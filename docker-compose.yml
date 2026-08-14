@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./public:/var/www/html/public:ro
+    depends_on:
+      - php-fpm
+    networks:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+  php-fpm:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    volumes:
+      - .:/var/www/html
+      - ./storage:/var/www/html/storage
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - backend
+    restart: unless-stopped
+
+  horizon:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    command: php artisan horizon
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - php-fpm
+      - redis
+    networks:
+      - backend
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    command: >
+      sh -c "while true; do
+        php /var/www/html/artisan schedule:run --no-interaction;
+        sleep 60;
+      done"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - php-fpm
+    networks:
+      - backend
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: \
+      POSTGRES_USER: \
+      POSTGRES_PASSWORD: \
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
