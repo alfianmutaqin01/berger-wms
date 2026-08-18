@@ -1,59 +1,69 @@
-version: '3.8'
+# ===========================================
+# Berger WMS — Docker Compose (Development)
+# ===========================================
 
 services:
+  # --- Nginx Reverse Proxy ---
   nginx:
-    build:
-      context: .
-      dockerfile: docker/nginx/Dockerfile
+    image: nginx:1.27-alpine
     ports:
       - "8080:80"
     volumes:
       - .:/var/www/html:ro
-      - ./public:/var/www/html/public:ro
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - php-fpm
+      php-fpm:
+        condition: service_started
     networks:
       - frontend
       - backend
     restart: unless-stopped
 
+  # --- PHP-FPM Application ---
   php-fpm:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
+      target: development
     volumes:
       - .:/var/www/html
-      - ./storage:/var/www/html/storage
     environment:
       - APP_ENV=local
       - APP_DEBUG=true
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
 
-  horizon:
+  # --- Queue Worker (use queue:work until Horizon is installed) ---
+  queue:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
-    command: php artisan horizon
+      target: development
+    command: php artisan queue:work redis --sleep=3 --tries=3 --timeout=60
     volumes:
       - .:/var/www/html
     depends_on:
-      - php-fpm
-      - redis
+      php-fpm:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
 
+  # --- Laravel Scheduler (Cron) ---
   scheduler:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
+      target: development
     command: >
       sh -c "while true; do
         php /var/www/html/artisan schedule:run --no-interaction;
@@ -62,25 +72,33 @@ services:
     volumes:
       - .:/var/www/html
     depends_on:
-      - php-fpm
+      php-fpm:
+        condition: service_started
     networks:
       - backend
     restart: unless-stopped
 
+  # --- PostgreSQL Database ---
   postgres:
     image: postgres:16-alpine
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: \
-      POSTGRES_USER: \
-      POSTGRES_PASSWORD: \
+      POSTGRES_DB: wms_berger
+      POSTGRES_USER: wms_user
+      POSTGRES_PASSWORD: secret
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wms_user -d wms_berger"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - backend
     restart: unless-stopped
 
+  # --- Redis (Cache + Session + Queue) ---
   redis:
     image: redis:7-alpine
     ports:
@@ -88,8 +106,28 @@ services:
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - backend
+    restart: unless-stopped
+
+  # --- Soketi (WebSocket Server) ---
+  soketi:
+    image: quay.io/soketi/soketi:1.6-16-alpine
+    ports:
+      - "6001:6001"
+    environment:
+      SOKETI_DEBUG: "1"
+      SOKETI_DEFAULT_APP_ID: "berger-wms"
+      SOKETI_DEFAULT_APP_KEY: "app-key"
+      SOKETI_DEFAULT_APP_SECRET: "app-secret"
+    networks:
+      - backend
+      - frontend
     restart: unless-stopped
 
 volumes:

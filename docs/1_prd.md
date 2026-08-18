@@ -206,12 +206,6 @@ graph TD
 - Jika berhasil, arahkan ke halaman MFA.
 - Jika gagal, tampilkan pesan error generik ("Email atau Password salah").
 
-#### F-AUTH-02: Multi-Factor Authentication (MFA)
-- **Metode:** Google Authenticator (TOTP — Time-based One-Time Password).
-- Setelah login email/password berhasil, pengguna diminta memasukkan kode 6 digit dari Google Authenticator.
-- **Setup awal:** Saat akun baru dibuat, pengguna diarahkan ke halaman setup MFA yang menampilkan QR Code. QR Code di-scan menggunakan Google Authenticator.
-- **Recovery:** Super Admin dapat me-reset MFA pengguna jika perangkat hilang.
-
 #### F-AUTH-03: Progressive Lockout
 - **Batas percobaan:** Maksimal **5 kali** salah memasukkan password/username.
 - **Setelah 5 kali salah:** Akun terkunci selama **5 menit**.
@@ -295,21 +289,30 @@ graph TD
 ### 6.3 Modul Inbound (Barang Masuk)
 
 #### F-INB-01: Input Produksi (Tim Produksi)
-- **Proses:**
+- **Proses: Role Produksi harus bisa memasukkan data hasil produksi dan menyimpannya ke sistem**
   1. Tim Produksi membuka form Inbound.
-  2. Mengisi: Nomor Dokumen Fisik Pabrik (manual), Tanggal Produksi, memilih Gudang Tujuan.
-  3. Menambahkan detail item: SKU Produk, Batch Number, Total Qty.
-  4. Sistem **otomatis memecah** Total Qty ke dalam hitungan palet berdasarkan `max_qty_per_pallet` produk tersebut.
-     - Contoh: Input 500 pcs cat 5Kg (maks 180/palet) → Sistem membuat: Palet 1 (180), Palet 2 (180), Palet 3 (140).
-  5. Submit. Status inbound: **Draft / Menunggu Put-away**.
+  2. Mengisi: Nomor Dokumen Produksi (manual), Tanggal Produksi (manual).
+  3. Menambahkan detail item: melalui fitur uoload dokumen exel yang berisi data sebagai berikut
+    - SKU Produk
+    - Deskripsi Produk sesuai sku
+    - UoM sesuai sku
+    - Total Qty
+    - Batch Number
+  4. Setelah selesai mengupload dokumen exel, sistem akan menampilkan rincian data yang sudah diupload dan sistem **otomatis memecah** Total Qty ke dalam hitungan palet berdasarkan `max_qty_per_pallet` produk tersebut. **Jika total qty sudah benar maka tidak perlu diedit lagi**
+     - Contoh: Input 500 pcs cat 5Kg (maks 180/palet) → Sistem membuat: Palet 1 (180), Palet 2 (180), Palet 3 (140). maka menghasilkan 3 palet.
+     - Contoh 2: Input 360 pcs cat 5Kg (maks 180/palet) → Sistem membuat: Palet 1 (180), Palet 2 (180). maka menghasilkan 2 palet.
+  5. Setelah data dicek kembali maka jika data sudah sesuai tinggal klik submit, namun jika ada data yang salah role produksi bisa mengedit data tersebut sebelum submit.
+  6. Submit. Status inbound: **Production Delivery Note / Menunggu Put-away**.
 
 #### F-INB-02: Put-away (Operator Gudang)
-- **Proses:**
+- **Proses: Operator Gudang Harus bisa melihat daftar inbound yang menunggu put-away dan menentukan lokasi penyimpanan barang**
   1. Operator melihat daftar inbound yang menunggu put-away.
-  2. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`).
-  3. Kode lokasi divalidasi terhadap tabel `locations` — harus lokasi yang valid dan terdaftar di gudang yang sesuai.
-  4. Submit. Status berubah menjadi **Menunggu Verifikasi**.
-  5. Stok **belum aktif** — masih "mengambang".
+  2. Operator meng klik kode produksi yang sudah dibuat.
+  3. sistem menampilkan data produksi yang sudah dibuat,Operator **tidak bisa** mengubah qty atau batch number, operator hanya bisa menentukan lokasi penyimpanan barang.
+  4. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`) atau mengklik tombol scan untuk scan barcode lokasi rak. (setiap operator meng klik lokasi rak sistem otomatis memberikan rekomendasi lokasi rak yang masih kosong).
+  5. Kode lokasi divalidasi terhadap tabel `locations` — harus lokasi yang valid dan terdaftar di gudang yang sesuai dan masih memiliki kapasitas untuk menampung barang tersebut.
+  6. Submit. Status berubah menjadi **Menunggu Verifikasi**.
+  7. Stok **belum aktif** — masih "mengambang".
 
 #### F-INB-03: Verifikasi Maker-Checker (Tim Logistik)
 - **Proses:**
@@ -816,3 +819,21 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | **Partial Fulfillment** | Pemenuhan pesanan sebagian karena stok kurang |
 | **Billing** | Pengelolaan piutang/tagihan |
 | **Payment Term** | Syarat pembayaran (Cash, Transfer, Tempo) |
+
+---
+
+### 7. Lampiran: Catatan Kebutuhan Struktur Database (Draft)
+*(Sesuai permintaan, tabel-tabel ini tidak akan dibuat di database sungguhan secara fisik saat ini, melainkan sebagai referensi untuk implementasi backend di masa mendatang).*
+
+1. **Tabel products**
+   - Menyimpan data *Master Produk*.
+   - Kolom penting: sku (PK), description, uom, max_qty_per_pallet (Integer, penting untuk pemecahan otomatis saat Inbound).
+2. **Tabel locations**
+   - Menyimpan data *Master Lokasi Rak*.
+   - Kolom penting: id (PK), location_code (Contoh: G-03-04), capacity_status.
+3. **Tabel inbounds**
+   - Header untuk dokumen Inbound Produksi (F-INB-01).
+   - Kolom penting: id (PK), production_document_number, production_date, status (Enum: Menunggu Put-away, Menunggu Verifikasi, Selesai).
+4. **Tabel inbound_pallets**
+   - Detail dari Inbound yang menyimpan hasil pecah palet.
+   - Kolom penting: id (PK), inbound_id (FK), product_sku (FK), atch_number, qty, location_code (Diisi 1-per-1 saat F-INB-02 Put-away).

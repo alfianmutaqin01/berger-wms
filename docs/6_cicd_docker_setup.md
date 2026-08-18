@@ -1,5 +1,5 @@
-# CI/CD dengan Docker & GitHub
-## Sistem WMS & Sales Order — PT Berger Paints Indonesia
+﻿# CI/CD dengan Docker & GitHub
+## Sistem WMS & Sales Order â€” PT Berger Paints Indonesia
 
 > **Versi:** 1.0  
 > **Tanggal:** 14 Agustus 2026  
@@ -37,10 +37,10 @@ docker compose version
 # Docker Compose version v2.x.x
 
 # 3. Aktifkan WSL2 backend (recommended)
-# Settings → General → "Use the WSL 2 based engine" ✓
+# Settings â†’ General â†’ "Use the WSL 2 based engine" âœ“
 
 # 4. Alokasikan resource
-# Settings → Resources → Advanced:
+# Settings â†’ Resources â†’ Advanced:
 #   CPUs: 4 (minimum 2)
 #   Memory: 8 GB (minimum 4 GB)
 #   Swap: 2 GB
@@ -98,21 +98,21 @@ docker compose version
 
 ```
 project-root/
-├── docker/
-│   ├── php/
-│   │   ├── Dockerfile
-│   │   ├── php.ini
-│   │   └── supervisord.conf
-│   ├── nginx/
-│   │   ├── Dockerfile
-│   │   ├── nginx.conf
-│   │   └── default.conf
-│   └── scheduler/
-│       └── crontab
-├── docker-compose.yml
-├── docker-compose.prod.yml
-├── .dockerignore
-└── .env.docker
+â”œâ”€â”€ docker/
+â”‚   â”œâ”€â”€ php/
+â”‚   â”‚   â”œâ”€â”€ Dockerfile
+â”‚   â”‚   â”œâ”€â”€ php.ini
+â”‚   â”‚   â””â”€â”€ supervisord.conf
+â”‚   â”œâ”€â”€ nginx/
+â”‚   â”‚   â”œâ”€â”€ Dockerfile
+â”‚   â”‚   â”œâ”€â”€ nginx.conf
+â”‚   â”‚   â””â”€â”€ default.conf
+â”‚   â””â”€â”€ scheduler/
+â”‚       â””â”€â”€ crontab
+â”œâ”€â”€ docker-compose.yml
+â”œâ”€â”€ docker-compose.prod.yml
+â”œâ”€â”€ .dockerignore
+â””â”€â”€ .env.docker
 ```
 
 ### 2.2 PHP-FPM Dockerfile (Multi-Stage Build)
@@ -160,7 +160,7 @@ RUN npm run build
 # ==============================
 # Stage 3: Production Image
 # ==============================
-FROM php:8.2-fpm-alpine
+FROM php:8.3-fpm-alpine
 
 # Install system dependencies
 RUN apk add --no-cache \
@@ -664,17 +664,17 @@ gitGraph
 ### 4.3 Branch Protection Rules
 
 #### `main` Branch:
-- ✅ Require pull request before merging
-- ✅ Require at least 1 approval
-- ✅ Require status checks to pass (CI pipeline)
-- ✅ Require branches to be up to date
-- ❌ No direct push
-- ❌ No force push
+- âœ… Require pull request before merging
+- âœ… Require at least 1 approval
+- âœ… Require status checks to pass (CI pipeline)
+- âœ… Require branches to be up to date
+- âŒ No direct push
+- âŒ No force push
 
 #### `develop` Branch:
-- ✅ Require pull request before merging
-- ✅ Require status checks to pass (CI pipeline)
-- ❌ No direct push
+- âœ… Require pull request before merging
+- âœ… Require status checks to pass (CI pipeline)
+- âŒ No direct push
 
 ### 4.4 Repository Setup
 
@@ -701,7 +701,7 @@ git checkout -b backend/feature-auth
 git add .
 git commit -m "feat(auth): implement login with email and password"
 git push -u origin backend/feature-auth
-# → Create Pull Request di GitHub: backend/feature-auth → develop
+# â†’ Create Pull Request di GitHub: backend/feature-auth â†’ develop
 ```
 
 ### 4.5 `.gitignore`
@@ -748,10 +748,10 @@ coverage/
 
 ## 5. GitHub Actions Pipeline
 
-### 5.1 CI Pipeline — Test & Lint (`.github/workflows/ci.yml`)
+### 5.1 CI Pipeline â€” Test & Lint (`.github/workflows/ci.yml`)
 
 ```yaml
-name: CI — Test & Lint
+name: CI â€” Test & Lint
 
 on:
   pull_request:
@@ -772,7 +772,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.3'
           tools: phpstan, php-cs-fixer
 
       - name: Cache Composer
@@ -829,7 +829,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.3'
           extensions: pdo_pgsql, redis, gd, zip, pcntl, bcmath
           coverage: xdebug
 
@@ -892,10 +892,10 @@ jobs:
           path: coverage/
 ```
 
-### 5.2 CD Pipeline — Build & Deploy (`.github/workflows/cd.yml`)
+### 5.2 CD Pipeline â€” Build & Deploy (`.github/workflows/cd.yml`)
 
 ```yaml
-name: CD — Build & Deploy
+name: CD â€” Build & Deploy
 
 on:
   push:
@@ -994,7 +994,7 @@ jobs:
             sleep 10
             curl -f http://localhost/health || exit 1
             
-            echo "✅ Deployment successful: ${{ github.ref_name }}"
+            echo "âœ… Deployment successful: ${{ github.ref_name }}"
 ```
 
 ### 5.3 CI Environment File (`.env.ci`)
@@ -1029,11 +1029,11 @@ MAIL_MAILER=array
 
 | File | Tujuan | Di-commit ke Git? |
 |---|---|---|
-| `.env.example` | Template referensi | ✅ Ya |
-| `.env` | Development lokal | ❌ Tidak |
-| `.env.ci` | CI/CD pipeline testing | ✅ Ya |
-| `.env.production` | Production server | ❌ Tidak (manual di server) |
-| `.env.docker` | Docker Compose defaults | ✅ Ya |
+| `.env.example` | Template referensi | âœ… Ya |
+| `.env` | Development lokal | âŒ Tidak |
+| `.env.ci` | CI/CD pipeline testing | âœ… Ya |
+| `.env.production` | Production server | âŒ Tidak (manual di server) |
+| `.env.docker` | Docker Compose defaults | âœ… Ya |
 
 ### 6.2 `.env.example` (Template)
 
@@ -1099,40 +1099,40 @@ GOOGLE2FA_ENABLED=true
 
 ```mermaid
 flowchart LR
-    subgraph DEV ["💻 Development"]
+    subgraph DEV ["ðŸ’» Development"]
         A[Code di feature branch] --> B[Push ke GitHub]
         B --> C{PR ke develop}
     end
     
-    subgraph CI ["🔍 CI Pipeline"]
+    subgraph CI ["ðŸ” CI Pipeline"]
         C --> D[Lint Check]
         D --> E[Run Tests]
         E --> F{All Passed?}
-        F -->|No| G[❌ Fix Issues]
+        F -->|No| G[âŒ Fix Issues]
         G --> A
-        F -->|Yes| H[✅ Merge to develop]
+        F -->|Yes| H[âœ… Merge to develop]
     end
     
-    subgraph STAGING ["🧪 Staging"]
+    subgraph STAGING ["ðŸ§ª Staging"]
         H --> I[Auto-deploy to staging]
         I --> J[Manual Testing / UAT]
         J --> K{Ready for Release?}
         K -->|No| A
     end
     
-    subgraph RELEASE ["🚀 Release"]
-        K -->|Yes| L[Create PR: develop → main]
+    subgraph RELEASE ["ðŸš€ Release"]
+        K -->|Yes| L[Create PR: develop â†’ main]
         L --> M[Review & Approve]
         M --> N[Merge to main]
         N --> O[Create Git Tag v1.x.x]
     end
     
-    subgraph CD ["📦 CD Pipeline"]
+    subgraph CD ["ðŸ“¦ CD Pipeline"]
         O --> P[Build Docker Image]
         P --> Q[Push to Registry]
         Q --> R[Deploy to Production]
         R --> S[Health Check]
-        S --> T[✅ Live!]
+        S --> T[âœ… Live!]
     end
 ```
 
@@ -1294,7 +1294,7 @@ docker system prune -f
 ```bash
 #!/bin/bash
 # /opt/berger-wms/scripts/health-check.sh
-# Schedule: crontab → */5 * * * *
+# Schedule: crontab â†’ */5 * * * *
 
 HEALTH_URL="http://localhost/health"
 LOG_FILE="/var/log/berger-wms/health.log"
