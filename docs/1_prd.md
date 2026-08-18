@@ -244,7 +244,6 @@ graph TD
 #### F-MASTER-02: Manajemen Produk
 - **Akses:** Super Admin, Manager
 - **Fungsi:** CRUD data produk/SKU.
-- **Field:** Kode SKU, Nama Produk, Deskripsi, Kategori (FK), Unit of Measure (UoM), Kapasitas Maks per Palet.
 - **Kapasitas Palet Standar:**
 
 | UoM (Ukuran) | Kapasitas per Palet |
@@ -256,7 +255,7 @@ graph TD
 | 0.9 Kg; 1 Kg | 720 |
 | 4 Kg; 5 Kg | 180 |
 | 18 Kg; 20 Kg; 25 Kg | 36 |
-
+- **Field:** Kode SKU, Deskripsi, Kategori (FK), Unit of Measure (UoM), Kapasitas Maks per Palet.
 - **Aturan:** Kapasitas palet dapat diubah per produk oleh Manager/Super Admin.
 
 #### F-MASTER-03: Manajemen Kategori Produk
@@ -316,16 +315,20 @@ graph TD
 
 #### F-INB-03: Verifikasi Maker-Checker (Tim Logistik)
 - **Proses:**
-  1. Tim Logistik melihat daftar barang yang menunggu verifikasi.
-  2. Logistik melakukan pengecekan fisik di gudang.
-  3. **Opsi verifikasi:**
+  1. Tim Logistik melihat jumlah barang yang menunggu verifikasi di halaman dashboard.
+  2. Tim Logistik mengklik card jumlah barang atau klik pada halaman dashboard fitur inbound untuk melihat detail barang.
+  3. sistem menampilkan data inbound yang perlu di verifikasi.
+  4. Logistik meng klik daftar kode produksi yang akan diverifikasi.
+  5. sistem menampilkan detail data produk dan lokasinya yang sudah ditentukan oleh operator put-away.
+  6. Logistik melakukan pengecekan fisik di gudang.
+  7. **Opsi verifikasi:**
      - **Ceklis satu per satu:** Klik ceklis pada setiap palet yang sudah benar.
      - **Ceklis semua:** Jika sudah yakin semua benar, klik "Verifikasi Semua" + konfirmasi.
-  4. **Jika ditemukan kesalahan:**
+  8. **Jika ditemukan kesalahan:**
      - Logistik dapat **mengedit** data (qty, lokasi, batch) sebelum verifikasi.
      - Logistik dapat **menunda** verifikasi (status tetap Menunggu Verifikasi).
-  5. Setelah diverifikasi, stok **resmi aktif** dan tercatat di `inventory_stocks`.
-  6. `stock_movements` mencatat entri `IN` untuk setiap item yang diverifikasi.
+  9. Setelah diverifikasi, stok **resmi aktif** dan tercatat di `inventory_stocks`.
+  10. `stock_movements` mencatat entri `IN` untuk setiap item yang diverifikasi.
 
 #### F-INB-04: Koreksi Pasca-Verifikasi
 - **Situasi:** Jika data sudah terlanjur diverifikasi dan ditemukan kesalahan.
@@ -338,10 +341,10 @@ graph TD
 ### 6.4 Modul Inventory (Stok)
 
 #### F-INV-01: Tampilan Stok
-- **Akses:** Tim Logistik (lihat saja), Manager, Super Admin.
-- **Data yang ditampilkan:** SKU, Nama Produk, Batch No, Lokasi Rak, Qty Tersedia, Qty Teralokasi, Tanggal Produksi, Gudang.
-- **Filter:** Berdasarkan gudang, kategori produk, lokasi rak, batch.
-- **Pencarian:** Berdasarkan SKU atau nama produk.
+- **Akses:** Tim Produksi (lihat saja), Operator Gudang (lihat saja), Tim Logistik (lihat saja), Manager, Super Admin.
+- **Data yang ditampilkan:** no, SKU, Deskripsi Produk, Batch No, uom, Lokasi Rak, Qty Tersedia, Qty Teralokasi, Tanggal Produksi, Gudang. (sehingga misal ada 1 produk dengan 2 kali tanggal produksi maka akan muncul 2 baris data)
+- **Filter:** kategori produk, lokasi rak, batch, tanggal produksi.
+- **Pencarian:** kode produksi, SKU atau Deskripsi Produk.
 - **Ekspor:** Excel (untuk Logistik, Manager, Super Admin).
 
 #### F-INV-02: Stok Adjustment
@@ -819,21 +822,3 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | **Partial Fulfillment** | Pemenuhan pesanan sebagian karena stok kurang |
 | **Billing** | Pengelolaan piutang/tagihan |
 | **Payment Term** | Syarat pembayaran (Cash, Transfer, Tempo) |
-
----
-
-### 7. Lampiran: Catatan Kebutuhan Struktur Database (Draft)
-*(Sesuai permintaan, tabel-tabel ini tidak akan dibuat di database sungguhan secara fisik saat ini, melainkan sebagai referensi untuk implementasi backend di masa mendatang).*
-
-1. **Tabel products**
-   - Menyimpan data *Master Produk*.
-   - Kolom penting: sku (PK), description, uom, max_qty_per_pallet (Integer, penting untuk pemecahan otomatis saat Inbound).
-2. **Tabel locations**
-   - Menyimpan data *Master Lokasi Rak*.
-   - Kolom penting: id (PK), location_code (Contoh: G-03-04), capacity_status.
-3. **Tabel inbounds**
-   - Header untuk dokumen Inbound Produksi (F-INB-01).
-   - Kolom penting: id (PK), production_document_number, production_date, status (Enum: Menunggu Put-away, Menunggu Verifikasi, Selesai).
-4. **Tabel inbound_pallets**
-   - Detail dari Inbound yang menyimpan hasil pecah palet.
-   - Kolom penting: id (PK), inbound_id (FK), product_sku (FK), atch_number, qty, location_code (Diisi 1-per-1 saat F-INB-02 Put-away).
