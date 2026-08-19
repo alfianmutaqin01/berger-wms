@@ -1,120 +1,137 @@
 @extends('layouts.soms')
 
-@section('title', 'Dashboard')
-@section('page_title', 'Sales Dashboard')
+@section('title', 'Dashboard Sales')
+@section('page_title', 'Overview Kinerja Sales')
 
 @section('content')
+<div class="row mb-4">
+    <div class="col-12">
+        <h4 class="fw-bold text-dark mb-0">Performa Pribadi Anda</h4>
+        <p class="text-muted">Pantau target penjualan bulanan dan status pesanan kustomer Anda secara real-time.</p>
+    </div>
+</div>
+
 <!-- Statistic Cards -->
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
-        <div class="stat-card card h-100 p-3">
-            <div class="d-flex align-items-center mb-3">
-                <div class="stat-icon bg-primary bg-opacity-10 text-primary me-3">
-                    <i class="bi bi-currency-dollar"></i>
-                </div>
-                <div>
-                    <h6 class="text-muted fw-normal mb-0" style="font-size: 0.8rem;">Penjualan Bulan Ini</h6>
-                    <h4 class="mb-0 fw-bold">Rp 125.5M</h4>
-                </div>
+        <div class="card h-100 shadow-sm border-0 bg-primary text-white">
+            <div class="card-body">
+                <h6 class="fw-normal mb-2 opacity-75">Pesanan Dibuat (Bulan Ini)</h6>
+                <h3 class="mb-0 fw-bold">45 <span class="fs-6 fw-normal">PO</span></h3>
             </div>
         </div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="stat-card card h-100 p-3">
-            <div class="d-flex align-items-center mb-3">
-                <div class="stat-icon bg-warning bg-opacity-10 text-warning me-3">
-                    <i class="bi bi-hourglass-split"></i>
-                </div>
-                <div>
-                    <h6 class="text-muted fw-normal mb-0" style="font-size: 0.8rem;">Menunggu Approval</h6>
-                    <h4 class="mb-0 fw-bold">8 Order</h4>
-                </div>
+        <div class="card h-100 shadow-sm border-0 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Menunggu Approval</h6>
+                <h3 class="mb-0 fw-bold text-warning">8 <span class="fs-6 fw-normal">PO</span></h3>
             </div>
         </div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="stat-card card h-100 p-3">
-            <div class="d-flex align-items-center mb-3">
-                <div class="stat-icon bg-info bg-opacity-10 text-info me-3">
-                    <i class="bi bi-truck"></i>
-                </div>
-                <div>
-                    <h6 class="text-muted fw-normal mb-0" style="font-size: 0.8rem;">Dalam Pengiriman</h6>
-                    <h4 class="mb-0 fw-bold">12 Order</h4>
-                </div>
+        <div class="card h-100 shadow-sm border-0 border-start border-info border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Sedang Dikirim</h6>
+                <h3 class="mb-0 fw-bold text-info">12 <span class="fs-6 fw-normal">PO</span></h3>
             </div>
         </div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="stat-card card h-100 p-3">
-            <div class="d-flex align-items-center mb-3">
-                <div class="stat-icon bg-success bg-opacity-10 text-success me-3">
-                    <i class="bi bi-check-circle"></i>
-                </div>
-                <div>
-                    <h6 class="text-muted fw-normal mb-0" style="font-size: 0.8rem;">Selesai (Terkirim)</h6>
-                    <h4 class="mb-0 fw-bold">45 Order</h4>
-                </div>
+        <div class="card h-100 shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Sukses Terkirim</h6>
+                <h3 class="mb-0 fw-bold text-success">25 <span class="fs-6 fw-normal">PO</span></h3>
             </div>
         </div>
     </div>
 </div>
 
-<!-- My Recent Orders Table -->
-<div class="table-card card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h6 class="fw-bold mb-0 text-dark">Pesanan Terakhir Saya</h6>
-        <div>
-            <a href="/sales/new-order" class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> Buat Order Baru</a>
+<div class="row g-4">
+    <!-- Chart Area -->
+    <div class="col-12 col-xl-8">
+        <div class="card shadow-sm border-0 h-100 rounded-4">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center pt-4 px-4 pb-0">
+                <h6 class="fw-bold mb-0">Target vs Realisasi (Qty Item Terjual)</h6>
+                <select class="form-select form-select-sm w-auto bg-light border-0 rounded-pill">
+                    <option>Bulan Ini</option>
+                    <option>Kuartal Ini</option>
+                </select>
+            </div>
+            <div class="card-body px-4" style="min-height: 300px;">
+                <canvas id="mySalesChart"></canvas>
+            </div>
         </div>
     </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th class="ps-4">No. Order</th>
-                        <th>Tanggal</th>
-                        <th>Customer</th>
-                        <th>Nilai Transaksi</th>
-                        <th>Status</th>
-                        <th class="text-end pe-4">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td class="ps-4 fw-bold text-primary">SO-2608-0105</td>
-                        <td>15 Aug 2026</td>
-                        <td>Toko Besi Maju Jaya</td>
-                        <td>Rp 12.500.000</td>
-                        <td><span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Menunggu</span></td>
-                        <td class="text-end pe-4">
-                            <a href="/sales/tracking" class="btn btn-sm btn-light border"><i class="bi bi-search text-primary"></i> Detail</a>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="ps-4 fw-bold text-primary">SO-2608-0104</td>
-                        <td>14 Aug 2026</td>
-                        <td>CV. Bintang Abadi</td>
-                        <td>Rp 45.200.000</td>
-                        <td><span class="badge bg-info"><i class="bi bi-truck me-1"></i>Pengiriman</span></td>
-                        <td class="text-end pe-4">
-                            <a href="/sales/tracking" class="btn btn-sm btn-light border"><i class="bi bi-search text-primary"></i> Detail</a>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="ps-4 fw-bold text-muted">SO-2608-0100</td>
-                        <td class="text-muted">10 Aug 2026</td>
-                        <td class="text-muted">Toko Warna Baru</td>
-                        <td class="text-muted">Rp 8.500.000</td>
-                        <td><span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Selesai</span></td>
-                        <td class="text-end pe-4">
-                            <a href="/sales/tracking" class="btn btn-sm btn-light border"><i class="bi bi-search text-primary"></i> Detail</a>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+
+    <!-- Need Action Table -->
+    <div class="col-12 col-xl-4">
+        <div class="card shadow-sm border-0 h-100 rounded-4 border-top border-warning border-4">
+            <div class="card-header bg-transparent border-0 pt-4 px-4 pb-0">
+                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-exclamation-circle text-warning me-2"></i>Butuh Tindakan Anda</h6>
+            </div>
+            <div class="card-body p-4 mt-2">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0 fw-bold">CV Bangun Jaya</h6>
+                            <small class="text-muted">Supir sudah tiba (Arrived)</small>
+                        </div>
+                        <a href="/sales/orders" class="btn btn-sm btn-outline-primary rounded-pill px-3">Upload Bukti</a>
+                    </li>
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0 fw-bold">Toko Merah</h6>
+                            <small class="text-danger">Overdue, hubungi Logistik</small>
+                        </div>
+                        <button class="btn btn-sm btn-light rounded-pill px-3 disabled">Terblokir</button>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const ctx = document.getElementById('mySalesChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'],
+                datasets: [
+                    {
+                        label: 'Realisasi (Qty)',
+                        data: [500, 800, 600, 1200],
+                        borderColor: '#1B4F8A',
+                        backgroundColor: 'rgba(27, 79, 138, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Target (Qty)',
+                        data: [700, 700, 700, 700],
+                        borderColor: '#E8871E',
+                        borderDash: [5, 5],
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    });
+</script>
+@endpush

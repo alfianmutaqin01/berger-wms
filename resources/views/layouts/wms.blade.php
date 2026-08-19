@@ -11,6 +11,63 @@
     <!-- Custom CSS based on original SOMS -->
     <link href="/css/soms-style.css?v={{ time() }}" rel="stylesheet">
     @stack('styles')
+    <style>
+        /* Global Animations & Premium Hover Effects */
+        @keyframes fadeInUp {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes pulseSoft {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+        
+        /* Auto-animate all main content */
+        main {
+            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Card Hover Lift */
+        .card {
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important;
+        }
+
+        /* Interactive Buttons */
+        .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Smooth Table Rows */
+        tbody tr {
+            transition: background-color 0.2s ease;
+        }
+        tbody tr:hover {
+            background-color: rgba(13, 110, 253, 0.03) !important;
+        }
+
+        /* Sidebar Link Hover */
+        .nav-link {
+            transition: all 0.3s ease;
+        }
+        .nav-link:hover {
+            transform: translateX(5px);
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+        }
+        
+        /* Alert Pulse */
+        .alert-danger, .alert-warning {
+            animation: pulseSoft 2s infinite;
+        }
+    </style>
 </head>
 <body>
 <div class="wrapper">
@@ -61,17 +118,38 @@
                 </a>
             </li>
 
-            <li class="nav-section">Operasional</li>
-            <li class="nav-item {{ request()->is('wms/approval') ? 'active' : '' }}">
-                <a href="/wms/approval" class="nav-link">
-                    <i class="bi bi-check2-square"></i>
-                    <span>Approval Order</span>
+            <li class="nav-section">Outbound (Pengiriman)</li>
+            <li class="nav-item {{ request()->is('wms/outbound/approval') ? 'active' : '' }}">
+                <a href="/wms/outbound/approval" class="nav-link">
+                    <i class="bi bi-ui-checks-grid"></i>
+                    <span>Approval Pesanan</span>
                 </a>
             </li>
-            <li class="nav-item {{ request()->is('wms/delivery') ? 'active' : '' }}">
-                <a href="/wms/delivery" class="nav-link">
-                    <i class="bi bi-truck"></i>
-                    <span>Pengiriman (Surat Jalan)</span>
+            <li class="nav-item {{ request()->is('wms/outbound/picking') ? 'active' : '' }}">
+                <a href="/wms/outbound/picking" class="nav-link">
+                    <i class="bi bi-box-seam"></i>
+                    <span>Proses Picking</span>
+                </a>
+            </li>
+            <li class="nav-item {{ request()->is('wms/outbound/delivery') ? 'active' : '' }}">
+                <a href="/wms/outbound/delivery" class="nav-link">
+                    <i class="bi bi-printer"></i>
+                    <span>Cetak Surat Jalan</span>
+                </a>
+            </li>
+            <li class="nav-item {{ request()->is('wms/outbound/verification') ? 'active' : '' }}">
+                <a href="/wms/outbound/verification" class="nav-link">
+                    <i class="bi bi-shield-check"></i>
+                    <span>Verifikasi Bukti SJ</span>
+                </a>
+            </li>
+            
+            <!-- BILLING -->
+            <li class="nav-section mt-3">Finance & Penagihan</li>
+            <li class="nav-item {{ request()->is('wms/billing') ? 'active' : '' }}">
+                <a href="/wms/billing" class="nav-link">
+                    <i class="bi bi-receipt"></i>
+                    <span>Billing & Piutang</span>
                 </a>
             </li>
 
@@ -94,6 +172,13 @@
                 <a href="/wms/admin/users" class="nav-link">
                     <i class="bi bi-person-gear"></i>
                     <span>Manajemen User</span>
+                  </a>
+              </li>
+              <li class="nav-item {{ request()->is('wms/admin/sequence') ? 'active' : '' }}">
+                  <a href="/wms/admin/sequence" class="nav-link">
+                      <i class="bi bi-file-earmark-code"></i>
+                      <span>Pengaturan Dokumen</span>
+                  </a>
                 </a>
             </li>
         </ul>
@@ -237,9 +322,10 @@
     });
 </script>
 @stack('scripts')
+
+    @stack('modals')
 </body>
 </html>
-
 
 
 

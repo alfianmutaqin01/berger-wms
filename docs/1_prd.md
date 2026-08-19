@@ -196,7 +196,7 @@ graph TD
 
 ---
 
-## 6. Spesifikasi Fungsional
+## 6. Spesifikasi Fungsional Sistem
 
 ### 6.1 Modul Autentikasi & Keamanan
 
@@ -367,16 +367,16 @@ graph TD
 ### 6.5 Modul Outbound (Sales Order)
 
 #### F-OUT-01: Pembuatan PO oleh Sales
-- **Proses:**
+- **Proses: Sales harus bisa melakukan pemesanan sesuai dengan pilihan customer tanpa terpengaruh oleh status stok.**
   1. Sales membuka form Buat Pesanan di Portal Sales.
-  2. Memilih **Customer** (hanya yang berstatus Approved).
+  2. Memilih **Customer** (hanya yang berstatus Approved). Jika customer belum terdaftar sales bisa ke menu pendaftaran customer baru dan menunggu persetujuan dari manager atau super admin (**maka status customer akan berubah menjadi approved atau sudah muncul di list customer jika sudah disetujui**).
   3. **Validasi Customer Billing:**
      - Jika customer memiliki tagihan tempo (30/60/90 hari) yang **belum dikonfirmasi lunas**, sistem **memblokir** pembuatan PO baru dengan pesan: *"Customer ini memiliki tagihan belum lunas. Hubungi tim logistik."*
      - Jika customer pembayaran Cash/Transfer, atau semua tagihan tempo sudah lunas → lanjut.
   4. Memilih **Dispatch Code** (gudang tujuan pengiriman).
   5. Menambahkan item produk dan qty pesanan. **Sales TIDAK melihat angka stok**, hanya indikator (✅⚠️❌).
   6. Memilih **Payment Term**: Cash, Transfer, Tempo 30 Hari, Tempo 60 Hari, Tempo 90 Hari.
-  7. Submit. Status: **Menunggu Approval**.
+  7. Simpan draft. atau Submit. Status: **masuk ke riwayat order**. Jika draft masih bisa diedit atau di hapus pada riwayat namun jika telah di submit maka status berubah menjadi menunggu aproval dan tidak bisa di edit sama sekali
   8. Sistem mengirim **notifikasi real-time + suara** ke dashboard Logistik.
 
 - **Batasan Waktu Order:**
@@ -386,7 +386,7 @@ graph TD
 #### F-OUT-02: Approval & Auto-Adjustment (Tim Logistik)
 - **Proses:**
   1. Logistik melihat daftar PO masuk. **Dapat difilter** berdasarkan gudang (Dispatch Code).
-  2. Logistik menekan **Approve**.
+  2. logistik bisa melakukan preview sebelum Logistik menekan **Approve**. 
   3. **Pengecekan Stok Otomatis:**
      - Jika stok cukup → qty disetujui = qty pesanan.
      - Jika stok **kurang** → sistem otomatis memotong qty sesuai stok tersedia (**Partial Fulfillment**).
@@ -400,8 +400,8 @@ graph TD
 #### F-OUT-03: Picking (Operator Gudang)
 - **Proses:**
   1. Setelah PO di-approve, sistem menerbitkan **Picking List** di layar Operator.
-  2. Picking List berisi: Nama Produk, Qty, Lokasi Rak, Batch No.
-  3. Urutan picking **disusun berdasarkan lokasi rak** (dari Rak A → G, atau terdekat ke terjauh) untuk efisiensi pergerakan.
+  2. Picking List berisi: sku, deskripsi produk, Qty, Lokasi Rak, Batch No, dan uom. sehingga sistem menghitung otomatis ketika operator klik siap loading, misal dalam rak ada 100 dengan pesanan 50 maka sisa dalam rak menjadi 50.
+  3. Urutan picking **disusun berdasarkan lokasi rak** (dari Rak A → terakhir) untuk efisiensi pergerakan.
   4. Operator mengambil barang dari rak dan meletakkan di **loading dock**.
   5. Operator menekan **"Siap Loading"** di sistem.
   6. Status PO berubah menjadi **Siap Kirim**.
@@ -409,19 +409,23 @@ graph TD
 
 #### F-OUT-04: Cetak Surat Jalan (Tim Logistik)
 - **Proses:**
-  1. Logistik melihat daftar PO yang sudah **Siap Kirim**.
-  2. Mengisi data pengiriman: Nama Supir, Plat Nomor Kendaraan.
-  3. Menekan **"Cetak Surat Jalan"**.
-  4. Sistem **generate nomor Surat Jalan otomatis** (melanjutkan dari starting number yang diatur Super Admin di Pengaturan).
-  5. Format nomor: Dapat dikonfigurasi (misal: `SJ-KRW-2026-00001`).
-  6. Surat Jalan dapat dicetak langsung (format PDF/print-friendly).
+  1. Logistik melihat daftar PO yang sudah **Siap Kirim** dan meng klik salah satu daftar po.
+  2. logistik mengupload data barang yang ada dan tidak ada dalam bentuk exel sebagai bahan konfirmasi.
+  3. sistem akan membandingkan data barang yang ada dan tidak ada dengan data barang yang ada di sistem.
+  4. jika sudah sesuai dengan data yang dikirim kan maka bisa lanjut, namun jika ada yang tidak sesuai maka logistik bisa mengoreksi stok yang tersedia di gudang saat ini berbeda sehingga bisa menjadi bahan perbaikan/ stock opname.
+  5. jika data sudah sesuai logistik dapat mengisi data pengiriman: Nama Supir. nomer WA, Plat Nomor Kendaraan.
+  6. Menekan **"Cetak Surat Jalan"**. 
+  7. Sistem **generate nomor Surat Jalan otomatis** (melanjutkan dari starting number yang diatur Super Admin di Pengaturan).
+  8. Format nomor: Dapat dikonfigurasi (misal: `SJ-KRW-2026-00001`).
+  9. Surat Jalan dapat dicetak langsung (format PDF/print-friendly).
   7. Status PO berubah menjadi **Dalam Pengiriman**.
   8. **SLA Timer dimulai** — argo waktu mulai berjalan dari saat ini.
   9. Notifikasi dikirim ke Sales: *"Pesanan Anda sedang dalam pengiriman."*
+  10. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
 
 #### F-OUT-05: Upload Bukti & Penyelesaian
 - **Proses:**
-  1. Barang tiba di pelanggan. Sales atau kurir mengambil foto Surat Jalan yang telah **ditandatangani oleh pelanggan**.
+  1. setelah driver meng klik Barang tiba di pelanggan. Sales mengambil foto Surat Jalan yang telah **ditandatangani oleh pelanggan**.
   2. Membuka Portal Sales → menu Pesanan → pilih PO → **Upload Bukti**.
   3. **Batasan Upload:**
      - Format file: **PNG atau JPG saja**.
@@ -562,7 +566,7 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 
 ## 7. Aturan Bisnis (Business Rules)
 
-### 7.1 Aturan Palet Otomatis
+### 7.1 Aturan Palet Otomatis: sistem harus mampu menerapkan perhitungan palet otomatis sesuai dengan alur kerja.
 
 ```
 RULE: PALLET_AUTO_SPLIT
@@ -579,7 +583,7 @@ CONTOH:
   Output: Palet-1 (180), Palet-2 (180), Palet-3 (140) = 3 palet
 ```
 
-### 7.2 Aturan FIFO (First-In, First-Out)
+### 7.2 Aturan FIFO (First-In, First-Out): sistem harus mampu menerapkan perhitungan fifo sesuai dengan alur kerja.
 
 ```
 RULE: FIFO_ALLOCATION
@@ -675,7 +679,8 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 
 ## 8. Spesifikasi Non-Fungsional
 
-### 8.1 Performa
+### 8.1 Performa: sistem harus cepat dan andal saat digunakan
+
 | Metrik | Target |
 |---|---|
 | Waktu muat halaman (desktop) | < 3 detik |
@@ -743,18 +748,18 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 
 ```
 ┌──────────────────────────────────────────────────┐
-│                   Docker Host                     │
-│                                                   │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
-│  │  Nginx  │  │ Laravel │  │  Redis  │          │
-│  │ (proxy) │→ │  (PHP)  │→ │ (cache) │          │
-│  └─────────┘  └─────────┘  └─────────┘          │
-│                     ↓                             │
-│  ┌─────────┐  ┌─────────┐  ┌──────────┐         │
-│  │PostgreSQL│  │Horizon  │  │ Soketi/  │         │
-│  │  (DB)   │  │(queue)  │  │ Pusher   │         │
-│  └─────────┘  └─────────┘  └──────────┘         │
-│                                                   │
+│                   Docker Host                    │
+│                                                  │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐           │
+│  │  Nginx  │  │ Laravel │  │  Redis  │           │
+│  │ (proxy) │→ │  (PHP)  │→ │ (cache) │           │
+│  └─────────┘  └─────────┘  └─────────┘           │
+│                     ↓                            │
+│  ┌─────────┐  ┌─────────┐  ┌──────────┐          │
+│  │PostgreSQL│  │Horizon  │  │ Soketi/  │          │
+│  │  (DB)   │  │(queue)  │  │ Pusher   │          │
+│  └─────────┘  └─────────┘  └──────────┘          │
+│                                                  │
 └──────────────────────────────────────────────────┘
 ```
 

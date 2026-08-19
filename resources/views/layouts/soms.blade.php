@@ -11,17 +11,77 @@
     <!-- Custom CSS based on original SOMS -->
     <link href="/css/soms-style.css?v={{ time() }}" rel="stylesheet">
     @stack('styles')
+    <style>
+        /* Global Animations & Premium Hover Effects */
+        @keyframes fadeInUp {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes pulseSoft {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+        
+        /* Auto-animate all main content */
+        main {
+            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Card Hover Lift */
+        .card {
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important;
+        }
+
+        /* Interactive Buttons */
+        .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Smooth Table Rows */
+        tbody tr {
+            transition: background-color 0.2s ease;
+        }
+        tbody tr:hover {
+            background-color: rgba(13, 110, 253, 0.03) !important;
+        }
+
+        /* Sidebar Link Hover */
+        .nav-link {
+            transition: all 0.3s ease;
+        }
+        .nav-link:hover {
+            transform: translateX(5px);
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+        }
+        
+        /* Alert Pulse */
+        .alert-danger, .alert-warning {
+            animation: pulseSoft 2s infinite;
+        }
+    </style>
 </head>
 <body>
 <div class="wrapper">
     <!-- Sidebar -->
     <nav id="sidebar" class="sidebar">
         <!-- Brand -->
-        <div class="sidebar-header">
-            <a href="/sales/dashboard" class="sidebar-brand">
-                <i class="bi bi-droplet-half"></i> Berger SOMS
+        <div class="sidebar-header d-flex justify-content-between align-items-center w-100">
+            <a href="/sales/dashboard" class="sidebar-brand text-decoration-none d-flex align-items-center">
+                <i class="bi bi-droplet-half"></i> <span class="ms-2">Berger SOMS</span>
             </a>
-            <button type="button" class="btn-close d-lg-none" id="sidebarClose" aria-label="Close"></button>
+            <button type="button" class="btn btn-link text-white p-0 d-none d-lg-block" id="sidebarToggleDesktop">
+                <i class="bi bi-list fs-4"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white d-lg-none" id="sidebarClose" aria-label="Close"></button>
         </div>
 
         <ul class="sidebar-nav">
@@ -48,6 +108,13 @@
                 <a href="/sales/tracking" class="nav-link">
                     <i class="bi bi-geo-alt"></i>
                     <span>Order Tracking</span>
+                  </a>
+              </li>
+              <li class="nav-item {{ request()->is('sales/customers') ? 'active' : '' }}">
+                  <a href="/sales/customers" class="nav-link">
+                      <i class="bi bi-people"></i>
+                      <span>My Customers</span>
+                  </a>
                 </a>
             </li>
         </ul>
@@ -69,9 +136,29 @@
                 <button type="button" id="sidebarToggle" class="btn btn-light d-lg-none me-3 rounded-circle border-0 text-dark">
                     <i class="bi bi-list"></i>
                 </button>
-                <h5 class="mb-0 fw-bold text-dark" style="letter-spacing: -0.5px;">@yield('page_title', 'Dashboard')</h5>
                 
-                <div class="ms-auto d-flex align-items-center gap-3">
+                @php
+                    $hour = now()->format('H');
+                    if ($hour < 11) {
+                        $greeting = 'Selamat Pagi';
+                        $icon = 'bi-brightness-alt-high text-warning';
+                    } elseif ($hour < 15) {
+                        $greeting = 'Selamat Siang';
+                        $icon = 'bi-brightness-high text-warning';
+                    } elseif ($hour < 18) {
+                        $greeting = 'Selamat Sore';
+                        $icon = 'bi-sunset text-danger';
+                    } else {
+                        $greeting = 'Selamat Malam';
+                        $icon = 'bi-moon-stars text-primary';
+                    }
+                    $userName = "Sales Representative";
+                @endphp
+                <h5 class="mb-0 fw-bold text-dark d-flex align-items-center text-truncate" style="letter-spacing: -0.5px; max-width: 50%;">
+                    <i class="bi {{ $icon }} me-2 fs-4"></i> <span class="d-none d-md-inline">{{ $greeting }}, {{ $userName }}</span>
+                </h5>
+                
+                <div class="ms-auto d-flex align-items-center gap-2 gap-md-3 flex-nowrap">
                     <!-- Notification -->
                     <div class="dropdown">
                         <button class="btn btn-light position-relative rounded-circle d-flex align-items-center justify-content-center border" data-bs-toggle="dropdown" style="width: 40px; height: 40px; background-color: #f8f9fa;">
@@ -95,7 +182,7 @@
                     </div>
                     
                     <!-- Role Switcher (Mockup) -->
-                    <div class="dropdown">
+                    <div class="dropdown d-none d-md-block">
                         <button class="btn rounded-pill px-3 fw-semibold dropdown-toggle text-dark border bg-light shadow-sm" type="button" data-bs-toggle="dropdown" style="font-size: 0.85rem;">
                             <i class="bi bi-shield-check text-primary me-1"></i> Switch Role
                         </button>
@@ -162,7 +249,6 @@
 @stack('scripts')
 </body>
 </html>
-
 
 
 
