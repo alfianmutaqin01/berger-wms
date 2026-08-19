@@ -48,6 +48,9 @@
     </div>
 </div>
 
+@endsection
+
+@push('modals')
 <!-- Modal Verifikasi -->
 <div class="modal fade" id="verifyModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -89,4 +92,4 @@
         </div>
     </div>
 </div>
-@endsection
+@endpush

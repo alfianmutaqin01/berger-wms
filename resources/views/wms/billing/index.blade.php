@@ -106,6 +106,9 @@
     </div>
 </div>
 
+@endsection
+
+@push('modals')
 <!-- Modal Konfirmasi Pelunasan (F-BILL-02) -->
 <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -132,4 +135,4 @@
         </div>
     </div>
 </div>
-@endsection
+@endpush

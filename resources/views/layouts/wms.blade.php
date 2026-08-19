@@ -91,7 +91,12 @@
                     <span>Dashboard</span>
                 </a>
             </li>
-            
+            <li class="nav-item {{ request()->is('wms/reports') ? 'active' : '' }}">
+                <a href="/wms/reports" class="nav-link">
+                    <i class="bi bi-file-earmark-bar-graph"></i>
+                    <span>Laporan & Analisis</span>
+                </a>
+            </li>
             <li class="nav-section">Inbound & Stok</li>
             <li class="nav-item {{ request()->is('wms/inbound/create') ? 'active' : '' }}">
                 <a href="/wms/inbound/create" class="nav-link">
@@ -99,6 +104,12 @@
                     <span>Input Produksi</span>
                 </a>
             </li>
+              <li class="nav-item {{ request()->is('wms/inbound/history') ? 'active' : '' }}">
+                  <a href="/wms/inbound/history" class="nav-link">
+                      <i class="bi bi-clock-history"></i>
+                      <span>Riwayat Produksi</span>
+                  </a>
+              </li>
             <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">
                 <a href="/wms/inbound/putaway" class="nav-link">
                     <i class="bi bi-box-seam"></i>
@@ -326,9 +337,6 @@
     @stack('modals')
 </body>
 </html>
-
-
-
 
 
 

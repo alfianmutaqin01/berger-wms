@@ -85,6 +85,34 @@
 </div>
 @endsection
 
+@push('modals')
+<!-- Modal Edit Qty -->
+<div class="modal fade" id="editQtyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0">
+            <div class="modal-header border-bottom-0 pb-0">
+                <h6 class="modal-title fw-bold text-dark">Edit Kuantitas Produk</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-4">
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">SKU Produk</label>
+                    <input type="text" class="form-control bg-light" id="editSku" readonly>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label small fw-semibold text-secondary">Ubah Qty (Max: <span id="maxQtyLimit">180</span>)</label>
+                    <input type="number" class="form-control fw-bold" id="editQtyInput" value="180">
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
+                <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary px-3" onclick="alert('Simulasi: Kuantitas berhasil diubah!'); bootstrap.Modal.getInstance(document.getElementById('editQtyModal')).hide();"><i class="bi bi-save me-1"></i> Simpan</button>
+            </div>
+        </div>
+    </div>
+</div>
+@endpush
+
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -94,25 +122,26 @@
         const previewSection = document.getElementById('previewSection');
         const previewTableBody = document.getElementById('previewTableBody');
         
-        // Open file dialog on click
-        dropZone.addEventListener('click', () => fileInput.click());
+        function simulateFileUpload() {
+            dropZone.innerHTML = 
+                '<i class="bi bi-file-earmark-check text-primary" style="font-size: 3rem;"></i>' +
+                '<h6 class="mt-3 fw-bold text-primary">Data_Produksi_Shift_Pagi.xlsx</h6>' +
+                '<p class="text-muted small mb-0">File siap diproses</p>';
+            dropZone.classList.replace('bg-light', 'bg-primary-subtle');
+            dropZone.style.borderColor = '#93c5fd !important';
+            btnPreview.disabled = false;
+            
+            // Auto-fill form
+            document.getElementById('doc_no').value = 'PROD-202608-001';
+            document.getElementById('prod_date').value = '2026-08-19';
+        }
 
-        // File Selection Logic
-        fileInput.addEventListener('change', function(e) {
-            if(this.files && this.files[0]) {
-                const fileName = this.files[0].name;
-                dropZone.innerHTML = 
-                    <i class="bi bi-file-earmark-check text-primary" style="font-size: 3rem;"></i>
-                    <h6 class="mt-3 fw-bold text-primary"> + fileName + </h6>
-                    <p class="text-muted small mb-0">File siap diproses</p>
-                ;
-                dropZone.classList.replace('bg-light', 'bg-primary-subtle');
-                dropZone.style.borderColor = '#93c5fd !important';
-                btnPreview.disabled = false;
-            }
-        });
+        // Otomatis terisi saat halaman dimuat
+        setTimeout(() => {
+            simulateFileUpload();
+            btnPreview.click();
+        }, 500);
 
-        // Simulate AJAX Preview
         btnPreview.addEventListener('click', function() {
             // Check manual fields
             if(!document.getElementById('doc_no').value || !document.getElementById('prod_date').value) {
@@ -145,18 +174,17 @@
                         
                         let tr = document.createElement('tr');
                         tr.innerHTML = 
-                            <td class="fw-bold">#+item.pallet_no+</td>
-                            <td><span class="badge bg-light text-dark border">+item.sku+</span></td>
-                            <td><small>+item.description+</small></td>
-                            <td>+item.uom+</td>
-                            <td><small class="font-monospace text-muted">+item.batch+</small></td>
-                            <td class="text-end">
-                                <span class="badge border +badgeClass+ px-2 py-1">+item.qty+ / +item.max_cap+</span>
-                            </td>
-                            <td class="text-center">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" title="Edit Qty Manual"><i class="bi bi-pencil"></i></button>
-                            </td>
-                        ;
+                            '<td class="fw-bold">#'+item.pallet_no+'</td>' +
+                            '<td><span class="badge bg-light text-dark border">'+item.sku+'</span></td>' +
+                            '<td><small>'+item.description+'</small></td>' +
+                            '<td>'+item.uom+'</td>' +
+                            '<td><small class="font-monospace text-muted">'+item.batch+'</small></td>' +
+                            '<td class="text-end">' +
+                                '<span class="badge border '+badgeClass+' px-2 py-1">'+item.qty+' / '+item.max_cap+'</span>' +
+                            '</td>' +
+                            '<td class="text-center">' +
+                                '<button type="button" class="btn btn-sm btn-outline-secondary" title="Edit Qty Manual" onclick="openEditModal(\''+item.sku+'\', '+item.qty+', '+item.max_cap+')"><i class="bi bi-pencil"></i></button>' +
+                            '</td>';
                         previewTableBody.appendChild(tr);
                     });
 
@@ -178,10 +206,9 @@
             previewSection.classList.add('d-none');
             fileInput.value = '';
             dropZone.innerHTML = 
-                <i class="bi bi-file-earmark-excel text-success" style="font-size: 3rem;"></i>
-                <h6 class="mt-3 fw-bold text-dark">Pilih atau Tarik File Excel ke Sini</h6>
-                <p class="text-muted small mb-0">Format yang didukung: .xlsx, .xls</p>
-            ;
+                '<i class="bi bi-file-earmark-excel text-success" style="font-size: 3rem;"></i>' +
+                '<h6 class="mt-3 fw-bold text-dark">Pilih atau Tarik File Excel ke Sini</h6>' +
+                '<p class="text-muted small mb-0">Format yang didukung: .xlsx, .xls</p>';
             dropZone.classList.replace('bg-primary-subtle', 'bg-light');
             dropZone.style.borderColor = '#cbd5e1 !important';
             btnPreview.disabled = true;
@@ -192,6 +219,15 @@
             alert('Data berhasil disimpan! Status Inbound kini: Menunggu Put-away.');
             window.location.href = '/wms/inbound/putaway';
         });
+
+        window.openEditModal = function(sku, currentQty, maxQty) {
+            document.getElementById('editSku').value = sku;
+            document.getElementById('editQtyInput').value = currentQty;
+            document.getElementById('maxQtyLimit').innerText = maxQty;
+            document.getElementById('editQtyInput').max = maxQty;
+            var myModal = new bootstrap.Modal(document.getElementById('editQtyModal'));
+            myModal.show();
+        }
     });
 </script>
 @endpush

@@ -53,6 +53,9 @@
     </div>
 </div>
 
+@endsection
+
+@push('modals')
 <!-- Modal Tambah Produk -->
 <div class="modal fade" id="addProductModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -102,4 +105,4 @@
         </div>
     </div>
 </div>
-@endsection
+@endpush

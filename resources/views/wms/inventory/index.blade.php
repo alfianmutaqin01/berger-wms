@@ -125,6 +125,9 @@
     </div>
 </div>
 
+@endsection
+
+@push('modals')
 <!-- Modal Adjustment -->
 <div class="modal fade" id="modalAdjustment" tabindex="-1" aria-labelledby="modalAdjustmentLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -190,7 +193,7 @@
     </div>
   </div>
 </div>
-@endsection
+@endpush
 
 @push('scripts')
 <script>

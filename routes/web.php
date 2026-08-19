@@ -32,6 +32,8 @@ Route::prefix('wms')->group(function () {
     Route::get('/dashboard/operator', [\App\Http\Controllers\Wms\DashboardController::class, 'operator']);
     
     Route::prefix('inbound')->group(function () {
+        Route::get('/history', [\App\Http\Controllers\Wms\InboundController::class, 'historyIndex']);
+        Route::get('/history/{doc_no}', [\App\Http\Controllers\Wms\InboundController::class, 'historyDetail']);
         Route::get('/create', [\App\Http\Controllers\Wms\InboundController::class, 'create']);
         Route::post('/preview', [\App\Http\Controllers\Wms\InboundController::class, 'previewExcel']);
         Route::get('/putaway', [\App\Http\Controllers\Wms\InboundController::class, 'putawayIndex']);
@@ -53,6 +55,11 @@ Route::prefix('wms')->group(function () {
     });
     Route::get('/approval', function () {
         return view('wms.approval');
+    });
+    
+    // Reports
+    Route::get('/reports', function () {
+        return view('wms.reports.index');
     });
     
     // Master Data

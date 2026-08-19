@@ -54,6 +54,9 @@
     </div>
 </div>
 
+@endsection
+
+@push('modals')
 <!-- Modal Preview & Approval -->
 <div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -126,14 +129,24 @@
                         </table>
                     </div>
 
+                    
+                    <div class="alert alert-warning border border-warning-subtle bg-warning-subtle rounded-3 p-3 mt-4 mb-0">
+                        <h6 class="fw-bold text-dark mb-2"><i class="bi bi-link-45deg me-2"></i>Validasi Sistem Eksternal (ERP)</h6>
+                        <p class="small text-dark mb-2">Pastikan pesanan ini sudah Anda input ke dalam sistem ERP/Eksternal sebelum melakukan approval.</p>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-warning"><i class="bi bi-upc-scan"></i></span>
+                            <input type="text" class="form-control border-warning" placeholder="Ketik Nomor Referensi ERP / SO. Contoh: SO-99123" required oninput="document.getElementById('btn-approve').disabled = this.value.trim() === ''">
+                        </div>
+                    </div>
+
                 </div>
                 <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
-                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Tutup</button>
-                    <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check2-circle me-1"></i> Approve Pesanan</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary px-4" id="btn-approve" disabled><i class="bi bi-check2-circle me-1"></i> Approve Pesanan</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-@endsection
+@endpush
