@@ -215,9 +215,33 @@
         });
 
         // Final Submit
-        document.getElementById('btnSubmitFinal').addEventListener('click', function() {
-            alert('Data berhasil disimpan! Status Inbound kini: Menunggu Put-away.');
-            window.location.href = '/wms/inbound/putaway';
+                document.getElementById('btnSubmitFinal').addEventListener('click', function() {
+            // Tampilkan loading
+            Swal.fire({
+                title: 'Menyimpan Data Produksi',
+                text: 'Mohon tunggu sebentar...',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            // Simulasi proses API
+            setTimeout(() => {
+                // Simulasi 80% sukses, 20% gagal
+                let isSuccess = Math.random() > 0.2;
+                
+                if (isSuccess) {
+                    window.location.href = '/wms/inbound/history?status=success';
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Gagal Menyimpan',
+                        text: 'Terjadi kesalahan sistem atau format data tidak valid. Silakan coba lagi.',
+                        confirmButtonColor: '#dc3545'
+                    });
+                }
+            }, 1200);
         });
 
         window.openEditModal = function(sku, currentQty, maxQty) {

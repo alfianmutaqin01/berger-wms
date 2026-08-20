@@ -114,3 +114,22 @@
 }
 </style>
 @endsection
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if(urlParams.get('status') === 'success') {
+            Swal.fire({
+                icon: 'success',
+                title: 'Berhasil!',
+                text: 'Data produksi berhasil ditambahkan dan masuk dalam antrean Put-away.',
+                timer: 3500,
+                showConfirmButton: false,
+                position: 'center'
+            });
+            // Bersihkan URL tanpa reload agar tidak muncul lagi saat di-refresh
+            window.history.replaceState({}, document.title, "/wms/inbound/history");
+        }
+    });
+</script>
+@endpush

@@ -23,19 +23,19 @@
                 <div class="alert alert-info border-0 bg-info-subtle text-info-emphasis d-flex align-items-center rounded-3 p-3 mb-4" role="alert">
                     <i class="bi bi-info-circle-fill fs-4 me-3"></i>
                     <div>
-                        <small>Anda <strong>tidak dapat</strong> mengubah nilai Qty atau Batch pada tahap ini. Silakan arahkan palet secara fisik ke lokasi rak yang tersedia, nyalakan tuas <strong>Verifikasi Fisik</strong> jika fisik palet sesuai dengan data, lalu input kode lokasinya (contoh: G-03-04).</small>
+                        <small>Jika rak yang Anda pilih tidak memiliki kapasitas yang cukup untuk 1 palet (maks 180 Pail), sistem akan <strong>otomatis memecah</strong> sisanya ke baris baru agar Anda dapat menempatkannya di rak lain.</small>
                     </div>
                 </div>
 
                 <div class="table-responsive" style="overflow: visible;">
-                    <table class="table table-hover align-middle mb-0">
+                    <table class="table table-hover align-middle mb-0" id="putawayTable">
                         <thead class="table-light">
                             <tr>
                                 <th class="text-secondary small fw-semibold text-center">VERIFIKASI FISIK</th>
                                 <th class="text-secondary small fw-semibold">SKU / DESKRIPSI</th>
                                 <th class="text-secondary small fw-semibold">BATCH</th>
                                 <th class="text-secondary small fw-semibold text-center">QTY</th>
-                                <th class="text-secondary small fw-semibold" style="width: 250px;">LOKASI RAK</th>
+                                <th class="text-secondary small fw-semibold" style="width: 300px;">LOKASI RAK</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -52,12 +52,12 @@
                                     <small class="text-muted">{{ $pallet['description'] }}</small>
                                 </td>
                                 <td><small class="font-monospace text-muted">{{ $pallet['batch'] }}</small></td>
-                                <td class="text-center">
-                                    <span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2">{{ $pallet['qty'] }}</span>
+                                <td class="text-center qty-cell">
+                                    <span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2 original-qty">{{ $pallet['qty'] }}</span>
                                 </td>
                                 <td>
                                     <div class="input-group">
-                                        <span class="input-group-text bg-white"><i class="bi bi-upc-scan text-muted"></i></span>
+                                        <button type="button" class="btn btn-outline-secondary" title="Scan QR Code" onclick="openQRScanner(this, '{{ $idx }}')"><i class="bi bi-qr-code-scan"></i></button>
                                         <input type="text" class="form-control location-input" placeholder="Scan/Input Lokasi" list="locationList{{ $idx }}" required>
                                         <datalist id="locationList{{ $idx }}">
                                             @foreach($availableLocations as $loc)
@@ -86,7 +86,152 @@
 
 @push('scripts')
 <script>
+    const RACK_MAX_CAPACITY = 180;
+
+    window.handleLocationSelection = function(inputElem) {
+        let tr = inputElem.closest('tr');
+        let locationString = inputElem.value;
+        if (!locationString) return;
+        
+        // Parse how much is currently in the rack
+        let currentInRack = 0;
+        let match = locationString.match(/Terisi (\d+) Pail/i);
+        if (match) {
+            currentInRack = parseInt(match[1]);
+        } else if (locationString.toLowerCase().includes('kosong')) {
+            currentInRack = 0;
+        } else {
+            currentInRack = 0;
+        }
+        
+        let availableSpace = RACK_MAX_CAPACITY - currentInRack;
+        
+        let qtyCell = tr.querySelector('.qty-cell');
+        let qtyBadge = tr.querySelector('.original-qty');
+        
+        let currentQty = parseInt(qtyBadge.innerText) || 0;
+        
+        if (currentQty > availableSpace && availableSpace > 0) {
+            // Split needed!
+            // 1. Change this row to hold only availableSpace
+            qtyCell.innerHTML = '<span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2 original-qty">' + availableSpace + '</span>';
+            
+            let remainingQty = currentQty - availableSpace;
+            
+            // 2. Clone row for remainder
+            let newTr = tr.cloneNode(true);
+            let timestamp = new Date().getTime();
+            
+            // Setup new row labels & IDs
+            let verifyLabel = newTr.querySelector('.form-check-label');
+            if (!verifyLabel.innerText.includes('(Sisa)')) {
+                verifyLabel.innerText = verifyLabel.innerText + ' (Sisa)';
+            }
+            
+            let switchInput = newTr.querySelector('.verify-checkbox');
+            switchInput.id = 'verify_split_' + timestamp;
+            switchInput.checked = false;
+            verifyLabel.setAttribute('for', 'verify_split_' + timestamp);
+            
+            let newLocationInput = newTr.querySelector('.location-input');
+            newLocationInput.value = '';
+            newLocationInput.classList.remove('is-invalid');
+            
+            let scanBtn = newTr.querySelector('button[title="Scan QR Code"]');
+            scanBtn.setAttribute('onclick', 'openQRScanner(this, "split_' + timestamp + '")');
+            
+            let datalist = newTr.querySelector('datalist');
+            datalist.id = 'locationList_split_' + timestamp;
+            newLocationInput.setAttribute('list', 'locationList_split_' + timestamp);
+            
+            let newQtyCell = newTr.querySelector('.qty-cell');
+            newQtyCell.innerHTML = '<span class="badge bg-danger-subtle text-danger border border-danger px-3 py-2 original-qty">' + remainingQty + '</span>';
+            
+            newLocationInput.addEventListener('change', function() {
+                handleLocationSelection(this);
+            });
+            
+            tr.parentNode.insertBefore(newTr, tr.nextSibling);
+            
+            Swal.fire({
+                icon: 'warning',
+                title: 'Kapasitas Rak Terbatas',
+                text: 'Rak ' + locationString + ' hanya muat ' + availableSpace + ' pail lagi. Sisa ' + remainingQty + ' pail otomatis dipisahkan ke baris baru.',
+                position: 'center',
+                showConfirmButton: true,
+                confirmButtonText: 'Mengerti'
+            });
+            
+            // Auto focus the new location input
+            setTimeout(() => newLocationInput.focus(), 1000);
+        }
+    };
+
+    window.openQRScanner = function(btnElement, idx) {
+        let inputField = btnElement.closest('.input-group').querySelector('.location-input');
+        
+        Swal.fire({
+            title: 'Scan QR Code Rak',
+            html: '<div class="d-flex flex-column align-items-center justify-content-center bg-dark rounded-3" style="height: 250px; position: relative; overflow: hidden;">' +
+                  '  <div class="border border-success border-2 rounded-3" style="width: 150px; height: 150px; position: absolute; z-index: 2;"></div>' +
+                  '  <div class="bg-success opacity-50" style="width: 150px; height: 2px; position: absolute; top: 50%; z-index: 3; animation: scan 2s linear infinite;"></div>' +
+                  '  <i class="bi bi-camera-video text-secondary opacity-50" style="font-size: 5rem; z-index: 1;"></i>' +
+                  '  <style>@keyframes scan { 0% { transform: translateY(-75px); } 50% { transform: translateY(75px); } 100% { transform: translateY(-75px); } }</style>' +
+                  '</div><p class="mt-3 text-muted small">Membuka kamera... Arahkan ke QR Code di rak.</p>',
+            showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Batal',
+            allowOutsideClick: false,
+            didOpen: () => {
+                // Simulate scanning process
+                setTimeout(() => {
+                    Swal.close();
+                    
+                    const racks = [
+                        'G-03-01 (Kosong)', 
+                        'G-03-02 (Terisi 90 Pail)', 
+                        'G-03-03 (Terisi 120 Pail)', 
+                        'G-03-04 (Terisi 150 Pail)', 
+                        'G-03-05 (Kosong)'
+                    ];
+                    let randomRack = racks[Math.floor(Math.random() * racks.length)];
+                    inputField.value = randomRack;
+                    
+                    // Trigger the change event manually to run auto-split logic
+                    inputField.dispatchEvent(new Event('change'));
+                    
+                    // Only show success if it didn't trigger a split alert
+                    let currentInRack = 0;
+                    let match = randomRack.match(/Terisi (\d+) Pail/i);
+                    if (match) currentInRack = parseInt(match[1]);
+                    let availableSpace = RACK_MAX_CAPACITY - currentInRack;
+                    
+                    let qtyBadge = btnElement.closest('tr').querySelector('.original-qty');
+                    let currentQty = qtyBadge ? parseInt(qtyBadge.innerText) : 0;
+                    
+                    if (!(currentQty > availableSpace && availableSpace > 0)) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'QR Code Terbaca',
+                            text: 'Lokasi Rak: ' + randomRack,
+                            position: 'center',
+                            showConfirmButton: false,
+                            timer: 2000
+                        });
+                    }
+                }, 2000);
+            }
+        });
+    };
+
     document.addEventListener('DOMContentLoaded', function() {
+        // Bind change event to existing inputs
+        document.querySelectorAll('.location-input').forEach(input => {
+            input.addEventListener('change', function() {
+                handleLocationSelection(this);
+            });
+        });
+
         document.getElementById('btnSubmitPutaway').addEventListener('click', function() {
             let isValid = true;
             let inputs = document.querySelectorAll('.location-input');
@@ -111,12 +256,27 @@
             });
 
             if(!isValid || !isVerified) {
-                alert('Peringatan: Anda belum mengisi lokasi rak atau memastikan seluruh tuas Verifikasi Fisik telah menyala (dicentang).');
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Peringatan',
+                    text: 'Anda belum mengisi lokasi rak atau memastikan seluruh tuas Verifikasi Fisik telah menyala (dicentang).',
+                    position: 'center',
+                    confirmButtonText: 'Periksa Kembali'
+                });
                 return;
             }
 
-            alert('Proses Put-away dan Verifikasi Fisik berhasil! Status Inbound kini menjadi: Menunggu Verifikasi Final Logistik.');
-            window.location.href = '/wms/inbound/putaway';
+            Swal.fire({
+                icon: 'success',
+                title: 'Berhasil!',
+                text: 'Proses Put-away dan Verifikasi Fisik berhasil! Status Inbound kini menjadi: Menunggu Verifikasi Final Logistik.',
+                position: 'center',
+                showConfirmButton: true,
+                confirmButtonText: 'Kembali ke Daftar',
+                confirmButtonColor: '#198754'
+            }).then(() => {
+                window.location.href = '/wms/inbound/putaway';
+            });
         });
     });
 </script>

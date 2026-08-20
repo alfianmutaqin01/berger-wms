@@ -123,12 +123,27 @@
             });
 
             if(!isVerified) {
-                alert('Peringatan: Ada baris palet yang belum diverifikasi. Silakan centang semua baris jika fisik sudah sesuai.');
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Peringatan',
+                    text: 'Ada baris palet yang belum diverifikasi. Silakan centang semua baris jika fisik sudah sesuai.',
+                    position: 'center',
+                    confirmButtonText: 'Periksa Kembali'
+                });
                 return;
             }
 
-            alert('Verifikasi Final berhasil! Stok sekarang telah berstatus AKTIF di sistem.');
-            window.location.href = '/wms/inbound/verify';
+            Swal.fire({
+                icon: 'success',
+                title: 'Berhasil!',
+                text: 'Verifikasi Final berhasil! Stok sekarang telah berstatus AKTIF di sistem.',
+                position: 'center',
+                showConfirmButton: true,
+                confirmButtonText: 'Kembali ke Daftar',
+                confirmButtonColor: '#198754'
+            }).then(() => {
+                window.location.href = '/wms/inbound/verify';
+            });
         });
     });
 </script>
