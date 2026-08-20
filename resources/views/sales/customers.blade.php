@@ -44,7 +44,7 @@
                         <td>19 Ags 2026</td>
                         <td><span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Menunggu Approval</span></td>
                         <td class="pe-4 text-end">
-                            <button class="btn btn-sm btn-light border"><i class="bi bi-eye"></i></button>
+                            <button class="btn btn-sm btn-light border" onclick="showCustomerDetail('Toko Cat Makmur Jaya')"><i class="bi bi-eye"></i></button>
                         </td>
                     </tr>
                     <tr>
@@ -119,11 +119,59 @@
                     </div>
                     <div class="d-flex justify-content-end gap-2 mt-5">
                         <button type="button" class="btn btn-light fw-semibold rounded-pill px-4" data-bs-dismiss="modal">Batal</button>
-                        <button type="button" class="btn btn-primary fw-semibold rounded-pill px-4" data-bs-dismiss="modal" onclick="alert('Pengajuan berhasil dikirim! Silakan tunggu approval Admin WMS.')"><i class="bi bi-send me-2"></i>Kirim Pengajuan</button>
+                        <button type="button" class="btn btn-primary fw-semibold rounded-pill px-4" data-bs-dismiss="modal" onclick="submitCustomer()"><i class="bi bi-send me-2"></i>Kirim Pengajuan</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
+@endpush
+
+@push('scripts')
+<script>
+    function submitCustomer() {
+        Swal.fire({
+            icon: 'success',
+            title: 'Pengajuan Terkirim!',
+            text: 'Data pelanggan baru berhasil dikirim dan sedang menunggu verifikasi dari Admin Logistik.',
+            confirmButtonText: 'Kembali',
+            confirmButtonColor: '#198754'
+        });
+    }
+
+    function showCustomerDetail(name) {
+        Swal.fire({
+            title: 'Profil Pelanggan',
+            html: `
+                <div class="text-start mt-3">
+                    <div class="text-center mb-4">
+                        <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center border" style="width: 80px; height: 80px;">
+                            <i class="bi bi-shop fs-1 text-primary"></i>
+                        </div>
+                        <h5 class="fw-bold mt-3 mb-0">${name}</h5>
+                        <span class="badge bg-warning text-dark mt-2"><i class="bi bi-hourglass-split"></i> Menunggu Approval</span>
+                    </div>
+                    <ul class="list-group list-group-flush border-top border-bottom">
+                        <li class="list-group-item px-0 py-3 d-flex justify-content-between align-items-center">
+                            <span class="text-muted small"><i class="bi bi-person me-2"></i>PIC / Kontak</span>
+                            <span class="fw-semibold">Bpk. Budi (0812-3456-7890)</span>
+                        </li>
+                        <li class="list-group-item px-0 py-3 d-flex justify-content-between align-items-center">
+                            <span class="text-muted small"><i class="bi bi-credit-card me-2"></i>Plafon Kredit</span>
+                            <span class="fw-semibold">Rp 50.000.000</span>
+                        </li>
+                        <li class="list-group-item px-0 py-3">
+                            <span class="text-muted d-block small mb-1"><i class="bi bi-geo-alt me-2"></i>Alamat Toko</span>
+                            <span class="fw-semibold">Jl. Raya Bogor KM 29, Depok, Jawa Barat</span>
+                        </li>
+                    </ul>
+                </div>
+            `,
+            confirmButtonText: 'Tutup',
+            confirmButtonColor: '#6c757d',
+            width: '450px'
+        });
+    }
+</script>
 @endpush

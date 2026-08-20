@@ -77,7 +77,7 @@
                             <h6 class="mb-0 fw-bold">CV Bangun Jaya</h6>
                             <small class="text-muted">Supir sudah tiba (Arrived)</small>
                         </div>
-                        <a href="/sales/orders" class="btn btn-sm btn-outline-primary rounded-pill px-3">Upload Bukti</a>
+                        <button onclick="simulateUploadBukti(this, 'CV Bangun Jaya')" class="btn btn-sm btn-outline-primary rounded-pill px-3">Upload Bukti</button>
                     </li>
                     <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
                         <div>
@@ -133,5 +133,63 @@
             }
         });
     });
+    function simulateUploadBukti(btnElement, customerName) {
+        Swal.fire({
+            title: 'Upload Bukti Pengiriman',
+            html: `
+                <div class="text-start mt-2">
+                    <p class="mb-3 text-muted">Unggah foto bukti tanda terima atau surat jalan yang sudah ditandatangani oleh <strong>${customerName}</strong>.</p>
+                    <div class="border border-2 border-dashed rounded-3 p-4 text-center bg-light" style="cursor: pointer;" onclick="document.getElementById('fileInputMock').click()">
+                        <i class="bi bi-cloud-arrow-up display-6 text-muted mb-2"></i>
+                        <p class="mb-0 text-muted fw-semibold">Pilih atau Seret Foto ke Sini</p>
+                        <small class="text-secondary">Max 5MB (JPG, PNG, PDF)</small>
+                        <input type="file" id="fileInputMock" class="d-none" accept="image/png, image/jpeg, application/pdf" onchange="document.getElementById('fileNameDisplay').textContent = this.files[0]?.name || ''">
+                    </div>
+                    <p id="fileNameDisplay" class="text-primary mt-2 text-center fw-semibold small mb-0"></p>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-upload"></i> Unggah Sekarang',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#0d6efd',
+            preConfirm: () => {
+                const file = document.getElementById('fileInputMock').files[0];
+                if (!file) {
+                    Swal.showValidationMessage('Anda belum memilih file!');
+                    return false;
+                }
+                return true;
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Show loading
+                Swal.fire({
+                    title: 'Mengunggah...',
+                    html: 'Mohon tunggu sebentar',
+                    timerProgressBar: true,
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                // Simulate upload delay
+                setTimeout(() => {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Berhasil!',
+                        text: 'Bukti pengiriman berhasil diunggah. Status pesanan akan segera di-update menjadi Selesai.',
+                        confirmButtonColor: '#198754'
+                    });
+                    
+                    // Ganti tombol menjadi Selesai
+                    btnElement.className = 'btn btn-sm btn-success rounded-pill px-3';
+                    btnElement.innerHTML = '<i class="bi bi-check-circle me-1"></i>Selesai';
+                    btnElement.disabled = true;
+                    btnElement.onclick = null;
+                }, 1500);
+            }
+        });
+    }
 </script>
 @endpush

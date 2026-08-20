@@ -42,8 +42,8 @@
                             <label class="form-label small fw-semibold text-muted">Gudang Pengiriman (Dispatch Code) <span class="text-danger">*</span></label>
                             <select class="form-select bg-light" name="dispatch_code" required>
                                 <option value="" selected disabled>Pilih gudang asal pengiriman...</option>
-                                <option value="WH-01">WH-01 (Gudang Utama)</option>
-                                <option value="WH-02">WH-02 (Gudang Tambahan)</option>
+                                <option value="WH-01">Gudang Karawang</option>
+                                <option value="WH-02">Gudang Pekanbaru</option>
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -180,24 +180,30 @@
             itemList.appendChild(row);
         });
 
-        // Blind Stock Indicator Simulation
-        function attachSkuListener(inputEl) {
-            inputEl.addEventListener('change', function() {
-                const row = this.closest('.item-row');
-                const indicator = row.querySelector('.stock-indicator');
-                const val = this.value;
-                
+                // Product Catalog for Autocomplete
+        const productCatalog = {
+            "BP-5KG-WHT": "Cat Tembok Berger White 5Kg",
+            "BP-20KG-BLU": "Cat Pelapis Berger Blue 20Kg",
+            "BP-1KG-RED": "Cat Minyak Berger Red 1Kg",
+            "BP-25KG-YEL": "Cat Jalan Berger Yellow 25Kg"
+        };
+        const reverseCatalog = {};
+        for (const [sku, desc] of Object.entries(productCatalog)) {
+            reverseCatalog[desc] = sku;
+        }
+
+        // Blind Stock Indicator Simulation & Autocomplete Sync
+        function attachSkuListener(row) {
+            const skuInput = row.querySelector('.sku-code-input');
+            const descInput = row.querySelector('.sku-desc-input');
+            const indicator = row.querySelector('.stock-indicator');
+            
+            const updateIndicator = (val) => {
                 if(!val) {
                     indicator.style.display = 'none';
                     return;
                 }
-
                 indicator.style.display = 'block';
-                // Mock logic: 
-                // If contains 'WHT' -> Available (ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦)
-                // If contains 'BLU' -> Low Stock (ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â)
-                // If contains 'RED' -> Out of stock (ÃƒÂ¢Ã‚ÂÃ…â€™)
-                
                 if(val.includes('WHT')) {
                     indicator.innerHTML = '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle fs-6 rounded-pill"><i class="bi bi-check-circle-fill me-1"></i> Tersedia</span>';
                 } else if(val.includes('BLU')) {
@@ -207,11 +213,94 @@
                 } else {
                     indicator.innerHTML = '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle fs-6 rounded-pill"><i class="bi bi-check-circle-fill me-1"></i> Tersedia</span>';
                 }
+            };
+
+            skuInput.addEventListener('input', function() {
+                const val = this.value;
+                if (productCatalog[val]) {
+                    descInput.value = productCatalog[val];
+                }
+                updateIndicator(val);
             });
+
+            descInput.addEventListener('input', function() {
+                const val = this.value;
+                if (reverseCatalog[val]) {
+                    skuInput.value = reverseCatalog[val];
+                    updateIndicator(skuInput.value);
+                }
+            });
+            
+            if(skuInput.value) updateIndicator(skuInput.value);
         }
 
         // Attach listener to first row
-        attachSkuListener(document.querySelector('input.sku-input'));
+        attachSkuListener(document.querySelector('.item-row'));        
+        // Form Submit Interception for SweetAlert Notifications
+        const form = document.querySelector('form');
+        let submitAction = '';
+
+        btnDraft.addEventListener('click', function() {
+            submitAction = 'draft';
+        });
+
+        btnSubmit.addEventListener('click', function() {
+            submitAction = 'submit';
+        });
+
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                if (submitAction === 'draft') {
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Disimpan sebagai Draft',
+                        text: 'Pesanan Anda berhasil disimpan. Jangan lupa untuk menekan Submit nanti jika Anda sudah yakin untuk memproses pesanan ini ke gudang!',
+                        confirmButtonText: 'Mengerti',
+                        confirmButtonColor: '#6c757d'
+                    }).then(() => {
+                        window.location.href = '/sales/my-orders';
+                    });
+                } else if (submitAction === 'submit') {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Pesanan Terkirim!',
+                        text: 'Pesanan Anda berhasil disubmit dan saat ini sedang menunggu persetujuan (approval) dari Admin WMS.',
+                        confirmButtonText: 'Kembali ke Dashboard',
+                        confirmButtonColor: '#198754'
+                    }).then(() => {
+                        window.location.href = '/sales/my-orders';
+                    });
+                }
+            });
+        }
+        // Auto-fill from draft if URL has ?draft=...
+        const urlParams = new URLSearchParams(window.location.search);
+        const draftId = urlParams.get('draft');
+        if (draftId === 'DRAFT-992') {
+            // Mock prefill data for DRAFT-992 (Kusumana Food)
+            setTimeout(() => {
+                document.getElementById('customerInput').value = 'Kusumana Food';
+                document.querySelector('select[name="dispatch_code"]').value = 'WH-01';
+                document.querySelector('select[name="payment_term"]').value = 'Tempo 30';
+                
+                const firstRow = document.querySelector('.item-row');
+                const skuInput = firstRow.querySelector('.sku-code-input');
+                skuInput.value = 'BP-5KG-WHT';
+                skuInput.dispatchEvent(new Event('input')); // trigger autocomplete & indicator
+                
+                firstRow.querySelector('input[type="number"]').value = '50';
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Draft Berhasil Dimuat',
+                    text: 'Data untuk ' + draftId + ' berhasil dikembalikan ke dalam form.',
+                    confirmButtonText: 'Lanjutkan Edit',
+                    confirmButtonColor: '#0d6efd'
+                });
+            }, 300); // small delay to ensure DOM is fully ready
+        }
     });
 </script>
 @endpush

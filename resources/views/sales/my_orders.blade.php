@@ -1,4 +1,4 @@
-﻿@extends('layouts.soms')
+@extends('layouts.soms')
 @section('page_title', 'Riwayat Pesanan (My Orders)')
 
 @section('content')
@@ -59,7 +59,7 @@
                         </div>
 
                         <div class="border-top pt-3 d-flex gap-2">
-                            <button class="btn btn-light text-primary w-100 rounded-pill"><i class="bi bi-eye"></i> Detail</button>
+                            <button class="btn btn-light text-primary w-100 rounded-pill" onclick="showOrderDetail('PO-2608-001')"><i class="bi bi-eye"></i> Detail</button>
                             <!-- No Edit button because it's already submitted -->
                         </div>
                     </div>
@@ -90,14 +90,40 @@
                         </div>
 
                         <div class="border-top pt-3 d-flex gap-2">
-                            <button class="btn btn-outline-primary w-50 rounded-pill"><i class="bi bi-pencil"></i> Lanjutkan</button>
-                            <button class="btn btn-outline-danger w-50 rounded-pill"><i class="bi bi-trash"></i> Hapus</button>
+                            <button class="btn btn-outline-primary w-50 rounded-pill" onclick="continueDraft('DRAFT-992')"><i class="bi bi-pencil"></i> Lanjutkan</button>
+                            <button class="btn btn-outline-danger w-50 rounded-pill" onclick="deleteDraft(this, 'DRAFT-992')"><i class="bi bi-trash"></i> Hapus</button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- New Order Placed by Simulation -->
+                        <!-- Terkirim / Upload Surat Jalan Simulation -->
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card border border-success shadow-sm rounded-4 h-100 position-relative" style="background-color: #f8fff9;">
+                    <div class="position-absolute top-0 end-0 mt-3 me-3">
+                        <span class="badge bg-success text-white px-3 py-2 rounded-pill"><i class="bi bi-check-circle me-1"></i> Terkirim</span>
+                    </div>
+                    <div class="card-body p-4">
+                        <small class="text-success fw-bold d-block mb-1">PO-1508-011</small>
+                        <h5 class="fw-bold text-dark mb-3">PT Sentosa Abadi</h5>
+                        
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-muted"><i class="bi bi-box me-1"></i> Item:</small>
+                            <span class="fw-semibold">150 Qty (3 SKU)</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <small class="text-muted"><i class="bi bi-calendar3 me-1"></i> Tgl Order:</small>
+                            <span class="fw-semibold">15 Ags 2026</span>
+                        </div>
+
+                        <div class="border-top pt-3 mt-4">
+                            <button class="btn btn-success w-100 rounded-pill mb-2 fw-semibold shadow-sm" onclick="confirmDelivery('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-file-earmark-arrow-up me-2"></i>Konfirmasi Resi</button>
+                            <button class="btn btn-light text-primary w-100 rounded-pill" onclick="showOrderDetail('PO-1508-011', true)"><i class="bi bi-eye"></i> Detail Lengkap</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+<!-- New Order Placed by Simulation -->
             @if(session('success'))
             <div class="col-12 col-md-6 col-lg-4">
                 <div class="card border border-primary shadow-sm rounded-4 h-100 position-relative">
@@ -113,7 +139,7 @@
                             <span class="fw-semibold">Berdasarkan Input</span>
                         </div>
                         <div class="border-top pt-3 mt-4">
-                            <button class="btn btn-primary w-100 rounded-pill"><i class="bi bi-eye"></i> Detail</button>
+                            <button class="btn btn-primary w-100 rounded-pill" onclick="showOrderDetail('PO-NEW')"><i class="bi bi-eye"></i> Detail</button>
                         </div>
                     </div>
                 </div>
@@ -125,3 +151,215 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+    function showOrderDetail(poNumber, isFinished = false) {
+                let custName = (poNumber === 'PO-1508-011') ? 'PT Sentosa Abadi' : 'CV Bangun Jaya';
+        let statusBadge = (poNumber === 'PO-1508-011') ? '<span class="fw-bold text-success">Selesai / Terkirim</span>' : '';
+
+        let timelineHtml = `
+            <div class="position-relative mb-4 mt-3 px-1">
+                <!-- Garis Penghubung Abu-abu -->
+                <div class="position-absolute w-100" style="height: 4px; background-color: #e9ecef; top: 16px; left: 0; z-index: 1;"></div>
+                <!-- Garis Penghubung Hijau (Progress) -->
+                <div class="position-absolute" style="height: 4px; background-color: #198754; top: 16px; left: 0; width: ${isFinished ? '100%' : '25%'}; z-index: 2;"></div>
+                
+                <div class="d-flex justify-content-between position-relative" style="z-index: 3;">
+                    <div class="text-center" style="width: 20%; background: transparent;">
+                        <div class="bg-success text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto shadow-sm" style="width: 36px; height: 36px; border: 4px solid #fff;">
+                            <i class="bi bi-check-lg"></i>
+                        </div>
+                        <div class="small fw-bold text-success mb-1" style="font-size: 0.75rem; line-height: 1.1;">Submit</div>
+                        <div class="text-muted" style="font-size: 0.65rem;">18 Ags<br>09:15</div>
+                    </div>
+                    
+                    <div class="text-center" style="width: 20%; background: transparent;">
+                        <div class="${isFinished ? 'bg-success text-white' : 'bg-warning text-dark'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto shadow-sm" style="width: 36px; height: 36px; border: 4px solid #fff;">
+                            <i class="${isFinished ? 'bi bi-check-lg' : 'bi bi-hourglass-split'}"></i>
+                        </div>
+                        <div class="small fw-bold ${isFinished ? 'text-success' : 'text-warning'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Approval</div>
+                        <div class="${isFinished ? 'text-muted' : 'text-warning fw-semibold'}" style="font-size: 0.65rem;">${isFinished ? '18 Ags<br>10:00' : 'Menunggu'}</div>
+                    </div>
+
+                    <div class="text-center" style="width: 20%; background: transparent;">
+                        <div class="${isFinished ? 'bg-success text-white border-0' : 'bg-light text-muted border'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto" style="width: 36px; height: 36px; border: 4px solid #fff !important;">
+                            <i class="${isFinished ? 'bi bi-check-lg' : 'bi bi-box-seam'}"></i>
+                        </div>
+                        <div class="small ${isFinished ? 'text-success fw-bold' : 'text-muted fw-semibold'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Diproses</div>
+                        <div class="text-muted" style="font-size: 0.65rem;">${isFinished ? '19 Ags<br>08:00' : '-'}</div>
+                    </div>
+
+                    <div class="text-center" style="width: 20%; background: transparent;">
+                        <div class="${isFinished ? 'bg-success text-white border-0' : 'bg-light text-muted border'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto" style="width: 36px; height: 36px; border: 4px solid #fff !important;">
+                            <i class="${isFinished ? 'bi bi-check-lg' : 'bi bi-truck'}"></i>
+                        </div>
+                        <div class="small ${isFinished ? 'text-success fw-bold' : 'text-muted fw-semibold'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Dikirim</div>
+                        <div class="text-muted" style="font-size: 0.65rem;">${isFinished ? '19 Ags<br>14:00' : '-'}</div>
+                    </div>
+
+                    <div class="text-center" style="width: 20%; background: transparent;">
+                        <div class="${isFinished ? 'bg-success text-white border-0' : 'bg-light text-muted border'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto" style="width: 36px; height: 36px; border: 4px solid #fff !important;">
+                            <i class="bi bi-house-check"></i>
+                        </div>
+                        <div class="small ${isFinished ? 'text-success fw-bold' : 'text-muted fw-semibold'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Selesai</div>
+                        <div class="text-muted" style="font-size: 0.65rem;">${isFinished ? 'Hari Ini<br>09:00' : '-'}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        Swal.fire({
+            title: 'Detail ' + poNumber,
+            html: `
+                <div class="text-start mt-3">
+                    ${timelineHtml}
+                    <div class="p-3 bg-light rounded-3 mb-3 border">
+                        <p class="mb-1"><small class="text-muted">Customer:</small> <strong></strong></p>
+                        <p class="mb-1"><small class="text-muted">Tgl Order:</small> <strong>18 Ags 2026</strong></p>
+                        <p class="mb-0"><small class="text-muted">Status Tracking:</small> </p>
+                    </div>
+                    <h6 class="fw-bold mb-2">Item Pesanan:</h6>
+                    <ul class="list-group list-group-flush border rounded-3 mb-2">
+                        <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                            <div>
+                                <span class="fw-bold text-dark d-block">Cat Tembok Putih 5Kg</span>
+                                <small class="text-muted">BP-5KG-WHT</small>
+                            </div>
+                            <span class="badge bg-primary rounded-pill">100 Pail</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                            <div>
+                                <span class="fw-bold text-dark d-block">Cat Pelapis Biru 20Kg</span>
+                                <small class="text-muted">BP-20KG-BLU</small>
+                            </div>
+                            <span class="badge bg-primary rounded-pill">20 Pail</span>
+                        </li>
+                    </ul>
+                </div>
+            `,
+            confirmButtonText: 'Tutup',
+            confirmButtonColor: '#6c757d',
+            width: '600px'
+        });
+    }
+
+    function deleteDraft(btnElement, draftId) {
+        Swal.fire({
+            title: 'Hapus Draft ' + draftId + '?',
+            text: "Data yang dihapus tidak dapat dikembalikan!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '<i class="bi bi-trash"></i> Ya, Hapus!',
+            cancelButtonText: 'Batal'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Terhapus!',
+                    text: 'Draft pesanan Anda telah dihapus.',
+                    icon: 'success',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                
+                // Animasi hapus (fadeOut) menggunakan vanilla JS
+                const card = btnElement.closest('.col-12');
+                card.style.transition = 'opacity 0.4s';
+                card.style.opacity = '0';
+                setTimeout(() => {
+                    card.remove();
+                }, 400);
+            }
+        });
+    }
+
+    function continueDraft(draftId) {
+        Swal.fire({
+            title: 'Lanjutkan ' + draftId + '?',
+            text: "Anda akan dialihkan ke form pemesanan untuk melengkapi draft ini.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, Lanjutkan',
+            cancelButtonText: 'Nanti saja'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Menampilkan loading sederhana sebelum redirect
+                Swal.fire({
+                    title: 'Memuat data...',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+                // Simulasi redirect
+                setTimeout(() => {
+                    window.location.href = '/sales/new-order?draft=' + draftId;
+                }, 800);
+            }
+        });
+    }
+    function confirmDelivery(poNumber, customer, btnElement) {
+        Swal.fire({
+            title: 'Upload Surat Jalan',
+            html: `
+                <div class="text-start mt-2">
+                    <p class="mb-3 text-muted">Barang untuk <strong>${customer}</strong> terpantau sudah sampai. Silakan unggah foto Surat Jalan yang telah ditandatangani toko.</p>
+                    <div class="border border-2 border-dashed rounded-3 p-4 text-center bg-light" style="cursor: pointer;" onclick="document.getElementById('fileInputMock2').click()">
+                        <i class="bi bi-camera display-6 text-muted mb-2"></i>
+                        <p class="mb-0 text-muted fw-semibold">Jepret atau Pilih Foto</p>
+                        <small class="text-secondary">Max 5MB</small>
+                        <input type="file" id="fileInputMock2" class="d-none" accept="image/png, image/jpeg" onchange="document.getElementById('fileNameDisplay2').textContent = this.files[0]?.name || ''">
+                    </div>
+                    <p id="fileNameDisplay2" class="text-primary mt-2 text-center fw-semibold small mb-0"></p>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-upload"></i> Simpan Selesai',
+            cancelButtonText: 'Nanti',
+            confirmButtonColor: '#198754',
+            preConfirm: () => {
+                const file = document.getElementById('fileInputMock2').files[0];
+                if (!file) {
+                    Swal.showValidationMessage('Anda belum memilih foto surat jalan!');
+                    return false;
+                }
+                return true;
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Memproses...',
+                    html: 'Mohon tunggu',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                setTimeout(() => {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Selesai!',
+                        text: 'Pesanan ' + poNumber + ' telah resmi ditutup.',
+                        confirmButtonColor: '#198754'
+                    });
+                    
+                    // Ganti UI Button
+                    btnElement.className = 'btn btn-outline-secondary w-100 rounded-pill mb-2 disabled';
+                    btnElement.innerHTML = '<i class="bi bi-check2-all me-1"></i>Selesai & Tertutup';
+                    
+                    // Ubah badge
+                    const card = btnElement.closest('.card');
+                    card.classList.remove('border-success');
+                    card.style.backgroundColor = '#ffffff';
+                    card.style.opacity = '0.7';
+                }, 1200);
+            }
+        });
+    }
+</script>
+@endpush

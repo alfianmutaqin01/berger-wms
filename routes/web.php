@@ -72,6 +72,14 @@ Route::prefix('wms')->group(function () {
         });
     });
 
+    // Akun & Pengaturan
+    Route::get('/profile', function () {
+        return view('wms.profile');
+    });
+    Route::post('/profile/password', function () {
+        return redirect()->back()->with('success', 'Kata sandi berhasil diperbarui.');
+    });
+
     // Admin
     Route::prefix('admin')->group(function () {
         Route::get('/users', function () {

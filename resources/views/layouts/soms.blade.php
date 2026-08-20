@@ -104,12 +104,6 @@
                     <span>My Orders</span>
                 </a>
             </li>
-            <li class="nav-item {{ request()->is('sales/tracking') ? 'active' : '' }}">
-                <a href="/sales/tracking" class="nav-link">
-                    <i class="bi bi-geo-alt"></i>
-                    <span>Order Tracking</span>
-                  </a>
-              </li>
               <li class="nav-item {{ request()->is('sales/customers') ? 'active' : '' }}">
                   <a href="/sales/customers" class="nav-link">
                       <i class="bi bi-people"></i>
@@ -209,9 +203,8 @@
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2 rounded-3">
                             <li><h6 class="dropdown-header text-dark fw-bold">Sales Rep</h6></li>
-                            <li><a class="dropdown-item py-2" href="#"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
-                            <li><a class="dropdown-item py-2" href="#"><i class="bi bi-gear me-2 text-secondary"></i>Pengaturan</a></li>
-                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item py-2" href="/wms/profile"><i class="bi bi-person-gear me-2 text-secondary"></i>Pengaturan Akun</a></li>
+                                                        <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item py-2 text-danger fw-semibold" href="/"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
                         </ul>
                     </div>
@@ -246,6 +239,7 @@
         if (sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
     });
 </script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 @stack('scripts')
 </body>
 </html>

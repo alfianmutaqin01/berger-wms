@@ -1,132 +1,118 @@
 @extends('layouts.wms')
-@section('page_title', 'Data Stok (Inventory)')
+@section('title', 'Data Stok')
+@section('page_title', 'Master Data Stok (FIFO & Pallet)')
 
 @section('content')
 <div class="row mb-4">
     <div class="col-12">
-        <div class="card shadow-sm border-0 rounded-4">
-            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div>
-                        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-boxes text-primary me-2"></i> Data Stok (Inventory)</h5>
-                        <p class="text-muted small mt-1">Pantau ketersediaan stok fisik dan alokasi pesanan di semua gudang.</p>
-                    </div>
-                    <div>
-                        <button class="btn btn-success rounded-pill px-4 shadow-sm" type="button">
-                            <i class="bi bi-file-earmark-excel me-1"></i> Ekspor Excel
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Filters & Search -->
-                <div class="row g-2 mb-3 align-items-center">
-                    <div class="col-md-12 col-lg-3">
-                        <div class="input-group">
-                            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                            <input type="text" class="form-control border-start-0 bg-white" placeholder="Cari Kode Produksi / SKU...">
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-lg-2">
-                        <select class="form-select bg-light">
-                            <option selected>Kategori Produk</option>
-                            <option value="1">Cat Tembok</option>
-                            <option value="2">Cat Kayu</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3 col-lg-1">
-                        <input type="text" class="form-control bg-light" list="rakOptions" placeholder="Cari Rak...">
-                        <datalist id="rakOptions">
-                            <option value="G-03-01">
-                            <option value="G-03-02">
-                            <option value="G-01-10">
-                            <option value="G-05-01">
-                        </datalist>
-                    </div>
-                    <div class="col-md-3 col-lg-2">
-                        <input type="text" class="form-control bg-light" list="batchOptions" placeholder="Cari Batch...">
-                        <datalist id="batchOptions">
-                            <option value="BCH-202608-01">
-                            <option value="BCH-202607-15">
-                            <option value="BCH-202608-05">
-                            <option value="BCH-202606-20">
-                        </datalist>
-                    </div>
-                    <div class="col-md-6 col-lg-3">
-                        <div class="input-group">
-                            <span class="input-group-text bg-light text-muted small">Mulai</span>
-                            <input type="date" class="form-control bg-light" title="Tanggal Awal">
-                            <span class="input-group-text bg-light text-muted small">s/d</span>
-                            <input type="date" class="form-control bg-light" title="Tanggal Akhir">
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-lg-1">
-                        <button class="btn btn-primary w-100 shadow-sm text-nowrap d-flex align-items-center justify-content-center" style="height: 38px;"><i class="bi bi-funnel me-1"></i> Filter</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card-body p-4 pt-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0" style="white-space: nowrap;">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="text-secondary small fw-semibold">NO</th>
-                                <th class="text-secondary small fw-semibold">SKU</th>
-                                <th class="text-secondary small fw-semibold">DESKRIPSI PRODUK</th>
-                                <th class="text-secondary small fw-semibold">BATCH NO</th>
-                                <th class="text-secondary small fw-semibold text-center">UOM</th>
-                                <th class="text-secondary small fw-semibold">LOKASI RAK</th>
-                                <th class="text-secondary small fw-semibold text-center">QTY TERSEDIA</th>
-                                <th class="text-secondary small fw-semibold text-center">QTY TERALOKASI</th>
-                                <th class="text-secondary small fw-semibold">TGL PRODUKSI</th>
-                                <th class="text-secondary small fw-semibold">GUDANG</th>
-                                <th class="text-secondary small fw-semibold text-center">AKSI</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($inventories as $idx => $inv)
-                            <tr>
-                                <td class="text-muted">{{ $idx + 1 }}</td>
-                                <td><span class="badge bg-light text-dark border">{{ $inv['sku'] }}</span></td>
-                                <td><small class="fw-bold text-dark">{{ $inv['description'] }}</small></td>
-                                <td><small class="font-monospace text-muted">{{ $inv['batch_no'] }}</small></td>
-                                <td class="text-center"><small class="text-muted">{{ $inv['uom'] }}</small></td>
-                                <td><small class="fw-bold text-primary">{{ $inv['location'] }}</small></td>
-                                <td class="text-center">
-                                    <span class="badge {{ $inv['qty_available'] > 50 ? 'bg-success-subtle text-success-emphasis' : 'bg-warning-subtle text-warning-emphasis' }} border rounded-pill px-3 py-2 fs-6">
-                                        {{ $inv['qty_available'] }}
-                                    </span>
-                                </td>
-                                <td class="text-center">
-                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle rounded-pill px-3 py-2">
-                                        {{ $inv['qty_allocated'] }}
-                                    </span>
-                                </td>
-                                <td><small class="text-muted">{{ $inv['production_date'] }}</small></td>
-                                <td><small class="text-muted">{{ $inv['warehouse'] }}</small></td>
-                                <td class="text-center">
-                                    <button class="btn btn-sm btn-outline-primary btn-adjust" 
-                                        data-sku="{{ $inv['sku'] }}" 
-                                        data-batch="{{ $inv['batch_no'] }}"
-                                        data-loc="{{ $inv['location'] }}"
-                                        data-avail="{{ $inv['qty_available'] }}"
-                                        data-alloc="{{ $inv['qty_allocated'] }}"
-                                        data-bs-toggle="modal" data-bs-target="#modalAdjustment">
-                                        <i class="bi bi-sliders"></i> Sesuaikan
-                                    </button>
-                                </td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+        <p class="text-muted">Pantau ketersediaan stok secara real-time. Klik pada setiap SKU untuk melihat rincian lokasi Pallet dan Kadaluarsa (Batch) sesuai aturan FIFO.</p>
     </div>
 </div>
 
-@endsection
+<div class="card shadow-sm border-0 rounded-4 mb-4">
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4 d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold text-dark mb-0"><i class="bi bi-layers text-primary me-2"></i>Ketersediaan Stok Gudang</h6>
+        <div class="input-group input-group-sm w-25">
+            <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" class="form-control bg-light border-start-0" placeholder="Cari SKU / Produk...">
+        </div>
+    </div>
+    <div class="card-body p-4">
+        
+                <!-- Filter Bar -->
+        <div class="d-flex flex-wrap gap-2 mb-4 bg-light p-3 rounded-3 border">
+            <select class="form-select form-select-sm w-auto">
+                <option selected>Semua Gudang</option>
+                <option value="WH-01">WH-01 (Karawang)</option>
+                <option value="WH-02">WH-02 (Cikarang)</option>
+            </select>
+            <select class="form-select form-select-sm w-auto">
+                <option selected>Kategori Kemasan</option>
+                <option value="PAIL">PAIL</option>
+                <option value="TIN">TIN</option>
+                <option value="CAN">CAN</option>
+            </select>
+            <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-funnel"></i> Terapkan Filter</button>
+            <button class="btn btn-sm btn-outline-danger ms-auto"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
+            <button class="btn btn-sm btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
+        </div>
+        <div class="accordion" id="inventoryAccordion">
+            @foreach($inventories as $sku => $data)
+            <div class="accordion-item border-0 mb-3 rounded-4 shadow-sm bg-white overflow-hidden">
+                <h2 class="accordion-header" id="heading{{ Str::slug($sku) }}">
+                    <button class="accordion-button collapsed px-4 py-3 bg-light text-dark" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ Str::slug($sku) }}" aria-expanded="false" aria-controls="collapse{{ Str::slug($sku) }}">
+                        <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                            <div>
+                                <span class="font-monospace fw-bold text-primary me-2">{{ $sku }}</span>
+                                <span class="fw-semibold">{{ $data['name'] }}</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-4">
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis">{{ $data['uom'] }}</span>
+                                <div class="text-end" style="min-width: 120px;">
+                                    <small class="text-muted d-block mb-1" style="font-size: 0.7rem;">Stok Tersedia</small>
+                                    <span class="fw-bold text-success fs-5">{{ $data['total_qty'] }}</span>
+                                </div>
+                                <div class="text-end" style="min-width: 120px;">
+                                    <small class="text-muted d-block mb-1" style="font-size: 0.7rem;">Teralokasi (Booking)</small>
+                                    <span class="fw-bold text-warning fs-5">{{ $data['total_alloc'] }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </button>
+                </h2>
+                <div id="collapse{{ Str::slug($sku) }}" class="accordion-collapse collapse" aria-labelledby="heading{{ Str::slug($sku) }}" data-bs-parent="#inventoryAccordion">
+                    <div class="accordion-body p-0 border-top">
+                        <!-- Rincian Batch & Pallet -->
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm align-middle mb-0 text-center" style="font-size: 0.85rem;">
+                                <thead class="table-light text-muted">
+                                    <tr>
+                                        <th class="text-start ps-4 py-2">Batch No</th>
+                                        <th>Exp Date</th>
+                                        <th>Pallet No</th>
+                                        <th>Lokasi Rak</th>
+                                        <th class="text-success">Qty Aktual</th>
+                                        <th class="text-warning">Qty Booking</th>
+                                        <th class="text-end pe-4">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($data['batches'] as $batch)
+                                        @foreach($batch['pallets'] as $pallet)
+                                        <tr>
+                                            <td class="text-start ps-4"><span class="font-monospace text-secondary fw-semibold">{{ $batch['batch_no'] }}</span></td>
+                                            <td>{{ $batch['exp_date'] }}</td>
+                                            <td><span class="badge bg-light text-dark border">{{ $pallet['pallet_no'] }}</span></td>
+                                            <td><span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="bi bi-geo-alt-fill me-1"></i>{{ $pallet['location'] }}</span></td>
+                                            <td class="fw-bold text-success">{{ $pallet['qty'] }}</td>
+                                            <td class="fw-bold text-warning">{{ $pallet['alloc'] }}</td>
+                                            <td class="text-end pe-4">
+                                                                                                <button class="btn btn-sm btn-outline-secondary rounded-pill py-0 mb-1 d-block w-100" style="font-size: 0.7rem;" onclick="alert('Fitur pemindahan pallet antar rak')"><i class="bi bi-arrow-left-right me-1"></i>Move</button>
+                                                <button class="btn btn-sm btn-outline-primary rounded-pill py-0 d-block w-100 btn-adjust" style="font-size: 0.7rem;" 
+                                                    data-sku="{{ $sku }}" 
+                                                    data-batch="{{ $batch['batch_no'] }}"
+                                                    data-loc="{{ $pallet['location'] }}"
+                                                    data-avail="{{ $pallet['qty'] }}"
+                                                    data-alloc="{{ $pallet['alloc'] }}"
+                                                    data-bs-toggle="modal" data-bs-target="#modalAdjustment">
+                                                    <i class="bi bi-sliders"></i> Sesuaikan
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        @endforeach
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            @endforeach
+        </div>
 
+    </div>
+</div>
+@endsection
 @push('modals')
 <!-- Modal Adjustment -->
 <div class="modal fade" id="modalAdjustment" tabindex="-1" aria-labelledby="modalAdjustmentLabel" aria-hidden="true">
@@ -141,7 +127,7 @@
             <div class="row text-center">
                 <div class="col-4 border-end">
                     <small class="text-muted d-block mb-1">SKU</small>
-                    <strong id="adjSku" class="font-monospace"></strong>
+                    <strong id="adjSku" class="font-monospace small"></strong>
                 </div>
                 <div class="col-4 border-end">
                     <small class="text-muted d-block mb-1">Lokasi</small>
@@ -170,7 +156,7 @@
                 <label class="form-label fw-bold">Kuantitas Fisik Baru (Qty Baru) <span class="text-danger">*</span></label>
                 <input type="number" class="form-control form-control-lg fw-bold text-primary" id="adjNewQty" required min="0">
                 <div class="form-text text-danger" id="adjWarning" style="display: none;">
-                    <i class="bi bi-exclamation-circle"></i> Peringatan: Qty baru tidak boleh kurang dari Qty yang telah dialokasikan untuk pesanan!
+                    <i class="bi bi-exclamation-circle"></i> Peringatan: Qty baru tidak boleh kurang dari Qty yang telah dialokasikan!
                 </div>
             </div>
 
@@ -200,7 +186,6 @@
     document.addEventListener('DOMContentLoaded', function() {
         let minAllocated = 0;
 
-        // Listen for modal open
         document.querySelectorAll('.btn-adjust').forEach(btn => {
             btn.addEventListener('click', function() {
                 document.getElementById('adjSku').textContent = this.getAttribute('data-sku');
@@ -213,15 +198,13 @@
 
                 document.getElementById('adjCurrent').value = avail;
                 document.getElementById('adjAllocated').value = alloc;
-                document.getElementById('adjNewQty').value = avail; // Default to current
+                document.getElementById('adjNewQty').value = avail;
                 
-                // Reset warning
                 document.getElementById('adjNewQty').classList.remove('is-invalid');
                 document.getElementById('adjWarning').style.display = 'none';
             });
         });
 
-        // Validate Input
         document.getElementById('adjNewQty').addEventListener('input', function() {
             let newVal = parseInt(this.value) || 0;
             if(newVal < minAllocated) {
@@ -233,7 +216,6 @@
             }
         });
 
-        // Save
         document.getElementById('btnSaveAdjustment').addEventListener('click', function() {
             let newVal = parseInt(document.getElementById('adjNewQty').value) || 0;
             let reason = document.getElementById('adjReason').value;
@@ -248,7 +230,12 @@
                 return;
             }
 
-            alert('Berhasil! Stok telah dikoreksi menjadi ' + newVal + '. Perubahan dicatat di Audit Log.');
+            Swal.fire({
+                icon: 'success',
+                title: 'Stok Terkoreksi',
+                text: 'Kuantitas fisik telah disesuaikan menjadi ' + newVal + '. Perubahan dicatat di Log.',
+                confirmButtonColor: '#198754'
+            });
             let modal = bootstrap.Modal.getInstance(document.getElementById('modalAdjustment'));
             modal.hide();
         });

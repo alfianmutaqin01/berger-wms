@@ -98,32 +98,35 @@
                         </div>
                     </div>
 
-                    <h6 class="fw-bold text-dark mb-2">Daftar Item Dipesan</h6>
-                    <div class="table-responsive border rounded-3">
-                        <table class="table table-bordered mb-0 text-center align-middle">
-                            <thead class="table-light small">
+                    <h6 class="fw-bold text-dark mb-2">Daftar Item Dipesan <small class="text-muted fw-normal">(Format Excel-Ready)</small></h6>
+                    <div class="table-responsive border" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-bordered table-sm mb-0 text-center align-middle" style="font-family: 'Consolas', monospace; font-size: 0.85rem;">
+                            <thead style="background-color: #f3f2f1; border-bottom: 2px solid #ccc; user-select: none;">
                                 <tr>
-                                    <th class="text-start">SKU / Produk</th>
-                                    <th>Qty Dipesan</th>
-                                    <th>Stok Tersedia</th>
-                                    <th class="bg-primary-subtle">Qty Disetujui</th>
-                                    <th class="bg-danger-subtle">Lost Sales</th>
+                                    <th class="text-start px-2">Kode SKU</th>
+                                    <th class="text-start px-2">Nama Produk</th>
+                                    <th>Qty_Dipesan</th>
+                                    <th>Stok_Tersedia</th>
+                                    <th style="background-color: #e2f0d9;">Qty_Disetujui</th>
+                                    <th style="background-color: #fbe5d6;">Lost_Sales</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody style="background-color: #fff;">
                                 <tr>
-                                    <td class="text-start small fw-semibold">BP-5KG-WHT<br><span class="text-muted fw-normal">Cat Tembok Berger White 5Kg</span></td>
+                                    <td class="text-start px-2">BP-5KG-WHT</td>
+                                    <td class="text-start px-2 text-truncate" style="max-width: 200px;">Cat Tembok Berger White 5Kg</td>
                                     <td>100</td>
-                                    <td><span class="badge bg-success">150</span></td>
-                                    <td class="bg-primary-subtle fw-bold">100</td>
-                                    <td class="bg-danger-subtle text-danger">0</td>
+                                    <td class="text-success fw-bold">150</td>
+                                    <td style="background-color: #e2f0d9; font-weight: bold;">100</td>
+                                    <td style="background-color: #fbe5d6; color: #c00000;">0</td>
                                 </tr>
                                 <tr>
-                                    <td class="text-start small fw-semibold">BP-20KG-BLU<br><span class="text-muted fw-normal">Cat Pelapis Berger Blue 20Kg</span></td>
+                                    <td class="text-start px-2">BP-20KG-BLU</td>
+                                    <td class="text-start px-2 text-truncate" style="max-width: 200px;">Cat Pelapis Berger Blue 20Kg</td>
                                     <td>20</td>
-                                    <td><span class="badge bg-warning text-dark">15</span></td>
-                                    <td class="bg-primary-subtle fw-bold text-primary">15</td>
-                                    <td class="bg-danger-subtle text-danger fw-bold">5</td>
+                                    <td class="text-warning fw-bold">15</td>
+                                    <td style="background-color: #e2f0d9; font-weight: bold; color: #385723;">15</td>
+                                    <td style="background-color: #fbe5d6; color: #c00000; font-weight: bold;">5</td>
                                 </tr>
                             </tbody>
                         </table>

@@ -286,9 +286,8 @@
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2 rounded-3">
                             <li><h6 class="dropdown-header text-dark fw-bold">Admin</h6></li>
-                            <li><a class="dropdown-item py-2" href="#"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
-                            <li><a class="dropdown-item py-2" href="#"><i class="bi bi-gear me-2 text-secondary"></i>Pengaturan</a></li>
-                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item py-2" href="/wms/profile"><i class="bi bi-person-gear me-2 text-secondary"></i>Pengaturan Akun</a></li>
+                                                        <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item py-2 text-danger fw-semibold" href="/"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
                         </ul>
                     </div>
