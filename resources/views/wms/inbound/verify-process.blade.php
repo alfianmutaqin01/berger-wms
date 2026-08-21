@@ -41,7 +41,8 @@
                                 <th class="text-secondary small fw-semibold">PALET NO</th>
                                 <th class="text-secondary small fw-semibold">SKU / DESKRIPSI</th>
                                 <th class="text-secondary small fw-semibold">BATCH</th>
-                                <th class="text-secondary small fw-semibold text-center" style="width: 120px;">QTY AKTUAL</th>
+                                <th class="text-secondary small fw-semibold text-center" style="width: 100px;">QTY PROD</th>
+                                <th class="text-secondary small fw-semibold text-center" style="width: 120px;">QTY OPR</th>
                                 <th class="text-secondary small fw-semibold" style="width: 200px;">LOKASI RAK</th>
                             </tr>
                         </thead>
@@ -65,9 +66,11 @@
                                     </div>
                                 </td>
                                 <td class="text-center">
-                                    <!-- Editable QTY -->
-                                    <input type="number" class="form-control form-control-sm text-center fw-bold text-primary border-primary-subtle bg-primary-subtle" value="{{ $pallet['qty'] }}" min="0">
-                                </td>
+                                      <span class="badge bg-light text-dark border px-2 py-1">{{ $pallet['qty'] }}</span>
+                                  </td>
+                                  <td class="text-center">
+                                      <input type="number" class="form-control form-control-sm text-center fw-bold text-primary border-primary-subtle bg-primary-subtle" value="{{ $pallet['qty'] }}" min="0">
+                                  </td>
                                 <td>
                                     <!-- Editable Location -->
                                     <div class="input-group input-group-sm">

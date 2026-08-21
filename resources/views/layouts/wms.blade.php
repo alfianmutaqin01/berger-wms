@@ -1,74 +1,7 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'WMS') - Berger Paints</title>
-    <!-- Bootstrap 5.3 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <!-- Custom CSS based on original SOMS -->
-    <link href="/css/soms-style.css?v={{ time() }}" rel="stylesheet">
-    @stack('styles')
-    <style>
-        /* Global Animations & Premium Hover Effects */
-        @keyframes fadeInUp {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        @keyframes pulseSoft {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.02); }
-            100% { transform: scale(1); }
-        }
-        
-        /* Auto-animate all main content */
-        main {
-            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        /* Card Hover Lift */
-        .card {
-            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
-        }
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important;
-        }
-
-        /* Interactive Buttons */
-        .btn {
-            transition: all 0.2s ease-in-out;
-        }
-        .btn:active {
-            transform: scale(0.95);
-        }
-
-        /* Smooth Table Rows */
-        tbody tr {
-            transition: background-color 0.2s ease;
-        }
-        tbody tr:hover {
-            background-color: rgba(13, 110, 253, 0.03) !important;
-        }
-
-        /* Sidebar Link Hover */
-        .nav-link {
-            transition: all 0.3s ease;
-        }
-        .nav-link:hover {
-            transform: translateX(5px);
-            background: rgba(255,255,255,0.05);
-            border-radius: 8px;
-        }
-        
-        /* Alert Pulse */
-        .alert-danger, .alert-warning {
-            animation: pulseSoft 2s infinite;
-        }
-    </style>
-    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.min.css" rel="stylesheet">
+    @include('partials.head')
 </head>
 <body>
 <div class="wrapper">
@@ -213,111 +146,7 @@
     <!-- Main Content -->
     <main class="main-content">
                                 <!-- Top Navbar -->
-        <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm border-0 py-0 no-print">
-            <div class="container-fluid px-4">
-                
-                <button type="button" id="sidebarToggle" class="btn btn-light d-lg-none me-3 rounded-circle border-0 text-dark">
-                    <i class="bi bi-list"></i>
-                </button>
-                
-                @php
-                    $hour = now()->format('H');
-                    if ($hour < 11) {
-                        $greeting = 'Selamat Pagi';
-                        $icon = 'bi-brightness-alt-high text-warning';
-                    } elseif ($hour < 15) {
-                        $greeting = 'Selamat Siang';
-                        $icon = 'bi-brightness-high text-warning';
-                    } elseif ($hour < 18) {
-                        $greeting = 'Selamat Sore';
-                        $icon = 'bi-sunset text-danger';
-                    } else {
-                        $greeting = 'Selamat Malam';
-                        $icon = 'bi-moon-stars text-primary';
-                    }
-                    $userName = "Khoirun Nisa";
-                @endphp
-                <h5 class="mb-0 fw-bold text-dark d-none d-md-flex align-items-center" style="letter-spacing: -0.5px;">
-                    <i class="bi {{ $icon }} me-2 fs-4"></i> {{ $greeting }}, {{ $userName }}
-                </h5>
-                
-                <div class="ms-auto d-flex align-items-center gap-3">
-                    <!-- Notification -->
-                    <div class="dropdown">
-                        <button class="btn btn-light position-relative rounded-circle d-flex align-items-center justify-content-center border" data-bs-toggle="dropdown" style="width: 40px; height: 40px; background-color: #f8f9fa;">
-                            <i class="bi bi-bell text-secondary" style="font-size: 1.1rem;"></i>
-                            <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-2 border-white rounded-circle" style="margin-top: 5px; margin-left: -5px;">
-                                <span class="visually-hidden">New alerts</span>
-                            </span>
-                        </button>
-                        <div class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 mt-2 p-0" style="width: 320px;">
-                              <div class="dropdown-header d-flex justify-content-between align-items-center border-bottom p-3 bg-light" style="border-top-left-radius: 0.5rem; border-top-right-radius: 0.5rem;">
-                                  <h6 class="mb-0 fw-bold text-dark">Notifikasi</h6>
-                                  <span class="badge bg-primary rounded-pill">1 Baru</span>
-                              </div>
-                              <div class="p-2">
-                                  <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1" href="#" style="white-space: normal;">
-                                        <div class="mt-1"><i class="bi bi-bell-fill text-primary fs-5"></i></div>
-                                        <div class="flex-grow-1">
-                                            <small class="fw-bold d-block text-primary mb-1">Pesanan Baru</small>
-                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">PO-00145 sedang menunggu approval.</small>
-                                            <small class="text-muted d-block" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i> 21 Ags 2026, 09:30 WIB</small>
-                                        </div>
-                                    </a>
-                                    
-                                  <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1 opacity-75" href="#" style="white-space: normal;">
-                                        <div class="mt-1"><i class="bi bi-check-circle-fill text-success fs-5"></i></div>
-                                        <div class="flex-grow-1">
-                                            <small class="fw-bold d-block text-success mb-1">Retur Selesai</small>
-                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">Proses Good Stock untuk RTN-0081 selesai.</small>
-                                            <small class="text-muted d-block" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i> 20 Ags 2026, 14:15 WIB</small>
-                                        </div>
-                                    </a>
-                              </div>
-                              <div class="dropdown-divider my-0"></div>
-                              <a href="/wms/notifications" class="dropdown-item text-center py-2 text-primary fw-bold small bg-light" style="border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem;">
-                                  Lihat Semua Notifikasi <i class="bi bi-arrow-right ms-1"></i>
-                              </a>
-                          </div>
-                      </div>
-                      
-                      <!-- Role Switcher (Mockup) -->
-                    <div class="dropdown">
-                        <button class="btn rounded-pill px-3 fw-semibold dropdown-toggle text-dark border bg-light shadow-sm" type="button" data-bs-toggle="dropdown" style="font-size: 0.85rem;">
-                            <i class="bi bi-shield-check text-primary me-1"></i> Switch Role
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2 rounded-3">
-                            <li class="dropdown-header text-uppercase fw-bold text-muted small">Portal Sales</li>
-                            <li><a class="dropdown-item py-2" href="/sales/dashboard"><i class="bi bi-phone me-2 text-secondary"></i>Sales</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li class="dropdown-header text-uppercase fw-bold text-muted small">Portal WMS</li>
-                            <li><a class="dropdown-item py-2" href="#" onclick="Swal.fire('Informasi', 'Peran ini akan diarahkan ke Dashboard khusus di versi penuh.', 'info')"><i class="bi bi-boxes me-2 text-secondary"></i>Production</a></li>
-                            <li><a class="dropdown-item py-2" href="/wms/dashboard"><i class="bi bi-box-seam me-2 text-secondary"></i>Operator gudang</a></li>
-                            <li><a class="dropdown-item py-2" href="/wms/delivery"><i class="bi bi-truck me-2 text-secondary"></i>Logistic</a></li>
-                            <li><a class="dropdown-item py-2" href="#" onclick="Swal.fire('Informasi', 'Peran ini akan diarahkan ke Dashboard khusus di versi penuh.', 'info')"><i class="bi bi-person-workspace me-2 text-secondary"></i>Manager</a></li>
-                            <li><a class="dropdown-item py-2" href="/wms/admin/users"><i class="bi bi-cpu me-2 text-secondary"></i>Super Admin</a></li>
-                        </ul>
-                    </div>
-
-                    <!-- User Account / Logout -->
-                    <div class="dropdown">
-                        <button class="btn rounded-pill p-1 pe-3 fw-semibold dropdown-toggle text-dark border bg-light shadow-sm d-flex align-items-center" type="button" data-bs-toggle="dropdown">
-                            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center me-2 fw-bold" style="width: 32px; height: 32px; font-size: 0.8rem;">
-                                AD
-                            </div>
-                            <span class="d-none d-md-inline small">Admin</span>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2 rounded-3">
-                            <li><h6 class="dropdown-header text-dark fw-bold">Admin</h6></li>
-                            <li><a class="dropdown-item py-2" href="/wms/profile"><i class="bi bi-person-gear me-2 text-secondary"></i>Pengaturan Akun</a></li>
-                                                        <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item py-2 text-danger fw-semibold" href="/"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
-                        </ul>
-                    </div>
-
-                </div>
-            </div>
-        </nav>
+        @include('partials.navbar-top', ['userName' => 'Khoirun Nisa', 'userLabel' => 'Admin Gudang', 'userInitials' => 'KN'])
 
         <!-- Dynamic Content -->
         <div class="container-fluid p-4">
@@ -327,38 +156,7 @@
 </div>
 
 <!-- Bootstrap 5 JS Bundle -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const sidebar = document.getElementById('sidebar');
-        const sidebarToggle = document.getElementById('sidebarToggle');
-        const sidebarClose = document.getElementById('sidebarClose');
-        const sidebarOverlay = document.getElementById('sidebarOverlay');
-        const sidebarToggleDesktop = document.getElementById('sidebarToggleDesktop');
-
-        // Mobile Toggle
-        function toggleSidebarMobile() {
-            sidebar.classList.toggle('show');
-            sidebarOverlay.classList.toggle('show');
-        }
-
-        if (sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebarMobile);
-        if (sidebarClose) sidebarClose.addEventListener('click', toggleSidebarMobile);
-        if (sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebarMobile);
-
-        // Desktop Toggle
-        if (sidebarToggleDesktop) {
-            sidebarToggleDesktop.addEventListener('click', function(e) {
-                e.preventDefault();
-                document.body.classList.toggle('sidebar-collapsed');
-            });
-        }
-    });
-</script>
-@stack('scripts')
-
-    @stack('modals')
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.all.min.js"></script>
+@include('partials.scripts')
 </body>
 </html>
 

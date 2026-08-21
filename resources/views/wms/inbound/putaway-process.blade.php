@@ -34,7 +34,8 @@
                                 <th class="text-secondary small fw-semibold text-center">VERIFIKASI FISIK</th>
                                 <th class="text-secondary small fw-semibold">SKU / DESKRIPSI</th>
                                 <th class="text-secondary small fw-semibold">BATCH</th>
-                                <th class="text-secondary small fw-semibold text-center">QTY</th>
+                                <th class="text-secondary small fw-semibold text-center">QTY SISTEM</th>
+                                  <th class="text-secondary small fw-semibold text-center" style="width: 120px;">QTY AKTUAL</th>
                                 <th class="text-secondary small fw-semibold" style="width: 300px;">LOKASI RAK</th>
                             </tr>
                         </thead>
@@ -53,8 +54,11 @@
                                 </td>
                                 <td><small class="font-monospace text-muted">{{ $pallet['batch'] }}</small></td>
                                 <td class="text-center qty-cell">
-                                    <span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2 original-qty">{{ $pallet['qty'] }}</span>
-                                </td>
+                                      <span class="badge bg-light text-dark border px-2 py-1 original-qty" title="Dari Produksi">{{ $pallet['qty'] }}</span>
+                                  </td>
+                                  <td class="text-center actual-qty-cell" style="width: 120px;">
+                                      <input type="number" class="form-control form-control-sm text-center actual-qty-input fw-bold text-primary border-primary-subtle bg-primary-subtle" value="{{ $pallet['qty'] }}" min="0" required>
+                                  </td>
                                 <td>
                                     <div class="input-group">
                                         <button type="button" class="btn btn-outline-secondary" title="Scan QR Code" onclick="openQRScanner(this, '{{ $idx }}')"><i class="bi bi-qr-code-scan"></i></button>
@@ -114,7 +118,8 @@
         if (currentQty > availableSpace && availableSpace > 0) {
             // Split needed!
             // 1. Change this row to hold only availableSpace
-            qtyCell.innerHTML = '<span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2 original-qty">' + availableSpace + '</span>';
+            qtyCell.innerHTML = '<span class="badge bg-light text-dark border px-2 py-1 original-qty">' + availableSpace + '</span>';
+            tr.querySelector('.actual-qty-input').value = availableSpace;
             
             let remainingQty = currentQty - availableSpace;
             
@@ -145,7 +150,8 @@
             newLocationInput.setAttribute('list', 'locationList_split_' + timestamp);
             
             let newQtyCell = newTr.querySelector('.qty-cell');
-            newQtyCell.innerHTML = '<span class="badge bg-danger-subtle text-danger border border-danger px-3 py-2 original-qty">' + remainingQty + '</span>';
+            newQtyCell.innerHTML = '<span class="badge bg-light text-dark border px-2 py-1 original-qty">' + remainingQty + '</span>';
+            newTr.querySelector('.actual-qty-input').value = remainingQty;
             
             newLocationInput.addEventListener('change', function() {
                 handleLocationSelection(this);

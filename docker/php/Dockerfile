@@ -1,5 +1,5 @@
 # ==============================================================
-# Berger WMS — PHP-FPM Dockerfile (Multi-Stage Build)
+# Berger WMS â€” PHP-FPM Dockerfile (Multi-Stage Build)
 # ==============================================================
 
 # --- Stage 1: Composer Dependencies ---

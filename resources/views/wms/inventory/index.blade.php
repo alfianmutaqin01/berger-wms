@@ -169,6 +169,7 @@
     </div>
 </div>
 
+@push('modals')
 <!-- Modal Penyesuaian -->
 <div class="modal fade" id="adjustmentModal" tabindex="-1">
     <div class="modal-dialog">
@@ -263,6 +264,7 @@
         </div>
     </div>
 </div>
+@endpush
 @endsection
 
 @push('scripts')
