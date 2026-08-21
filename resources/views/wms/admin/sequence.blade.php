@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Manajemen Penomoran')
-@section('page_title', 'Pengaturan Dokumen')
+@section('title', 'Pengaturan Sistem')
+@section('page_title', 'Pengaturan Sistem (Dokumen & Master)')
 
 @section('content')
 <div class="row mb-4">
@@ -36,11 +36,11 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th class="ps-4">Jenis Dokumen</th>
-                        <th style="width: 25%;">Format Prefix</th>
-                        <th style="width: 15%;">Next Number</th>
-                        <th style="width: 15%;">Preview (Contoh)</th>
-                        <th>Reset Otomatis</th>
+                        <th class="ps-4" style="width: 28%;">Jenis Dokumen</th>
+                        <th style="width: 20%;">Format Prefix</th>
+                        <th style="width: 12%;">Next Number</th>
+                        <th style="width: 18%;">Preview (Contoh)</th>
+                        <th style="width: 22%; padding-right: 1.5rem;">Reset Otomatis</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -51,7 +51,7 @@
                             <small class="text-muted">Digunakan oleh Sales Portal</small>
                         </td>
                         <td>
-                            <input type="text" class="form-control" value="PO-{YYYY}-{MM}-">
+                            <input type="text" class="form-control" placeholder="PO-{YYYY}-{MM}-" value="PO-{YYYY}-{MM}-" onfocus="this.value=''">
                         </td>
                         <td>
                             <input type="number" class="form-control fw-bold text-primary" value="146">
@@ -75,7 +75,7 @@
                             <small class="text-muted">Digunakan saat Outbound Delivery</small>
                         </td>
                         <td>
-                            <input type="text" class="form-control" value="SJ/{YY}{MM}/">
+                            <input type="text" class="form-control" placeholder="SJ/{YY}{MM}/" value="SJ/{YY}{MM}/" onfocus="this.value=''">
                         </td>
                         <td>
                             <input type="number" class="form-control fw-bold text-primary" value="89">
@@ -99,7 +99,7 @@
                             <small class="text-muted">Digunakan saat barang masuk dari Pabrik</small>
                         </td>
                         <td>
-                            <input type="text" class="form-control" value="IN-">
+                            <input type="text" class="form-control" placeholder="IN-" value="IN-" onfocus="this.value=''">
                         </td>
                         <td>
                             <input type="number" class="form-control fw-bold text-primary" value="1025">
@@ -123,7 +123,7 @@
                             <small class="text-muted">Pergerakan stok antar lokasi</small>
                         </td>
                         <td>
-                            <input type="text" class="form-control" value="TRF-{YYYY}-">
+                            <input type="text" class="form-control" placeholder="TRF-{YYYY}-" value="TRF-{YYYY}-" onfocus="this.value=''">
                         </td>
                         <td>
                             <input type="number" class="form-control fw-bold text-primary" value="12">
@@ -137,6 +137,67 @@
                                 <option selected>Setiap Awal Tahun</option>
                                 <option>Jangan Pernah Reset</option>
                             </select>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 mt-4">
+    <div class="card-header bg-white border-bottom pt-4 px-4 pb-3 d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0 text-dark">Manajemen Kemasan (Unit of Measure)</h6>
+        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="Swal.fire('Fitur Segera Hadir', 'Menambahkan tipe kemasan baru akan disimulasikan di versi berikutnya.', 'info')">
+            <i class="bi bi-plus-circle me-1"></i> Tambah Kemasan
+        </button>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4" style="width: 20%;">Kode (Singkatan)</th>
+                        <th>Nama Kemasan</th>
+                        <th class="text-center">Kapasitas (Opsional)</th>
+                        <th class="text-end pe-4" style="width: 20%;">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="ps-4 fw-bold text-dark">PAIL</td>
+                        <td>Ember Besar (Pail)</td>
+                        <td class="text-center">20 - 25 Ltr</td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-light text-secondary me-1"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-light text-danger"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4 fw-bold text-dark">TIN</td>
+                        <td>Kaleng Sedang (Tin)</td>
+                        <td class="text-center">2.5 - 5 Ltr</td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-light text-secondary me-1"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-light text-danger"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4 fw-bold text-dark">CAN</td>
+                        <td>Kaleng Kecil (Can)</td>
+                        <td class="text-center">1 Ltr</td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-light text-secondary me-1"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-light text-danger"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4 fw-bold text-dark">DRUM</td>
+                        <td>Drum Besi</td>
+                        <td class="text-center">200 Ltr</td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-light text-secondary me-1"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-light text-danger"><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>
                 </tbody>

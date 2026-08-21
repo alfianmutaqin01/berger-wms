@@ -58,7 +58,12 @@
                                     <span class="d-block mb-1">Herman (0812-9988)</span>
                                     <span class="badge bg-light text-dark border">B 9901 XX</span>
                                 </td>
-                                <td><span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Menunggu Verifikasi WMS</span></td>
+                                <td>
+    <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Menunggu Verifikasi WMS</span>
+    @if(session('po_has_return_PO-1508-011'))
+        <span class="badge bg-danger d-block mt-1"><i class="bi bi-exclamation-triangle-fill"></i> Ada Laporan Retur</span>
+    @endif
+</td>
                                 <td class="text-end">
                                     <button class="btn btn-sm rounded-pill px-3 shadow-sm text-white" style="background-color: #1e3a8a; border-color: #1e3a8a;" onmouseover="this.style.backgroundColor='#172554'; this.style.color='#ffffff';" onmouseout="this.style.backgroundColor='#1e3a8a'; this.style.color='#ffffff';" data-bs-toggle="modal" data-bs-target="#modalVerifikasi"><i class="bi bi-check2-circle me-1"></i> Periksa Dokumen</button>
                                 </td>

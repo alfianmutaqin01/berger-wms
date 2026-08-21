@@ -141,9 +141,11 @@
 @push('scripts')
 <script>
     let currentScenario = '';
+    let currentSelectedPo = '';
 
     function selectPO(poNumber, customer, scenario) {
         currentScenario = scenario;
+        currentSelectedPo = poNumber;
         
         // Reset UI
         document.getElementById('emptyState').style.display = 'none';
@@ -278,14 +280,17 @@
                             <li class="list-group-item px-0"><i class="bi bi-printer text-primary me-2"></i> Surat Jalan Fisik siap dicetak.</li>
                             <li class="list-group-item px-0"><i class="bi bi-whatsapp text-success me-2"></i> Link E-POD terkirim ke ${wa}.</li>
                         </ul>
-                        <p class="small text-muted mb-0">Truk kini diizinkan meninggalkan gudang.</p>
+                        <div class="alert alert-success border-success bg-success-subtle p-3 text-center mb-0 mt-3 rounded-4">
+                            <p class="small fw-bold text-success mb-2">Simulasi Klik Link WA Supir:</p>
+                            <a href="/epod/${currentSelectedPo}" target="_blank" class="btn btn-sm btn-success rounded-pill px-4"><i class="bi bi-phone me-1"></i> Buka Layar Supir (E-POD)</a>
+                        </div>
                     </div>
                 `,
                 confirmButtonColor: '#198754',
-                confirmButtonText: 'Selesai & Kembali ke Antrean'
+                confirmButtonText: 'Tutup'
             }).then(() => {
-                // Mock redirect to refresh or go to history
-                window.location.reload();
+                // Biarkan user memilih klik link atau menutup form
+                // window.location.reload();
             });
         }, 2000);
     });

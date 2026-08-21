@@ -111,10 +111,16 @@
                       <span>Riwayat Produksi</span>
                   </a>
               </li>
-            <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">
+                        <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">
                 <a href="/wms/inbound/putaway" class="nav-link">
                     <i class="bi bi-box-seam"></i>
                     <span>Proses Put-away</span>
+                </a>
+            </li>
+            <li class="nav-item {{ request()->is('wms/inbound/returns*') ? 'active' : '' }}">
+                <a href="/wms/inbound/returns" class="nav-link">
+                    <i class="bi bi-arrow-return-left"></i>
+                    <span>Penerimaan Retur</span>
                 </a>
             </li>
             <li class="nav-item {{ request()->is('wms/inbound/verify*') ? 'active' : '' }}">
@@ -231,7 +237,7 @@
                     }
                     $userName = "Khoirun Nisa";
                 @endphp
-                <h5 class="mb-0 fw-bold text-dark d-flex align-items-center" style="letter-spacing: -0.5px;">
+                <h5 class="mb-0 fw-bold text-dark d-none d-md-flex align-items-center" style="letter-spacing: -0.5px;">
                     <i class="bi {{ $icon }} me-2 fs-4"></i> {{ $greeting }}, {{ $userName }}
                 </h5>
                 
@@ -244,21 +250,38 @@
                                 <span class="visually-hidden">New alerts</span>
                             </span>
                         </button>
-                        <div class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 mt-2" style="width: 320px;">
-                            <div class="dropdown-header d-flex justify-content-between align-items-center border-bottom pb-2">
-                                <h6 class="mb-0 fw-bold text-dark">Notifikasi</h6>
-                                <span class="badge bg-primary rounded-pill">1 Baru</span>
-                            </div>
-                            <div class="p-2">
-                                <a class="dropdown-item rounded px-3 py-2" href="#">
-                                    <small class="fw-bold d-block text-primary mb-1">Pesanan Baru</small>
-                                    <small class="text-muted text-wrap">PO-00145 sedang menunggu approval.</small>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Role Switcher (Mockup) -->
+                        <div class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 mt-2 p-0" style="width: 320px;">
+                              <div class="dropdown-header d-flex justify-content-between align-items-center border-bottom p-3 bg-light" style="border-top-left-radius: 0.5rem; border-top-right-radius: 0.5rem;">
+                                  <h6 class="mb-0 fw-bold text-dark">Notifikasi</h6>
+                                  <span class="badge bg-primary rounded-pill">1 Baru</span>
+                              </div>
+                              <div class="p-2">
+                                  <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1" href="#" style="white-space: normal;">
+                                        <div class="mt-1"><i class="bi bi-bell-fill text-primary fs-5"></i></div>
+                                        <div class="flex-grow-1">
+                                            <small class="fw-bold d-block text-primary mb-1">Pesanan Baru</small>
+                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">PO-00145 sedang menunggu approval.</small>
+                                            <small class="text-muted d-block" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i> 21 Ags 2026, 09:30 WIB</small>
+                                        </div>
+                                    </a>
+                                    
+                                  <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1 opacity-75" href="#" style="white-space: normal;">
+                                        <div class="mt-1"><i class="bi bi-check-circle-fill text-success fs-5"></i></div>
+                                        <div class="flex-grow-1">
+                                            <small class="fw-bold d-block text-success mb-1">Retur Selesai</small>
+                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">Proses Good Stock untuk RTN-0081 selesai.</small>
+                                            <small class="text-muted d-block" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i> 20 Ags 2026, 14:15 WIB</small>
+                                        </div>
+                                    </a>
+                              </div>
+                              <div class="dropdown-divider my-0"></div>
+                              <a href="/wms/notifications" class="dropdown-item text-center py-2 text-primary fw-bold small bg-light" style="border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem;">
+                                  Lihat Semua Notifikasi <i class="bi bi-arrow-right ms-1"></i>
+                              </a>
+                          </div>
+                      </div>
+                      
+                      <!-- Role Switcher (Mockup) -->
                     <div class="dropdown">
                         <button class="btn rounded-pill px-3 fw-semibold dropdown-toggle text-dark border bg-light shadow-sm" type="button" data-bs-toggle="dropdown" style="font-size: 0.85rem;">
                             <i class="bi bi-shield-check text-primary me-1"></i> Switch Role
@@ -268,10 +291,10 @@
                             <li><a class="dropdown-item py-2" href="/sales/dashboard"><i class="bi bi-phone me-2 text-secondary"></i>Sales</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li class="dropdown-header text-uppercase fw-bold text-muted small">Portal WMS</li>
-                            <li><a class="dropdown-item py-2" href="/wms/approval"><i class="bi bi-boxes me-2 text-secondary"></i>Production</a></li>
+                            <li><a class="dropdown-item py-2" href="#" onclick="Swal.fire('Informasi', 'Peran ini akan diarahkan ke Dashboard khusus di versi penuh.', 'info')"><i class="bi bi-boxes me-2 text-secondary"></i>Production</a></li>
                             <li><a class="dropdown-item py-2" href="/wms/dashboard"><i class="bi bi-box-seam me-2 text-secondary"></i>Operator gudang</a></li>
                             <li><a class="dropdown-item py-2" href="/wms/delivery"><i class="bi bi-truck me-2 text-secondary"></i>Logistic</a></li>
-                            <li><a class="dropdown-item py-2" href="/wms/approval"><i class="bi bi-person-workspace me-2 text-secondary"></i>Manager</a></li>
+                            <li><a class="dropdown-item py-2" href="#" onclick="Swal.fire('Informasi', 'Peran ini akan diarahkan ke Dashboard khusus di versi penuh.', 'info')"><i class="bi bi-person-workspace me-2 text-secondary"></i>Manager</a></li>
                             <li><a class="dropdown-item py-2" href="/wms/admin/users"><i class="bi bi-cpu me-2 text-secondary"></i>Super Admin</a></li>
                         </ul>
                     </div>

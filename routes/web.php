@@ -12,6 +12,25 @@ Route::prefix('sales')->group(function () {
         return view('sales.dashboard');
     });
     Route::get('/my-orders', [\App\Http\Controllers\Sales\SalesOrderController::class, 'history']);
+    Route::post('/report-return', function (Illuminate\Http\Request $request) {
+        $retur = [
+            'id' => 'RET-' . rand(1000, 9999),
+            'po' => $request->po_number,
+            'customer' => $request->customer,
+            'sku' => $request->sku,
+            'qty' => $request->qty,
+            'reason' => $request->reason,
+            'time' => now()->format('H:i') . ' WIB',
+            'date' => 'Hari Ini'
+        ];
+        // Simpan ke session untuk dibaca oleh Inbound WMS
+        session()->push('pending_returns', $retur);
+        
+        // Simpan penanda bahwa PO ini ada returnya (untuk verifikasi SJ)
+        session()->put('po_has_return_' . $request->po_number, true);
+        
+        return redirect()->back()->with('success', 'Laporan Retur Kendala untuk ' . $request->po_number . ' telah dikirim ke Gudang.');
+    });
     Route::get('/new-order', [\App\Http\Controllers\Sales\SalesOrderController::class, 'create']);
     Route::post('/new-order', [\App\Http\Controllers\Sales\SalesOrderController::class, 'store']);
     Route::get('/tracking', function () {
@@ -28,7 +47,12 @@ Route::prefix('wms')->group(function () {
         return redirect('/wms/dashboard/admin'); // Default redirect
     });
     Route::get('/dashboard/admin', [\App\Http\Controllers\Wms\DashboardController::class, 'admin']);
-    Route::get('/dashboard/produksi', [\App\Http\Controllers\Wms\DashboardController::class, 'produksi']);
+        Route::get('/dashboard/produksi', [\App\Http\Controllers\Wms\DashboardController::class, 'produksi']);
+    
+    // Notifications
+    Route::get('/notifications', function () {
+        return view('wms.notifications');
+    });
     Route::get('/dashboard/operator', [\App\Http\Controllers\Wms\DashboardController::class, 'operator']);
     
     Route::prefix('inbound')->group(function () {
@@ -40,19 +64,34 @@ Route::prefix('wms')->group(function () {
         Route::get('/putaway/{doc_no}', [\App\Http\Controllers\Wms\InboundController::class, 'putawayProcess']);
         Route::get('/verify', [\App\Http\Controllers\Wms\InboundController::class, 'verifyIndex']);
         Route::get('/verify/{doc_no}', [\App\Http\Controllers\Wms\InboundController::class, 'verifyProcess']);
+        
+        // Retur
+        Route::get('/returns', function () {
+            $pendingReturns = session('pending_returns', []);
+            return view('wms.inbound.returns', compact('pendingReturns'));
+        });
+        Route::post('/returns/{id}', function ($id, Illuminate\Http\Request $request) {
+            $pending = session('pending_returns', []);
+            $newPending = [];
+            
+            foreach ($pending as $retur) {
+                if ($retur['id'] !== $id) {
+                    $newPending[] = $retur;
+                }
+            }
+            session(['pending_returns' => $newPending]);
+            
+            // Simpan hasil verifikasi (GR/DDP)
+            session()->put('processed_return_' . $id, $request->alokasi);
+            
+            return redirect()->back()->with('success', 'Barang retur berhasil dialokasikan ke ' . $request->alokasi . '.');
+        });
     });
 
     // Inventory
     Route::get('/inventory', [\App\Http\Controllers\Wms\InventoryController::class, 'index']);
-    Route::get('/orders', function () {
-        return view('wms.orders');
-    });
-    Route::get('/delivery', function () {
-        return view('wms.delivery');
-    });
-    Route::get('/billing', function () {
-        return view('wms.billing');
-    });
+    Route::post('/inventory/adjust', [\App\Http\Controllers\Wms\InventoryController::class, 'adjust']);
+    Route::post('/inventory/transfer', [\App\Http\Controllers\Wms\InventoryController::class, 'transfer']);
     Route::get('/approval', function () {
         return view('wms.approval');
     });

@@ -185,10 +185,10 @@
                             <li><a class="dropdown-item py-2" href="/sales/dashboard"><i class="bi bi-phone me-2 text-secondary"></i>Sales</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li class="dropdown-header text-uppercase fw-bold text-muted small">Portal WMS</li>
-                            <li><a class="dropdown-item py-2" href="/wms/approval"><i class="bi bi-boxes me-2 text-secondary"></i>Production</a></li>
+                            <li><a class="dropdown-item py-2" href="#" onclick="Swal.fire('Informasi', 'Peran ini akan diarahkan ke Dashboard khusus di versi penuh.', 'info')"><i class="bi bi-boxes me-2 text-secondary"></i>Production</a></li>
                             <li><a class="dropdown-item py-2" href="/wms/dashboard"><i class="bi bi-box-seam me-2 text-secondary"></i>Operator gudang</a></li>
                             <li><a class="dropdown-item py-2" href="/wms/delivery"><i class="bi bi-truck me-2 text-secondary"></i>Logistic</a></li>
-                            <li><a class="dropdown-item py-2" href="/wms/approval"><i class="bi bi-person-workspace me-2 text-secondary"></i>Manager</a></li>
+                            <li><a class="dropdown-item py-2" href="#" onclick="Swal.fire('Informasi', 'Peran ini akan diarahkan ke Dashboard khusus di versi penuh.', 'info')"><i class="bi bi-person-workspace me-2 text-secondary"></i>Manager</a></li>
                             <li><a class="dropdown-item py-2" href="/wms/admin/users"><i class="bi bi-cpu me-2 text-secondary"></i>Super Admin</a></li>
                         </ul>
                     </div>

@@ -4,6 +4,14 @@
 @section('content')
 <div class="row">
     <div class="col-12">
+        <form id="hiddenReturnForm" method="POST" action="/sales/report-return" class="d-none">
+            @csrf
+            <input type="hidden" name="po_number" id="hr_po">
+            <input type="hidden" name="customer" id="hr_customer">
+            <input type="hidden" name="sku" id="hr_sku">
+            <input type="hidden" name="qty" id="hr_qty">
+            <input type="hidden" name="reason" id="hr_reason">
+        </form>
 
         <!-- Mobile Filter (Shown on mobile only) -->
         <div class="d-lg-none mb-3 d-flex gap-2 overflow-x-auto pb-2" style="white-space: nowrap; -webkit-overflow-scrolling: touch;">
@@ -117,7 +125,8 @@
                         </div>
 
                         <div class="border-top pt-3 mt-4">
-                            <button class="btn btn-success w-100 rounded-pill mb-2 fw-semibold shadow-sm" onclick="confirmDelivery('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-file-earmark-arrow-up me-2"></i>Konfirmasi Resi</button>
+                            <button class="btn btn-success w-100 rounded-pill mb-2 fw-semibold shadow-sm" onclick="confirmDelivery('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-file-earmark-check me-2"></i>Selesaikan SJ</button>
+                            <button class="btn btn-outline-danger w-100 rounded-pill mb-2 fw-semibold" onclick="reportReturn('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-exclamation-triangle me-2"></i>Lapor Kendala / Retur</button>
                             <button class="btn btn-light text-primary w-100 rounded-pill" onclick="showOrderDetail('PO-1508-011', true)"><i class="bi bi-eye"></i> Detail Lengkap</button>
                         </div>
                     </div>
@@ -358,6 +367,70 @@
                     card.style.backgroundColor = '#ffffff';
                     card.style.opacity = '0.7';
                 }, 1200);
+            }
+        });
+    }
+    function reportReturn(poNumber, customer, btnElement) {
+        Swal.fire({
+            title: 'Formulir Retur Barang',
+            html: `
+                <div class="text-start mt-2">
+                    <p class="mb-3 text-muted">Laporkan barang yang ditolak oleh <strong>${customer}</strong> untuk dokumen <strong>${poNumber}</strong>.</p>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Pilih SKU yang Bermasalah</label>
+                        <select id="returSku" class="form-select">
+                            <option value="BP-5KG-WHT">Cat Tembok Putih 5Kg</option>
+                            <option value="BP-20KG-BLU">Cat Pelapis Biru 20Kg</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Jumlah (Qty) Retur</label>
+                        <input type="number" id="returQty" class="form-control" value="1" min="1">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Alasan Retur</label>
+                        <select id="returReason" class="form-select">
+                            <option value="Lecet/Penyok">Kemasan Lecet / Penyok</option>
+                            <option value="Bocor">Bocor / Tumpah</option>
+                            <option value="Salah Kirim">Salah Kirim Varian</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Bukti Surat Jalan (Coretan) & Fisik</label>
+                        <input type="file" id="returFile" class="form-control form-control-sm">
+                    </div>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-send"></i> Kirim Laporan Retur',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#dc3545',
+            preConfirm: () => {
+                const qty = document.getElementById('returQty').value;
+                const sku = document.getElementById('returSku').options[document.getElementById('returSku').selectedIndex].text;
+                const reason = document.getElementById('returReason').options[document.getElementById('returReason').selectedIndex].text;
+                
+                if (!qty || qty < 1) {
+                    Swal.showValidationMessage('Jumlah retur harus diisi!');
+                    return false;
+                }
+                
+                document.getElementById('hr_po').value = poNumber;
+                document.getElementById('hr_customer').value = customer;
+                document.getElementById('hr_sku').value = sku;
+                document.getElementById('hr_qty').value = qty;
+                document.getElementById('hr_reason').value = reason;
+                
+                return true;
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Mengirim Laporan...',
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); }
+                });
+                document.getElementById('hiddenReturnForm').submit();
             }
         });
     }
