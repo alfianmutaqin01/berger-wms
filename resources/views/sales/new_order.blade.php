@@ -5,12 +5,7 @@
 <div class="row justify-content-center">
     <div class="col-12 col-lg-10">
         
-        <!-- Warning Alert (Hidden by default) -->
-        <div id="alertBilling" class="alert alert-warning d-none align-items-center rounded-3 shadow-sm mb-4 border-warning" role="alert">
-            <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
             <div>
-                <strong class="d-block mb-1 text-dark">Perhatian: Customer Menunggak</strong>
-                <span class="small text-dark">Customer ini terdeteksi memiliki tagihan tempo yang belum lunas. Pesanan tetap dapat dilanjutkan, namun akan ditandai khusus untuk memerlukan tinjauan tambahan dari tim logistik/finance.</span>
             </div>
         </div>
 
@@ -111,9 +106,7 @@
                     <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3 mt-2" id="btnAddItem">
                         <i class="bi bi-plus-circle me-1"></i> Tambah Produk
                     </button>
-
                 </div>
-                
                 @php
                     $currentHour = now()->format('H');
                     $isLate = $currentHour >= 15;
@@ -179,17 +172,15 @@
             if(this.value.includes('Menunggak')) {
                 alertBilling.classList.remove('d-none');
                 alertBilling.classList.add('d-flex');
-                // Tombol tidak lagi di-disable, tetapi kita bisa mengubah tampilannya sedikit jika mau
+                btnDraft.disabled = true;
+                btnSubmit.disabled = true;
                 this.classList.add('is-invalid');
-                // Opsional: tambahkan class khusus jika kita ingin membedakan warna input
-                this.style.borderColor = '#ffc107'; 
-                this.style.paddingRight = '2.25rem';
-                            } else {
+            } else {
                 alertBilling.classList.add('d-none');
                 alertBilling.classList.remove('d-flex');
+                btnDraft.disabled = false;
+                btnSubmit.disabled = false;
                 this.classList.remove('is-invalid');
-                this.style.borderColor = '';
-                this.style.backgroundImage = '';
             }
         });
 
