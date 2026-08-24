@@ -61,12 +61,15 @@
 
                     <!-- Hasil Validasi -->
                     <div id="validationResult" class="d-none mt-4">
-                        <div id="validationAlert" class="alert d-flex align-items-center py-3 mb-3" role="alert">
-                            <i id="validationIcon" class="bi fs-4 me-3"></i>
-                            <div>
-                                <h6 class="fw-bold mb-1" id="validationTitle">Status</h6>
-                                <span class="small fw-semibold" id="validationMessage">Message</span>
+                        <div id="validationAlert" class="alert d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between py-3 mb-3 gap-3" role="alert">
+                            <div class="d-flex align-items-center">
+                                <i id="validationIcon" class="bi fs-4 me-3"></i>
+                                <div>
+                                    <h6 class="fw-bold mb-1" id="validationTitle">Status</h6>
+                                    <span class="small fw-semibold" id="validationMessage">Message</span>
+                                </div>
                             </div>
+                            <div id="validationAction"></div>
                         </div>
 
                         <!-- Tabel Komparasi -->
@@ -148,10 +151,14 @@
         currentSelectedPo = poNumber;
         
         // Reset UI
+        document.getElementById('emptyState').classList.remove('d-flex');
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('detailCard').style.display = 'block';
+        document.getElementById('detailCard').classList.remove('d-none');
         document.getElementById('detailPoTitle').textContent = poNumber;
         document.getElementById('validationResult').classList.add('d-none');
+        const actionDiv = document.getElementById('validationAction');
+        if (actionDiv) actionDiv.innerHTML = '';
         document.getElementById('step2').classList.add('opacity-50');
         document.getElementById('excelFile').value = '';
         document.querySelectorAll('.sj-input').forEach(el => el.disabled = true);
@@ -190,16 +197,18 @@
             const message = document.getElementById('validationMessage');
             const tbody = document.getElementById('comparisonTableBody');
             const step2 = document.getElementById('step2');
+            const actionDiv = document.getElementById('validationAction');
             
             validationResult.classList.remove('d-none');
 
             if(currentScenario === 'match') {
                 // Success Scenario
-                alertBox.className = 'alert alert-success d-flex align-items-center py-3 mb-3';
+                alertBox.className = 'alert alert-success d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between py-3 mb-3 gap-3';
                 icon.className = 'bi bi-check-circle-fill fs-4 me-3 text-success';
                 title.textContent = 'Pencocokan Sukses!';
                 title.className = 'fw-bold mb-1 text-success';
                 message.textContent = 'Data fisik 100% sesuai dengan data WMS (2 Item, 120 Qty).';
+                if (actionDiv) actionDiv.innerHTML = '';
 
                 tbody.innerHTML = `
                     <tr>
@@ -224,19 +233,23 @@
 
             } else {
                 // Mismatch Scenario
-                alertBox.className = 'alert alert-danger d-flex align-items-center py-3 mb-3';
+                alertBox.className = 'alert alert-danger d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between py-3 mb-3 gap-3';
                 icon.className = 'bi bi-exclamation-triangle-fill fs-4 me-3 text-danger';
                 title.textContent = 'Ditemukan Selisih (Mismatch)!';
                 title.className = 'fw-bold mb-1 text-danger';
-                message.textContent = 'Ada perbedaan jumlah stok antara WMS dan fisik. Mohon lakukan adjustment (Stock Opname) sebelum cetak SJ.';
+                message.textContent = 'Ada perbedaan jumlah stok antara WMS dan fisik. Lakukan penyesuaian agar sama dengan data Excel fisik.';
+                
+                if (actionDiv) {
+                    actionDiv.innerHTML = '<button type="button" class="btn btn-sm btn-danger shadow-sm text-nowrap" onclick="autoAdjustStock()"><i class="bi bi-arrow-repeat me-1"></i> Sesuaikan Otomatis</button>';
+                }
 
                 tbody.innerHTML = `
-                    <tr>
+                    <tr id="row-bp5kg">
                         <td class="text-start px-2 fw-semibold">BP-5KG-WHT</td>
-                        <td>100</td>
+                        <td id="qty-wms-bp5kg">100</td>
                         <td class="text-danger fw-bold">98</td>
-                        <td class="text-danger fw-bold">-2</td>
-                        <td><span class="badge bg-danger">Mismatch</span></td>
+                        <td class="text-danger fw-bold" id="diff-bp5kg">-2</td>
+                        <td id="status-bp5kg"><span class="badge bg-danger">Mismatch</span></td>
                     </tr>
                     <tr>
                         <td class="text-start px-2 fw-semibold">BP-20KG-BLU</td>
@@ -254,6 +267,62 @@
 
         }, 1200);
     });
+
+    function autoAdjustStock() {
+        Swal.fire({
+            title: 'Konfirmasi Penyesuaian',
+            html: 'Sistem akan menyesuaikan stok WMS <b>mengikuti data Excel fisik (98 Qty)</b> secara otomatis. Lanjutkan?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, Sesuaikan Data'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Memproses Penyesuaian...',
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); }
+                });
+                
+                setTimeout(() => {
+                    // Update UI to Match scenario
+                    const alertBox = document.getElementById('validationAlert');
+                    const icon = document.getElementById('validationIcon');
+                    const title = document.getElementById('validationTitle');
+                    const message = document.getElementById('validationMessage');
+                    const actionDiv = document.getElementById('validationAction');
+                    const step2 = document.getElementById('step2');
+                    
+                    alertBox.className = 'alert alert-success d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between py-3 mb-3 gap-3';
+                    icon.className = 'bi bi-check-circle-fill fs-4 me-3 text-success';
+                    title.textContent = 'Penyesuaian Berhasil!';
+                    title.className = 'fw-bold mb-1 text-success';
+                    message.textContent = 'Data WMS telah dikurangi 2 Qty dan kini 100% cocok dengan data fisik.';
+                    if (actionDiv) actionDiv.innerHTML = '';
+                    
+                    // Update Table Row
+                    document.getElementById('qty-wms-bp5kg').innerHTML = '<span class="text-success fw-bold">98</span>';
+                    document.getElementById('diff-bp5kg').innerHTML = '<span class="text-success fw-bold">0</span>';
+                    document.getElementById('diff-bp5kg').className = 'text-success fw-bold';
+                    document.getElementById('status-bp5kg').innerHTML = '<span class="badge bg-success">Match</span>';
+                    
+                    // Enable Step 2
+                    step2.classList.remove('opacity-50');
+                    document.querySelectorAll('.sj-input').forEach(input => input.disabled = false);
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Sukses',
+                        text: 'Stok berhasil diseimbangkan.',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                }, 1200);
+            }
+        });
+    }
+
     document.getElementById('sjForm').addEventListener('submit', function(e) {
         e.preventDefault();
         
@@ -288,9 +357,6 @@
                 `,
                 confirmButtonColor: '#198754',
                 confirmButtonText: 'Tutup'
-            }).then(() => {
-                // Biarkan user memilih klik link atau menutup form
-                // window.location.reload();
             });
         }, 2000);
     });

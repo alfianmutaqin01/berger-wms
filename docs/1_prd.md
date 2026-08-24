@@ -482,7 +482,7 @@ Dashboard sederhana dan ringkas, menampilkan data **milik sales yang login saja*
 | Widget | Data |
 |---|---|
 | Total Transaksi Bulan Ini | Jumlah PO yang dibuat sales ini bulan berjalan |
-| Pesanan Menunggu Approval | Jumlah PO yang masih pending approval |
+| Pesanan Menunggu Diterima | Jumlah PO yang masih pending approval |
 | Pesanan Dalam Pengiriman | Jumlah PO yang sedang dikirim |
 | Pesanan Complete Bulan Ini | Jumlah PO yang sudah selesai bulan berjalan |
 
@@ -492,7 +492,7 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 | Widget | Data |
 |---|---|
 | Total Semua Transaksi | Jumlah seluruh PO (filter: bulan ini / custom range) |
-| Semua Butuh Approval | Jumlah PO menunggu approval |
+| Semua Butuh Approval | Jumlah PO Menunggu Diterima |
 | Semua Dalam Pengiriman | Jumlah PO sedang dikirim |
 | Semua Complete | Jumlah PO selesai |
 | Customer Overdue | Jumlah customer dengan tagihan jatuh tempo belum bayar |
@@ -528,7 +528,7 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 
 | Event | Penerima | Pesan |
 |---|---|---|
-| Sales submit PO baru | Tim Logistik (gudang terkait) | "Pesanan baru #{nomor} dari {sales} menunggu approval" |
+| Sales submit PO baru | Tim Logistik (gudang terkait) | "Pesanan baru #{nomor} dari {sales} Menunggu Diterima" |
 | PO diapprove | Sales pembuat | "Pesanan #{nomor} telah disetujui" |
 | PO di-reject | Sales pembuat | "Pesanan #{nomor} ditolak. Alasan: {alasan}" |
 | PO partial approved | Sales pembuat | "Pesanan #{nomor} disetujui sebagian. Cek detail." |

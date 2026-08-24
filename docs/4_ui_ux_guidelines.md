@@ -228,7 +228,7 @@
 │ ┌───────────────────────── ┐│
 │ │ PO-KRW-2026-00145  →    ││
 │ │ Toko Jaya Makmur        ││
-│ │ ⏳ Menunggu Approval     ││
+│ │ ⏳ Menunggu Diterima     ││
 │ │ 14 Aug 2026, 09:15      ││
 │ └───────────────────────── ┘│
 │ ┌───────────────────────── ┐│
@@ -541,7 +541,7 @@ Fields:
 - **Alert info:** Peringatan bahwa verifikasi bersifat final (koreksi hanya via menu Stok)
 
 #### 4.3.3 Halaman Pesanan — Approval (Tim Logistik)
-**Deskripsi:** Daftar pesanan masuk yang menunggu approval.
+**Deskripsi:** Daftar pesanan masuk yang Menunggu Diterima.
 
 **Wireframe Layout:**
 ```
@@ -869,7 +869,7 @@ Modal:
 
 ```html
 <!-- Badge warna berdasarkan status order -->
-<span class="badge bg-warning text-dark">⏳ Menunggu Approval</span>
+<span class="badge bg-warning text-dark">⏳ Menunggu Diterima</span>
 <span class="badge bg-success">✅ Disetujui</span>
 <span class="badge bg-danger">❌ Ditolak</span>
 <span class="badge bg-info">🔄 Proses Picking</span>
@@ -903,7 +903,7 @@ Modal:
             <button type="button" class="btn-close btn-close-white"></button>
         </div>
         <div class="toast-body">
-            Pesanan baru #PO-KRW-2026-00145 dari Ahmad menunggu approval.
+            Pesanan baru #PO-KRW-2026-00145 dari Ahmad Menunggu Diterima.
         </div>
     </div>
 </div>
@@ -963,7 +963,7 @@ Modal:
                 <i class="bi bi-cart-check text-success me-2 mt-1"></i>
                 <div>
                     <small class="fw-bold">Pesanan Baru</small>
-                    <p class="mb-0 small text-muted">PO-00145 dari Ahmad menunggu approval</p>
+                    <p class="mb-0 small text-muted">PO-00145 dari Ahmad Menunggu Diterima</p>
                     <small class="text-muted">2 menit lalu</small>
                 </div>
             </div>

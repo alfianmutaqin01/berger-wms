@@ -17,7 +17,7 @@
         <div class="d-lg-none mb-3 d-flex gap-2 overflow-x-auto pb-2" style="white-space: nowrap; -webkit-overflow-scrolling: touch;">
             <button class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm">Semua</button>
             <button class="btn btn-sm btn-outline-secondary bg-white rounded-pill px-3 shadow-sm">Draft</button>
-            <button class="btn btn-sm btn-outline-secondary bg-white rounded-pill px-3 shadow-sm">Menunggu Approval</button>
+            <button class="btn btn-sm btn-outline-secondary bg-white rounded-pill px-3 shadow-sm">Menunggu Diterima</button>
         </div>
         
         <!-- Desktop Filters -->
@@ -25,7 +25,7 @@
             <div>
                 <button class="btn btn-primary rounded-pill px-4 shadow-sm me-2">Semua</button>
                 <button class="btn btn-outline-secondary bg-white rounded-pill px-4 shadow-sm me-2">Draft</button>
-                <button class="btn btn-outline-secondary bg-white rounded-pill px-4 shadow-sm">Menunggu Approval</button>
+                <button class="btn btn-outline-secondary bg-white rounded-pill px-4 shadow-sm">Menunggu Diterima</button>
             </div>
             <div class="input-group w-auto">
                 <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
@@ -47,7 +47,7 @@
             <div class="col-12 col-md-6 col-lg-4">
                 <div class="card border-0 shadow-sm rounded-4 h-100 position-relative">
                     <div class="position-absolute top-0 end-0 mt-3 me-3">
-                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill"><i class="bi bi-hourglass-split me-1"></i> Menunggu Approval</span>
+                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill"><i class="bi bi-hourglass-split me-1"></i> Menunggu Diterima</span>
                     </div>
                     <div class="card-body p-4">
                         <small class="text-muted d-block mb-1">PO-2608-001</small>
@@ -126,7 +126,7 @@
 
                         <div class="border-top pt-3 mt-4">
                             <button class="btn btn-success w-100 rounded-pill mb-2 fw-semibold shadow-sm" onclick="confirmDelivery('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-file-earmark-check me-2"></i>Selesaikan SJ</button>
-                            <button class="btn btn-outline-danger w-100 rounded-pill mb-2 fw-semibold" onclick="reportReturn('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-exclamation-triangle me-2"></i>Lapor Kendala / Retur</button>
+                            <button class="btn btn-outline-danger w-100 rounded-pill mb-2 fw-semibold" onclick="openRejectionModal('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-exclamation-triangle me-2"></i>Lapor Penolakan</button>
                             <button class="btn btn-light text-primary w-100 rounded-pill" onclick="showOrderDetail('PO-1508-011', true)"><i class="bi bi-eye"></i> Detail Lengkap</button>
                         </div>
                     </div>
@@ -137,7 +137,7 @@
             <div class="col-12 col-md-6 col-lg-4">
                 <div class="card border border-primary shadow-sm rounded-4 h-100 position-relative">
                     <div class="position-absolute top-0 end-0 mt-3 me-3">
-                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill"><i class="bi bi-hourglass-split me-1"></i> Menunggu Approval</span>
+                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill"><i class="bi bi-hourglass-split me-1"></i> Menunggu Diterima</span>
                     </div>
                     <div class="card-body p-4">
                         <small class="text-primary fw-bold d-block mb-1">PO-NEW (Baru Saja)</small>
@@ -160,6 +160,49 @@
     </div>
 </div>
 @endsection
+
+@push('modals')
+<!-- Modal Penolakan -->
+<div class="modal fade" id="rejectionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0">
+            <div class="modal-header border-bottom-0 pb-0">
+                <h5 class="modal-title fw-bold text-dark"><i class="bi bi-exclamation-triangle text-danger me-2"></i> Lapor Penolakan Barang</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-4">
+                <div class="alert alert-warning border-0 rounded-3 small">
+                    Pelaporan penolakan untuk PO: <strong id="rejPoNumber" class="text-dark"></strong> (<span id="rejCustomer" class="text-dark"></span>). 
+                    Pastikan Surat Jalan asli yang sudah diberi catatan penolakan dilampirkan.
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label small fw-semibold text-secondary">Bukti Surat Jalan (Wajib)</label>
+                    <input class="form-control" type="file" id="rejFile" accept="image/png, image/jpeg, application/pdf">
+                </div>
+
+                <hr class="mb-4">
+                
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold mb-0">Detail Barang Ditolak</h6>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill fw-semibold px-3" onclick="addRejectionItem()">
+                        <i class="bi bi-plus-lg"></i> Tambah Barang
+                    </button>
+                </div>
+
+                <div id="rejectionItemsContainer">
+                    <!-- Dynamic rows go here -->
+                </div>
+
+            </div>
+            <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-danger px-4 fw-bold shadow-sm" onclick="submitRejection()"><i class="bi bi-send me-1"></i> Kirim Laporan</button>
+            </div>
+        </div>
+    </div>
+</div>
+@endpush
 
 @push('scripts')
 <script>
@@ -361,6 +404,12 @@
                     btnElement.className = 'btn btn-outline-secondary w-100 rounded-pill mb-2 disabled';
                     btnElement.innerHTML = '<i class="bi bi-check2-all me-1"></i>Selesai & Tertutup';
                     
+                    // Sembunyikan tombol Penolakan karena pesanan sudah diselesaikan tanpa kendala
+                    const rejectionBtn = btnElement.nextElementSibling;
+                    if (rejectionBtn) {
+                        rejectionBtn.classList.add('d-none');
+                    }
+                    
                     // Ubah badge
                     const card = btnElement.closest('.card');
                     card.classList.remove('border-success');
@@ -370,69 +419,109 @@
             }
         });
     }
-    function reportReturn(poNumber, customer, btnElement) {
-        Swal.fire({
-            title: 'Formulir Retur Barang',
-            html: `
-                <div class="text-start mt-2">
-                    <p class="mb-3 text-muted">Laporkan barang yang ditolak oleh <strong>${customer}</strong> untuk dokumen <strong>${poNumber}</strong>.</p>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Pilih SKU yang Bermasalah</label>
-                        <select id="returSku" class="form-select">
-                            <option value="BP-5KG-WHT">Cat Tembok Putih 5Kg</option>
-                            <option value="BP-20KG-BLU">Cat Pelapis Biru 20Kg</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Jumlah (Qty) Retur</label>
-                        <input type="number" id="returQty" class="form-control" value="1" min="1">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Alasan Retur</label>
-                        <select id="returReason" class="form-select">
-                            <option value="Lecet/Penyok">Kemasan Lecet / Penyok</option>
-                            <option value="Bocor">Bocor / Tumpah</option>
-                            <option value="Salah Kirim">Salah Kirim Varian</option>
-                        </select>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-semibold">Bukti Surat Jalan (Coretan) & Fisik</label>
-                        <input type="file" id="returFile" class="form-control form-control-sm">
-                    </div>
+    let currentRejectionBtn = null;
+    let rejectionItemCount = 0;
+
+    function openRejectionModal(poNumber, customer, btnElement) {
+        document.getElementById('rejPoNumber').textContent = poNumber;
+        document.getElementById('rejCustomer').textContent = customer;
+        document.getElementById('rejFile').value = '';
+        document.getElementById('rejectionItemsContainer').innerHTML = '';
+        currentRejectionBtn = btnElement;
+        
+        // Add one initial item row
+        addRejectionItem();
+
+        const modal = new bootstrap.Modal(document.getElementById('rejectionModal'));
+        modal.show();
+    }
+
+    function addRejectionItem() {
+        rejectionItemCount++;
+        const container = document.getElementById('rejectionItemsContainer');
+        const rowId = 'rejRow_' + rejectionItemCount;
+        
+        const rowHTML = `
+            <div class="row align-items-end mb-3 pb-3 border-bottom" id="${rowId}">
+                <div class="col-md-5">
+                    <label class="form-label small fw-semibold">Pilih SKU Ditolak</label>
+                    <select class="form-select form-select-sm rej-sku">
+                        <option value="BP-5KG-WHT">Cat Tembok Putih 5Kg</option>
+                        <option value="BP-20KG-BLU">Cat Pelapis Biru 20Kg</option>
+                        <option value="BP-5KG-RED">Cat Kayu Merah 5Kg</option>
+                    </select>
                 </div>
-            `,
-            showCancelButton: true,
-            confirmButtonText: '<i class="bi bi-send"></i> Kirim Laporan Retur',
-            cancelButtonText: 'Batal',
-            confirmButtonColor: '#dc3545',
-            preConfirm: () => {
-                const qty = document.getElementById('returQty').value;
-                const sku = document.getElementById('returSku').options[document.getElementById('returSku').selectedIndex].text;
-                const reason = document.getElementById('returReason').options[document.getElementById('returReason').selectedIndex].text;
-                
-                if (!qty || qty < 1) {
-                    Swal.showValidationMessage('Jumlah retur harus diisi!');
-                    return false;
-                }
-                
-                document.getElementById('hr_po').value = poNumber;
-                document.getElementById('hr_customer').value = customer;
-                document.getElementById('hr_sku').value = sku;
-                document.getElementById('hr_qty').value = qty;
-                document.getElementById('hr_reason').value = reason;
-                
-                return true;
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Mengirim Laporan...',
-                    allowOutsideClick: false,
-                    didOpen: () => { Swal.showLoading(); }
-                });
-                document.getElementById('hiddenReturnForm').submit();
-            }
+                <div class="col-md-2">
+                    <label class="form-label small fw-semibold">Qty</label>
+                    <input type="number" class="form-control form-control-sm rej-qty" min="1" value="1">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Alasan</label>
+                    <select class="form-select form-select-sm rej-reason">
+                        <option value="Kemasan Rusak/Bocor">Kemasan Rusak/Bocor</option>
+                        <option value="Kualitas Buruk/Beku">Kualitas Buruk/Beku</option>
+                        <option value="Salah Varian">Salah Varian</option>
+                        <option value="Kelebihan Kirim">Kelebihan Kirim</option>
+                    </select>
+                </div>
+                <div class="col-md-1 text-end">
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRejectionItem('${rowId}')"><i class="bi bi-trash"></i></button>
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', rowHTML);
+    }
+
+    function removeRejectionItem(rowId) {
+        const row = document.getElementById(rowId);
+        if (row) row.remove();
+    }
+
+    function submitRejection() {
+        const file = document.getElementById('rejFile').files[0];
+        if (!file) {
+            Swal.fire('File Wajib Diunggah', 'Mohon lampirkan bukti foto Surat Jalan yang telah dicoret/diberi catatan penolakan.', 'warning');
+            return;
+        }
+
+        const container = document.getElementById('rejectionItemsContainer');
+        if (container.children.length === 0) {
+            Swal.fire('Data Kosong', 'Harap masukkan setidaknya 1 barang yang ditolak.', 'warning');
+            return;
+        }
+
+        // Mock success submission
+        Swal.fire({
+            title: 'Mengirim Laporan...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
         });
+
+        setTimeout(() => {
+            const modalEl = document.getElementById('rejectionModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Penolakan Dilaporkan!',
+                text: 'Laporan penolakan dan bukti Surat Jalan telah dikirim ke Logistik.',
+                confirmButtonColor: '#198754'
+            });
+
+            // Update UI Button
+            if (currentRejectionBtn) {
+                const card = currentRejectionBtn.closest('.card');
+                currentRejectionBtn.className = 'btn btn-outline-secondary w-100 rounded-pill mb-2 disabled';
+                currentRejectionBtn.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Menunggu Proses Penolakan';
+                const finishBtn = currentRejectionBtn.previousElementSibling;
+                if (finishBtn) finishBtn.classList.add('disabled');
+                
+                card.classList.remove('border-success');
+                card.classList.add('border-danger');
+                card.style.opacity = '0.85';
+            }
+        }, 1200);
     }
 </script>
 @endpush

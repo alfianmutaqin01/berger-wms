@@ -73,7 +73,13 @@
             <li class="nav-item {{ request()->is('wms/outbound/approval') ? 'active' : '' }}">
                 <a href="/wms/outbound/approval" class="nav-link">
                     <i class="bi bi-ui-checks-grid"></i>
-                    <span>Approval Pesanan</span>
+                    <span>Penerimaan Pesanan</span>
+                </a>
+            </li>
+                        <li class="nav-item {{ request()->is('wms/outbound/picking/batching') ? 'active' : '' }}">
+                <a href="/wms/outbound/picking/batching" class="nav-link">
+                    <i class="bi bi-collection"></i>
+                    <span>Daftar Picking</span>
                 </a>
             </li>
             <li class="nav-item {{ request()->is('wms/outbound/picking') ? 'active' : '' }}">

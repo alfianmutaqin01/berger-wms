@@ -48,7 +48,7 @@
                                         <div class="mt-1"><i class="bi bi-bell-fill text-primary fs-5"></i></div>
                                         <div class="flex-grow-1">
                                             <small class="fw-bold d-block text-primary mb-1">Pesanan Baru</small>
-                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">PO-00145 sedang menunggu approval.</small>
+                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">PO-00145 sedang Menunggu Diterima.</small>
                                             <small class="text-muted d-block" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i> 21 Ags 2026, 09:30 WIB</small>
                                         </div>
                                     </a>

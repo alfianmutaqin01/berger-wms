@@ -5,12 +5,12 @@
 <div class="row justify-content-center">
     <div class="col-12 col-lg-10">
         
-        <!-- Error Alert (Hidden by default) -->
-        <div id="alertBilling" class="alert alert-danger d-none align-items-center rounded-3 shadow-sm mb-4" role="alert">
-            <i class="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
+        <!-- Warning Alert (Hidden by default) -->
+        <div id="alertBilling" class="alert alert-warning d-none align-items-center rounded-3 shadow-sm mb-4 border-warning" role="alert">
+            <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
             <div>
-                <strong class="d-block mb-1">Pemesanan Diblokir!</strong>
-                <span class="small">Customer ini memiliki tagihan tempo yang belum lunas. Mohon hubungi tim logistik atau finance.</span>
+                <strong class="d-block mb-1 text-dark">Perhatian: Customer Menunggak</strong>
+                <span class="small text-dark">Customer ini terdeteksi memiliki tagihan tempo yang belum lunas. Pesanan tetap dapat dilanjutkan, namun akan ditandai khusus untuk memerlukan tinjauan tambahan dari tim logistik/finance.</span>
             </div>
         </div>
 
@@ -61,7 +61,13 @@
                                 <span class="input-group-text bg-white"><i class="bi bi-camera text-muted"></i></span>
                                 <input type="file" class="form-control bg-light" name="bukti_pesanan" accept="image/png, image/jpeg" capture="environment">
                             </div>
-                            <div class="form-text small">Anda bisa memotret catatan PO toko langsung dari HP Anda. (Max 2MB)</div>
+                                                        <div class="form-text small">Anda bisa memotret catatan PO toko langsung dari HP Anda. (Max 2MB)</div>
+                            <div class="form-check mt-3 border p-2 rounded bg-white shadow-sm">
+                                <input class="form-check-input ms-1" type="checkbox" id="documentOnlyCheck" name="document_only">
+                                <label class="form-check-label ms-2 text-dark small fw-semibold" for="documentOnlyCheck">
+                                    Pesanan sesuai dengan dokumen yang diupload. <span class="text-muted fw-normal">(Abaikan input rincian item di bawah)</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -135,6 +141,34 @@
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+                // Document-only Checkbox Logic
+        const documentOnlyCheck = document.getElementById('documentOnlyCheck');
+        const itemListSection = document.getElementById('itemList');
+        
+        documentOnlyCheck.addEventListener('change', function() {
+            const isChecked = this.checked;
+            const inputs = itemListSection.querySelectorAll('input');
+            const btnAdd = document.getElementById('btnAddItem');
+            
+            if(isChecked) {
+                itemListSection.style.opacity = '0.4';
+                itemListSection.style.pointerEvents = 'none';
+                if(btnAdd) btnAdd.disabled = true;
+                
+                inputs.forEach(input => {
+                    input.removeAttribute('required');
+                });
+            } else {
+                itemListSection.style.opacity = '1';
+                itemListSection.style.pointerEvents = 'auto';
+                if(btnAdd) btnAdd.disabled = false;
+                
+                inputs.forEach(input => {
+                    input.setAttribute('required', 'required');
+                });
+            }
+        });
+
         // Validation Customer Block
         const customerInput = document.getElementById('customerInput');
         const alertBilling = document.getElementById('alertBilling');
@@ -145,15 +179,17 @@
             if(this.value.includes('Menunggak')) {
                 alertBilling.classList.remove('d-none');
                 alertBilling.classList.add('d-flex');
-                btnDraft.disabled = true;
-                btnSubmit.disabled = true;
+                // Tombol tidak lagi di-disable, tetapi kita bisa mengubah tampilannya sedikit jika mau
                 this.classList.add('is-invalid');
-            } else {
+                // Opsional: tambahkan class khusus jika kita ingin membedakan warna input
+                this.style.borderColor = '#ffc107'; 
+                this.style.paddingRight = '2.25rem';
+                            } else {
                 alertBilling.classList.add('d-none');
                 alertBilling.classList.remove('d-flex');
-                btnDraft.disabled = false;
-                btnSubmit.disabled = false;
                 this.classList.remove('is-invalid');
+                this.style.borderColor = '';
+                this.style.backgroundImage = '';
             }
         });
 

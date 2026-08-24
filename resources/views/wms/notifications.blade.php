@@ -29,9 +29,9 @@
                     </div>
                     <small class="text-muted fw-semibold"><i class="bi bi-clock me-1"></i> 21 Ags 2026, 09:30 WIB</small>
                 </div>
-                <p class="mb-1 text-dark ms-4 ps-2">Sales <strong>Budi Santoso</strong> telah mengajukan Pesanan Baru (PO-00145) untuk Toko Cat Makmur Jaya sejumlah 120 Pail. Pesanan ini sedang menunggu approval Anda untuk diteruskan ke tahap Picking.</p>
+                <p class="mb-1 text-dark ms-4 ps-2">Sales <strong>Budi Santoso</strong> telah mengajukan Pesanan Baru (PO-00145) untuk Toko Cat Makmur Jaya sejumlah 120 Pail. Pesanan ini sedang Menunggu Diterima Anda untuk diteruskan ke tahap Picking.</p>
                 <div class="mt-3 ms-4 ps-2">
-                    <span class="badge bg-primary px-3 py-2 rounded-pill">Status: Menunggu Approval</span>
+                    <span class="badge bg-primary px-3 py-2 rounded-pill">Status: Menunggu Diterima</span>
                 </div>
             </a>
 

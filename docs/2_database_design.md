@@ -460,7 +460,7 @@ Header pesanan penjualan.
 
 | Status | Kode Enum | Deskripsi |
 |---|---|---|
-| Menunggu Approval | `pending` | PO baru disubmit Sales |
+| Menunggu Diterima | `pending` | PO baru disubmit Sales |
 | Disetujui | `approved` | Logistik sudah approve, FIFO allocated |
 | Ditolak | `rejected` | Logistik menolak PO |
 | Proses Picking | `picking` | Operator sedang mengambil barang |

@@ -42,7 +42,7 @@
                             <small class="text-muted">0812-3456-7890</small>
                         </td>
                         <td>19 Ags 2026</td>
-                        <td><span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Menunggu Approval</span></td>
+                        <td><span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Menunggu Diterima</span></td>
                         <td class="pe-4 text-end">
                             <button class="btn btn-sm btn-light border" onclick="showCustomerDetail('Toko Cat Makmur Jaya')"><i class="bi bi-eye"></i></button>
                         </td>
@@ -150,7 +150,7 @@
                             <i class="bi bi-shop fs-1 text-primary"></i>
                         </div>
                         <h5 class="fw-bold mt-3 mb-0">${name}</h5>
-                        <span class="badge bg-warning text-dark mt-2"><i class="bi bi-hourglass-split"></i> Menunggu Approval</span>
+                        <span class="badge bg-warning text-dark mt-2"><i class="bi bi-hourglass-split"></i> </span>
                     </div>
                     <ul class="list-group list-group-flush border-top border-bottom">
                         <li class="list-group-item px-0 py-3 d-flex justify-content-between align-items-center">

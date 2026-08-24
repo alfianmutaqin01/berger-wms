@@ -22,7 +22,7 @@
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold px-4 py-3 text-danger" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending" type="button" role="tab">
-                    <i class="bi bi-person-exclamation me-2"></i>Menunggu Approval <span class="badge bg-danger rounded-pill ms-2">1</span>
+                    <i class="bi bi-person-exclamation me-2"></i>Menunggu Diterima <span class="badge bg-danger rounded-pill ms-2">1</span>
                 </button>
             </li>
         </ul>
@@ -80,7 +80,7 @@
                 </div>
             </div>
             
-            <!-- Tab: Menunggu Approval -->
+            <!-- Tab: Menunggu Diterima -->
             <div class="tab-pane fade" id="pending" role="tabpanel">
                 <div class="table-responsive mt-3">
                     <table class="table table-hover align-middle mb-0">
