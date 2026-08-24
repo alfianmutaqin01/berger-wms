@@ -5,7 +5,12 @@
 <div class="row justify-content-center">
     <div class="col-12 col-lg-10">
         
+        <!-- Warning Alert (Hidden by default) -->
+        <div id="alertBilling" class="alert alert-warning d-none align-items-center rounded-3 shadow-sm mb-4 border-warning" role="alert">
+            <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
             <div>
+                <strong class="d-block mb-1 text-dark">Perhatian: Customer Menunggak</strong>
+                <span class="small text-dark">Customer ini terdeteksi memiliki tagihan tempo yang belum lunas. Pesanan tetap dapat dilanjutkan, namun akan ditandai khusus untuk memerlukan tinjauan tambahan dari tim logistik/finance.</span>
             </div>
         </div>
 
