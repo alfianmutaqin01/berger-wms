@@ -26,7 +26,8 @@ Route::get('/', function () {
 |--------------------------------------------------------------------------
 | Autentikasi (PRD §6.1 F-AUTH-01/03/04/05)
 |--------------------------------------------------------------------------
-| MFA (F-AUTH-02) belum ada di sini — lihat catatan di AuthController.
+| Verifikasi Anti-Bot (F-AUTH-02, reCAPTCHA) belum terpasang — akan menyatu di
+| POST /login yang sama, bukan rute terpisah. Lihat catatan di AuthController.
 */
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');

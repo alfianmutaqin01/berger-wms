@@ -620,14 +620,12 @@ tests/
 │   │   └── CustomerBillingTest.php
 │   └── Middleware/
 │       ├── CheckRoleTest.php
-│       ├── CheckMfaTest.php
 │       ├── EnforceMaxSessionsTest.php
 │       ├── CheckOrderCutoffTest.php
 │       └── CustomerOverdueFlagTest.php
 ├── Feature/
 │   ├── Auth/
 │   │   ├── LoginTest.php
-│   │   ├── MfaTest.php
 │   │   ├── LockoutTest.php
 │   │   └── SessionTest.php
 │   ├── MasterData/

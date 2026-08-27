@@ -146,7 +146,7 @@ graph TB
 #### Layer 2: Application (Koordinator)
 - **Controllers:** Menerima HTTP request, memanggil Service, mengembalikan View/JSON
 - **Form Requests:** Validasi input sebelum masuk ke business logic
-- **Middleware:** Authentication, RBAC, MFA check, session enforcement, order cutoff
+- **Middleware:** Authentication, RBAC, portal separation, session enforcement, order cutoff
 - **View Composers:** Menyediakan data global ke semua view (notif count, user info)
 
 #### Layer 3: Domain (Business Logic)
@@ -188,7 +188,7 @@ graph LR
     
     subgraph L2 ["Layer 2: Authentication"]
         LOGIN["Email/Password"]
-        MFA_L["Google Authenticator<br>(TOTP)"]
+        BOT_L["Google reCAPTCHA v2<br>(anti-bot)"]
         LOCKOUT["Progressive Lockout"]
     end
     
@@ -229,14 +229,14 @@ Setiap request HTTP melewati middleware dalam urutan berikut:
 3. VerifyCsrfToken
 4. ShareErrorsFromSession
 5. ──────────────────────── (Laravel Default di atas)
-6. Authenticate           → Cek user sudah login?
-7. CheckMfa               → Cek MFA sudah diverifikasi?
-8. EnforceMaxSessions     → Cek max 2 device
-9. UpdateLastActivity     → Update last_activity_at untuk idle timeout
-10. CheckRole:{roles}     → Cek user punya role yang diizinkan?
-11. CheckOrderCutoff      → (Khusus route order) Cek belum lewat jam 15:00?
-12. CheckCustomerBlocked  → (Khusus route order) Cek customer tidak di-block?
-13. TrackAuditLog         → Record ke audit_logs (untuk operasi CUD)
+6. auth                   → Cek user sudah login?                    [SUDAH ADA]
+7. session.track          → Max 2 device + idle timeout 1 jam         [SUDAH ADA]
+                            (TrackUserSession: satu middleware untuk keduanya)
+8. portal:{wms|sales}     → Cegah akses silang antar-portal           [SUDAH ADA]
+                            (EnsurePortalAccess)
+9. CheckRole:{roles}      → Cek user punya role yang diizinkan?       [rencana]
+10. CheckOrderCutoff      → (Khusus route order) Cek belum lewat jam 15:00?  [rencana]
+11. TrackAuditLog         → Record ke audit_logs (untuk operasi CUD)  [rencana]
 ```
 
 ### 3.3 Alur Autentikasi Lengkap
@@ -249,61 +249,54 @@ sequenceDiagram
     participant Laravel
     participant Redis
     participant PostgreSQL
-    participant GA as Google Authenticator
+    participant ReCAPTCHA as Google reCAPTCHA
 
     User->>Browser: Buka halaman login
     Browser->>Nginx: GET /login
     Nginx->>Laravel: Forward request
-    Laravel->>Browser: Render login form
+    Laravel->>Browser: Render login form (+ widget reCAPTCHA)
 
-    User->>Browser: Input email + password
-    Browser->>Laravel: POST /login
+    User->>Browser: Input email + password + centang "Saya bukan robot"
+    Browser->>Laravel: POST /login (kredensial + token reCAPTCHA)
+    Laravel->>ReCAPTCHA: Verifikasi token (siteverify)
+    ReCAPTCHA->>Laravel: valid / tidak valid
     Laravel->>PostgreSQL: Cek email exists
-    
-    alt Email tidak ditemukan
+
+    alt Email tidak ditemukan ATAU token anti-bot tidak valid
         Laravel->>PostgreSQL: Log ke login_attempts
-        Laravel->>Browser: "Email atau Password salah"
+        Laravel->>Browser: "Email atau Password salah" (pesan generik)
     else Email ditemukan
-        Laravel->>PostgreSQL: Cek akun locked?
-        alt Akun terkunci
-            Laravel->>Browser: "Akun terkunci, coba lagi dalam X menit"
-        else Akun tidak terkunci
+        Laravel->>PostgreSQL: Cek akun aktif & tidak terkunci?
+        alt Akun nonaktif
+            Laravel->>Browser: "Akun Anda tidak aktif. Hubungi Administrator."
+        else Akun terkunci
+            Laravel->>Browser: "Akun terkunci sampai pukul HH:MM"
+        else Akun siap login
             Laravel->>PostgreSQL: Verifikasi password (Bcrypt)
             alt Password salah
                 Laravel->>PostgreSQL: Increment failed_login_attempts
-                alt Attempts >= 5
-                    Laravel->>PostgreSQL: Set locked_until (progressive)
+                alt Attempts >= 3
+                    Laravel->>PostgreSQL: Set locked_until (5/10/30/60/120 menit)
                     Laravel->>Browser: "Akun terkunci selama X menit"
-                else Attempts < 5
+                else Attempts < 3
                     Laravel->>Browser: "Email atau Password salah"
                 end
             else Password benar
                 Laravel->>PostgreSQL: Reset failed_login_attempts = 0
-                Laravel->>Redis: Simpan session (partial - belum MFA)
-                Laravel->>Browser: Redirect ke /mfa/verify
-                
-                User->>GA: Buka app, lihat kode 6 digit
-                User->>Browser: Input kode TOTP
-                Browser->>Laravel: POST /mfa/verify
-                Laravel->>PostgreSQL: Ambil google2fa_secret
-                Laravel->>Laravel: Verify TOTP code
-                
-                alt Kode TOTP benar
-                    Laravel->>Redis: Update session (full auth)
-                    Laravel->>PostgreSQL: Cek active sessions
-                    alt Sessions >= 2
-                        Laravel->>Redis: Terminate oldest session
-                        Laravel->>PostgreSQL: Delete oldest user_session
-                    end
-                    Laravel->>PostgreSQL: Insert new user_session
-                    Laravel->>Browser: Redirect ke dashboard (by role)
-                else Kode TOTP salah
-                    Laravel->>Browser: "Kode salah, coba lagi"
+                Laravel->>Redis: Simpan session (regenerate ID)
+                Laravel->>PostgreSQL: Cek active sessions
+                alt Sessions >= 2
+                    Laravel->>PostgreSQL: Delete oldest user_session
                 end
+                Laravel->>PostgreSQL: Insert user_session (device_token)
+                Laravel->>Browser: Set cookie device_token + redirect dashboard (by role)
             end
         end
     end
 ```
+
+> [!NOTE]
+> **Tidak ada langkah verifikasi terpisah setelah password.** reCAPTCHA diverifikasi pada request `POST /login` yang sama (PRD v1.2) — berbeda dengan rancangan MFA/TOTP lama yang memerlukan halaman `/mfa/verify` tersendiri.
 
 ### 3.4 File Upload Security
 
@@ -631,8 +624,8 @@ sequenceDiagram
     
     Note over Middleware: CSRF Check ✓
     Note over Middleware: Auth Check ✓
-    Note over Middleware: MFA Check ✓
-    Note over Middleware: Max Session Check ✓
+    Note over Middleware: Session Track (max 2 device + idle) ✓
+    Note over Middleware: Portal Check (sales) ✓
     Note over Middleware: Role Check (sales) ✓
     Note over Middleware: Order Cutoff Check (< 15:00?) ✓
     

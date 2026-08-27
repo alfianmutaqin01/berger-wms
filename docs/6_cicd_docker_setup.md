@@ -636,13 +636,11 @@ gitGraph
     
     branch backend/feature-auth
     commit id: "auth: login"
-    commit id: "auth: mfa"
     checkout develop
     merge backend/feature-auth id: "merge auth"
     
     branch frontend/feature-auth
     commit id: "ui: login page"
-    commit id: "ui: mfa page"
     checkout develop
     merge frontend/feature-auth id: "merge auth ui"
     
@@ -1092,8 +1090,9 @@ PUSHER_SCHEME=http
 # File Upload
 FILESYSTEM_DISK=local
 
-# Google 2FA
-GOOGLE2FA_ENABLED=true
+# Google reCAPTCHA v2 (verifikasi anti-bot pada form login, PRD v1.2)
+RECAPTCHA_SITE_KEY=
+RECAPTCHA_SECRET_KEY=
 ```
 
 ### 6.3 GitHub Secrets (untuk CD Pipeline)

@@ -50,11 +50,16 @@ return new class extends Migration
         });
 
         // Kolom keamanan sesuai docs/2_database_design.md §3.1.
-        // Dipasang sekarang agar modul Autentikasi (MFA + progressive lockout)
-        // tidak perlu mengubah struktur tabel `users` lagi di kemudian hari.
+        //
+        // CATATAN HISTORIS: `google2fa_secret` dan `is_mfa_enabled` di bawah ini
+        // SUDAH TIDAK DIPAKAI — PRD v1.2 mengganti MFA/TOTP dengan Google
+        // reCAPTCHA yang tidak menyimpan state per-user. Keduanya dihapus oleh
+        // migration 2026_08_29_000001_drop_mfa_columns_from_users_table.php.
+        // Definisi di sini sengaja dibiarkan utuh karena migration ini sudah
+        // pernah dijalankan; jangan diubah, cukup ikuti migration penghapusnya.
         Schema::table('users', function (Blueprint $table) {
             $table->string('google2fa_secret', 255)->nullable()
-                ->comment('Secret TOTP, disimpan terenkripsi lewat cast di model');
+                ->comment('TIDAK DIPAKAI — dihapus di migration 2026_08_29_000001');
             $table->boolean('is_mfa_enabled')->default(false);
             $table->unsignedSmallInteger('failed_login_attempts')->default(0);
             $table->timestamp('locked_until')->nullable();

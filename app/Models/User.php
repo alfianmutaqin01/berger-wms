@@ -38,7 +38,6 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
-        'google2fa_secret',
     ];
 
     protected function casts(): array
@@ -50,10 +49,6 @@ class User extends Authenticatable
             'last_lockout_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
-            'is_mfa_enabled' => 'boolean',
-            // Secret TOTP tidak boleh tersimpan sebagai teks polos: siapa pun yang
-            // bisa membaca database akan mampu membangkitkan kode MFA korban.
-            'google2fa_secret' => 'encrypted',
         ];
     }
 

@@ -18,10 +18,10 @@ use Illuminate\View\View;
 /**
  * Login, logout, dan penegakan sesi. PRD §6.1 F-AUTH-01/03/04/05.
  *
- * MFA (F-AUTH-02) BELUM diimplementasikan di sini — menyusul di fase
- * terpisah (lihat rencana pembangunan, Fase 1b). Untuk saat ini,
- * login yang berhasil langsung diarahkan ke dashboard sesuai role, BUKAN
- * ke halaman verifikasi MFA seperti yang dideskripsikan PRD.
+ * Verifikasi Anti-Bot (F-AUTH-02, Google reCAPTCHA v2) BELUM terpasang di sini —
+ * menyusul di fase terpisah. Widget-nya nanti menyatu di form login yang sama,
+ * bukan halaman verifikasi terpisah, dan kegagalannya masuk ke counter lockout
+ * yang sama dengan password salah (lihat User::registerFailedLogin()).
  */
 class AuthController extends Controller
 {

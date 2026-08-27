@@ -13,9 +13,9 @@ use Tests\TestCase;
 /**
  * Autentikasi — PRD §6.1 F-AUTH-01/03/04/05.
  *
- * MFA (F-AUTH-02) belum diimplementasikan — lihat catatan di AuthController
- * dan rencana pembangunan Fase 1b. Login berhasil di sini langsung
- * menuju dashboard, bukan halaman verifikasi MFA.
+ * Verifikasi Anti-Bot (F-AUTH-02, reCAPTCHA) belum terpasang — lihat catatan di
+ * AuthController. Login berhasil di sini langsung menuju dashboard; tidak ada
+ * halaman verifikasi terpisah setelah password pada desain PRD v1.2.
  */
 class LoginTest extends TestCase
 {
