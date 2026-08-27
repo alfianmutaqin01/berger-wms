@@ -146,11 +146,11 @@ class LoginTest extends TestCase
 
     /* ---------------------------------------------------- Progressive lockout */
 
-    public function test_akun_terkunci_setelah_5_kali_gagal(): void
+    public function test_akun_terkunci_setelah_3_kali_gagal(): void
     {
         $user = $this->makeUser(Role::SALES);
 
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 3; $i++) {
             $this->post('/login', ['email' => $user->email, 'password' => 'salah']);
         }
 
@@ -164,7 +164,7 @@ class LoginTest extends TestCase
     public function test_akun_terkunci_menolak_password_benar_sekalipun(): void
     {
         $user = $this->makeUser(Role::SALES, [
-            'failed_login_attempts' => 5,
+            'failed_login_attempts' => 3,
             'lockout_count' => 1,
             'locked_until' => now()->addMinutes(5),
         ]);
@@ -179,7 +179,7 @@ class LoginTest extends TestCase
     public function test_lockout_meningkat_progresif_setelah_unlock(): void
     {
         $user = $this->makeUser(Role::SALES, [
-            'failed_login_attempts' => 5,
+            'failed_login_attempts' => 3,
             'lockout_count' => 1,
             'locked_until' => now()->subMinute(), // sudah lewat, akun sudah unlock
         ]);

@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.1  
-> **Tanggal:** 26 Agustus 2026 *(revisi dari v1.0, 14 Agustus 2026)*  
+> **Versi:** 1.2  
+> **Tanggal:** 27 Agustus 2026 *(revisi dari v1.1, 26 Agustus 2026)*  
 > **Status:** Draft — Menunggu Final Approval  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
@@ -10,6 +10,14 @@
 ---
 
 ## Riwayat Revisi
+
+### Versi 1.2 — 27 Agustus 2026
+
+| # | Perubahan | Bagian Terdampak |
+|---|---|---|
+| 1 | **MFA (Google Authenticator/TOTP) diganti Verifikasi Anti-Bot (Google reCAPTCHA v2).** reCAPTCHA memverifikasi manusia vs bot, BUKAN faktor kedua berbasis identitas — tidak ada lagi halaman verifikasi terpisah setelah password, widget-nya tampil langsung di form login. | §6.1 F-AUTH-01/02, §8.2, §9.1, §11 |
+| 2 | **Batas percobaan progressive lockout diturunkan dari 5 menjadi 3 kali gagal** (password ATAU verifikasi anti-bot, satu counter yang sama). Durasi lockout tiap tingkat tidak berubah (5/10/30/60/120 menit), hanya ambang pemicunya yang bergeser. | §6.1 F-AUTH-03 |
+| 3 | **Role Switcher pada navbar sudah dihapus** (bukan lagi "akan dihapus") — autentikasi sungguhan dan middleware RBAC sudah aktif sejak Fase 1. | Catatan di bawah, §5.1 |
 
 ### Versi 1.1 — 26 Agustus 2026
 
@@ -28,7 +36,7 @@ Revisi ini menyelaraskan PRD dengan keputusan bisnis terbaru dan dengan prototip
 | 9 | **Scan QR lokasi rak masuk scope.** | §3.2, §6.3 F-INB-02 |
 
 > [!NOTE]
-> **Role Switcher** yang terlihat di navbar prototipe adalah **alat bantu pengembangan sementara** untuk meninjau tampilan tiap role tanpa perlu berganti akun. Komponen ini **wajib dihapus** sebelum Go-Live dan digantikan autentikasi + middleware RBAC yang sebenarnya.
+> **Role Switcher** yang sebelumnya terlihat di navbar prototipe sudah **dihapus** sejak Fase 1 (Autentikasi Nyata). Peran kini ditentukan oleh akun yang login sungguhan, ditegakkan oleh middleware RBAC — lihat dokumen arsitektur §5.3.
 
 ---
 
@@ -104,7 +112,7 @@ Sebelum sistem ini dibangun, alur operasional PT Berger Paints Indonesia berjala
 
 | Modul | Deskripsi |
 |---|---|
-| Autentikasi & Keamanan | Login, MFA (Google Authenticator), RBAC, session management |
+| Autentikasi & Keamanan | Login, Verifikasi Anti-Bot (Google reCAPTCHA), RBAC, session management |
 | Master Data | Pengelolaan User, Produk, Kategori, Lokasi Rak, Gudang, Pelanggan |
 | Inbound (Barang Masuk) | Input produksi, put-away, verifikasi Maker-Checker |
 | Inventory (Stok) | Stok real-time, stock movement ledger, adjustment oleh Manager |
@@ -222,7 +230,7 @@ graph TD
 | Tugas operasional harian | ❌ | ✅ |
 | Hapus transaksi | ❌ | ✅ |
 | Pengaturan Sistem (cutoff, threshold, session, lockout) | ❌ | ✅ |
-| Reset MFA & unlock akun terkunci | ❌ | ✅ |
+| Unlock akun terkunci (progressive lockout) | ❌ | ✅ |
 
 #### Portal Sales
 
@@ -250,19 +258,25 @@ graph TD
 ### 6.1 Modul Autentikasi & Keamanan
 
 #### F-AUTH-01: Login
-- Pengguna memasukkan email dan password.
+- Pengguna memasukkan email, password, dan menyelesaikan verifikasi anti-bot (lihat F-AUTH-02) pada form yang sama.
 - Validasi kredensial terhadap database.
-- Jika berhasil, arahkan ke halaman MFA.
+- Jika berhasil, arahkan langsung ke portal sesuai role (lihat F-AUTH-05).
 - Jika gagal, tampilkan pesan error generik ("Email atau Password salah").
 
+#### F-AUTH-02: Verifikasi Anti-Bot (Google reCAPTCHA)
+- Form login menampilkan widget **Google reCAPTCHA v2 ("Saya bukan robot")** berdampingan dengan kolom email/password — bukan halaman terpisah setelah password.
+- Token reCAPTCHA diverifikasi ke Google (`siteverify`) bersamaan dengan pengecekan kredensial pada request yang sama.
+- Verifikasi anti-bot gagal (token tidak valid/kedaluwarsa, atau tidak dicentang) diperlakukan sama seperti kredensial salah: masuk ke counter percobaan gagal di F-AUTH-03, dengan pesan generik yang sama.
+- **Bukan MFA** — reCAPTCHA memverifikasi bahwa yang mengakses form adalah manusia, bukan mengonfirmasi identitas pengguna. Tidak ada faktor kedua berbasis identitas (mis. TOTP) pada versi ini.
+
 #### F-AUTH-03: Progressive Lockout
-- **Batas percobaan:** Maksimal **5 kali** salah memasukkan password/username.
-- **Setelah 5 kali salah:** Akun terkunci selama **5 menit**.
+- **Batas percobaan:** Maksimal **3 kali** salah memasukkan password/username **atau** gagal verifikasi anti-bot (F-AUTH-02) — keduanya berbagi counter yang sama.
+- **Setelah 3 kali salah:** Akun terkunci selama **5 menit**.
 - **Jika salah lagi setelah unlock:** Durasi lockout bertambah secara progresif:
-  - Percobaan ke-6 gagal: 10 menit
-  - Percobaan ke-7 gagal: 30 menit
-  - Percobaan ke-8 gagal: 60 menit
-  - Percobaan ke-9+ gagal: 120 menit
+  - Percobaan ke-4 gagal: 10 menit
+  - Percobaan ke-5 gagal: 30 menit
+  - Percobaan ke-6 gagal: 60 menit
+  - Percobaan ke-7+ gagal: 120 menit
 - **Reset lockout:** Hanya Super Admin yang dapat membuka kunci akun secara manual.
 
 #### F-AUTH-04: Session Management
@@ -272,7 +286,7 @@ graph TD
 - **Session tracking:** Setiap sesi aktif dicatat (device info, IP, waktu login).
 
 #### F-AUTH-05: Routing Berdasarkan Role
-- Setelah login + MFA berhasil, pengguna otomatis diarahkan ke portal sesuai rolenya:
+- Setelah login berhasil (kredensial + verifikasi anti-bot), pengguna otomatis diarahkan ke portal sesuai rolenya:
   - Super Admin, Manager, Tim Produksi, Operator Gudang, Tim Logistik → **Portal Warehouse/Admin**
   - Tim Sales → **Portal Sales**
 - Middleware memblokir akses silang antar-portal.
@@ -290,7 +304,7 @@ graph TD
   - Setiap user wajib ditetapkan ke satu gudang (dispatch code) sebagai default.
   - Setiap user memiliki **tepat satu role** (relasi `users.role_id`).
   - **Batasan Manager:** Manager dapat membuat dan mengubah user ber-role Manager, Tim Logistik, Tim Produksi, Operator Gudang, dan Tim Sales. Manager **tidak dapat** membuat, mengubah, atau menghapus akun ber-role **Super Admin**.
-  - **Eksklusif Super Admin:** reset MFA dan unlock akun yang terkunci akibat progressive lockout.
+  - **Eksklusif Super Admin:** unlock akun yang terkunci akibat progressive lockout.
   - Penonaktifan user menggunakan flag status (Aktif/Non-aktif), **bukan** penghapusan data, agar jejak audit tetap utuh.
 
 #### F-MASTER-02: Manajemen Produk
@@ -891,10 +905,10 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 ### 8.2 Keamanan
 | Aspek | Implementasi |
 |---|---|
-| Autentikasi | Email/Password + Google Authenticator (TOTP) |
+| Autentikasi | Email/Password + Google reCAPTCHA v2 (anti-bot) |
 | Otorisasi | RBAC via Laravel Middleware + Policy |
 | Session | 1 jam idle timeout, max 2 device |
-| Rate Limiting | 5 kali gagal login → progressive lockout |
+| Rate Limiting | 3 kali gagal (password atau anti-bot) → progressive lockout |
 | File Upload | PNG/JPG only, max 5MB, validasi MIME type |
 | CSRF Protection | Laravel CSRF Token pada semua form |
 | XSS Protection | Blade auto-escaping + Content Security Policy |
@@ -934,7 +948,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | Cache & Session | Redis | 7+ |
 | Queue Worker | Laravel Horizon | (latest) |
 | Real-time | Laravel Echo + Pusher/Soketi | (latest) |
-| MFA | Google Authenticator (TOTP) | pragmarx/google2fa-laravel |
+| Verifikasi Anti-Bot | Google reCAPTCHA v2 | google/recaptcha (HTTP client ke Google siteverify) |
 | Excel Export | Maatwebsite/Laravel-Excel | 3.x |
 | Charts | Chart.js atau ApexCharts | (latest) |
 | PDF Generation | DomPDF atau Snappy | (latest) |
@@ -969,7 +983,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 ### Fase 1: Foundation (Minggu 1-3)
 - Setup infrastruktur Docker
 - Database migration & seeder
-- Autentikasi (Login, MFA, Session, Lockout)
+- Autentikasi (Login, Verifikasi Anti-Bot, Session, Lockout)
 - RBAC Middleware
 - Master Data (User, Produk, Kategori, Lokasi, Gudang, Customer)
 
@@ -1016,8 +1030,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | **UoM** | Unit of Measure — Satuan ukur produk (liter, kg) |
 | **FIFO** | First-In, First-Out — Stok tertua keluar duluan |
 | **RBAC** | Role-Based Access Control — Kontrol akses berbasis peran |
-| **MFA** | Multi-Factor Authentication — Autentikasi berlapis |
-| **TOTP** | Time-based One-Time Password — Kode OTP berbasis waktu |
+| **reCAPTCHA** | Layanan verifikasi anti-bot dari Google ("Saya bukan robot") — memverifikasi manusia, bukan identitas pengguna |
 | **SLA** | Service Level Agreement — Standar waktu layanan |
 | **Dispatch Code** | Kode identifikasi gudang |
 | **Put-away** | Proses meletakkan barang di rak gudang |
