@@ -1,11 +1,34 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.0  
-> **Tanggal:** 14 Agustus 2026  
+> **Versi:** 1.1  
+> **Tanggal:** 26 Agustus 2026 *(revisi dari v1.0, 14 Agustus 2026)*  
 > **Status:** Draft — Menunggu Final Approval  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
+
+---
+
+## Riwayat Revisi
+
+### Versi 1.1 — 26 Agustus 2026
+
+Revisi ini menyelaraskan PRD dengan keputusan bisnis terbaru dan dengan prototipe yang sudah dibangun.
+
+| # | Perubahan | Bagian Terdampak |
+|---|---|---|
+| 1 | **Pengajuan customer oleh Sales dihapus.** Pelanggan kini dibuat langsung oleh Manager/Super Admin. Menu "My Customers" dihapus dari Portal Sales. | §5.2, §6.2 F-MASTER-06, §6.5 F-OUT-01, §6.8 |
+| 2 | **Manager mendapat hak CRUD User dan Pengaturan Dokumen.** | §5.2, §6.2 F-MASTER-01 |
+| 3 | **Super Admin mendapat akses penuh Portal Warehouse**, termasuk seluruh tugas operasional. Tetap tidak dapat mengakses Portal Sales. | §5.2 |
+| 4 | **Blokir order untuk customer menunggak dihapus.** Diganti penandaan visual `⚠ Menunggak` yang bersifat informatif. | §6.5 F-OUT-01, §6.6 F-BILL-03, §7.4 |
+| 5 | **Produk cat MEMILIKI masa kedaluwarsa** (default 30 bulan dari tanggal produksi). Ditambahkan pengelolaan Stok DDP. | §3.2, §6.4 F-INV-04, §7.2.1 |
+| 6 | **Operator Gudang berwenang mengoreksi Qty Aktual** saat put-away. SKU & batch tetap terkunci. | §6.3 F-INB-02 |
+| 7 | **Modul Retur masuk scope** (sebelumnya Fase Berikutnya). | §3.2, §6.10, §10 |
+| 8 | **Transfer Stok antar lokasi/gudang masuk scope.** | §3.2, §6.4 F-INV-05, §10 |
+| 9 | **Scan QR lokasi rak masuk scope.** | §3.2, §6.3 F-INB-02 |
+
+> [!NOTE]
+> **Role Switcher** yang terlihat di navbar prototipe adalah **alat bantu pengembangan sementara** untuk meninjau tampilan tiap role tanpa perlu berganti akun. Komponen ini **wajib dihapus** sebelum Go-Live dan digantikan autentikasi + middleware RBAC yang sebenarnya.
 
 ---
 
@@ -85,8 +108,12 @@ Sebelum sistem ini dibangun, alur operasional PT Berger Paints Indonesia berjala
 | Master Data | Pengelolaan User, Produk, Kategori, Lokasi Rak, Gudang, Pelanggan |
 | Inbound (Barang Masuk) | Input produksi, put-away, verifikasi Maker-Checker |
 | Inventory (Stok) | Stok real-time, stock movement ledger, adjustment oleh Manager |
+| Expiry & Stok DDP | Masa simpan produk, pemisahan Good Stock vs stok DDP (rusak/expired) |
+| Transfer Stok | Perpindahan stok antar lokasi rak dan antar gudang |
 | Outbound (Sales Order) | Pembuatan PO (Semi-Blind), approval, FIFO allocation, picking, delivery |
 | Surat Jalan | Generate nomor otomatis, cetak dokumen, upload bukti tanda tangan |
+| Retur (Reverse Logistics) | Pelaporan penolakan barang oleh Sales, pengecekan fisik, alokasi Good Stock / DDP |
+| Scan QR Lokasi Rak | Pemindaian QR pada rak untuk mempercepat put-away dan picking |
 | Billing (Penagihan) | Manajemen piutang untuk pembayaran tempo 30/60/90 hari |
 | Dashboard & Laporan | KPI per role, grafik penjualan, ekspor Excel |
 | Notifikasi Real-time | Push notification dengan suara untuk setiap perubahan status |
@@ -95,11 +122,7 @@ Sebelum sistem ini dibangun, alur operasional PT Berger Paints Indonesia berjala
 
 | Modul | Keterangan |
 |---|---|
-| Modul Retur / Return | Akan dikembangkan setelah sistem utama selesai 80-90% |
-| Transfer Antar Gudang | Setiap gudang beroperasi independen pada Fase 1 |
 | Integrasi Keuangan | Tidak ada integrasi ke sistem accounting/ERP |
-| Barcode / QR Scanning | Tidak digunakan; validasi dilakukan manual oleh Logistik |
-| Tracking Expiry Date | Cat tidak memiliki tanggal kadaluarsa |
 | Backorder Management | Sisa pesanan tidak terpenuhi = Lost Sales |
 
 ---
@@ -156,29 +179,50 @@ graph TD
 
 #### Portal Warehouse / Admin
 
+> [!IMPORTANT]
+> **Prinsip Super Admin:** Super Admin memiliki akses **penuh ke seluruh fungsi Portal Warehouse/Admin**, termasuk seluruh tugas operasional harian (input produksi, put-away, verifikasi, approval pesanan, picking, cetak Surat Jalan). Satu-satunya yang **tidak** dimiliki Super Admin adalah **Portal Sales** — Super Admin tidak dapat membuat Purchase Order atas nama Sales.
+>
+> Konsekuensinya: bila Super Admin mengerjakan sendiri dua tahap berurutan pada alur Maker-Checker (misal put-away lalu verifikasi dokumen yang sama), prinsip pemisahan tugas menjadi gugur untuk dokumen tersebut. Karena itu setiap aksi operasional oleh Super Admin **wajib tercatat di `audit_logs`** dan ditandai khusus pada laporan agar tetap dapat diaudit.
+
 | Fitur | Super Admin | Manager | Tim Logistik | Tim Produksi | Operator Gudang |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Dashboard (semua data)** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Master User (CRUD)** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Master User (CRUD)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Master Produk (CRUD)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Master Kategori (CRUD)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Master Lokasi Rak (CRUD)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Master Gudang (CRUD)** | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Approval Customer Baru** | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Input Inbound (Produksi)** | ❌ | ❌ | ❌ | ✅ | ❌ |
-| **Put-away (Penempatan Rak)** | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **Verifikasi Inbound (Ceklis)** | ❌ | ❌ | ✅ | ❌ | ❌ |
-| **Lihat Stok** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Master Customer (CRUD)** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Input Inbound (Produksi)** | ✅ | ❌ | ❌ | ✅ | ❌ |
+| **Put-away (Penempatan Rak)** | ✅ | ❌ | ❌ | ❌ | ✅ |
+| **Verifikasi Inbound (Ceklis)** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Lihat Stok** | ✅ | ✅ | ✅ | ✅ (lihat) | ✅ (lihat) |
 | **Edit Stok (Adjustment)** | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Approve/Reject Pesanan** | ❌ | ❌ | ✅ | ❌ | ❌ |
-| **Proses Picking** | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **Cetak Surat Jalan** | ❌ | ❌ | ✅ | ❌ | ❌ |
-| **Verifikasi Bukti Surat Jalan** | ❌ | ❌ | ✅ | ❌ | ❌ |
-| **Konfirmasi Pembayaran Billing** | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **Transfer Stok (Lokasi/Gudang)** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Approve/Reject Pesanan** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Proses Picking** | ✅ | ❌ | ❌ | ❌ | ✅ |
+| **Cetak Surat Jalan** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Verifikasi Bukti Surat Jalan** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Proses Retur (Alokasi GR/DDP)** | ✅ | ❌ | ✅ | ❌ | ✅ |
+| **Konfirmasi Pembayaran Billing** | ✅ | ❌ | ✅ | ❌ | ❌ |
 | **Laporan & Ekspor Excel** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Audit Log (Lihat)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Hapus Transaksi** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Pengaturan Dokumen (Sequence)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Pengaturan Sistem** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Akses Portal Sales (Buat PO)** | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+**Catatan pembeda Manager vs Super Admin:**
+
+| | Manager | Super Admin |
+|---|---|---|
+| Seluruh Master Data (termasuk User & Customer) | ✅ | ✅ |
+| Pengaturan Dokumen / nomor urut | ✅ | ✅ |
+| Membuat atau mengubah akun ber-role **Super Admin** | ❌ | ✅ |
+| Tugas operasional harian | ❌ | ✅ |
+| Hapus transaksi | ❌ | ✅ |
+| Pengaturan Sistem (cutoff, threshold, session, lockout) | ❌ | ✅ |
+| Reset MFA & unlock akun terkunci | ❌ | ✅ |
 
 #### Portal Sales
 
@@ -189,10 +233,15 @@ graph TD
 | **Lihat Daftar Pesanan Sendiri** | ✅ |
 | **Lacak Status Pesanan** | ✅ |
 | **Upload Bukti Surat Jalan** | ✅ |
-| **Ajukan Customer Baru** | ✅ |
+| **Lapor Penolakan Barang** | ✅ |
+| **Pilih Customer saat Buat PO** | ✅ (hanya customer aktif) |
+| **Tambah / Ajukan Customer Baru** | ❌ (dibuat oleh Manager / Super Admin) |
 | **Lihat Stok** | ❌ (Hanya indikator ✅⚠️❌) |
-| **Edit/Hapus Pesanan** | ❌ |
+| **Edit/Hapus Pesanan** | ❌ (kecuali status Draft) |
 | **Akses Portal Warehouse** | ❌ |
+
+> [!NOTE]
+> Menu **"My Customers"** dihapus dari Portal Sales. Sales tidak lagi memiliki halaman daftar maupun form pengajuan pelanggan. Kebutuhan pelanggan baru disampaikan ke Manager/Super Admin melalui kanal di luar sistem, lalu didaftarkan langsung lewat menu **Master Customer**.
 
 ---
 
@@ -233,13 +282,16 @@ graph TD
 ### 6.2 Modul Master Data
 
 #### F-MASTER-01: Manajemen User
-- **Akses:** Super Admin
+- **Akses:** Super Admin, **Manager**
 - **Fungsi:** CRUD data pengguna (Nama, Email, Password, Role, Dispatch Code/Gudang Awal).
 - **Aturan:**
   - Email harus unik.
   - Password minimal 8 karakter, kombinasi huruf dan angka.
   - Setiap user wajib ditetapkan ke satu gudang (dispatch code) sebagai default.
-  - Super Admin dapat reset MFA dan unlock akun terkunci.
+  - Setiap user memiliki **tepat satu role** (relasi `users.role_id`).
+  - **Batasan Manager:** Manager dapat membuat dan mengubah user ber-role Manager, Tim Logistik, Tim Produksi, Operator Gudang, dan Tim Sales. Manager **tidak dapat** membuat, mengubah, atau menghapus akun ber-role **Super Admin**.
+  - **Eksklusif Super Admin:** reset MFA dan unlock akun yang terkunci akibat progressive lockout.
+  - Penonaktifan user menggunakan flag status (Aktif/Non-aktif), **bukan** penghapusan data, agar jejak audit tetap utuh.
 
 #### F-MASTER-02: Manajemen Produk
 - **Akses:** Super Admin, Manager
@@ -275,13 +327,17 @@ graph TD
 - **Aturan:** Saat ini 3 gudang aktif. Sistem harus mendukung penambahan gudang baru tanpa perubahan kode.
 
 #### F-MASTER-06: Manajemen Pelanggan (Customer)
-- **Pengajuan oleh Sales:**
-  - Sales mengisi form: Nama Toko, Alamat, Nama PIC, Nomor Kontak, Tipe Pembayaran Default (Cash/Transfer/Tempo 30/60/90 hari).
-  - Status awal: **Pending**.
-- **Approval oleh Manager/Super Admin:**
-  - Melihat daftar pengajuan customer baru.
-  - Menyetujui (status menjadi **Approved**) atau menolak (status menjadi **Rejected**).
-  - Hanya customer berstatus Approved yang bisa menerima pesanan.
+- **Akses:** Super Admin, Manager
+- **Fungsi:** CRUD data pelanggan melalui menu **Master Customer** di Portal Warehouse/Admin.
+- **Field:** Nama Toko/Perusahaan, Alamat, Nama PIC, Nomor Kontak, Tipe Pembayaran Default (Cash/Transfer/Tempo 30/60/90 hari), Plafon Kredit (opsional), Status Aktif.
+- **Aturan:**
+  - Pelanggan **dibuat langsung** oleh Manager atau Super Admin dan **langsung berstatus aktif** — tidak ada alur pengajuan maupun persetujuan bertingkat.
+  - Hanya pelanggan berstatus **aktif** yang muncul pada pilihan Customer di form Buat Pesanan milik Sales.
+  - Penonaktifan pelanggan menggunakan flag `is_active`, bukan penghapusan data, agar riwayat pesanan dan piutang tetap dapat ditelusuri.
+  - Setiap pembuatan dan perubahan data pelanggan tercatat di `audit_logs` beserta identitas pembuatnya (`created_by`).
+
+> [!NOTE]
+> **Perubahan dari versi 1.0.** Sebelumnya pelanggan diajukan oleh Sales lalu menunggu persetujuan Manager/Super Admin (status Pending → Approved/Rejected). Alur tersebut **dihapus**. Sales tidak lagi memiliki menu maupun form pengajuan pelanggan; kebutuhan pelanggan baru disampaikan ke Manager/Super Admin di luar sistem. Konsekuensi teknis: kolom `status`, `requested_by`, `approved_by`, `approved_at`, dan `rejection_reason` pada tabel `customers` digantikan oleh `is_active` dan `created_by`.
 
 ---
 
@@ -307,11 +363,19 @@ graph TD
 - **Proses: Operator Gudang Harus bisa melihat daftar inbound yang menunggu put-away dan menentukan lokasi penyimpanan barang**
   1. Operator melihat daftar inbound yang menunggu put-away.
   2. Operator meng klik kode produksi yang sudah dibuat.
-  3. sistem menampilkan data produksi yang sudah dibuat,Operator **tidak bisa** mengubah qty atau batch number, operator hanya bisa menentukan lokasi penyimpanan barang.
-  4. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`) atau mengklik tombol scan untuk scan barcode lokasi rak. (setiap operator meng klik lokasi rak sistem otomatis memberikan rekomendasi lokasi rak yang masih kosong).
-  5. Kode lokasi divalidasi terhadap tabel `locations` — harus lokasi yang valid dan terdaftar di gudang yang sesuai dan masih memiliki kapasitas untuk menampung barang tersebut.
-  6. Submit. Status berubah menjadi **Menunggu Verifikasi**.
-  7. Stok **belum aktif** — masih "mengambang".
+  3. Sistem menampilkan data produksi beserta kolom **Qty Sistem** (dari Tim Produksi, read-only) dan **Qty Aktual** (dapat diisi operator).
+  4. **Koreksi Qty Aktual:** Operator **dapat mengoreksi Qty Aktual** bila jumlah fisik di lapangan berbeda dengan Qty Sistem. **SKU dan Batch Number tetap terkunci** dan tidak dapat diubah oleh operator.
+     - Nilai awal Qty Aktual selalu disamakan dengan Qty Sistem.
+     - Bila `qty_actual ≠ qty_system`, sistem mencatat **selisih** pada palet tersebut dan menandainya agar mendapat perhatian khusus saat verifikasi Logistik.
+     - Operator wajib mengaktifkan tuas **Verifikasi Fisik** pada setiap palet sebagai pernyataan bahwa jumlah tersebut sudah dihitung di lapangan.
+  5. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`), atau menekan tombol **Scan QR** untuk memindai QR Code yang tertempel pada rak. Saat operator memilih kolom lokasi, sistem menampilkan **rekomendasi lokasi rak** yang masih memiliki kapasitas kosong.
+  6. Kode lokasi divalidasi terhadap tabel `locations` — harus lokasi yang valid, terdaftar di gudang yang sesuai, dan masih memiliki kapasitas untuk menampung barang tersebut.
+  7. **Auto-split kapasitas rak:** Bila Qty Aktual satu palet melebihi sisa kapasitas rak yang dipilih, sistem otomatis memecah baris — sebagian mengisi rak tersebut sampai penuh, sisanya menjadi baris baru yang harus ditempatkan operator di rak lain.
+  8. Submit. Status berubah menjadi **Menunggu Verifikasi**.
+  9. Stok **belum aktif** — masih "mengambang".
+
+> [!IMPORTANT]
+> **Perubahan dari versi 1.0.** Sebelumnya operator sama sekali tidak boleh menyentuh qty. Kini operator **berwenang mengoreksi Qty Aktual** karena dialah pihak pertama yang menghitung fisik barang saat menurunkan dari kendaraan. Prinsip Maker-Checker tetap terjaga: operator adalah *maker* yang melaporkan kondisi fisik, Tim Logistik tetap menjadi *checker* yang memvalidasi dan memutuskan angka final sebelum stok diaktifkan. Setiap selisih `qty_actual` vs `qty_system` tercatat di `audit_logs`.
 
 #### F-INB-03: Verifikasi Maker-Checker (Tim Logistik)
 - **Proses:**
@@ -342,8 +406,11 @@ graph TD
 
 #### F-INV-01: Tampilan Stok
 - **Akses:** Tim Produksi (lihat saja), Operator Gudang (lihat saja), Tim Logistik (lihat saja), Manager, Super Admin.
-- **Data yang ditampilkan:** no, SKU, Deskripsi Produk, Batch No, uom, Lokasi Rak, Qty Tersedia, Qty Teralokasi, Tanggal Produksi, Gudang. (sehingga misal ada 1 produk dengan 2 kali tanggal produksi maka akan muncul 2 baris data)
-- **Filter:** kategori produk, lokasi rak, batch, tanggal produksi.
+- **Data yang ditampilkan:** no, SKU, Deskripsi Produk, Batch No, uom, Lokasi Rak/Pallet, Qty Tersedia, Qty Teralokasi, Tanggal Produksi, **Expired Date**, Gudang. (sehingga misal ada 1 produk dengan 2 kali tanggal produksi maka akan muncul 2 baris data)
+- **Pengelompokan:** Stok setiap SKU dipisah menjadi dua kelompok yang ditampilkan terpisah:
+  - **Good Stock** — layak jual, ikut alokasi FIFO.
+  - **Stok DDP** — rusak / karantina / lewat masa simpan. **Tidak ikut alokasi FIFO.**
+- **Filter:** kategori produk, lokasi rak, batch, tanggal produksi, gudang, **status stok (Good/DDP)**.
 - **Pencarian:** kode produksi, SKU atau Deskripsi Produk.
 - **Ekspor:** Excel (untuk Logistik, Manager, Super Admin).
 
@@ -361,6 +428,39 @@ graph TD
   - ⚠️ **Terbatas** — Stok mendekati habis
   - ❌ **Habis** — Stok 0
 - **Threshold** dapat dikonfigurasi per produk oleh Manager/Super Admin di menu Pengaturan.
+- Indikator **hanya menghitung Good Stock**. Stok DDP tidak pernah dihitung sebagai ketersediaan.
+
+#### F-INV-04: Expiry Date & Stok DDP
+
+Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
+
+- **Masa simpan default:** **30 bulan** terhitung dari **Tanggal Produksi**.
+  - `expiry_date = production_date + shelf_life_months`
+  - Nilai `shelf_life_months` disimpan **per produk** (`products.shelf_life_months`, default 30) dan dapat diubah oleh Manager/Super Admin, karena tiap jenis produk dapat berbeda.
+- **Kategori stok:**
+
+| Kategori | Kondisi | Ikut FIFO? | Bisa dikirim? |
+|---|---|:---:|:---:|
+| **Good Stock** (`active`) | Belum lewat `expiry_date` dan tidak ditandai rusak | ✅ | ✅ |
+| **DDP — Expired** (`expired`) | `expiry_date` sudah terlewat | ❌ | ❌ |
+| **DDP — Rusak/Karantina** (`ddp`) | Ditandai rusak dari hasil retur, write-off, atau temuan stock opname | ❌ | ❌ |
+
+- **Perpindahan otomatis ke DDP:** Scheduled job harian memindahkan batch yang melewati `expiry_date` dari status `active` → `expired`, dan mencatatnya di `stock_movements` (tipe `ADJUSTMENT`, alasan `EXPIRED`).
+- **Peringatan dini:** Batch yang akan kedaluwarsa dalam **90 hari** ditandai pada halaman Stok dan memicu notifikasi ke Tim Logistik & Manager.
+- **Aturan alokasi:** Stok berstatus `expired` atau `ddp` **wajib dilewati** oleh mesin FIFO. Stok DDP hanya dapat dikeluarkan melalui Stock Adjustment oleh Manager/Super Admin (write-off atau pemusnahan) dan **tidak pernah** masuk Picking List.
+- **Aturan FIFO tetap berlaku** di dalam Good Stock: batch dengan `production_date` tertua keluar lebih dulu — sekaligus meminimalkan risiko stok mendekati kedaluwarsa.
+
+#### F-INV-05: Transfer Stok (Lokasi & Antar Gudang)
+- **Akses:** Tim Logistik, Manager, Super Admin.
+- **Fungsi:** Memindahkan stok dari satu lokasi rak ke lokasi lain, baik di dalam gudang yang sama maupun **antar gudang**.
+- **Proses:**
+  1. Pilih SKU, batch, lokasi asal, dan qty yang dipindahkan.
+  2. Tentukan lokasi tujuan; sistem memvalidasi kapasitas lokasi tujuan.
+  3. Sistem mengurangi qty di lokasi asal dan menambahkannya di lokasi tujuan **tanpa mengubah `batch_no` maupun `production_date`** — sehingga urutan FIFO dan perhitungan expiry tetap utuh.
+  4. Tercatat di `stock_movements` dengan tipe `TRANSFER` (satu entri keluar, satu entri masuk) dan di `audit_logs`.
+- **Aturan:**
+  - Qty yang sudah teralokasi ke pesanan (`qty_allocated`) **tidak dapat** ditransfer.
+  - Transfer antar gudang menghasilkan nomor dokumen otomatis dengan prefix `TRF-{YYYY}-` (dapat dikonfigurasi di Pengaturan Dokumen).
 
 ---
 
@@ -369,10 +469,11 @@ graph TD
 #### F-OUT-01: Pembuatan PO oleh Sales
 - **Proses: Sales harus bisa melakukan pemesanan sesuai dengan pilihan customer tanpa terpengaruh oleh status stok.**
   1. Sales membuka form Buat Pesanan di Portal Sales.
-  2. Memilih **Customer** (hanya yang berstatus Approved). Jika customer belum terdaftar sales bisa ke menu pendaftaran customer baru dan menunggu persetujuan dari manager atau super admin (**maka status customer akan berubah menjadi approved atau sudah muncul di list customer jika sudah disetujui**).
-  3. **Validasi Customer Billing:**
-     - Jika customer memiliki tagihan tempo (30/60/90 hari) yang **belum dikonfirmasi lunas**, sistem **memblokir** pembuatan PO baru dengan pesan: *"Customer ini memiliki tagihan belum lunas. Hubungi tim logistik."*
-     - Jika customer pembayaran Cash/Transfer, atau semua tagihan tempo sudah lunas → lanjut.
+  2. Memilih **Customer** dari daftar pelanggan **aktif**. Bila pelanggan yang dituju belum terdaftar, Sales menghubungi Manager/Super Admin untuk didaftarkan lebih dulu melalui menu Master Customer (lihat F-MASTER-06). Sales **tidak memiliki** menu pengajuan pelanggan.
+  3. **Penandaan Status Piutang (informatif, tidak memblokir):**
+     - Jika customer memiliki tagihan tempo (30/60/90 hari) yang **belum dikonfirmasi lunas**, sistem menampilkan **peringatan** berupa badge `⚠ Menunggak` beserta pesan: *"Customer ini memiliki tagihan tempo yang belum lunas. Pesanan tetap dapat dilanjutkan dan akan ditandai untuk tinjauan tim logistik."*
+     - **Pesanan tetap dapat disimpan maupun di-submit.** Sistem **tidak memblokir** pembuatan PO dalam kondisi apa pun terkait piutang.
+     - Penanda ini ikut terbawa ke halaman Approval Logistik agar menjadi bahan pertimbangan saat memutuskan approve/reject.
   4. Memilih **Dispatch Code** (gudang tujuan pengiriman).
   5. Menambahkan item produk dan qty pesanan. **Sales TIDAK melihat angka stok**, hanya indikator (✅⚠️❌).
   6. Memilih **Payment Term**: Cash, Transfer, Tempo 30 Hari, Tempo 60 Hari, Tempo 90 Hari.
@@ -457,20 +558,27 @@ graph TD
 - **Highlight:** Piutang yang **sudah melewati jatuh tempo** ditandai warna merah.
 
 #### F-BILL-02: Konfirmasi Pembayaran
-- **Akses:** Tim Logistik.
+- **Akses:** Tim Logistik, Super Admin.
 - **Proses:**
   1. Logistik menerima informasi/bukti bahwa customer sudah membayar.
   2. Membuka data billing yang bersangkutan.
-  3. Menekan **"Konfirmasi Lunas"** + memasukkan tanggal pembayaran.
+  3. Menekan **"Konfirmasi Lunas"** + memasukkan **tanggal bukti bayar diterima** dan **metode pelunasan** (Transfer/Giro/Tunai).
   4. Status berubah menjadi **Lunas**.
-  5. **Customer unblocked:** Sales kini bisa membuat PO baru untuk customer tersebut.
+  5. Penanda `⚠ Menunggak` pada customer tersebut hilang dengan sendirinya begitu seluruh tagihannya lunas.
+  6. Notifikasi dikirim ke Sales terkait.
 
-#### F-BILL-03: Blokir Order untuk Customer Overdue
+#### F-BILL-03: Penandaan Customer Overdue
+
+> [!IMPORTANT]
+> **Perubahan dari versi 1.0.** Mekanisme **blokir order otomatis dihapus sepenuhnya.** Customer dengan tagihan belum lunas **tetap dapat menerima pesanan baru**. Keputusan meneruskan atau menolak pesanan diserahkan kepada Tim Logistik saat approval, karena merekalah yang memahami konteks hubungan dagang dengan pelanggan. Sistem hanya menyediakan **informasi**, bukan pemblokiran.
+
 - **Mekanisme:**
-  - Sistem secara otomatis **memblokir pembuatan PO baru** jika customer memiliki tagihan tempo yang belum dikonfirmasi lunas.
-  - Berlaku HANYA untuk customer dengan pembayaran **Tempo 30/60/90 hari**.
-  - **TIDAK berlaku** untuk customer dengan pembayaran Cash/Transfer.
-  - Blokir dicabut otomatis setelah Logistik mengkonfirmasi semua tagihan lunas.
+  - Sistem menghitung status piutang setiap customer secara real-time dan menampilkannya sebagai **penanda visual** `⚠ Menunggak`.
+  - Penanda muncul di: form Buat Pesanan (Portal Sales), halaman Approval Pesanan (Portal WMS), dan halaman Master Customer.
+  - Relevan HANYA untuk customer dengan pembayaran **Tempo 30/60/90 hari**. Customer Cash/Transfer tidak pernah memiliki piutang berjalan.
+  - Penanda hilang otomatis setelah Logistik mengkonfirmasi seluruh tagihan lunas.
+- **Tidak ada pemblokiran** pembuatan PO, penyimpanan draft, maupun proses picking/pengiriman akibat status piutang.
+- **Jejak keputusan:** Bila Logistik meng-approve PO milik customer bertanda `⚠ Menunggak`, keputusan tersebut dicatat di `audit_logs` beserta identitas penyetujunya.
 
 ---
 
@@ -535,8 +643,9 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 | Picking selesai (Siap Kirim) | Tim Logistik, Sales | "Pesanan #{nomor} siap untuk dikirim" |
 | Surat Jalan dicetak | Sales pembuat | "Surat Jalan #{nomor} telah diterbitkan. Pesanan dalam pengiriman." |
 | Bukti Surat Jalan diupload | Tim Logistik | "Sales {nama} mengunggah bukti SJ untuk pesanan #{nomor}" |
-| Customer baru diajukan | Manager, Super Admin | "Sales {nama} mengajukan customer baru: {nama toko}" |
-| Customer diapprove | Sales pengaju | "Customer {nama toko} telah disetujui" |
+| **Penolakan** dilaporkan Sales | Tim Logistik, Operator Gudang | "Laporan penolakan #{nomor} untuk PO #{nomor} menunggu pengecekan fisik" |
+| **Penolakan** selesai diproses | Sales pelapor | "Penolakan #{nomor} telah diproses dan barang dialokasikan ke {Good Stock / DDP}" |
+| Batch mendekati kedaluwarsa | Tim Logistik, Manager | "Batch {batch} SKU {sku} akan kedaluwarsa dalam {n} hari" |
 | Stok selesai diverifikasi | Tim Logistik | "Stok inbound #{nomor} telah diverifikasi dan aktif" |
 | Pembayaran dikonfirmasi lunas | Sales terkait | "Pembayaran customer {nama} telah dikonfirmasi lunas" |
 
@@ -561,6 +670,57 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 #### F-AUDIT-03: Archival
 - Data audit log yang sudah melewati umur tertentu (misal: >2 tahun) dapat dipindahkan ke tabel **archive** untuk menjaga performa query.
 - Data arsip tetap bisa diakses melalui menu "Arsip Audit Log".
+
+---
+
+### 6.10 Modul Retur (Reverse Logistics)
+
+Modul ini menangani barang yang **ditolak pelanggan** dan dibawa kembali oleh armada pengiriman.
+
+> [!IMPORTANT]
+> **Ketentuan istilah.** Dua kata ini merujuk pada dua hal berbeda dan **tidak boleh dipertukarkan** — baik di dokumen, label UI, isi notifikasi, maupun penamaan kode:
+>
+> | Istilah | Arti | Pelaku | Dipakai di |
+> |---|---|---|---|
+> | **Penolakan** | *Peristiwa* pelanggan menolak barang saat pengiriman, beserta pelaporannya | Tim Sales | Tombol "Lapor Penolakan", judul modal, isi notifikasi, status PO |
+> | **Retur** | *Alur fisik* barang kembali ke gudang: penerimaan, pengecekan, alokasi GR/DDP | Gudang / Logistik | Menu "Penerimaan Retur", nomor dokumen `RTN-`, tabel `sales_returns` |
+>
+> Ringkasnya: **Sales melaporkan penolakan; gudang memproses retur.** Satu laporan penolakan menghasilkan satu dokumen retur.
+
+#### F-RET-01: Pelaporan Penolakan oleh Sales
+- **Akses:** Tim Sales.
+- **Kapan:** Setelah barang tiba di pelanggan namun sebagian/seluruhnya ditolak.
+- **Proses:**
+  1. Sales membuka menu **My Orders** → pilih PO yang bersangkutan → **"Lapor Penolakan"**.
+  2. **Upload bukti wajib:** foto Surat Jalan asli yang sudah diberi catatan/coretan penolakan (PNG/JPG, maks 5 MB).
+  3. Menambahkan satu atau lebih baris barang yang ditolak, masing-masing berisi: **SKU**, **Qty**, dan **Alasan Penolakan**.
+  4. **Pilihan alasan penolakan:** Kemasan Rusak/Bocor, Kualitas Buruk/Beku, Salah Varian, Kelebihan Kirim.
+  5. Submit. Sistem membuat dokumen retur bernomor `RTN-{YYYY}{MM}-{urut}` berstatus **Menunggu Pengecekan Gudang** — dokumen inilah yang menjadi jembatan dari peristiwa penolakan ke alur fisik retur di gudang.
+  6. Notifikasi real-time + suara dikirim ke Tim Logistik dan Operator Gudang.
+- **Aturan:** Penolakan hanya dapat dilaporkan untuk PO yang berstatus **Dalam Pengiriman** atau **Menunggu Verifikasi Bukti**. PO yang sudah **Complete** tidak dapat dilaporkan melalui alur ini.
+
+#### F-RET-02: Pengecekan Fisik & Alokasi
+- **Akses:** Tim Logistik, Operator Gudang, Super Admin.
+- **Proses:**
+  1. Gudang membuka menu **Penerimaan Retur** dan melihat antrean laporan yang masuk.
+  2. Barang retur diturunkan dari armada dan diperiksa fisiknya satu per satu.
+  3. Petugas menekan **"Proses Fisik"** dan menentukan alokasi:
+     - **GR (Good Stock)** — kemasan masih layak jual. Barang kembali menjadi stok aktif.
+     - **DDP** — penyok parah, bocor, atau kemasan hancur. Barang masuk kategori DDP/karantina.
+  4. **Catatan pengecekan wajib diisi** sebagai bukti dasar keputusan.
+  5. Submit.
+- **Dampak ke stok:**
+
+| Alokasi | Dampak `inventory_stocks` | Entri `stock_movements` |
+|---|---|---|
+| **GR** | `qty_available` bertambah pada batch & lokasi asal; `production_date` dan `batch_no` **dipertahankan** agar urutan FIFO tetap benar | tipe `RETURN_IN`, status `active` |
+| **DDP** | Baris stok baru berstatus `ddp` di lokasi karantina | tipe `RETURN_IN`, status `ddp` |
+
+- **Aturan:**
+  - Barang retur yang dialokasikan ke **GR wajib tetap memakai batch dan tanggal produksi aslinya** — dilarang membuat batch baru, karena akan merusak perhitungan FIFO dan masa kedaluwarsa.
+  - Bila batch asli sudah melewati `expiry_date` pada saat retur diterima, alokasi **dipaksa ke DDP** meskipun kondisi fisiknya baik.
+  - Seluruh keputusan alokasi tercatat di `audit_logs` beserta identitas petugas dan catatan pengecekannya.
+  - Qty retur mengurangi qty terkirim pada PO terkait dan **tidak** dihitung sebagai Lost Sales (berbeda dari partial fulfillment).
 
 ---
 
@@ -592,6 +752,8 @@ THEN:
   1. Query inventory_stocks WHERE product_id = X 
      AND qty_available > 0 
      AND warehouse_id = dispatch_code
+     AND status = 'active'          -- WAJIB: lewati stok 'ddp' dan 'expired'
+     AND expiry_date > CURRENT_DATE -- WAJIB: lewati batch yang sudah kedaluwarsa
      ORDER BY production_date ASC (tertua duluan)
   2. Loop: Alokasikan qty dari stok tertua hingga qty pesanan terpenuhi
   3. Update inventory_stocks: 
@@ -601,8 +763,38 @@ THEN:
   
 ATURAN TAMBAHAN:
   - Alokasi bersifat LOCK: stok yang sudah dialokasikan tidak bisa dialokasikan ulang
+  - Stok berstatus 'ddp' atau 'expired' TIDAK PERNAH masuk hitungan alokasi
   - Jika total qty_available < qty_ordered → Partial Fulfillment
   - Selisih masuk ke lost_qty di sales_order_details
+```
+
+### 7.2.1 Aturan Expiry & Stok DDP
+
+```
+RULE: EXPIRY_CALCULATION
+WHEN: Stok diaktifkan oleh Logistik (verifikasi inbound) atau retur masuk sebagai GR
+THEN:
+  expiry_date = production_date + products.shelf_life_months (default 30 bulan)
+
+RULE: EXPIRY_SWEEP
+WHEN: Scheduled job harian (00:05 WIB)
+THEN:
+  1. UPDATE inventory_stocks
+     SET status = 'expired'
+     WHERE status = 'active' AND expiry_date <= CURRENT_DATE
+  2. Catat setiap perubahan di stock_movements (type: ADJUSTMENT, reason: EXPIRED)
+  3. Kirim notifikasi ke Tim Logistik & Manager
+
+RULE: EXPIRY_EARLY_WARNING
+WHEN: Scheduled job harian
+THEN:
+  Tandai + notifikasikan batch dengan
+  expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 90 hari
+
+CATATAN:
+  - Stok 'expired' dan 'ddp' hanya bisa keluar lewat Stock Adjustment
+    oleh Manager/Super Admin (write-off / pemusnahan)
+  - Stok DDP tidak pernah muncul di Picking List
 ```
 
 ### 7.3 Aturan Partial Fulfillment & Lost Sales
@@ -633,16 +825,23 @@ THEN:
     → Status COMPLETE (Menunggu Pembayaran)
     → Masuk menu Billing
     → Hitung jatuh_tempo = tanggal_complete + payment_term_days
-    → Customer DIBLOKIR dari order baru sampai Logistik konfirmasi lunas
+    → Customer DITANDAI '⚠ Menunggak' (informatif, TIDAK memblokir)
 
-RULE: CUSTOMER_BLOCK_CHECK
-WHEN: Sales membuat PO baru
+RULE: CUSTOMER_OVERDUE_FLAG
+WHEN: Sistem menampilkan customer di form Buat Pesanan,
+      halaman Approval Pesanan, atau Master Customer
 THEN:
   IF customer memiliki billing dengan status 'belum_lunas':
-    → BLOKIR pembuatan PO
-    → Tampilkan pesan error
+    → Tampilkan badge '⚠ Menunggak' + tanggal jatuh tempo terlama
+    → Pesanan TETAP boleh dibuat, disimpan, dan di-submit
+    → Penanda ikut terbawa ke halaman Approval Logistik
   ELSE:
-    → Izinkan pembuatan PO
+    → Tidak ada penanda
+
+  CATATAN: Aturan ini murni INFORMATIF.
+  Sistem TIDAK PERNAH memblokir pembuatan PO karena alasan piutang.
+  Keputusan approve/reject sepenuhnya di tangan Tim Logistik,
+  dan keputusan tersebut dicatat di audit_logs.
 ```
 
 ### 7.5 Aturan Batas Waktu Order
@@ -775,13 +974,17 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 - Master Data (User, Produk, Kategori, Lokasi, Gudang, Customer)
 
 ### Fase 2: Core Workflow (Minggu 4-7)
-- Modul Inbound (Input Produksi, Put-away, Verifikasi)
+- Modul Inbound (Input Produksi, Put-away + koreksi Qty Aktual, Verifikasi)
 - Modul Inventory (Tampilan Stok, Adjustment, Semi-Blind)
+- **Modul Expiry & Stok DDP** (perhitungan masa simpan, sweep harian, pemisahan Good/DDP)
 - Modul Outbound (PO Creation, Approval, FIFO, Picking, Surat Jalan)
 - Modul Upload Bukti & Verifikasi
-- Modul Billing (Penagihan, Konfirmasi Lunas, Blokir)
+- Modul Billing (Penagihan, Konfirmasi Lunas, Penandaan Overdue)
 
 ### Fase 3: Enhancement (Minggu 8-9)
+- **Modul Retur (Reverse Logistics)** — pelaporan Sales, pengecekan fisik, alokasi GR/DDP
+- **Modul Transfer Stok** (antar lokasi rak & antar gudang)
+- **Scan QR Lokasi Rak** (put-away & picking)
 - Notifikasi Real-time + Suara
 - Dashboard & Grafik Analitik
 - Laporan & Ekspor Excel
@@ -792,14 +995,14 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 - Testing komprehensif (Unit, Feature, Browser, UAT)
 - Performance optimization (Redis cache, query optimization)
 - CI/CD pipeline setup
+- **Pencabutan Role Switcher** dari navbar (alat pengembangan, wajib hilang sebelum Go-Live)
 - User Acceptance Testing dengan tim operasional
 - Go-Live & monitoring
 
 ### Fase Masa Depan (Post Go-Live)
-- Modul Retur / Return Management
-- Transfer Antar Gudang
 - Offline/PWA Mode
 - Advanced Analytics & Forecasting
+- Integrasi ke sistem accounting/ERP
 
 ---
 

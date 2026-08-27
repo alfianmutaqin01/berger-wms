@@ -24,7 +24,7 @@
     <div class="col-6 col-md-3">
         <div class="card h-100 shadow-sm border-0 border-start border-warning border-4">
             <div class="card-body">
-                <h6 class="text-muted fw-normal mb-2">Menunggu Approval</h6>
+                <h6 class="text-muted fw-normal mb-2">Menunggu Diterima</h6>
                 <h3 class="mb-0 fw-bold text-warning">8 <span class="fs-6 fw-normal">PO</span></h3>
             </div>
         </div>

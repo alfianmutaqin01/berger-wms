@@ -22,23 +22,28 @@ class SalesOrderController extends Controller
     {
         return view('sales.my_orders');
     }
+
     public function reportReturn(Request $request)
     {
         $retur = [
-            'id' => 'RET-' . rand(1000, 9999),
+            'id' => 'RET-'.rand(1000, 9999),
             'po' => $request->po_number,
             'customer' => $request->customer,
             'sku' => $request->sku,
             'qty' => $request->qty,
             'reason' => $request->reason,
-            'time' => now()->format('H:i') . ' WIB',
-            'date' => 'Hari Ini'
+            'time' => now()->format('H:i').' WIB',
+            'date' => 'Hari Ini',
         ];
         session()->push('pending_returns', $retur);
-        session()->put('po_has_return_' . $request->po_number, true);
-        return redirect()->back()->with('success', 'Laporan Retur Kendala untuk ' . $request->po_number . ' telah dikirim ke Gudang.');
+        session()->put('po_has_return_'.$request->po_number, true);
+
+        return redirect()->back()->with('success', 'Laporan Penolakan untuk '.$request->po_number.' telah dikirim ke Gudang.');
     }
-    
-    public function tracking() { return view('sales.tracking'); }
-    public function customers() { return view('sales.customers'); }
+
+    // Dihapus pada PRD v1.1:
+    // - tracking()  -> view 'sales.tracking' tidak pernah ada (selalu error 500).
+    //                  Tracking ditampilkan sebagai timeline di halaman My Orders.
+    // - customers() -> Sales tidak lagi mengelola/mengajukan pelanggan.
+    //                  Pengelolaan pindah ke Master Customer di Portal WMS.
 }

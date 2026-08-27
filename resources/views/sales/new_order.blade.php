@@ -1,6 +1,13 @@
 @extends('layouts.soms')
 @section('page_title', 'Buat Pesanan Baru')
 
+@php
+    // Batas waktu order harian (PRD §7.5 RULE: ORDER_CUTOFF).
+    // Dihitung di sini agar tersedia baik untuk markup maupun untuk blok @push('scripts')
+    // di bawah, tanpa bergantung pada urutan penulisan section.
+    $isLate = (int) now()->format('H') >= 15;
+@endphp
+
 @section('content')
 <div class="row justify-content-center">
     <div class="col-12 col-lg-10">
@@ -10,7 +17,7 @@
             <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
             <div>
                 <strong class="d-block mb-1 text-dark">Perhatian: Customer Menunggak</strong>
-                <span class="small text-dark">Customer ini terdeteksi memiliki tagihan tempo yang belum lunas. Pesanan tetap dapat dilanjutkan, namun akan ditandai khusus untuk memerlukan tinjauan tambahan dari tim logistik/finance.</span>
+                <span class="small text-dark">Customer ini terdeteksi memiliki tagihan tempo yang belum lunas. Pesanan tetap dapat dilanjutkan, namun akan ditandai khusus untuk memerlukan tinjauan tambahan dari tim logistik.</span>
             </div>
         </div>
 
@@ -53,6 +60,7 @@
                                 <option value="Transfer">Transfer Bank</option>
                                 <option value="Tempo 30">Tempo 30 Hari</option>
                                 <option value="Tempo 60">Tempo 60 Hari</option>
+                                <option value="Tempo 90">Tempo 90 Hari</option>
                             </select>
                         </div>
                         <div class="col-md-12">
@@ -112,10 +120,7 @@
                         <i class="bi bi-plus-circle me-1"></i> Tambah Produk
                     </button>
                 </div>
-                @php
-                    $currentHour = now()->format('H');
-                    $isLate = $currentHour >= 15;
-                @endphp
+                {{-- $isLate dihitung sekali di atas file --}}
                 <div class="card-footer bg-light border-top p-4 rounded-bottom-4">
                     @if($isLate)
                     <div class="alert alert-warning d-flex align-items-center mb-3 p-2" role="alert">
@@ -138,6 +143,11 @@
 
 @push('scripts')
 <script>
+    // Batas waktu order (15:00 WIB) dievaluasi di server agar tidak bisa
+    // diakali lewat jam perangkat. Nilai ini hanya untuk mengatur state tombol;
+    // penegakan sebenarnya tetap harus dilakukan server-side saat submit.
+    const IS_PAST_CUTOFF = @json($isLate);
+
     document.addEventListener('DOMContentLoaded', function() {
                 // Document-only Checkbox Logic
         const documentOnlyCheck = document.getElementById('documentOnlyCheck');
@@ -173,20 +183,23 @@
         const btnDraft = document.getElementById('btnDraft');
         const btnSubmit = document.getElementById('btnSubmit');
 
+        // PRD v1.1: status menunggak bersifat INFORMATIF, bukan pemblokir.
+        // Tombol Draft & Submit WAJIB tetap aktif — lihat docs/1_prd.md F-BILL-03
+        // dan RULE: CUSTOMER_OVERDUE_FLAG. Jangan menambahkan `disabled` di sini.
         customerInput.addEventListener('change', function() {
-            if(this.value.includes('Menunggak')) {
-                alertBilling.classList.remove('d-none');
-                alertBilling.classList.add('d-flex');
-                btnDraft.disabled = true;
-                btnSubmit.disabled = true;
-                this.classList.add('is-invalid');
-            } else {
-                alertBilling.classList.add('d-none');
-                alertBilling.classList.remove('d-flex');
-                btnDraft.disabled = false;
-                btnSubmit.disabled = false;
-                this.classList.remove('is-invalid');
-            }
+            const isOverdue = this.value.includes('Menunggak');
+
+            alertBilling.classList.toggle('d-none', !isOverdue);
+            alertBilling.classList.toggle('d-flex', isOverdue);
+
+            // Ditandai kuning (peringatan), bukan merah (invalid), agar konsisten
+            // dengan pesan alert yang menyatakan pesanan tetap boleh dilanjutkan.
+            this.classList.toggle('border-warning', isOverdue);
+            this.classList.remove('is-invalid');
+
+            // Submit tetap tunduk pada batas waktu order, bukan pada status piutang.
+            btnDraft.disabled = false;
+            btnSubmit.disabled = IS_PAST_CUTOFF;
         });
 
         // Dynamic Add Item

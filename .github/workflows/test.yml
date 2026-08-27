@@ -21,7 +21,6 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          tools: php-cs-fixer
 
       - name: Cache Composer
         uses: actions/cache@v4
@@ -32,8 +31,11 @@ jobs:
       - name: Install Dependencies
         run: composer install --no-interaction --prefer-dist
 
+      # Pakai Laravel Pint (sudah ada di require-dev), bukan php-cs-fixer.
+      # Tanpa `|| true` — pelanggaran style HARUS menggagalkan pipeline,
+      # kalau tidak, langkah lint ini tidak ada gunanya.
       - name: Check Code Style
-        run: php-cs-fixer fix --dry-run --diff --allow-risky=yes || true
+        run: ./vendor/bin/pint --test
 
   # === Job 2: Run Tests ===
   test:
@@ -90,6 +92,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      # `npm ci` memasang persis versi yang terkunci di package-lock.json,
+      # sehingga build di CI identik dengan build di mesin lokal.
       - name: Install & Build Frontend
         run: |
           npm ci
@@ -110,8 +114,10 @@ jobs:
           DB_USERNAME: wms_test
           DB_PASSWORD: testing
 
+      # `--parallel` membutuhkan brianium/paratest yang belum terpasang.
+      # Tambahkan paratest ke require-dev lebih dulu bila ingin mengaktifkannya.
       - name: Execute Tests
-        run: php artisan test --parallel
+        run: php artisan test
         env:
           DB_CONNECTION: pgsql
           DB_HOST: 127.0.0.1

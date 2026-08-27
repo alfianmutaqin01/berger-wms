@@ -82,9 +82,15 @@ jobs:
             docker compose exec -T php-fpm php artisan route:cache
             docker compose exec -T php-fpm php artisan view:cache
             docker compose exec -T php-fpm php artisan event:cache
-            docker compose exec -T php-fpm php artisan horizon:terminate
 
-            # Health check
+            # Restart queue worker agar memuat kode terbaru.
+            # Horizon belum terpasang; setelah terpasang, ganti baris ini
+            # menjadi: docker compose exec -T php-fpm php artisan horizon:terminate
+            docker compose exec -T php-fpm php artisan queue:restart
+
+            # Health check — endpoint /health (routes/web.php, lihat docs/6 §9.1).
+            # `curl -f` mengembalikan exit code non-nol saat /health membalas 503,
+            # sehingga deploy yang dependensinya bermasalah otomatis gagal.
             sleep 10
             curl -f http://localhost/health || exit 1
 

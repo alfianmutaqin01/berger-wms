@@ -38,13 +38,9 @@
                     <span>My Orders</span>
                 </a>
             </li>
-              <li class="nav-item {{ request()->is('sales/customers') ? 'active' : '' }}">
-                  <a href="/sales/customers" class="nav-link">
-                      <i class="bi bi-people"></i>
-                      <span>My Customers</span>
-                  </a>
-                </a>
-            </li>
+            {{-- Menu "My Customers" dihapus pada PRD v1.1: pelanggan didaftarkan
+                 langsung oleh Manager/Super Admin lewat Master Customer di Portal WMS.
+                 Lihat docs/1_prd.md §6.2 F-MASTER-06. --}}
         </ul>
 
         <!-- User Profile - Fixed Bottom -->

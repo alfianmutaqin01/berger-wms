@@ -9,5 +9,9 @@
     <!-- Bootstrap 5.3 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <link href="/css/soms-style.css?v={{ time() }}" rel="stylesheet">
+    {{-- Cache-buster berbasis waktu modifikasi file, bukan time().
+         time() menghasilkan URL baru pada SETIAP request sehingga browser
+         tidak pernah bisa men-cache stylesheet — boros bandwidth di produksi.
+         filemtime() hanya berubah ketika file-nya benar-benar diubah. --}}
+    <link href="/css/soms-style.css?v={{ @filemtime(public_path('css/soms-style.css')) ?: '1' }}" rel="stylesheet">
     @stack('styles')
