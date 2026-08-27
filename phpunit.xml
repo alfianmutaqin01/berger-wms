@@ -18,15 +18,30 @@
         </include>
     </source>
     <php>
-        <env name="APP_ENV" value="testing"/>
+        <!--
+            force="true" WAJIB di sini.
+
+            docker-compose.yml menyuntikkan APP_ENV=local sebagai environment
+            variable milik container php-fpm. Tanpa force, PHPUnit 11 tidak akan
+            menimpa variabel yang sudah ada, sehingga test berjalan di environment
+            "local". Dampaknya serius dan senyap: middleware PreventRequestForgery
+            hanya melewati pemeriksaan CSRF bila app()->runningUnitTests() bernilai
+            true — yang bergantung pada APP_ENV=testing. Semua request POST/PUT/PATCH
+            di feature test akan gagal dengan HTTP 419 tanpa penjelasan.
+
+            DB_DATABASE juga diberi force agar tidak ada kemungkinan test menghapus
+            isi database pengembangan (wms_berger) lewat RefreshDatabase.
+        -->
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_DEBUG" value="true" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
-        <env name="BCRYPT_ROUNDS" value="4"/>
-        <env name="DB_CONNECTION" value="pgsql"/>
-        <env name="DB_DATABASE" value="wms_testing"/>
-        <env name="CACHE_STORE" value="array"/>
-        <env name="SESSION_DRIVER" value="array"/>
-        <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="BROADCAST_CONNECTION" value="null"/>
-        <env name="MAIL_MAILER" value="array"/>
+        <env name="BCRYPT_ROUNDS" value="4" force="true"/>
+        <env name="DB_CONNECTION" value="pgsql" force="true"/>
+        <env name="DB_DATABASE" value="wms_testing" force="true"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
+        <env name="SESSION_DRIVER" value="array" force="true"/>
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <env name="MAIL_MAILER" value="array" force="true"/>
     </php>
 </phpunit>

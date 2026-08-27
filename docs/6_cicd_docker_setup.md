@@ -1,9 +1,24 @@
 ﻿# CI/CD dengan Docker & GitHub
 ## Sistem WMS & Sales Order â€” PT Berger Paints Indonesia
 
-> **Versi:** 1.0  
-> **Tanggal:** 14 Agustus 2026  
+> **Versi:** 1.1  
+> **Tanggal:** 26 Agustus 2026 *(revisi dari v1.0, 14 Agustus 2026)*  
 > **Teknologi:** Docker, Docker Compose, GitHub Actions, Nginx, PostgreSQL, Redis
+
+> [!IMPORTANT]
+> **Perubahan v1.1 — penyesuaian dengan kondisi repo saat ini.**
+>
+> Contoh workflow di dokumen ini mengasumsikan beberapa perkakas yang **belum terpasang**. Berkas nyata di `.github/workflows/` sudah disesuaikan agar pipeline benar-benar hijau:
+>
+> | Bagian | Rencana dokumen | Kondisi repo & langkah nyata |
+> |---|---|---|
+> | Lint PHP | `php-cs-fixer` + `phpstan` | Keduanya belum ada. Dipakai **`./vendor/bin/pint --test`** (sudah di `require-dev`). PHPStan ditambahkan menyusul |
+> | Build frontend | `npm ci` | ✅ **Sudah sesuai.** `package-lock.json` telah dibuat & di-commit, `cache: 'npm'` aktif |
+> | Eksekusi test | `php artisan test --parallel` | `brianium/paratest` belum terpasang → dijalankan **tanpa** `--parallel` |
+> | Restart worker | `horizon:terminate` | Horizon belum terpasang → dipakai **`queue:restart`** |
+> | Endpoint `/health` | Hanya contoh kode | **Sudah diimplementasikan** di `routes/web.php` |
+>
+> Setiap penyesuaian di atas diberi komentar di berkas workflow, lengkap dengan instruksi mengembalikannya begitu dependensinya terpasang. **Jangan menyalin mentah-mentah contoh workflow di bawah** — gunakan berkas nyata sebagai acuan.
 
 ---
 

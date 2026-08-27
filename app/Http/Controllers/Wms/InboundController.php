@@ -18,14 +18,14 @@ class InboundController extends Controller
                 'doc_no' => 'PROD-202608-001',
                 'date' => '19 Aug 2026',
                 'total_pallets' => 3,
-                'status' => 'Menunggu Put-away'
+                'status' => 'Menunggu Put-away',
             ],
             [
                 'batch_no' => 'BCH-202608-00',
                 'doc_no' => 'PROD-202608-000',
                 'date' => '18 Aug 2026',
                 'total_pallets' => 5,
-                'status' => 'Selesai'
+                'status' => 'Selesai',
             ],
         ];
 
@@ -43,7 +43,7 @@ class InboundController extends Controller
             'batch_no' => 'BCH-202608-01',
             'date' => '19 Aug 2026',
             'status' => 'Menunggu Put-away',
-            'total_pallets' => 3
+            'total_pallets' => 3,
         ];
 
         $pallets = [
@@ -55,7 +55,7 @@ class InboundController extends Controller
                 'uom' => '5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'max_cap' => 180
+                'max_cap' => 180,
             ],
             [
                 'id' => 2,
@@ -65,7 +65,7 @@ class InboundController extends Controller
                 'uom' => '5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'max_cap' => 180
+                'max_cap' => 180,
             ],
             [
                 'id' => 3,
@@ -75,7 +75,7 @@ class InboundController extends Controller
                 'uom' => '5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 140,
-                'max_cap' => 180
+                'max_cap' => 180,
             ],
         ];
 
@@ -105,7 +105,7 @@ class InboundController extends Controller
                 'uom' => '5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'max_cap' => 180
+                'max_cap' => 180,
             ],
             [
                 'pallet_no' => 2,
@@ -114,7 +114,7 @@ class InboundController extends Controller
                 'uom' => '5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'max_cap' => 180
+                'max_cap' => 180,
             ],
             [
                 'pallet_no' => 3,
@@ -123,14 +123,14 @@ class InboundController extends Controller
                 'uom' => '5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 140,
-                'max_cap' => 180
+                'max_cap' => 180,
             ],
         ];
 
         return response()->json([
             'status' => 'success',
             'message' => 'File berhasil diproses. Sistem memecah Qty 500 menjadi 3 palet.',
-            'data' => $dummyPallets
+            'data' => $dummyPallets,
         ]);
     }
 
@@ -145,14 +145,14 @@ class InboundController extends Controller
                 'doc_no' => 'PROD-8821',
                 'date' => '18 Aug 2026',
                 'total_pallets' => 3,
-                'status' => 'Menunggu Put-away'
+                'status' => 'Menunggu Put-away',
             ],
             [
                 'batch_no' => 'BCH-202608-02',
                 'doc_no' => 'PROD-8822',
                 'date' => '18 Aug 2026',
                 'total_pallets' => 5,
-                'status' => 'Menunggu Put-away'
+                'status' => 'Menunggu Put-away',
             ],
         ];
 
@@ -162,7 +162,9 @@ class InboundController extends Controller
     /**
      * F-INB-02: Detail Put-away
      */
-    public function putawayProcess($doc_no) { $inbound = [ 'doc_no' => $doc_no, 'batch_no' => 'BCH-202608-01',
+    public function putawayProcess($doc_no)
+    {
+        $inbound = ['doc_no' => $doc_no, 'batch_no' => 'BCH-202608-01',
             'date' => '18 Aug 2026',
         ];
 
@@ -174,7 +176,7 @@ class InboundController extends Controller
                 'description' => 'Cat Tembok Berger White 5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'location' => ''
+                'location' => '',
             ],
             [
                 'id' => 2,
@@ -183,7 +185,7 @@ class InboundController extends Controller
                 'description' => 'Cat Tembok Berger White 5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'location' => ''
+                'location' => '',
             ],
             [
                 'id' => 3,
@@ -192,7 +194,7 @@ class InboundController extends Controller
                 'description' => 'Cat Tembok Berger White 5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 140,
-                'location' => ''
+                'location' => '',
             ],
         ];
 
@@ -212,8 +214,8 @@ class InboundController extends Controller
                 'doc_no' => 'PROD-8821',
                 'date' => '18 Aug 2026',
                 'total_pallets' => 3,
-                'status' => 'Menunggu Verifikasi'
-            ]
+                'status' => 'Menunggu Verifikasi',
+            ],
         ];
 
         return view('wms.inbound.verify-list', compact('dummyVerifications'));
@@ -222,7 +224,9 @@ class InboundController extends Controller
     /**
      * F-INB-03: Detail Verifikasi Logistik
      */
-    public function verifyProcess($doc_no) { $inbound = [ 'doc_no' => $doc_no, 'batch_no' => 'BCH-202608-01',
+    public function verifyProcess($doc_no)
+    {
+        $inbound = ['doc_no' => $doc_no, 'batch_no' => 'BCH-202608-01',
             'date' => '18 Aug 2026',
         ];
 
@@ -235,7 +239,7 @@ class InboundController extends Controller
                 'description' => 'Cat Tembok Berger White 5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'location' => 'G-03-01'
+                'location' => 'G-03-01',
             ],
             [
                 'id' => 2,
@@ -244,7 +248,7 @@ class InboundController extends Controller
                 'description' => 'Cat Tembok Berger White 5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 180,
-                'location' => 'G-03-02'
+                'location' => 'G-03-02',
             ],
             [
                 'id' => 3,
@@ -253,7 +257,7 @@ class InboundController extends Controller
                 'description' => 'Cat Tembok Berger White 5Kg',
                 'batch' => 'BCH-202608-01',
                 'qty' => 140,
-                'location' => 'G-03-03'
+                'location' => 'G-03-03',
             ],
         ];
 
@@ -261,21 +265,26 @@ class InboundController extends Controller
 
         return view('wms.inbound.verify-process', compact('inbound', 'pallets', 'availableLocations'));
     }
+
     public function returnsIndex()
     {
         $pendingReturns = session('pending_returns', []);
+
         return view('wms.inbound.returns', compact('pendingReturns'));
     }
 
-    public function processReturn($id, \Illuminate\Http\Request $request)
+    public function processReturn($id, Request $request)
     {
         $pending = session('pending_returns', []);
         $newPending = [];
         foreach ($pending as $retur) {
-            if ($retur['id'] !== $id) { $newPending[] = $retur; }
+            if ($retur['id'] !== $id) {
+                $newPending[] = $retur;
+            }
         }
         session(['pending_returns' => $newPending]);
-        session()->put('processed_return_' . $id, $request->alokasi);
-        return redirect()->back()->with('success', 'Barang retur berhasil dialokasikan ke ' . $request->alokasi . '.');
+        session()->put('processed_return_'.$id, $request->alokasi);
+
+        return redirect()->back()->with('success', 'Barang retur berhasil dialokasikan ke '.$request->alokasi.'.');
     }
 }

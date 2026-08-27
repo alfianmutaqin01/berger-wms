@@ -28,9 +28,14 @@ services:
       target: development
     volumes:
       - .:/var/www/html
-    environment:
-      - APP_ENV=local
-      - APP_DEBUG=true
+    # APP_ENV dan APP_DEBUG sengaja TIDAK didefinisikan di sini.
+    #
+    # Keduanya sudah diatur di .env, jadi mendefinisikannya ulang hanya duplikasi.
+    # Lebih buruk lagi: environment variable milik container berstatus "sudah ada"
+    # bagi PHPUnit, sehingga <env name="APP_ENV" value="testing"/> di phpunit.xml
+    # tidak berlaku dan seluruh feature test berjalan di environment "local".
+    # Akibatnya middleware CSRF tidak dilewati dan setiap POST/PUT/PATCH pada test
+    # gagal dengan HTTP 419 tanpa pesan yang menjelaskan sebabnya.
     depends_on:
       postgres:
         condition: service_healthy

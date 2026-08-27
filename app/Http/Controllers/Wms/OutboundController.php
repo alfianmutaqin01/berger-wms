@@ -17,6 +17,11 @@ class OutboundController extends Controller
         return redirect()->back()->with('success', "PO-$id berhasil di-approve (Auto-Adjustment diterapkan jika stok kurang).");
     }
 
+    public function pickingBatching()
+    {
+        return view('wms.outbound.picking-batching');
+    }
+
     public function picking()
     {
         return view('wms.outbound.picking');
@@ -36,8 +41,9 @@ class OutboundController extends Controller
     {
         $noWa = $request->input('wa_supir', '08123456789');
         $dummyLink = url("/epod/$id");
+
         return redirect()->back()->with('success', "Surat Jalan berhasil dicetak. Tautan Konfirmasi E-POD telah dikirim ke WA Supir ($noWa).")
-                                 ->with('epod_link', $dummyLink);
+            ->with('epod_link', $dummyLink);
     }
 
     public function verification()

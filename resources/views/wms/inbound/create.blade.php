@@ -136,11 +136,15 @@
             document.getElementById('prod_date').value = '2026-08-19';
         }
 
-        // Otomatis terisi saat halaman dimuat
-        setTimeout(() => {
-            simulateFileUpload();
-            btnPreview.click();
-        }, 500);
+        // Simulasi pemilihan file: dijalankan saat pengguna benar-benar
+        // berinteraksi dengan drop zone, bukan otomatis saat halaman dimuat.
+        // (Auto-play dihapus — halaman yang mengisi dirinya sendiri membingungkan
+        // saat demo dan menyembunyikan alur asli dari pengguna.)
+        dropZone.addEventListener('click', function() {
+            if (btnPreview.disabled) {
+                simulateFileUpload();
+            }
+        });
 
         btnPreview.addEventListener('click', function() {
             // Check manual fields
@@ -226,21 +230,13 @@
                 }
             });
 
-            // Simulasi proses API
+            // Simulasi proses API.
+            // Kegagalan acak (Math.random() > 0.2) dihapus: submit yang gagal
+            // tanpa sebab membuat demo tidak dapat diandalkan dan menyulitkan
+            // pengujian. Penanganan error sesungguhnya menyusul saat endpoint
+            // penyimpanan inbound dibuat.
             setTimeout(() => {
-                // Simulasi 80% sukses, 20% gagal
-                let isSuccess = Math.random() > 0.2;
-                
-                if (isSuccess) {
-                    window.location.href = '/wms/inbound/history?status=success';
-                } else {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Gagal Menyimpan',
-                        text: 'Terjadi kesalahan sistem atau format data tidak valid. Silakan coba lagi.',
-                        confirmButtonColor: '#dc3545'
-                    });
-                }
+                window.location.href = '/wms/inbound/history?status=success';
             }, 1200);
         });
 

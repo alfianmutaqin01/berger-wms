@@ -1,6 +1,13 @@
 <?php
+
 namespace App\Http\Controllers\Wms;
+
 use App\Http\Controllers\Controller;
-class ReportController extends Controller {
-    public function index() { return view('wms.reports.index'); }
+
+class ReportController extends Controller
+{
+    public function index()
+    {
+        return view('wms.reports.index');
+    }
 }

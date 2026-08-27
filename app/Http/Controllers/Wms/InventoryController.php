@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers\Wms;
 
+use App\Data\MockInventory;
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 
 class InventoryController extends Controller
 {
@@ -14,8 +15,9 @@ class InventoryController extends Controller
             return session('raw_inventories');
         }
 
-        $rawInventories = \App\Data\MockInventory::getRawInventories();
+        $rawInventories = MockInventory::getRawInventories();
         session(['raw_inventories' => $rawInventories]);
+
         return $rawInventories;
     }
 
@@ -29,7 +31,7 @@ class InventoryController extends Controller
             $goodQty = 0;
             $goodAlloc = 0;
             $ddpQty = 0;
-            
+
             $goodBatches = [];
             $ddpBatches = [];
 
@@ -38,7 +40,7 @@ class InventoryController extends Controller
                 $expDate = $mfgDate->copy()->addMonths(30);
                 $isExpired = $now->greaterThan($expDate);
                 $isDamaged = $batch['is_damaged'] ?? false;
-                
+
                 $batchData = $batch;
                 $batchData['exp_date'] = $expDate->format('Y-m-d');
                 $batchData['is_expired'] = $isExpired;
@@ -46,7 +48,7 @@ class InventoryController extends Controller
                 $batchTotalQty = collect($batch['pallets'])->sum('qty');
                 $batchTotalAlloc = collect($batch['pallets'])->sum('alloc');
                 $batchData['total_qty'] = $batchTotalQty;
-                
+
                 if ($isExpired || $isDamaged) {
                     $ddpBatches[] = $batchData;
                     $ddpQty += $batchTotalQty;
@@ -64,7 +66,7 @@ class InventoryController extends Controller
                 'good_alloc' => $goodAlloc,
                 'ddp_qty' => $ddpQty,
                 'good_batches' => $goodBatches,
-                'ddp_batches' => $ddpBatches
+                'ddp_batches' => $ddpBatches,
             ];
         }
 
@@ -75,8 +77,8 @@ class InventoryController extends Controller
     {
         $sku = $request->sku;
         $action = $request->action;
-        $qty = (int)$request->qty;
-        
+        $qty = (int) $request->qty;
+
         $raw = $this->getRawInventories();
         if (isset($raw[$sku])) {
             // Kita sederhanakan: Adjust ke pallet pertama yang ditemukan
@@ -89,12 +91,12 @@ class InventoryController extends Controller
                     // deduct from good stock and create a damaged batch
                     $raw[$sku]['batches'][0]['pallets'][0]['qty'] = max(0, $raw[$sku]['batches'][0]['pallets'][0]['qty'] - $qty);
                     $raw[$sku]['batches'][] = [
-                        'batch_no' => 'BCH-WO-' . rand(100, 999),
+                        'batch_no' => 'BCH-WO-'.rand(100, 999),
                         'mfg_date' => now()->format('Y-m-d'),
                         'is_damaged' => true,
                         'pallets' => [
-                            ['pallet_no' => 'PLT-DDP-NEW', 'location' => 'Rak DDP-1', 'qty' => $qty, 'alloc' => 0]
-                        ]
+                            ['pallet_no' => 'PLT-DDP-NEW', 'location' => 'Rak DDP-1', 'qty' => $qty, 'alloc' => 0],
+                        ],
                     ];
                 }
             }
@@ -109,7 +111,7 @@ class InventoryController extends Controller
         $sku = $request->sku;
         $fromLoc = $request->from_loc;
         $toLoc = $request->to_loc;
-        $qty = (int)$request->qty;
+        $qty = (int) $request->qty;
 
         $raw = $this->getRawInventories();
         if (isset($raw[$sku])) {
@@ -128,10 +130,10 @@ class InventoryController extends Controller
             // Tambah ke lokasi tujuan (buat pallet baru di batch pertama)
             if ($deducted > 0) {
                 $raw[$sku]['batches'][0]['pallets'][] = [
-                    'pallet_no' => 'PLT-TRF-' . rand(100, 999),
+                    'pallet_no' => 'PLT-TRF-'.rand(100, 999),
                     'location' => $toLoc,
                     'qty' => $deducted,
-                    'alloc' => 0
+                    'alloc' => 0,
                 ];
             }
             session(['raw_inventories' => $raw]);

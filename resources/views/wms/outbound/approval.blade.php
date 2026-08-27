@@ -170,7 +170,8 @@
                         <div class="col-md-5">
                             <h6 class="fw-bold text-dark border-bottom pb-2 mb-3">Bukti Pesanan (Opsional)</h6>
                             <div class="border rounded-3 p-1 bg-light text-center" style="height: 120px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                                <img src="https://via.placeholder.com/300x150.png?text=Bukti+Pesanan+Toko" alt="Bukti Pesanan" class="img-fluid rounded" style="max-height: 100%; object-fit: contain;">
+                                {{-- Placeholder inline (data URI), menggantikan via.placeholder.com yang sudah mati. --}}
+                                <img src="data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='150'%3E%3Crect width='300' height='150' fill='%23f1f3f5'/%3E%3Cpath d='M120 58h60v34h-60z' fill='none' stroke='%23adb5bd' stroke-width='3'/%3E%3Ccircle cx='137' cy='71' r='6' fill='%23adb5bd'/%3E%3Cpath d='M126 92l16-16 12 12 9-8 11 12z' fill='%23adb5bd'/%3E%3Ctext x='150' y='120' font-family='sans-serif' font-size='12' fill='%236c757d' text-anchor='middle'%3EBukti Pesanan Toko%3C/text%3E%3C/svg%3E" alt="Bukti Pesanan" class="img-fluid rounded" style="max-height: 100%; object-fit: contain;">
                             </div>
                         </div>
                     </div>
@@ -248,7 +249,8 @@
                         <div class="col-md-5">
                             <h6 class="fw-bold text-dark border-bottom pb-2 mb-3">Dokumen Pesanan</h6>
                             <div class="border rounded-3 p-1 bg-light text-center" style="height: 120px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                                <img src="https://via.placeholder.com/300x150.png?text=Surat+Jalan+PO" class="img-fluid rounded" style="max-height: 100%;">
+                                {{-- Placeholder inline (data URI), menggantikan via.placeholder.com yang sudah mati. --}}
+                                <img src="data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='150'%3E%3Crect width='300' height='150' fill='%23f1f3f5'/%3E%3Crect x='120' y='45' width='60' height='60' rx='3' fill='%23fff' stroke='%23adb5bd' stroke-width='3'/%3E%3Cpath d='M131 60h38M131 72h38M131 84h24' stroke='%23adb5bd' stroke-width='3' stroke-linecap='round'/%3E%3Ctext x='150' y='128' font-family='sans-serif' font-size='12' fill='%236c757d' text-anchor='middle'%3EDokumen Pesanan%3C/text%3E%3C/svg%3E" alt="Dokumen Pesanan" class="img-fluid rounded" style="max-height: 100%;">
                             </div>
                         </div>
                     </div>
