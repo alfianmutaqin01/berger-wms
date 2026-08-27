@@ -8,17 +8,19 @@ use App\Models\User;
 /**
  * Menentukan user yang sedang bertindak.
  *
- * Modul autentikasi belum dibangun, sehingga belum ada `auth()->user()` yang bisa
- * diandalkan. Kelas ini menjadi SATU-SATUNYA tempat penentuan aktor, supaya ketika
- * login sungguhan nanti aktif, cukup satu berkas ini yang diubah — bukan tersebar
- * di controller, Form Request, dan Blade.
+ * Sejak Fase 1 (Autentikasi Nyata), `auth()->user()` sudah bisa diandalkan —
+ * kelas ini tetap dipertahankan sebagai SATU-SATUNYA tempat penentuan aktor,
+ * supaya controller, Form Request, dan Blade tidak perlu memanggil `auth()`
+ * secara langsung tersebar di banyak tempat.
  *
  * Urutan penentuan:
- *   1. `auth()->user()` bila sudah login (sudah siap untuk masa depan).
- *   2. Parameter `?as=<slug-role>` — mendukung Role Switcher pada fase mockup.
- *   3. Super Admin hasil seed sebagai fallback.
+ *   1. `auth()->user()` bila sudah login — jalur utama sejak Fase 1.
+ *   2. Parameter `?as=<slug-role>` — sisa alat bantu dev, dipagari
+ *      `app()->environment('production')`. Praktis tidak terjangkau lewat
+ *      HTTP karena rute wms/sales sudah dibungkus middleware `auth`.
+ *   3. Super Admin hasil seed sebagai fallback (juga hanya di luar production).
  *
- * @see dokumen arsitektur §5.3 — Role Switcher wajib dihapus sebelum Go-Live.
+ * @see dokumen arsitektur §5.3 — Role Switcher sudah dihapus.
  */
 class CurrentActor
 {
@@ -35,6 +37,14 @@ class CurrentActor
         }
 
         $query = User::with('role')->where('is_active', true);
+
+        // Jalur ini praktis sudah tidak terjangkau lewat HTTP sejak Fase 1:
+        // rute wms/sales kini dibungkus middleware `auth`, sehingga tamu
+        // ditolak sebelum sempat mencapai baris ini. Pagar environment ini
+        // adalah lapis pertahanan kedua, bukan satu-satunya pengaman.
+        if (app()->environment('production')) {
+            return self::$cached = null;
+        }
 
         if ($slug = request()->query('as')) {
             $impersonated = (clone $query)

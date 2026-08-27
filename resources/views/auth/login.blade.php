@@ -34,7 +34,7 @@
             max-width: 420px;
             padding: 2rem;
         }
-        
+
         /* Slideshow Layout */
         .image-side {
             position: relative;
@@ -83,7 +83,7 @@
             font-size: 1.15rem;
             max-width: 85%;
         }
-        
+
         /* Typography Polish for Form */
         .form-label {
             font-size: 0.85rem;
@@ -109,14 +109,14 @@
 
 <div class="container-fluid p-0">
     <div class="row g-0 min-vh-100">
-        
+
         <!-- Image Side (Hidden on Mobile) -->
         <div class="col-lg-7 d-none d-lg-block image-side shadow-lg">
             <!-- Background Images -->
             <div class="bg-slide active" style="background-image: url('/images/berger_warehouse.jpg');"></div>
             <div class="bg-slide" style="background-image: url('/images/berger_paint_splash.jpg');"></div>
             <div class="bg-slide" style="background-image: url('/images/login_bg.jpg');"></div>
-            
+
             <div class="hero-text">
                 <h1 class="display-4">Warnai Dunia<br>Operasionalmu.</h1>
                 <p>Platform Digital WMS & SOMS terintegrasi. Mengoptimalkan manajemen persediaan dan logistik dengan presisi tinggi.</p>
@@ -132,15 +132,24 @@
                     <p class="text-muted" style="font-size: 0.9rem;">Silakan otentikasi kredensial Anda</p>
                 </div>
 
-                <form action="#" method="POST" onsubmit="event.preventDefault(); window.location.href = '/wms/dashboard/admin';">
+                @if (session('status'))
+                    <div class="alert alert-warning py-2 small mb-4">{{ session('status') }}</div>
+                @endif
+
+                @if ($errors->any())
+                    <div class="alert alert-danger py-2 small mb-4">{{ $errors->first() }}</div>
+                @endif
+
+                <form action="{{ route('login.attempt') }}" method="POST">
+                    @csrf
                     <div class="mb-4">
                         <label class="form-label">Email / Username</label>
                         <div class="input-group">
                             <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-person"></i></span>
-                            <input type="email" class="form-control border-start-0 bg-light" placeholder="nama@bergerpaints.co.id" required>
+                            <input type="email" name="email" value="{{ old('email') }}" class="form-control border-start-0 bg-light" placeholder="nama@bergerpaints.co.id" required autofocus>
                         </div>
                     </div>
-                    
+
                     <div class="mb-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <label class="form-label mb-0">Kata Sandi</label>
@@ -148,7 +157,7 @@
                         </div>
                         <div class="input-group">
                             <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-lock"></i></span>
-                            <input type="password" id="passwordInput" class="form-control border-start-0 border-end-0 bg-light" placeholder="********" required>
+                            <input type="password" name="password" id="passwordInput" class="form-control border-start-0 border-end-0 bg-light" placeholder="********" required>
                             <button class="btn btn-light border-start-0 border text-muted" type="button" id="togglePassword">
                                 <i class="bi bi-eye" id="eyeIcon"></i>
                             </button>
@@ -156,13 +165,13 @@
                     </div>
 
                     <div class="mb-4 form-check mt-3">
-                        <input type="checkbox" class="form-check-input" id="remember">
+                        <input type="checkbox" name="remember" class="form-check-input" id="remember">
                         <label class="form-check-label text-muted" for="remember" style="font-size: 0.85rem;">Biarkan saya tetap masuk</label>
                     </div>
-                    
+
                     <button type="submit" class="btn btn-login w-100 py-2 mt-2 fw-semibold text-white shadow-sm">Masuk ke Sistem</button>
                 </form>
-                
+
                 <div class="text-center mt-5 pt-4 border-top">
                     <p class="text-muted mb-0" style="font-size: 0.8rem;">&copy; 2026 PT. Berger Paints Indonesia</p>
                 </div>
@@ -195,7 +204,7 @@
         // Slideshow Logic for Left Column
         let currentSlide = 0;
         const slides = document.querySelectorAll('.bg-slide');
-        
+
         if (slides.length > 0) {
             setInterval(() => {
                 slides[currentSlide].classList.remove('active');

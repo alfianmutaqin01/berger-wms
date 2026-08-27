@@ -5,6 +5,7 @@ namespace Tests\Feature\Wms;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\UserSession;
 use App\Models\Warehouse;
 use App\Support\CurrentActor;
 use Database\Seeders\RoleSeeder;
@@ -12,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -38,6 +40,14 @@ class UserManagementTest extends TestCase
         $this->warehouse = Warehouse::factory()->create();
     }
 
+    /**
+     * Login sungguhan lewat guard (bukan cuma CurrentActor::fake()) supaya
+     * request menembus middleware `auth` + `session.track` yang sekarang
+     * membungkus seluruh rute /wms — lihat Fase 1 Autentikasi,
+     * rencana pembangunan. Baris `user_sessions` dan cookie
+     * `device_token` di sini meniru persis apa yang AuthController::login()
+     * lakukan pada login sungguhan.
+     */
     private function actingAsRole(string $slug): User
     {
         $user = User::factory()
@@ -45,6 +55,19 @@ class UserManagementTest extends TestCase
             ->create(['department_id' => $this->department->id]);
 
         CurrentActor::fake($user->load('role'));
+
+        $deviceToken = Str::random(64);
+        UserSession::create([
+            'user_id' => $user->id,
+            'session_id' => $deviceToken,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'PHPUnit',
+            'last_activity_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->withUnencryptedCookies(['device_token' => $deviceToken]);
+        $this->actingAs($user);
 
         return $user;
     }

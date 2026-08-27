@@ -274,7 +274,7 @@ Melacak sesi aktif per user untuk enforce max 2 device.
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `user_id` | BIGINT UNSIGNED | FK → users.id | |
-| `session_id` | VARCHAR(255) | NOT NULL, UNIQUE | Laravel session ID |
+| `session_id` | VARCHAR(255) | NOT NULL, UNIQUE | Token device, diterbitkan `AuthController` saat login (BUKAN Laravel session ID — session ID Laravel berubah tiap `regenerate()`/tanpa cookie, sehingga tidak stabil dipakai sebagai identitas device; lihat cookie `device_token`, dikecualikan dari enkripsi di `bootstrap/app.php`) |
 | `ip_address` | VARCHAR(45) | NULLABLE | IPv4/IPv6 |
 | `user_agent` | TEXT | NULLABLE | Browser/Device info |
 | `last_activity_at` | TIMESTAMP | NOT NULL | Waktu aktivitas terakhir |
