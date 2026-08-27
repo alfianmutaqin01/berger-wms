@@ -51,16 +51,14 @@ return new class extends Migration
 
         // Kolom keamanan sesuai docs/2_database_design.md §3.1.
         //
-        // CATATAN HISTORIS: `google2fa_secret` dan `is_mfa_enabled` di bawah ini
-        // SUDAH TIDAK DIPAKAI — PRD v1.2 mengganti MFA/TOTP dengan Google
-        // reCAPTCHA yang tidak menyimpan state per-user. Keduanya dihapus oleh
-        // migration 2026_08_29_000001_drop_mfa_columns_from_users_table.php.
-        // Definisi di sini sengaja dibiarkan utuh karena migration ini sudah
-        // pernah dijalankan; jangan diubah, cukup ikuti migration penghapusnya.
+        // Progressive lockout (PRD §6.1 F-AUTH-03): 3 kali percobaan gagal —
+        // password salah ATAU verifikasi anti-bot gagal, satu counter bersama —
+        // mengunci akun 5/10/30/60/120 menit secara progresif.
+        //
+        // Tidak ada kolom MFA/TOTP: PRD v1.2 memakai Google reCAPTCHA yang
+        // memverifikasi manusia vs bot per-request dan tidak menyimpan state
+        // apa pun per-user.
         Schema::table('users', function (Blueprint $table) {
-            $table->string('google2fa_secret', 255)->nullable()
-                ->comment('TIDAK DIPAKAI — dihapus di migration 2026_08_29_000001');
-            $table->boolean('is_mfa_enabled')->default(false);
             $table->unsignedSmallInteger('failed_login_attempts')->default(0);
             $table->timestamp('locked_until')->nullable();
             $table->timestamp('last_lockout_at')->nullable();
@@ -100,8 +98,6 @@ return new class extends Migration
                 'avatar_path',
                 'is_active',
                 'last_login_at',
-                'google2fa_secret',
-                'is_mfa_enabled',
                 'failed_login_attempts',
                 'locked_until',
                 'last_lockout_at',

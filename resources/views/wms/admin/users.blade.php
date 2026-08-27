@@ -63,15 +63,15 @@
         </div>
 
         <!-- Filter: submit via GET agar hasil filter bisa di-bookmark & di-share -->
-        <form method="GET" action="{{ route('wms.users.index') }}" class="row g-2 mt-2 mb-3">
+        <form method="GET" action="{{ route('wms.users.index') }}" class="row g-2 mt-2 mb-3 align-items-stretch">
             <div class="col-12 col-md-4">
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" name="search" value="{{ $filters['search'] }}" class="form-control bg-light border-start-0" placeholder="Cari NIK, Nama, Email...">
+                <div class="input-group input-group-sm h-100">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="search" value="{{ $filters['search'] }}" class="form-control bg-white border-start-0" placeholder="Cari NIK, Nama, Email...">
                 </div>
             </div>
             <div class="col-6 col-md-2">
-                <select name="role_id" class="form-select form-select-sm">
+                <select name="role_id" class="form-select form-select-sm h-100">
                     <option value="">Semua Role</option>
                     @foreach($roles as $role)
                         <option value="{{ $role->id }}" @selected($filters['role_id'] == $role->id)>{{ $role->name }}</option>
@@ -79,7 +79,7 @@
                 </select>
             </div>
             <div class="col-6 col-md-2">
-                <select name="warehouse_id" class="form-select form-select-sm">
+                <select name="warehouse_id" class="form-select form-select-sm h-100">
                     <option value="">Semua Gudang</option>
                     @foreach($warehouses as $warehouse)
                         <option value="{{ $warehouse->id }}" @selected($filters['warehouse_id'] == $warehouse->id)>{{ $warehouse->display_label }}</option>
@@ -87,15 +87,15 @@
                 </select>
             </div>
             <div class="col-6 col-md-2">
-                <select name="status" class="form-select form-select-sm">
+                <select name="status" class="form-select form-select-sm h-100">
                     <option value="">Semua Status</option>
                     <option value="active" @selected($filters['status'] === 'active')>Aktif</option>
                     <option value="inactive" @selected($filters['status'] === 'inactive')>Non-aktif</option>
                 </select>
             </div>
             <div class="col-6 col-md-2 d-flex gap-2">
-                <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel"></i> Terapkan</button>
-                <a href="{{ route('wms.users.index') }}" class="btn btn-sm btn-outline-secondary" title="Reset filter"><i class="bi bi-arrow-counterclockwise"></i></a>
+                <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{{ route('wms.users.index') }}" class="btn btn-sm btn-outline-secondary" title="Reset filter"><i class="bi bi-arrow-counterclockwise"></i> Reset</a>
             </div>
         </form>
     </div>

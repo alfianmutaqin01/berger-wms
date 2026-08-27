@@ -633,7 +633,7 @@ sequenceDiagram
     Controller->>Service: createOrder(data)
     
     Service->>DB: BEGIN TRANSACTION
-    Service->>DB: Check customer not blocked (billing)
+    Service->>DB: Cek status piutang customer (INFORMATIF, tidak memblokir)
     Service->>DB: Insert sales_orders
     Service->>DB: Insert sales_order_details
     Service->>DB: Insert order_trackings (status: pending)
