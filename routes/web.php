@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EpodController;
 use App\Http\Controllers\Sales\SalesOrderController;
 use App\Http\Controllers\Wms\AdminController;
@@ -18,8 +19,18 @@ use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    return redirect('/login');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Autentikasi (PRD §6.1 F-AUTH-01/03/04/05)
+|--------------------------------------------------------------------------
+| MFA (F-AUTH-02) belum ada di sini — lihat catatan di AuthController.
+*/
+Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
+Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
+Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
 /*
 |--------------------------------------------------------------------------
@@ -64,7 +75,7 @@ Route::get('/health', function () {
 })->name('health');
 
 // SALES PORTAL ROUTES
-Route::prefix('sales')->group(function () {
+Route::prefix('sales')->middleware(['auth', 'session.track', 'portal:sales'])->group(function () {
     Route::get('/dashboard', function () {
         return view('sales.dashboard');
     });
@@ -82,7 +93,7 @@ Route::prefix('sales')->group(function () {
 });
 
 // WMS PORTAL ROUTES
-Route::prefix('wms')->group(function () {
+Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group(function () {
     Route::get('/dashboard', function () {
         return redirect('/wms/dashboard/admin');
     });

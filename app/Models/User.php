@@ -95,6 +95,11 @@ class User extends Authenticatable
         return $this->belongsTo(self::class, 'created_by');
     }
 
+    public function sessions(): HasMany
+    {
+        return $this->hasMany(UserSession::class);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Pemeriksaan peran
@@ -139,6 +144,57 @@ class User extends Authenticatable
         }
 
         return ! $target->isSuperAdmin();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Progressive lockout (PRD §6.1 F-AUTH-03)
+    |--------------------------------------------------------------------------
+    */
+
+    public function isCurrentlyLocked(): bool
+    {
+        return $this->locked_until !== null && $this->locked_until->isFuture();
+    }
+
+    /**
+     * Catat satu percobaan password salah. Mengunci akun begitu counter
+     * mencapai 5, dengan durasi yang meningkat setiap kali akun terkunci lagi
+     * setelah unlock sebelumnya (5 -> 10 -> 30 -> 60 -> 120 menit).
+     *
+     * `lockout_count` sengaja TIDAK direset di sini — itu riwayat berapa kali
+     * akun ini pernah terkunci, dan hanya Super Admin yang boleh menuntaskannya
+     * lewat unlock manual (lihat PRD: "Reset lockout: Hanya Super Admin...").
+     */
+    public function registerFailedLogin(): void
+    {
+        $this->failed_login_attempts++;
+
+        if ($this->failed_login_attempts >= 5) {
+            $this->lockout_count++;
+            $this->locked_until = now()->addMinutes(self::lockoutDurationMinutes($this->lockout_count));
+            $this->last_lockout_at = now();
+        }
+
+        $this->save();
+    }
+
+    public function registerSuccessfulLogin(): void
+    {
+        $this->failed_login_attempts = 0;
+        $this->last_login_at = now();
+        $this->save();
+    }
+
+    private static function lockoutDurationMinutes(int $lockoutCount): int
+    {
+        return match (true) {
+            $lockoutCount <= 1 => 5,
+            $lockoutCount === 2 => 10,
+            $lockoutCount === 3 => 30,
+            $lockoutCount === 4 => 60,
+            default => 120,
+        };
     }
 
     /*

@@ -194,7 +194,7 @@
     <!-- Main Content -->
     <main class="main-content">
                                 <!-- Top Navbar -->
-        @include('partials.navbar-top', ['userName' => 'Khoirun Nisa', 'userLabel' => 'Admin Gudang', 'userInitials' => 'KN'])
+        @include('partials.navbar-top')
 
         <!-- Dynamic Content -->
         <div class="container-fluid p-4">

@@ -20,10 +20,16 @@
                           $greeting = 'Selamat Malam';
                           $icon = 'bi-moon-stars text-primary';
                       }
-                      // Use parameter or fallback
-                      $uName = $userName ?? 'Budi Santoso';
-                      $uLabel = $userLabel ?? 'Sales Representative';
-                      $uInitials = $userInitials ?? 'BS';
+                      // Identitas diambil dari user yang benar-benar login (Fase 1
+                      // Autentikasi). Parameter $userName/$userLabel/$userInitials
+                      // lama dipertahankan sebagai fallback murni jika suatu saat
+                      // partial ini dirender tanpa actor (semestinya tidak terjadi,
+                      // karena semua route pemanggilnya sudah di balik middleware auth).
+                      $actor = \App\Support\CurrentActor::get();
+                      $uName = $actor?->full_name ?? ($userName ?? 'Pengguna');
+                      $uLabel = $actor?->role?->name ?? ($userLabel ?? '');
+                      $uInitials = $actor?->initials ?? ($userInitials ?? '?');
+                      $isSalesUser = $actor?->hasRole(\App\Models\Role::SALES) ?? false;
                   @endphp
                   <h5 class="mb-0 fw-bold text-dark d-none d-md-flex align-items-center" style="letter-spacing: -0.5px;">
                       <i class="bi {{ $icon }} me-2 fs-4"></i> {{ $greeting }}, {{ $uName }}
@@ -69,20 +75,10 @@
                           </div>
                       </div>
                       
-                      <!-- Role Switcher -->
-                      <div class="dropdown">
-                          <button class="btn rounded-pill px-3 fw-semibold dropdown-toggle text-dark border bg-light shadow-sm" type="button" data-bs-toggle="dropdown" style="font-size: 0.85rem;">
-                              <i class="bi bi-shield-check text-primary me-1"></i> Switch Role
-                          </button>
-                          <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0">
-                              <li><h6 class="dropdown-header">Login Sebagai:</h6></li>
-                              <li><a class="dropdown-item" href="/wms/dashboard/admin"><i class="bi bi-person-badge me-2 text-primary"></i>Admin Gudang (WMS)</a></li>
-                              <li><a class="dropdown-item" href="/sales/dashboard"><i class="bi bi-briefcase me-2 text-success"></i>Sales Portal</a></li>
-                              <li><a class="dropdown-item" href="/wms/dashboard/produksi"><i class="bi bi-tools me-2 text-warning"></i>Tim Produksi</a></li>
-                              <li><hr class="dropdown-divider"></li>
-                              <li><a class="dropdown-item" href="/wms/outbound/delivery"><i class="bi bi-truck me-2 text-info"></i>Tim Logistik</a></li>
-                          </ul>
-                      </div>
+                      {{-- Role Switcher dihapus: sejak login sungguhan aktif (Fase 1,
+                           rencana pembangunan), peran ditentukan oleh akun
+                           yang login, bukan lagi dipilih bebas lewat menu ini. Lihat
+                           dokumen arsitektur §5.3. --}}
 
                       <!-- User Profile -->
                       <div class="dropdown">
@@ -96,10 +92,19 @@
                                       <small class="text-muted">{{ $uLabel }}</small>
                                   </div>
                               </li>
+                              @unless ($isSalesUser)
                               <li><a class="dropdown-item py-2 mt-2" href="/wms/profile"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
-                              
+                              @endunless
+
                               <li><hr class="dropdown-divider"></li>
-                              <li><a class="dropdown-item py-2 text-danger fw-bold" href="#"><i class="bi bi-box-arrow-right me-2"></i>Keluar</a></li>
+                              <li>
+                                  <form action="{{ route('logout') }}" method="POST">
+                                      @csrf
+                                      <button type="submit" class="dropdown-item py-2 text-danger fw-bold border-0 bg-transparent w-100 text-start">
+                                          <i class="bi bi-box-arrow-right me-2"></i>Keluar
+                                      </button>
+                                  </form>
+                              </li>
                           </ul>
                       </div>
                   </div>
