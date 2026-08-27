@@ -256,8 +256,8 @@ Menyimpan data autentikasi dan profil pengguna.
 | `password` | VARCHAR(255) | NOT NULL | Bcrypt hash |
 | `role_id` | BIGINT UNSIGNED | FK → roles.id | Peran pengguna |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang default |
-| `google2fa_secret` | VARCHAR(255) | NULLABLE, ENCRYPTED | Secret key TOTP |
-| `is_mfa_enabled` | BOOLEAN | DEFAULT FALSE | Apakah MFA sudah disetup |
+| `google2fa_secret` | VARCHAR(255) | NULLABLE, ENCRYPTED | **PENDING REMOVAL** (PRD v1.2) — TOTP diganti Google reCAPTCHA, kolom ini tidak lagi dipakai. Belum dihapus lewat migration; dijadwalkan dibereskan bersamaan saat Verifikasi Anti-Bot dibangun. |
+| `is_mfa_enabled` | BOOLEAN | DEFAULT FALSE | **PENDING REMOVAL** (PRD v1.2) — lihat catatan `google2fa_secret`. reCAPTCHA tidak memerlukan flag per-user seperti ini. |
 | `failed_login_attempts` | INTEGER | DEFAULT 0 | Counter login gagal |
 | `locked_until` | TIMESTAMP | NULLABLE | Waktu akun bisa dicoba lagi |
 | `last_lockout_at` | TIMESTAMP | NULLABLE | Waktu terakhir terkunci |

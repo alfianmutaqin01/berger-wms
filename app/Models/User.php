@@ -158,9 +158,10 @@ class User extends Authenticatable
     }
 
     /**
-     * Catat satu percobaan password salah. Mengunci akun begitu counter
-     * mencapai 5, dengan durasi yang meningkat setiap kali akun terkunci lagi
-     * setelah unlock sebelumnya (5 -> 10 -> 30 -> 60 -> 120 menit).
+     * Catat satu percobaan gagal (password salah ATAU verifikasi anti-bot
+     * gagal — keduanya berbagi counter yang sama, PRD §6.1 F-AUTH-03). Mengunci
+     * akun begitu counter mencapai 3, dengan durasi yang meningkat setiap kali
+     * akun terkunci lagi setelah unlock sebelumnya (5 -> 10 -> 30 -> 60 -> 120 menit).
      *
      * `lockout_count` sengaja TIDAK direset di sini — itu riwayat berapa kali
      * akun ini pernah terkunci, dan hanya Super Admin yang boleh menuntaskannya
@@ -170,7 +171,7 @@ class User extends Authenticatable
     {
         $this->failed_login_attempts++;
 
-        if ($this->failed_login_attempts >= 5) {
+        if ($this->failed_login_attempts >= 3) {
             $this->lockout_count++;
             $this->locked_until = now()->addMinutes(self::lockoutDurationMinutes($this->lockout_count));
             $this->last_lockout_at = now();

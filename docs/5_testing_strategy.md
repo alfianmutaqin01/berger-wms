@@ -193,7 +193,7 @@ Unit test menguji satu class/method secara terisolasi. Dependencies di-mock jika
 
 | Model | Test Cases |
 |---|---|
-| `User` | Relasi ke role, warehouse. Scope by role. MFA enabled check. |
+| `User` | Relasi ke role, warehouse. Scope by role. Progressive lockout state. |
 | `Product` | Relasi ke category. Scope aktif. Max pallet qty accessor. |
 | `InventoryStock` | Scope by warehouse. Scope available (qty > 0). FIFO scope (order by production_date). |
 | `SalesOrder` | Relasi ke details, customer, user. Status scopes. SLA accessor. |
@@ -211,16 +211,16 @@ Feature tests mengirim HTTP request ke endpoint dan memverifikasi response, data
 
 | # | Test | Method | URL | Expected |
 |---|---|---|---|---|
-| 1 | Login berhasil (email + password) | POST | /login | Redirect ke MFA page |
+| 1 | Login berhasil (email + password + reCAPTCHA) | POST | /login | Redirect ke dashboard sesuai role |
 | 2 | Login gagal — email salah | POST | /login | Error message, failed_login_attempts +1 |
 | 3 | Login gagal — password salah | POST | /login | Error message, failed_login_attempts +1 |
-| 4 | Login lockout setelah 5x gagal | POST | /login (x5) | Account locked 5 menit |
-| 5 | Progressive lockout | POST | /login (x6) | Locked 10 menit |
-| 6 | MFA verify berhasil | POST | /mfa/verify | Redirect ke dashboard |
-| 7 | MFA verify gagal | POST | /mfa/verify | Error, stay on MFA page |
-| 8 | Akses halaman tanpa login | GET | /warehouse/dashboard | Redirect ke /login |
-| 9 | Akses halaman tanpa MFA | GET | /warehouse/dashboard | Redirect ke /mfa/verify |
-| 10 | Akses portal salah (sales → warehouse) | GET | /warehouse/dashboard | 403 Forbidden |
+| 4 | Login lockout setelah 3x gagal | POST | /login (x3) | Account locked 5 menit |
+| 5 | Progressive lockout | POST | /login (x4) | Locked 10 menit |
+| 6 | Verifikasi anti-bot gagal | POST | /login | Error message, counter yang sama dengan #2/#3 |
+| 7 | *(dicadangkan)* | | | |
+| 8 | Akses halaman tanpa login | GET | /wms/dashboard/admin | Redirect ke /login |
+| 9 | *(dicadangkan — tidak ada langkah verifikasi terpisah setelah password)* | | | |
+| 10 | Akses portal salah (sales → warehouse) | GET | /wms/dashboard/admin | 403 Forbidden |
 | 11 | Auto-logout setelah idle | GET | any (after 1h) | Redirect ke /login |
 | 12 | Max 2 sessions — 3rd login | POST | /login (3rd device) | Oldest session terminated |
 
@@ -330,7 +330,7 @@ Browser tests menggunakan **Laravel Dusk** untuk mensimulasikan interaksi penggu
 
 | # | Skenario | Langkah | Verifikasi |
 |---|---|---|---|
-| 1 | **Login Flow Lengkap** | Input email → password → MFA code → dashboard | Dashboard tampil sesuai role |
+| 1 | **Login Flow Lengkap** | Input email → password → verifikasi anti-bot → dashboard | Dashboard tampil sesuai role |
 | 2 | **Sales: Create Order** | Login Sales → New Order → Pilih customer → Add items → Submit | Order muncul di daftar pending |
 | 3 | **Logistik: Approve Order** | Login Logistik → Pesanan → Detail → Approve | Status berubah, notification ke Sales |
 | 4 | **Operator: Picking** | Login Operator → Picking List → Ceklis items → Siap Loading | Status berubah ke ready_to_ship |
@@ -532,8 +532,8 @@ public function test_only_manager_and_super_admin_can_edit_stock()
 ```
 1. Sales coba akses URL warehouse → 403
 2. Logistik coba edit stok → 403
-3. Login salah 5 kali → akun terkunci
-4. Login dengan MFA code → berhasil
+3. Login salah 3 kali → akun terkunci
+4. Login dengan kredensial + reCAPTCHA benar → berhasil
 5. Buka di device ke-3 → device pertama logout
 ```
 
@@ -685,8 +685,8 @@ tests/
 - [ ] Code coverage ≥ 80% overall
 - [ ] RBAC: Setiap endpoint tested untuk semua 6 role
 - [ ] File upload: Semua tipe file berbahaya ditolak
-- [ ] Progressive lockout berfungsi sesuai spec
-- [ ] MFA (Google Authenticator) berfungsi
+- [ ] Progressive lockout berfungsi sesuai spec (3 kali gagal, 5/10/30/60/120 menit)
+- [ ] Verifikasi anti-bot (Google reCAPTCHA) berfungsi
 - [ ] Session: Idle timeout 1 jam berfungsi
 - [ ] Session: Max 2 device berfungsi
 - [ ] Order cutoff 15:00 berfungsi
