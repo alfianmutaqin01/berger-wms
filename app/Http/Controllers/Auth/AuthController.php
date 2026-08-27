@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginAttempt;
-use App\Models\Role;
 use App\Models\User;
 use App\Models\UserSession;
 use Illuminate\Http\RedirectResponse;
@@ -109,19 +109,14 @@ class AuthController extends Controller
     /**
      * PRD §6.1 F-AUTH-05: routing berdasarkan role. Tim Sales -> Portal Sales,
      * seluruh role lain -> Portal Warehouse/Admin (dashboard berbeda per role
-     * operasional, lihat DashboardController).
+     * operasional).
+     *
+     * Pemetaannya tinggal di DashboardController agar redirect setelah login
+     * dan redirect /wms/dashboard tidak bisa berbeda pendapat.
      */
     private function redirectPathFor(User $user): string
     {
-        if ($user->hasRole(Role::SALES)) {
-            return '/sales/dashboard';
-        }
-
-        return match ($user->role?->slug) {
-            Role::PRODUCTION => '/wms/dashboard/produksi',
-            Role::WAREHOUSE_OPERATOR => '/wms/dashboard/operator',
-            default => '/wms/dashboard/admin',
-        };
+        return DashboardController::pathFor($user);
     }
 
     /**
