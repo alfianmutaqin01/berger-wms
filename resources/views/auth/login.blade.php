@@ -169,7 +169,13 @@
                         <label class="form-check-label text-muted" for="remember" style="font-size: 0.85rem;">Biarkan saya tetap masuk</label>
                     </div>
 
-                    <button type="submit" class="btn btn-login w-100 py-2 mt-2 fw-semibold text-white shadow-sm">Masuk ke Sistem</button>
+                    @if (config('services.recaptcha.site_key'))
+                        <div class="mb-4">
+                            <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}" data-callback="onRecaptchaVerified" data-expired-callback="onRecaptchaExpired"></div>
+                        </div>
+                    @endif
+
+                    <button type="submit" id="submitLoginBtn" class="btn btn-login w-100 py-2 mt-2 fw-semibold text-white shadow-sm" @if(config('services.recaptcha.site_key')) disabled @endif>Masuk ke Sistem</button>
                 </form>
 
                 <div class="text-center mt-5 pt-4 border-top">
@@ -213,6 +219,19 @@
             }, 6000); // Change image every 6 seconds
         }
     });
+
+    // Tombol submit sengaja nonaktif sampai widget "Saya bukan robot" dicentang
+    // (PRD §6.1 F-AUTH-02) -- server tetap jadi penegak utama, ini murni UX.
+    function onRecaptchaVerified() {
+        document.getElementById('submitLoginBtn').removeAttribute('disabled');
+    }
+
+    function onRecaptchaExpired() {
+        document.getElementById('submitLoginBtn').setAttribute('disabled', 'disabled');
+    }
 </script>
+@if (config('services.recaptcha.site_key'))
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+@endif
 </body>
 </html>

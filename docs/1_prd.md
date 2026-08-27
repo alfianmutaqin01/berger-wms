@@ -948,7 +948,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | Cache & Session | Redis | 7+ |
 | Queue Worker | Laravel Horizon | (latest) |
 | Real-time | Laravel Echo + Pusher/Soketi | (latest) |
-| Verifikasi Anti-Bot | Google reCAPTCHA v2 | google/recaptcha (HTTP client ke Google siteverify) |
+| Verifikasi Anti-Bot | Google reCAPTCHA v2 | `Illuminate\Support\Facades\Http` langsung ke endpoint siteverify — tanpa package tambahan |
 | Excel Export | Maatwebsite/Laravel-Excel | 3.x |
 | Charts | Chart.js atau ApexCharts | (latest) |
 | PDF Generation | DomPDF atau Snappy | (latest) |

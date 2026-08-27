@@ -7,25 +7,54 @@ use App\Models\User;
 use App\Models\UserSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * Autentikasi — PRD §6.1 F-AUTH-01/03/04/05.
+ * Autentikasi — PRD §6.1 F-AUTH-01/02/03/04/05.
  *
- * Verifikasi Anti-Bot (F-AUTH-02, reCAPTCHA) belum terpasang — lihat catatan di
- * AuthController. Login berhasil di sini langsung menuju dashboard; tidak ada
- * halaman verifikasi terpisah setelah password pada desain PRD v1.2.
+ * Verifikasi Anti-Bot (F-AUTH-02, reCAPTCHA) menyatu di POST /login yang sama
+ * — tidak ada halaman verifikasi terpisah setelah password. Google siteverify
+ * di-fake di setUp() supaya suite ini TIDAK PERNAH memanggil jaringan
+ * sungguhan, terlepas dari RECAPTCHA_SECRET_KEY terisi atau tidak di .env
+ * developer yang menjalankannya.
  */
 class LoginTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Satu fake untuk seluruh suite (Http::fake() memakai aturan pertama
+        // yang cocok — memanggilnya lagi di dalam test untuk "override" TIDAK
+        // menimpa ini, cuma menambah aturan yang tidak pernah tercapai).
+        // Token 'fake-token-invalid' sengaja dianggap ditolak Google, supaya
+        // test kegagalan cukup ganti nilai token, bukan mendefinisikan fake baru.
+        Http::fake([
+            'www.google.com/recaptcha/*' => fn ($request) => Http::response([
+                'success' => ($request->data()['response'] ?? null) !== 'fake-token-invalid',
+            ]),
+        ]);
+    }
 
     private function makeUser(string $roleSlug, array $overrides = []): User
     {
         return User::factory()
             ->withRole($roleSlug)
             ->create(array_merge(['password' => Hash::make('rahasia123')], $overrides));
+    }
+
+    /** Payload POST /login lengkap dengan token reCAPTCHA "valid" (di-fake di setUp()). */
+    private function loginPayload(string $email, string $password, array $overrides = []): array
+    {
+        return array_merge([
+            'email' => $email,
+            'password' => $password,
+            'g-recaptcha-response' => 'fake-token-valid',
+        ], $overrides);
     }
 
     /**
@@ -84,7 +113,7 @@ class LoginTest extends TestCase
     {
         $user = $this->makeUser(Role::SUPER_ADMIN);
 
-        $this->post('/login', ['email' => $user->email, 'password' => 'rahasia123'])
+        $this->post('/login', $this->loginPayload($user->email, 'rahasia123'))
             ->assertRedirect('/wms/dashboard/admin');
 
         $this->assertDatabaseHas('login_attempts', [
@@ -108,7 +137,7 @@ class LoginTest extends TestCase
         foreach ($cases as $slug => $expectedPath) {
             $user = $this->makeUser($slug, ['email' => "{$slug}@berger.co.id"]);
 
-            $this->post('/login', ['email' => $user->email, 'password' => 'rahasia123'])
+            $this->post('/login', $this->loginPayload($user->email, 'rahasia123'))
                 ->assertRedirect($expectedPath);
         }
     }
@@ -128,20 +157,59 @@ class LoginTest extends TestCase
     {
         $user = $this->makeUser(Role::SALES);
 
-        $this->post('/login', ['email' => $user->email, 'password' => 'salah'])
+        $this->post('/login', $this->loginPayload($user->email, 'salah'))
             ->assertSessionHasErrors('email');
 
         $this->assertSame(1, $user->fresh()->failed_login_attempts);
+        $this->assertDatabaseHas('login_attempts', [
+            'email' => $user->email,
+            'failure_reason' => 'wrong_password',
+        ]);
     }
 
     public function test_akun_nonaktif_tidak_bisa_login(): void
     {
         $user = $this->makeUser(Role::SALES, ['is_active' => false]);
 
-        $this->post('/login', ['email' => $user->email, 'password' => 'rahasia123'])
+        $this->post('/login', $this->loginPayload($user->email, 'rahasia123'))
             ->assertSessionHasErrors('email');
 
         $this->assertGuest();
+    }
+
+    /* ------------------------------------------------------- Verifikasi anti-bot */
+
+    /** PRD §6.1 F-AUTH-02: token kosong/tidak dicentang diperlakukan sama seperti kredensial salah. */
+    public function test_login_gagal_jika_recaptcha_kosong(): void
+    {
+        $user = $this->makeUser(Role::SALES);
+
+        $this->post('/login', $this->loginPayload($user->email, 'rahasia123', ['g-recaptcha-response' => '']))
+            ->assertSessionHasErrors('email');
+
+        $this->assertGuest();
+        $this->assertSame(1, $user->fresh()->failed_login_attempts);
+        $this->assertDatabaseHas('login_attempts', [
+            'email' => $user->email,
+            'failure_reason' => 'recaptcha_failed',
+        ]);
+    }
+
+    /** Google menolak token (kedaluwarsa/tidak valid) -> diperlakukan sama seperti kredensial salah. */
+    public function test_login_gagal_jika_recaptcha_ditolak_google(): void
+    {
+        $user = $this->makeUser(Role::SALES);
+
+        $this->post('/login', $this->loginPayload($user->email, 'rahasia123', [
+            'g-recaptcha-response' => 'fake-token-invalid',
+        ]))->assertSessionHasErrors('email');
+
+        $this->assertGuest();
+        $this->assertSame(1, $user->fresh()->failed_login_attempts);
+        $this->assertDatabaseHas('login_attempts', [
+            'email' => $user->email,
+            'failure_reason' => 'recaptcha_failed',
+        ]);
     }
 
     /* ---------------------------------------------------- Progressive lockout */
@@ -151,7 +219,7 @@ class LoginTest extends TestCase
         $user = $this->makeUser(Role::SALES);
 
         for ($i = 0; $i < 3; $i++) {
-            $this->post('/login', ['email' => $user->email, 'password' => 'salah']);
+            $this->post('/login', $this->loginPayload($user->email, 'salah'));
         }
 
         $user->refresh();
@@ -184,7 +252,7 @@ class LoginTest extends TestCase
             'locked_until' => now()->subMinute(), // sudah lewat, akun sudah unlock
         ]);
 
-        $this->post('/login', ['email' => $user->email, 'password' => 'salah']);
+        $this->post('/login', $this->loginPayload($user->email, 'salah'));
 
         $user->refresh();
         $this->assertSame(2, $user->lockout_count);
@@ -197,7 +265,7 @@ class LoginTest extends TestCase
     {
         $user = $this->makeUser(Role::SUPER_ADMIN);
 
-        $response = $this->post('/login', ['email' => $user->email, 'password' => 'rahasia123']);
+        $response = $this->post('/login', $this->loginPayload($user->email, 'rahasia123'));
 
         $token = $response->getCookie('device_token', decrypt: false)?->getValue();
 
@@ -210,11 +278,11 @@ class LoginTest extends TestCase
     {
         $user = $this->makeUser(Role::SUPER_ADMIN);
 
-        $firstToken = $this->post('/login', ['email' => $user->email, 'password' => 'rahasia123'])
+        $firstToken = $this->post('/login', $this->loginPayload($user->email, 'rahasia123'))
             ->getCookie('device_token', decrypt: false)?->getValue();
 
-        $this->post('/login', ['email' => $user->email, 'password' => 'rahasia123']);
-        $this->post('/login', ['email' => $user->email, 'password' => 'rahasia123']);
+        $this->post('/login', $this->loginPayload($user->email, 'rahasia123'));
+        $this->post('/login', $this->loginPayload($user->email, 'rahasia123'));
 
         $this->assertSame(2, UserSession::where('user_id', $user->id)->count());
         $this->assertDatabaseMissing('user_sessions', ['session_id' => $firstToken]);

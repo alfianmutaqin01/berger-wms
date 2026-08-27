@@ -12,16 +12,17 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
- * Login, logout, dan penegakan sesi. PRD §6.1 F-AUTH-01/03/04/05.
+ * Login, logout, dan penegakan sesi. PRD §6.1 F-AUTH-01/02/03/04/05.
  *
- * Verifikasi Anti-Bot (F-AUTH-02, Google reCAPTCHA v2) BELUM terpasang di sini —
- * menyusul di fase terpisah. Widget-nya nanti menyatu di form login yang sama,
- * bukan halaman verifikasi terpisah, dan kegagalannya masuk ke counter lockout
- * yang sama dengan password salah (lihat User::registerFailedLogin()).
+ * Verifikasi Anti-Bot (F-AUTH-02, Google reCAPTCHA v2) menyatu di form login
+ * yang sama — BUKAN halaman verifikasi terpisah seperti rancangan MFA lama.
+ * Kegagalannya (token tidak valid/kedaluwarsa/kosong) masuk ke counter lockout
+ * yang sama dengan password salah, lihat User::registerFailedLogin().
  */
 class AuthController extends Controller
 {
@@ -64,6 +65,13 @@ class AuthController extends Controller
                 'email' => 'Akun terkunci sampai pukul '.$user->locked_until->translatedFormat('H:i').
                     ' karena terlalu banyak percobaan gagal.',
             ])->onlyInput('email');
+        }
+
+        if (! $this->verifyRecaptcha((string) $request->input('g-recaptcha-response'))) {
+            $user->registerFailedLogin();
+            $this->logAttempt($user->email, false, 'recaptcha_failed', $request);
+
+            return $this->invalidCredentialsResponse();
         }
 
         if (! Hash::check($credentials['password'], $user->password)) {
@@ -149,6 +157,37 @@ class AuthController extends Controller
         ]);
 
         return $token;
+    }
+
+    /**
+     * PRD §6.1 F-AUTH-02: verifikasi token widget "Saya bukan robot" ke Google
+     * siteverify. Dipanggil dari request POST /login yang sama — bukan rute
+     * terpisah — sehingga kegagalannya bisa langsung masuk ke alur lockout.
+     *
+     * Secret key kosong DIANGGAP LULUS di luar production, supaya development
+     * lokal tanpa kredensial reCAPTCHA sendiri tidak ikut terkunci (mengikuti
+     * pola pagar environment yang sama dengan CurrentActor). Di production,
+     * secret key kosong berarti verifikasi ke Google gagal terkirim -> token
+     * tidak pernah tervalidasi -> login tertahan, bukan diam-diam dilewati.
+     */
+    private function verifyRecaptcha(string $token): bool
+    {
+        $secret = config('services.recaptcha.secret_key');
+
+        if (blank($secret)) {
+            return ! app()->environment('production');
+        }
+
+        if (blank($token)) {
+            return false;
+        }
+
+        $response = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret' => $secret,
+            'response' => $token,
+        ]);
+
+        return $response->successful() && $response->json('success') === true;
     }
 
     private function logAttempt(string $email, bool $successful, ?string $reason, Request $request): void
