@@ -118,17 +118,26 @@
 
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
+                        {{-- Urutan kolom: identitas -> klasifikasi -> ukuran -> operasional.
+                             Kolom "KEMASAN" (ukuran wadah) sengaja dipisah dari "VOL. ISI"
+                             (unit_volume) karena keduanya memang berbeda: pail 20 L bisa
+                             berisi 19.4 L, dan aturan palet memakai ukuran wadahnya. --}}
                         <thead class="table-light">
                             <tr>
-                                <th class="text-secondary small fw-semibold text-center" style="width: 50px;">NO</th>
+                                <th class="text-secondary small fw-semibold text-center" style="width: 46px;">NO</th>
                                 <th class="text-secondary small fw-semibold">SAPSKU</th>
-                                <th class="text-secondary small fw-semibold" style="min-width: 260px;">DESCRIPTION</th>
+                                <th class="text-secondary small fw-semibold" style="min-width: 240px;">DESCRIPTION</th>
+                                <th class="text-secondary small fw-semibold text-center">PROD<br>CODE</th>
+                                <th class="text-secondary small fw-semibold text-center">SHADE<br>CODE</th>
+                                <th class="text-secondary small fw-semibold text-center">PACK<br>CODE</th>
                                 <th class="text-secondary small fw-semibold">PRODUCT TYPE</th>
                                 <th class="text-secondary small fw-semibold text-center">UoM</th>
                                 <th class="text-secondary small fw-semibold text-end">KEMASAN</th>
-                                <th class="text-secondary small fw-semibold text-end">GROSS</th>
-                                <th class="text-secondary small fw-semibold text-end">NET</th>
-                                <th class="text-secondary small fw-semibold text-center">MAKS/PALET</th>
+                                <th class="text-secondary small fw-semibold text-end">VOL. ISI</th>
+                                <th class="text-secondary small fw-semibold text-end">NET (KG)</th>
+                                <th class="text-secondary small fw-semibold text-end">GROSS (KG)</th>
+                                <th class="text-secondary small fw-semibold text-center">MAKS<br>PALET</th>
+                                <th class="text-secondary small fw-semibold text-center">MASA<br>SIMPAN</th>
                                 <th class="text-secondary small fw-semibold text-center">STATUS</th>
                                 <th class="text-secondary small fw-semibold text-center pe-3">AKSI</th>
                             </tr>
@@ -148,6 +157,7 @@
                                         'pack_code' => $product->pack_code,
                                         'category_id' => $product->category_id,
                                         'uom' => $product->uom,
+                                        'pack_size' => $product->pack_size,
                                         'pack_unit' => $product->pack_unit,
                                         'unit_volume' => $product->unit_volume,
                                         'net_weight' => $product->net_weight,
@@ -161,34 +171,36 @@
                                 @endphp
                                 <tr class="{{ $dimmed }}">
                                     <td class="text-center text-muted">{{ $loop->iteration + ($products->currentPage() - 1) * $products->perPage() }}</td>
-                                    <td class="font-monospace fw-bold text-dark">{{ $product->sku }}</td>
-                                    <td class="text-dark">
-                                        {{ $product->name }}
-                                        <div class="small text-muted font-monospace">
-                                            {{ $product->product_code }} · {{ $product->shade_code }} · {{ $product->pack_code }}
-                                        </div>
-                                    </td>
-                                    <td>
+                                    <td class="font-monospace fw-bold text-dark text-nowrap">{{ $product->sku }}</td>
+                                    <td class="text-dark">{{ $product->name }}</td>
+                                    <td class="text-center font-monospace small text-muted">{{ $product->product_code }}</td>
+                                    <td class="text-center font-monospace small text-muted">{{ $product->shade_code }}</td>
+                                    <td class="text-center font-monospace small text-muted">{{ $product->pack_code }}</td>
+                                    <td class="text-nowrap">
                                         @if($product->category)
                                             <span class="badge bg-secondary text-white">{{ $product->category->name }}</span>
                                         @else
-                                            <span class="text-muted small">—</span>
+                                            {{-- Pada ekspor ERP nilainya "Tidak ditemukan" — dibiarkan kosong
+                                                 agar masalahnya terlihat, bukan disamarkan jadi kategori palsu. --}}
+                                            <span class="badge bg-light text-muted border" title="Product Type tidak ditemukan di ERP">Belum berkategori</span>
                                         @endif
                                     </td>
                                     <td class="text-center"><span class="badge bg-light text-dark border">{{ $product->uom }}</span></td>
-                                    <td class="text-end font-monospace text-dark">{{ $product->pack_label }}</td>
+                                    <td class="text-end font-monospace fw-semibold text-dark text-nowrap">{{ $product->pack_label }}</td>
+                                    <td class="text-end font-monospace text-muted">{{ $product->unit_volume !== null ? rtrim(rtrim(number_format((float) $product->unit_volume, 3, '.', ''), '0'), '.') : '—' }}</td>
+                                    <td class="text-end font-monospace text-muted">{{ $product->net_weight !== null ? number_format((float) $product->net_weight, 2) : '—' }}</td>
                                     <td class="text-end font-monospace text-muted">{{ $product->gross_weight !== null ? number_format((float) $product->gross_weight, 2) : '—' }}</td>
-                                    <td class="text-end font-monospace text-muted">{{ $product->net_weight !== null ? number_format((float) $product->net_weight, 3) : '—' }}</td>
                                     <td class="text-center">
                                         @if($product->max_qty_per_pallet)
                                             <span class="fw-bold text-dark">{{ number_format($product->max_qty_per_pallet) }}</span>
                                         @else
-                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning"
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning text-nowrap"
                                                   title="Ukuran kemasan tidak ada di aturan palet gudang. Mohon isi manual.">
                                                 <i class="bi bi-exclamation-triangle"></i> Belum diisi
                                             </span>
                                         @endif
                                     </td>
+                                    <td class="text-center text-muted small text-nowrap">{{ $product->shelf_life_months }} bln</td>
                                     <td class="text-center">
                                         @if($product->is_active)
                                             <span class="badge bg-success-subtle text-success-emphasis border border-success">Aktif</span>
@@ -215,7 +227,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="11" class="text-center text-muted py-5">
+                                    <td colspan="16" class="text-center text-muted py-5">
                                         <i class="bi bi-inbox fs-1 d-block mb-2 opacity-50"></i>
                                         Belum ada produk yang cocok dengan filter ini.
                                     </td>
@@ -299,20 +311,37 @@
                         <i class="bi bi-pallet me-1"></i> Ukuran Kemasan &amp; Kapasitas Palet
                     </p>
 
+                    <div class="alert alert-light border small mb-3">
+                        <i class="bi bi-info-circle text-primary me-1"></i>
+                        <strong>Ukuran Kemasan</strong> adalah ukuran wadahnya (pail 20 L), sedangkan
+                        <strong>Volume Isi</strong> adalah isi sebenarnya menurut ERP — bisa lebih kecil,
+                        misal 19,4 L, karena menyisakan ruang untuk pewarna. Kapasitas palet dihitung dari
+                        <strong>ukuran wadah</strong>.
+                    </div>
+
                     <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-secondary">Ukuran Kemasan *</label>
+                            <input type="text" name="pack_size" id="inpPackSize" class="form-control" placeholder="20">
+                            <div class="form-text">Kosongkan agar dibaca dari nama produk.</div>
+                        </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold text-secondary">Satuan Ukuran</label>
                             <select name="pack_unit" id="inpPackUnit" class="form-select">
-                                <option value="">— Pilih —</option>
+                                <option value="">— Otomatis —</option>
                                 <option value="L">Liter (L)</option>
                                 <option value="KG">Kilogram (KG)</option>
                             </select>
-                            <div class="form-text">Menentukan aturan palet: 20 L = 27 pcs, 20 Kg = 36 pcs.</div>
+                            <div class="form-text">20 L = 27 pcs, 20 Kg = 36 pcs.</div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label small fw-semibold text-secondary">Unit Volume (L)</label>
-                            <input type="text" name="unit_volume" id="inpVolume" class="form-control" placeholder="2.5">
+                            <label class="form-label small fw-semibold text-secondary">Volume Isi (L)</label>
+                            <input type="text" name="unit_volume" id="inpVolume" class="form-control" placeholder="19.4">
+                            <div class="form-text">Angka apa adanya dari ERP.</div>
                         </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold text-secondary">Net Weight (Kg)</label>
                             <input type="text" name="net_weight" id="inpNet" class="form-control" placeholder="0">
@@ -322,7 +351,7 @@
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold text-secondary">Gross Weight (Kg)</label>
-                            <input type="text" name="gross_weight" id="inpGross" class="form-control" placeholder="4.05">
+                            <input type="text" name="gross_weight" id="inpGross" class="form-control" placeholder="26.79">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold text-secondary">Maks per Palet</label>
@@ -401,6 +430,7 @@
         document.getElementById('inpName').value = data.name ?? '';
         document.getElementById('inpCategory').value = data.category_id ?? '';
         document.getElementById('inpUom').value = data.uom ?? '';
+        document.getElementById('inpPackSize').value = data.pack_size ?? '';
         document.getElementById('inpPackUnit').value = data.pack_unit ?? '';
         document.getElementById('inpVolume').value = data.unit_volume ?? '';
         document.getElementById('inpNet').value = data.net_weight ?? '';

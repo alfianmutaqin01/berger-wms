@@ -38,11 +38,16 @@ return new class extends Migration
             // Satuan kemasan dari ERP: KG, TIN, PAI, CAN, dst.
             $table->string('uom', 20);
 
-            // Ukuran kemasan yang menentukan kapasitas palet. `pack_unit`
-            // menyatakan ukuran mana yang berlaku: 'L' -> unit_volume,
-            // 'KG' -> net_weight. Perlu eksplisit karena 20 L dan 20 Kg
-            // punya kapasitas palet berbeda (27 vs 36).
+            // Ukuran kemasan NOMINAL (ukuran wadah) + satuannya. Inilah yang
+            // menentukan kapasitas palet, BUKAN `unit_volume`: pail "20Ltr"
+            // bisa berisi 19.4 L saja karena menyisakan ruang untuk pewarna,
+            // sementara paletnya tetap memuat 27 pail. Satuan wajib eksplisit
+            // karena 20 L (27 pcs) dan 20 Kg (36 pcs) berbeda kapasitasnya.
+            $table->decimal('pack_size', 10, 3)->nullable();
             $table->string('pack_unit', 2)->nullable();
+
+            // Angka apa adanya dari ERP — volume isi & bobot sebenarnya.
+            // Dipakai untuk perencanaan muatan, bukan untuk aturan palet.
             $table->decimal('unit_volume', 10, 3)->nullable();
             $table->decimal('net_weight', 10, 3)->nullable();
             $table->decimal('gross_weight', 10, 3)->nullable();

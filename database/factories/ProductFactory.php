@@ -25,9 +25,10 @@ class ProductFactory extends Factory
             'shade_code' => $shadeCode,
             'pack_code' => $packCode,
             'category_id' => ProductCategory::factory(),
-            'uom' => fake()->randomElement(['TIN', 'PAI', 'KG', 'CAN']),
+            'uom' => fake()->randomElement(['TIN', 'PAIL', 'KG', 'CAN']),
+            'pack_size' => 2.5,
             'pack_unit' => PalletCapacity::UNIT_LITER,
-            'unit_volume' => 2.5,
+            'unit_volume' => 2.425,
             'net_weight' => null,
             'gross_weight' => 4.05,
             'max_qty_per_pallet' => 180,
@@ -37,25 +38,27 @@ class ProductFactory extends Factory
         ];
     }
 
-    /** Kemasan berbasis liter, kapasitas palet mengikuti aturan gudang. */
-    public function liter(float $volume): static
+    /** Kemasan berbasis liter; $size = ukuran wadah, bukan volume isi. */
+    public function liter(float $size): static
     {
         return $this->state(fn () => [
+            'pack_size' => $size,
             'pack_unit' => PalletCapacity::UNIT_LITER,
-            'unit_volume' => $volume,
+            'unit_volume' => $size,
             'net_weight' => null,
-            'max_qty_per_pallet' => PalletCapacity::resolve(PalletCapacity::UNIT_LITER, $volume),
+            'max_qty_per_pallet' => PalletCapacity::resolve(PalletCapacity::UNIT_LITER, $size),
         ]);
     }
 
     /** Kemasan berbasis kilogram. */
-    public function kilogram(float $weight): static
+    public function kilogram(float $size): static
     {
         return $this->state(fn () => [
+            'pack_size' => $size,
             'pack_unit' => PalletCapacity::UNIT_KILOGRAM,
-            'net_weight' => $weight,
+            'net_weight' => $size,
             'unit_volume' => null,
-            'max_qty_per_pallet' => PalletCapacity::resolve(PalletCapacity::UNIT_KILOGRAM, $weight),
+            'max_qty_per_pallet' => PalletCapacity::resolve(PalletCapacity::UNIT_KILOGRAM, $size),
         ]);
     }
 

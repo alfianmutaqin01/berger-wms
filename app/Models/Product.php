@@ -40,6 +40,7 @@ class Product extends Model
         'pack_code',
         'category_id',
         'uom',
+        'pack_size',
         'pack_unit',
         'unit_volume',
         'net_weight',
@@ -54,6 +55,7 @@ class Product extends Model
     protected function casts(): array
     {
         return [
+            'pack_size' => 'decimal:3',
             'unit_volume' => 'decimal:3',
             'net_weight' => 'decimal:3',
             'gross_weight' => 'decimal:3',
@@ -93,26 +95,15 @@ class Product extends Model
     }
 
     /**
-     * Ukuran kemasan yang menentukan kapasitas palet.
+     * Kapasitas palet menurut aturan gudang; NULL bila ukurannya tidak terdaftar.
      *
-     * `pack_unit` menyatakan kolom mana yang berlaku, karena satu produk bisa
-     * punya volume DAN berat sekaligus (mis. 20 L dengan bobot kotor 27 Kg) —
-     * tanpa penanda ini, sistem bisa salah memilih aturan 20 L (27 pcs) atau
-     * 20 Kg (36 pcs).
+     * Memakai `pack_size` (ukuran wadah), BUKAN `unit_volume` (volume isi
+     * sebenarnya). Pail "20Ltr" yang hanya berisi 19.4 L tetap memakan tempat
+     * satu pail 20 L di atas palet — lihat catatan di App\Support\PackSize.
      */
-    public function packSize(): int|float|null
-    {
-        return match ($this->pack_unit) {
-            PalletCapacity::UNIT_LITER => $this->unit_volume === null ? null : (float) $this->unit_volume,
-            PalletCapacity::UNIT_KILOGRAM => $this->net_weight === null ? null : (float) $this->net_weight,
-            default => null,
-        };
-    }
-
-    /** Kapasitas palet menurut aturan gudang; NULL bila ukurannya tidak terdaftar. */
     public function resolvePalletCapacity(): ?int
     {
-        return PalletCapacity::resolve($this->pack_unit, $this->packSize());
+        return PalletCapacity::resolve($this->pack_unit, $this->pack_size);
     }
 
     /**
@@ -154,16 +145,14 @@ class Product extends Model
         });
     }
 
-    /** Label ukuran untuk tampilan, contoh: "2.5 L" atau "20 Kg". */
+    /** Label ukuran kemasan untuk tampilan, contoh: "2.5 L" atau "20 Kg". */
     public function getPackLabelAttribute(): string
     {
-        $size = $this->packSize();
-
-        if ($size === null) {
-            return '-';
+        if ($this->pack_size === null) {
+            return '—';
         }
 
-        return rtrim(rtrim(number_format($size, 2, '.', ''), '0'), '.').' '.
-            ($this->pack_unit === PalletCapacity::UNIT_LITER ? 'L' : 'Kg');
+        return rtrim(rtrim(number_format((float) $this->pack_size, 3, '.', ''), '0'), '.').' '.
+            ($this->pack_unit === PalletCapacity::UNIT_KILOGRAM ? 'Kg' : 'L');
     }
 }

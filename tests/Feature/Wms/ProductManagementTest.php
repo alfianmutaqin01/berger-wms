@@ -64,6 +64,7 @@ class ProductManagementTest extends TestCase
             'name' => 'Royale Smart Clean White 2.5Ltr',
             'category_id' => $this->category->id,
             'uom' => 'TIN',
+            'pack_size' => '2.5',
             'pack_unit' => PalletCapacity::UNIT_LITER,
             'unit_volume' => '2.5',
             'net_weight' => '',
@@ -154,14 +155,61 @@ class ProductManagementTest extends TestCase
         $this->loginAs(Role::SUPER_ADMIN);
 
         $this->post('/wms/master/products', $this->validPayload([
-            'pack_code' => '225', 'unit_volume' => '2.5',
+            'pack_code' => '225', 'pack_size' => '2.5',
         ]));
         $this->assertSame(180, Product::where('sku', 'ID1-F00113202225')->value('max_qty_per_pallet'));
 
         $this->post('/wms/master/products', $this->validPayload([
-            'pack_code' => '320', 'unit_volume' => '20',
+            'pack_code' => '320', 'pack_size' => '20',
         ]));
         $this->assertSame(27, Product::where('sku', 'ID1-F00113202320')->value('max_qty_per_pallet'));
+    }
+
+    /**
+     * Kapasitas palet memakai ukuran WADAH, bukan volume isi.
+     *
+     * Regresi: pail "20Ltr" pada data ERP punya unit_volume 19.4 (menyisakan
+     * ruang untuk pewarna). Bila kapasitas dihitung dari volume isi, produk ini
+     * salah dianggap tidak punya aturan palet — padahal tetap 27 pcs per palet.
+     */
+    public function test_kapasitas_palet_memakai_ukuran_wadah_bukan_volume_isi(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $this->post('/wms/master/products', $this->validPayload([
+            'shade_code' => 'B128',
+            'pack_code' => '320',
+            'name' => 'Royale Smart Clean Blue Smoke 20Ltr',
+            'pack_size' => '20',
+            'unit_volume' => '19.4',
+        ]))->assertSessionHasNoErrors();
+
+        $product = Product::where('shade_code', 'B128')->firstOrFail();
+
+        $this->assertSame(27, $product->max_qty_per_pallet);
+        $this->assertSame('19.400', $product->unit_volume);
+    }
+
+    /** Ukuran kemasan dibaca dari nama produk bila tidak diisi. */
+    public function test_ukuran_kemasan_dibaca_otomatis_dari_nama_produk(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $this->post('/wms/master/products', $this->validPayload([
+            'shade_code' => 'B137',
+            'pack_code' => '320',
+            'name' => 'Royale Smart Clean Solitaire 8500 20Ltr',
+            'pack_size' => '',
+            'pack_unit' => '',
+            'unit_volume' => '18.4',
+        ]))->assertSessionHasNoErrors();
+
+        $product = Product::where('shade_code', 'B137')->firstOrFail();
+
+        // "8500" tidak boleh tertangkap sebagai ukuran — hanya "20Ltr" di ujung nama.
+        $this->assertSame('20.000', $product->pack_size);
+        $this->assertSame(PalletCapacity::UNIT_LITER, $product->pack_unit);
+        $this->assertSame(27, $product->max_qty_per_pallet);
     }
 
     /** Satuan menentukan hasil: 20 Kg -> 36 pcs, berbeda dari 20 L -> 27 pcs. */
@@ -171,6 +219,8 @@ class ProductManagementTest extends TestCase
 
         $this->post('/wms/master/products', $this->validPayload([
             'pack_code' => '820',
+            'name' => 'Trucare Alkali Resist Primer White 20Kg',
+            'pack_size' => '20',
             'pack_unit' => PalletCapacity::UNIT_KILOGRAM,
             'unit_volume' => '',
             'net_weight' => '20',
@@ -185,7 +235,9 @@ class ProductManagementTest extends TestCase
         $this->loginAs(Role::SUPER_ADMIN);
 
         $this->post('/wms/master/products', $this->validPayload([
-            'pack_code' => '203', 'unit_volume' => '0.25',
+            'pack_code' => '203',
+            'name' => 'Royale Smart Clean White 0.25Ltr',
+            'pack_size' => '0.25',
         ]))->assertSessionHasNoErrors();
 
         $product = Product::where('pack_code', '203')->firstOrFail();
@@ -199,7 +251,7 @@ class ProductManagementTest extends TestCase
         $this->loginAs(Role::SUPER_ADMIN);
 
         $this->post('/wms/master/products', $this->validPayload([
-            'pack_code' => '203', 'unit_volume' => '0.25', 'max_qty_per_pallet' => '900',
+            'pack_code' => '203', 'pack_size' => '0.25', 'max_qty_per_pallet' => '900',
         ]));
 
         $this->assertSame(900, Product::where('pack_code', '203')->value('max_qty_per_pallet'));

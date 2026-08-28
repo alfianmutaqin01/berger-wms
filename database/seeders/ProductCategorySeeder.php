@@ -6,19 +6,20 @@ use App\Models\ProductCategory;
 use Illuminate\Database\Seeder;
 
 /**
- * Tipe produk ("Product Type") — mengikuti pilihan yang sudah ada di halaman
- * Master Produk. Daftar ini masih perlu dilengkapi sesuai katalog Berger.
+ * Tipe produk ("Product Type" pada ekspor ERP).
+ *
+ * Nilainya diambil apa adanya dari kolom Product Type. Nilai "Tidak ditemukan"
+ * pada ekspor TIDAK dibuatkan kategori — itu penanda bahwa pencarian kategori
+ * di ERP gagal, bukan nama kategori. Produk seperti itu dibiarkan tanpa
+ * kategori agar masalahnya terlihat, bukan tersamarkan jadi kategori palsu.
  */
 class ProductCategorySeeder extends Seeder
 {
     public function run(): void
     {
         $categories = [
-            ['name' => 'Alk Primer', 'description' => 'Cat dasar berbasis alkyd'],
-            ['name' => 'AMC', 'description' => 'Acrylic Multi Coat'],
-            ['name' => 'Apex Emulsion', 'description' => 'Cat tembok eksterior'],
-            ['name' => 'Royale Emulsion', 'description' => 'Cat tembok interior premium'],
-            ['name' => 'Wood & Metal', 'description' => 'Cat kayu dan besi'],
+            ['name' => 'Royale Smart Clean', 'description' => 'Cat tembok interior Royale Smart Clean'],
+            ['name' => 'Royale Smart Clean - Base', 'description' => 'Base tinting untuk Royale Smart Clean'],
         ];
 
         foreach ($categories as $category) {

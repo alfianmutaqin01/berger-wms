@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Wms;
 
 use App\Models\Product;
+use App\Support\PackSize;
 use App\Support\PalletCapacity;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -22,12 +23,18 @@ class StoreProductRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        // Ukuran kemasan nominal dibaca dari nama produk ("20Ltr") bila tidak
+        // diisi, karena kolom itulah dasar aturan palet — bukan unit_volume
+        // yang berisi volume isi sebenarnya (pail 20 L bisa berisi 19.4 L).
+        $parsed = PackSize::parse($this->input('name'));
+
         $this->merge([
+            'pack_size' => $this->normalizeDecimal($this->input('pack_size')) ?? ($parsed['size'] ?? null),
+            'pack_unit' => $this->input('pack_unit') ?: ($parsed['unit'] ?? null),
             'unit_volume' => $this->normalizeDecimal($this->input('unit_volume')),
             'net_weight' => $this->normalizeDecimal($this->input('net_weight')),
             'gross_weight' => $this->normalizeDecimal($this->input('gross_weight')),
             'category_id' => $this->input('category_id') ?: null,
-            'pack_unit' => $this->input('pack_unit') ?: null,
             'sku' => $this->resolveSku(),
         ]);
     }
@@ -46,6 +53,7 @@ class StoreProductRequest extends FormRequest
             'category_id' => ['nullable', 'integer', 'exists:product_categories,id'],
             'uom' => ['required', 'string', 'max:20'],
 
+            'pack_size' => ['nullable', 'numeric', 'min:0', 'max:99999'],
             'pack_unit' => ['nullable', Rule::in(PalletCapacity::UNITS)],
             'unit_volume' => ['nullable', 'numeric', 'min:0', 'max:99999'],
             'net_weight' => ['nullable', 'numeric', 'min:0', 'max:99999'],
@@ -79,20 +87,11 @@ class StoreProductRequest extends FormRequest
 
         $data['max_qty_per_pallet'] = $this->filled('max_qty_per_pallet')
             ? (int) $this->input('max_qty_per_pallet')
-            : PalletCapacity::resolve($this->input('pack_unit'), $this->packSizeInput());
+            : PalletCapacity::resolve($this->input('pack_unit'), $this->input('pack_size'));
 
         $data['is_active'] = $this->boolean('is_active');
 
         return $data;
-    }
-
-    protected function packSizeInput(): ?string
-    {
-        return match ($this->input('pack_unit')) {
-            PalletCapacity::UNIT_LITER => $this->input('unit_volume'),
-            PalletCapacity::UNIT_KILOGRAM => $this->input('net_weight'),
-            default => null,
-        };
     }
 
     /** SKU boleh diketik manual (mis. saat menyalin dari ERP); bila kosong, dibentuk dari tiga kode. */

@@ -333,9 +333,10 @@ Master data SKU/produk.
 | `shade_code` | VARCHAR(10) | NOT NULL | Kode warna, contoh: `3202` = White, `B050` = Vanilla Sky |
 | `pack_code` | VARCHAR(10) | NOT NULL | Kode kemasan, contoh: `225` = 2.5 L, `320` = 20 L |
 | `category_id` | BIGINT UNSIGNED | FK → product_categories.id, NULLABLE | "Product Type" (Alk Primer, AMC, dst.) |
-| `uom` | VARCHAR(20) | NOT NULL | Satuan kemasan dari ERP: KG, TIN, PAI, CAN |
-| `pack_unit` | VARCHAR(2) | NULLABLE | `L` atau `KG` — menentukan ukuran mana yang dipakai aturan palet |
-| `unit_volume` | DECIMAL(10,3) | NULLABLE | Volume kemasan dalam liter |
+| `uom` | VARCHAR(20) | NOT NULL | Satuan kemasan dari ERP: KG, TIN, PAIL, CAN |
+| `pack_size` | DECIMAL(10,3) | NULLABLE | Ukuran **wadah** (nominal), contoh: 20 untuk pail 20 Ltr. **Dasar aturan palet** |
+| `pack_unit` | VARCHAR(2) | NULLABLE | `L` atau `KG` — satuan dari `pack_size` |
+| `unit_volume` | DECIMAL(10,3) | NULLABLE | Volume **isi sebenarnya** menurut ERP — bisa lebih kecil dari `pack_size` |
 | `net_weight` | DECIMAL(10,3) | NULLABLE | Berat bersih (kg) |
 | `gross_weight` | DECIMAL(10,3) | NULLABLE | Berat kotor (kg) |
 | `max_qty_per_pallet` | INTEGER | NULLABLE | Kapasitas maks per palet, dihitung otomatis (lihat catatan) |
@@ -355,12 +356,27 @@ Master data SKU/produk.
 >
 > Ada test regresi (`ProductManagementTest::test_tabel_produk_tidak_menyimpan_jumlah_stok`) yang menggagalkan build bila kolom bernama `stock`, `qty`, `quantity`, atau `inventory` menyelinap masuk ke tabel ini.
 
+> [!CAUTION]
+> **`pack_size` vs `unit_volume` — jangan tertukar.** Keduanya sama-sama angka liter, tapi artinya berbeda:
+>
+> | Kolom | Arti | Contoh (Blue Smoke 20Ltr) |
+> |---|---|---|
+> | `pack_size` | Ukuran **wadah** | `20.000` |
+> | `unit_volume` | **Isi sebenarnya** menurut ERP | `19.400` |
+>
+> Wadah tinting base sengaja tidak diisi penuh agar ada ruang untuk pewarna. **Aturan palet WAJIB memakai `pack_size`** — satu pail tetap memakan tempat satu pail 20 L di atas palet, berapa pun isinya. Memakai `unit_volume` membuat sebagian besar produk salah dianggap tidak punya aturan palet.
+>
+> `pack_size` dan `pack_unit` diisi otomatis dengan membaca ukuran di ujung nama produk ("…20Ltr", "…4Kg") lewat `App\Support\PackSize`.
+
 > [!NOTE]
-> **`max_qty_per_pallet` NULLABLE, berbeda dari rancangan awal.** Kapasitas palet dihitung dari tabel aturan gudang (`App\Support\PalletCapacity`) berdasarkan `pack_unit` + ukuran. Satuan ikut menentukan hasilnya — **20 L memuat 27 pcs, sedangkan 20 Kg memuat 36 pcs** — sehingga tidak bisa diturunkan dari rumus volume/berat semata.
+> **`max_qty_per_pallet` NULLABLE, berbeda dari rancangan awal.** Kapasitas palet dihitung dari tabel aturan gudang (`App\Support\PalletCapacity`) berdasarkan `pack_unit` + `pack_size`. Satuan ikut menentukan hasilnya — **20 L memuat 27 pcs, sedangkan 20 Kg memuat 36 pcs** — sehingga tidak bisa diturunkan dari rumus volume/berat semata.
 >
 > Ukuran di luar daftar aturan (mis. 0.25 L) sengaja menghasilkan NULL, **bukan angka tebakan**: salah menghitung kapasitas palet berarti salah membentuk palet di lantai gudang. Produk semacam itu ditandai di halaman Master Produk agar Manager mengisinya manual.
 >
 > **Aturan kapasitas palet:** 0.9 L / 0.9 Kg / 1 Kg → 720 · 2.5 L / 3.6 L / 4 Kg / 5 Kg → 180 · 15 L → 40 · 18 L / 20 L → 27 · 18 Kg / 20 Kg / 25 Kg → 36
+
+> [!NOTE]
+> **Product Type "Tidak ditemukan" pada ekspor ERP** dipetakan menjadi `category_id = NULL`, bukan dibuatkan kategori bernama itu. Nilai tersebut adalah penanda bahwa pencarian kategori di ERP gagal — bila dijadikan kategori, masalah datanya akan tersamarkan. Di layar tampil sebagai badge "Belum berkategori".
 
 #### `locations`
 Master lokasi rak penyimpanan di gudang.
