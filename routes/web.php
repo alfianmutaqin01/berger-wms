@@ -5,10 +5,10 @@ use App\Http\Controllers\EpodController;
 use App\Http\Controllers\Sales\SalesOrderController;
 use App\Http\Controllers\Wms\AdminController;
 use App\Http\Controllers\Wms\BillingController;
+use App\Http\Controllers\Wms\CustomerController;
 use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Controllers\Wms\InboundController;
 use App\Http\Controllers\Wms\InventoryController;
-use App\Http\Controllers\Wms\MasterController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OutboundController;
 use App\Http\Controllers\Wms\ProductController;
@@ -161,8 +161,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         ->middleware('can:'.Permission::REPORTS_VIEW);
 
     Route::prefix('master')->group(function () {
-        Route::get('/customers', [MasterController::class, 'customers'])
-            ->middleware('can:'.Permission::MASTER_CUSTOMERS);
+        // Master Pelanggan (PRD §6.2 F-MASTER-06) — sudah terhubung ke database.
+        Route::middleware('can:'.Permission::MASTER_CUSTOMERS)->group(function () {
+            Route::get('/customers', [CustomerController::class, 'index'])->name('wms.customers.index');
+            Route::post('/customers', [CustomerController::class, 'store'])->name('wms.customers.store');
+            Route::put('/customers/{customer}', [CustomerController::class, 'update'])->name('wms.customers.update');
+            Route::patch('/customers/{customer}/status', [CustomerController::class, 'toggleStatus'])->name('wms.customers.status');
+        });
 
         // Master Produk (PRD §6.2 F-MASTER-02) — sudah terhubung ke database.
         Route::middleware('can:'.Permission::MASTER_PRODUCTS)->group(function () {

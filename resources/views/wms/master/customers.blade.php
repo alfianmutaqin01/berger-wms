@@ -1,277 +1,367 @@
 @extends('layouts.wms')
 
 @section('title', 'Master Customers')
-@section('page_title', 'Master Customers')
+@section('page_title', 'Master Data Pelanggan')
 
 @section('content')
-<div class="row mb-4">
-    <div class="col-12 col-md-8">
-        <h4 class="fw-bold text-dark mb-0">Manajemen Pelanggan</h4>
-        <p class="text-muted">Kelola basis data pelanggan aktif dan review pengajuan pelanggan baru dari Sales.</p>
+@if(session('success'))
+<div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-check-circle-fill me-2"></i>{{ session('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
+@if($errors->any())
+<div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ $errors->first() }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
+<!-- Ringkasan -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Total Pelanggan</h6>
+                <h3 class="mb-0 fw-bold text-dark">{{ $stats['total'] }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Aktif</h6>
+                <h3 class="mb-0 fw-bold text-success">{{ $stats['active'] }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-secondary border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Non-aktif</h6>
+                <h3 class="mb-0 fw-bold text-secondary">{{ $stats['inactive'] }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        {{-- Ship-to Code adalah nomor pelanggan di ERP; yang belum punya
+             ditonjolkan agar bisa dilengkapi. --}}
+        <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Tanpa Ship-to Code</h6>
+                <h3 class="mb-0 fw-bold text-warning">{{ $stats['no_ship_to'] }}</h3>
+            </div>
+        </div>
     </div>
 </div>
 
 <div class="card shadow-sm border-0 rounded-4">
-    <div class="card-header bg-white border-bottom pt-4 px-4 pb-0">
-        <!-- Nav Tabs -->
-        <ul class="nav nav-tabs border-bottom-0" id="customerTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active fw-bold px-4 py-3" id="active-tab" data-bs-toggle="tab" data-bs-target="#active" type="button" role="tab">
-                    <i class="bi bi-person-check me-2"></i>Pelanggan Aktif
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link fw-bold px-4 py-3 text-danger" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending" type="button" role="tab">
-                    <i class="bi bi-person-exclamation me-2"></i>Menunggu Diterima <span class="badge bg-danger rounded-pill ms-2">1</span>
-                </button>
-            </li>
-        </ul>
-    </div>
-    
-    <div class="card-body p-0">
-        <div class="tab-content" id="customerTabsContent">
-            
-            <!-- Tab: Pelanggan Aktif -->
-            <div class="tab-pane fade show active" id="active" role="tabpanel">
-                <div class="d-flex justify-content-between align-items-center p-4 border-bottom bg-light">
-                    <div class="input-group w-50">
-                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                        <input type="text" class="form-control border-start-0" placeholder="Cari pelanggan...">
-                    </div>
-                    <button class="btn btn-primary fw-semibold rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
-                        <i class="bi bi-plus-circle me-2"></i>Tambah Manual
-                    </button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light text-muted small">
-                            <tr>
-                                <th class="ps-4">KODE</th>
-                                <th>NAMA PELANGGAN</th>
-                                <th>NO. TELEPON</th>
-                                <th>ALAMAT</th>
-                                <th>STATUS</th>
-                                <th class="text-end pe-4">AKSI</th>
-                            </tr>
-                        </thead>
-                        <tbody id="active-customers-list">
-                            <tr>
-                                <td class="ps-4 fw-bold text-muted">CUST-001</td>
-                                <td class="fw-bold text-dark">Toko Besi Maju Jaya</td>
-                                <td>0812-3456-7890</td>
-                                <td>Jl. Raya Bekasi No. 45</td>
-                                <td><span class="badge bg-success">Aktif</span></td>
-                                <td class="text-end pe-4">
-                                    <button class="btn btn-sm btn-outline-secondary" onclick="Swal.fire('Fitur Edit', 'Simulasi form edit pelanggan aktif akan muncul di sini', 'info')"><i class="bi bi-pencil"></i></button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="ps-4 fw-bold text-muted">CUST-002</td>
-                                <td class="fw-bold text-dark">CV. Bintang Abadi</td>
-                                <td>0819-8765-4321</td>
-                                <td>Kawasan Industri Karawang</td>
-                                <td><span class="badge bg-success">Aktif</span></td>
-                                <td class="text-end pe-4">
-                                    <button class="btn btn-sm btn-outline-secondary" onclick="Swal.fire('Fitur Edit', 'Simulasi form edit pelanggan aktif akan muncul di sini', 'info')"><i class="bi bi-pencil"></i></button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <!-- Tab: Menunggu Diterima -->
-            <div class="tab-pane fade" id="pending" role="tabpanel">
-                <div class="table-responsive mt-3">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light text-muted small">
-                            <tr>
-                                <th class="ps-4">NAMA PENGAJU (SALES)</th>
-                                <th>NAMA TOKO CALON</th>
-                                <th>KONTAK</th>
-                                <th>ALAMAT</th>
-                                
-                                <th class="text-end pe-4">AKSI REVIEW</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr id="pending-customer-row">
-                                <td class="ps-4">
-                                    <span class="fw-bold text-dark d-block">Budi Santoso</span>
-                                    <small class="text-muted">Tgl Pengajuan: 19 Ags 2026</small>
-                                </td>
-                                <td>
-                                    <h6 class="mb-0 fw-bold text-primary">Toko Cat Makmur Jaya</h6>
-                                </td>
-                                <td>0812-3456-7890</td>
-                                <td>Jl. Raya Bogor KM 29, Depok</td>
-                                
-                                <td class="text-end pe-4">
-                                    <button class="btn btn-sm btn-outline-primary fw-bold rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#reviewCustomerModal">
-                                        <i class="bi bi-file-earmark-person me-1"></i> Review Pengajuan
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-people text-primary me-2"></i> Master Data Pelanggan</h5>
+            {{-- PRD v1.1 §6.2 F-MASTER-06: tidak ada lagi antrean pengajuan dari
+                 Sales. Pelanggan didaftarkan langsung dan langsung aktif. --}}
+            <p class="text-muted small mt-1 mb-0">Pelanggan didaftarkan langsung oleh Manager/Super Admin — tidak melalui pengajuan Sales.</p>
         </div>
+        <div>
+            <button class="btn btn-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#customerModal" onclick="openCustomerModal('add')">
+                <i class="bi bi-plus-circle me-1"></i> Tambah Pelanggan
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body p-4">
+        <!-- Filter: submit via GET agar hasil filter bisa di-bookmark & di-share -->
+        <form method="GET" action="{{ route('wms.customers.index') }}" class="row g-2 mb-4 align-items-stretch">
+            <div class="col-12 col-md-5">
+                <div class="input-group h-100">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="search" value="{{ $filters['search'] }}" class="form-control bg-white border-start-0" placeholder="Cari nama, kode, email, telepon...">
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <select name="territory" class="form-select h-100">
+                    <option value="">Semua Territory</option>
+                    @foreach($territories as $territory)
+                        <option value="{{ $territory }}" @selected($filters['territory'] === $territory)>{{ $territory }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <select name="status" class="form-select h-100">
+                    <option value="">Semua Status</option>
+                    <option value="active" @selected($filters['status'] === 'active')>Aktif</option>
+                    <option value="inactive" @selected($filters['status'] === 'inactive')>Non-aktif</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{{ route('wms.customers.index') }}" class="btn btn-outline-secondary" title="Reset filter"><i class="bi bi-arrow-counterclockwise"></i></a>
+            </div>
+        </form>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                {{-- Urutan kolom mengikuti ekspor ERP: identitas -> kontak -> lokasi.
+                     Address & Address 2 disimpan terpisah tapi ditampilkan sebagai
+                     SATU kolom alamat, sesuai permintaan. --}}
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-secondary small fw-semibold text-center" style="width: 46px;">NO</th>
+                        <th class="text-secondary small fw-semibold">KODE</th>
+                        <th class="text-secondary small fw-semibold">SHIP-TO CODE</th>
+                        <th class="text-secondary small fw-semibold" style="min-width: 220px;">NAMA PELANGGAN</th>
+                        <th class="text-secondary small fw-semibold">NO. TELEPON</th>
+                        <th class="text-secondary small fw-semibold">KONTAK</th>
+                        <th class="text-secondary small fw-semibold">EMAIL</th>
+                        <th class="text-secondary small fw-semibold" style="min-width: 300px;">ALAMAT</th>
+                        <th class="text-secondary small fw-semibold text-center">TERRITORY</th>
+                        <th class="text-secondary small fw-semibold text-center">STATUS</th>
+                        <th class="text-secondary small fw-semibold text-center pe-3">AKSI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($customers as $customer)
+                        @php
+                            // Payload untuk mengisi modal edit. Disiapkan di sini
+                            // (bukan inline di atribut onclick) agar Blade tidak
+                            // salah membaca array yang terpotong antar baris.
+                            $payload = [
+                                'id' => $customer->id,
+                                'code' => $customer->code,
+                                'ship_to_code' => $customer->ship_to_code,
+                                'name' => $customer->name,
+                                'phone' => $customer->phone,
+                                'contact_name' => $customer->contact_name,
+                                'email' => $customer->email,
+                                'address' => $customer->address,
+                                'address_2' => $customer->address_2,
+                                'territory_code' => $customer->territory_code,
+                                'is_active' => $customer->is_active,
+                            ];
+                            $dimmed = $customer->is_active ? '' : 'opacity-50';
+                        @endphp
+                        <tr class="{{ $dimmed }}">
+                            <td class="text-center text-muted">{{ $loop->iteration + ($customers->currentPage() - 1) * $customers->perPage() }}</td>
+                            <td class="font-monospace fw-bold text-dark">{{ $customer->code }}</td>
+                            <td class="font-monospace small">
+                                @if($customer->ship_to_code)
+                                    <span class="text-muted">{{ $customer->ship_to_code }}</span>
+                                @else
+                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning"
+                                          title="Belum terdaftar di ERP">Belum ada</span>
+                                @endif
+                            </td>
+                            <td class="text-dark fw-semibold">{{ $customer->name }}</td>
+                            <td class="font-monospace small text-nowrap">{{ $customer->phone_label }}</td>
+                            <td class="small">{{ $customer->contact_name ?: '—' }}</td>
+                            <td class="small text-break" style="max-width: 220px;">{{ $customer->email ?: '—' }}</td>
+                            <td class="small text-muted">{{ $customer->full_address }}</td>
+                            <td class="text-center">
+                                @if($customer->territory_code)
+                                    <span class="badge bg-info-subtle text-info-emphasis border border-info">{{ $customer->territory_code }}</span>
+                                @else
+                                    <span class="text-muted small">—</span>
+                                @endif
+                            </td>
+                            <td class="text-center">
+                                @if($customer->is_active)
+                                    <span class="badge bg-success-subtle text-success-emphasis border border-success">Aktif</span>
+                                @else
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary">Non-aktif</span>
+                                @endif
+                            </td>
+                            <td class="text-center pe-3 text-nowrap">
+                                <button class="btn btn-sm btn-outline-secondary" title="Sunting"
+                                        data-bs-toggle="modal" data-bs-target="#customerModal"
+                                        onclick='openCustomerModal("edit", @json($payload))'>
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form action="{{ route('wms.customers.status', $customer) }}" method="POST" class="d-inline js-toggle-status">
+                                    @csrf
+                                    @method('PATCH')
+                                    <button type="submit" class="btn btn-sm {{ $customer->is_active ? 'btn-outline-warning' : 'btn-outline-success' }}"
+                                            data-name="{{ $customer->name }}" data-action="{{ $customer->is_active ? 'menonaktifkan' : 'mengaktifkan' }}"
+                                            title="{{ $customer->is_active ? 'Nonaktifkan' : 'Aktifkan' }}">
+                                        <i class="bi {{ $customer->is_active ? 'bi-toggle-on' : 'bi-toggle-off' }}"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="11" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-1 d-block mb-2 opacity-50"></i>
+                                Belum ada pelanggan yang cocok dengan filter ini.
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        @if($customers->hasPages())
+            <div class="mt-4">{{ $customers->links() }}</div>
+        @endif
     </div>
 </div>
 @endsection
 
-{{-- Sebelumnya ada `@push('modals')` nyasar tepat di atas baris ini yang tidak
-     pernah ditutup `@endpush`. Blade membuka output buffer untuk tiap @push,
-     sehingga buffer itu menggantung sepanjang request — terdeteksi sebagai
-     "did not close its own output buffers" saat halaman ini dites. Isi blok
-     di bawah memang skrip, jadi push 'modals' tersebut dihapus. --}}
+@push('modals')
+<!-- Modal Tambah / Sunting Pelanggan -->
+<div class="modal fade" id="customerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <form id="customerForm" method="POST" action="{{ route('wms.customers.store') }}">
+            @csrf
+            <input type="hidden" name="_method" id="formMethod" value="POST">
+            <div class="modal-content rounded-4 border-0">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark"><i class="bi bi-people text-primary me-2"></i> <span id="modalTitle">Tambah Pelanggan</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-4">
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-secondary">Kode Pelanggan *</label>
+                            <input type="text" name="code" id="inpCode" class="form-control font-monospace" placeholder="IDI10101" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-secondary">Ship-to Code</label>
+                            <input type="text" name="ship_to_code" id="inpShipTo" class="form-control font-monospace" placeholder="1061600017">
+                            <div class="form-text">Nomor pelanggan di ERP. Kosongkan bila belum terdaftar.</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Nama Pelanggan *</label>
+                        <input type="text" name="name" id="inpName" class="form-control" placeholder="PT PANDU BIO POLIMER" required>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-secondary">No. Telepon</label>
+                            <input type="text" name="phone" id="inpPhone" class="form-control font-monospace" placeholder="6289531435435">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-secondary">Nama Kontak</label>
+                            <input type="text" name="contact_name" id="inpContact" class="form-control" placeholder="Nama PIC">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-secondary">Territory Code</label>
+                            <input type="text" name="territory_code" id="inpTerritory" class="form-control" list="territoryOptions" placeholder="PROJECT">
+                            <datalist id="territoryOptions">
+                                @foreach($territories as $territory)<option value="{{ $territory }}">@endforeach
+                            </datalist>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Email</label>
+                        <input type="email" name="email" id="inpEmail" class="form-control" placeholder="marketing@perusahaan.com">
+                    </div>
+
+                    <hr class="my-4">
+                    <p class="small fw-semibold text-secondary mb-1">
+                        <i class="bi bi-geo-alt me-1"></i> Alamat
+                    </p>
+                    <p class="small text-muted mb-3">
+                        Dipisah dua baris mengikuti ekspor ERP: baris pertama alamat jalan,
+                        baris kedua kelurahan/kecamatan/kota. Di tabel keduanya tampil digabung.
+                    </p>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Alamat (Jalan) *</label>
+                        <textarea name="address" id="inpAddress" class="form-control" rows="2" placeholder="JL RAYA PONDOK GEDE NO. 17 A, RT 002 RW 002, DUKUH KRAMAT JATI" required></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Alamat 2 (Kelurahan / Kota)</label>
+                        <textarea name="address_2" id="inpAddress2" class="form-control" rows="2" placeholder="JAKARTA TIMUR, DKI JAKARTA"></textarea>
+                    </div>
+
+                    <div class="form-check">
+                        <input type="hidden" name="is_active" value="0">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="inpActive" value="1" checked>
+                        <label class="form-check-label" for="inpActive">Pelanggan aktif</label>
+                        <div class="form-text">Hanya pelanggan aktif yang muncul di form Buat Pesanan Sales.</div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm"><i class="bi bi-save me-1"></i> Simpan</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+@endpush
+
 @push('scripts')
 <script>
-    function approveCustomer() {
-        Swal.fire({
-            title: 'Memproses...',
-            text: 'Mendaftarkan pelanggan ke sistem WMS',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
+    const CUSTOMER_STORE_URL = @json(route('wms.customers.store'));
+
+    function openCustomerModal(mode, data = null) {
+        const form = document.getElementById('customerForm');
+        const method = document.getElementById('formMethod');
+
+        if (mode === 'add') {
+            form.reset();
+            form.action = CUSTOMER_STORE_URL;
+            method.value = 'POST';
+            document.getElementById('modalTitle').textContent = 'Tambah Pelanggan';
+            document.getElementById('inpActive').checked = true;
+            return;
+        }
+
+        form.action = CUSTOMER_STORE_URL + '/' + data.id;
+        method.value = 'PUT';
+        document.getElementById('modalTitle').textContent = 'Sunting Pelanggan';
+
+        document.getElementById('inpCode').value = data.code ?? '';
+        document.getElementById('inpShipTo').value = data.ship_to_code ?? '';
+        document.getElementById('inpName').value = data.name ?? '';
+        document.getElementById('inpPhone').value = data.phone ?? '';
+        document.getElementById('inpContact').value = data.contact_name ?? '';
+        document.getElementById('inpEmail').value = data.email ?? '';
+        document.getElementById('inpTerritory').value = data.territory_code ?? '';
+        document.getElementById('inpAddress').value = data.address ?? '';
+        document.getElementById('inpAddress2').value = data.address_2 ?? '';
+        document.getElementById('inpActive').checked = !!data.is_active;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Konfirmasi sebelum mengubah status, agar tidak terjadi karena salah klik.
+        document.querySelectorAll('.js-toggle-status').forEach(function (form) {
+            form.addEventListener('submit', function (e) {
+                const btn = form.querySelector('button[type="submit"]');
+                if (form.dataset.confirmed === 'yes') {
+                    return;
+                }
+                e.preventDefault();
+
+                Swal.fire({
+                    title: 'Ubah status pelanggan?',
+                    text: 'Anda akan ' + btn.dataset.action + ' ' + btn.dataset.name + '.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Ya, lanjutkan',
+                    cancelButtonText: 'Batal',
+                    confirmButtonColor: '#1B4F8A',
+                }).then(function (result) {
+                    if (result.isConfirmed) {
+                        form.dataset.confirmed = 'yes';
+                        form.submit();
+                    }
+                });
+            });
         });
 
-        setTimeout(() => {
-            // Remove from pending
-            const pendingRow = document.getElementById('pending-customer-row');
-            if (pendingRow) pendingRow.remove();
-            
-            // Hide the badge
-            const badges = document.querySelectorAll('.badge.bg-danger.rounded-pill');
-            badges.forEach(b => b.style.display = 'none');
-
-            // Add to active
-            const activeList = document.getElementById('active-customers-list');
-            if (activeList) {
-                const newRow = `
-                    <tr class="table-success" style="transition: all 1s ease;">
-                        <td class="ps-4 fw-bold text-muted">CUST-003</td>
-                        <td class="fw-bold text-dark">Toko Cat Makmur Jaya</td>
-                        <td>0812-3456-7890</td>
-                        <td>Jl. Raya Bogor KM 29, Depok</td>
-                        <td><span class="badge bg-success">Aktif</span></td>
-                        <td class="text-end pe-4">
-                            <button class="btn btn-sm btn-outline-secondary" onclick="Swal.fire('Fitur Edit', 'Simulasi form edit pelanggan aktif akan muncul di sini', 'info')"><i class="bi bi-pencil"></i></button>
-                        </td>
-                    </tr>
-                `;
-                activeList.insertAdjacentHTML('beforeend', newRow);
-            }
-
-            Swal.fire({
-                icon: 'success',
-                title: 'Disetujui!',
-                text: 'Pelanggan Toko Cat Makmur Jaya berhasil ditambahkan (Kode: CUST-003).',
-                confirmButtonColor: '#198754'
-            }).then(() => {
-                // Switch to active tab
-                const activeTab = new bootstrap.Tab(document.getElementById('active-tab'));
-                activeTab.show();
-            });
-        }, 1200);
-    }
+        // Buka kembali modal bila validasi server gagal, agar isian tidak hilang percuma.
+        @if($errors->any())
+            new bootstrap.Modal(document.getElementById('customerModal')).show();
+        @endif
+    });
 </script>
-@endpush
-@push('modals')
-<!-- Modal Review Customer -->
-<div class="modal fade" id="reviewCustomerModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content rounded-4 border-0 shadow-lg">
-            <div class="modal-header border-bottom-0 pb-0 pt-4 px-4">
-                <h5 class="modal-title fw-bold text-dark"><i class="bi bi-person-lines-fill text-primary me-2"></i>Review Pengajuan Pelanggan Baru</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-4">
-                <div class="row g-4">
-                    <div class="col-md-6">
-                        <h6 class="fw-bold text-secondary mb-3 border-bottom pb-2">Data Toko/Perusahaan</h6>
-                        <dl class="row mb-0">
-                            <dt class="col-sm-4 text-muted fw-normal">Nama Toko</dt>
-                            <dd class="col-sm-8 fw-semibold text-dark">Toko Cat Makmur Jaya</dd>
-                            
-                            <dt class="col-sm-4 text-muted fw-normal">Bentuk Usaha</dt>
-                            <dd class="col-sm-8 text-dark">Toko Retail / Eceran</dd>
-
-                            <dt class="col-sm-4 text-muted fw-normal">Alamat Lengkap</dt>
-                            <dd class="col-sm-8 text-dark">Jl. Raya Bogor KM 29, Kec. Cimanggis, Kota Depok, Jawa Barat 16452</dd>
-                        </dl>
-                    </div>
-                    <div class="col-md-6">
-                        <h6 class="fw-bold text-secondary mb-3 border-bottom pb-2">Kontak & Legalitas</h6>
-                        <dl class="row mb-0">
-                            <dt class="col-sm-4 text-muted fw-normal">Nama Pemilik</dt>
-                            <dd class="col-sm-8 text-dark">Bpk. H. Sukamto</dd>
-
-                            <dt class="col-sm-4 text-muted fw-normal">No. Telepon/WA</dt>
-                            <dd class="col-sm-8 fw-semibold text-primary">0812-3456-7890</dd>
-
-                            <dt class="col-sm-4 text-muted fw-normal">NPWP</dt>
-                            <dd class="col-sm-8 text-dark font-monospace">01.234.567.8-412.000</dd>
-                            
-                            <dt class="col-sm-4 text-muted fw-normal">Lampiran</dt>
-                            <dd class="col-sm-8">
-                                <button class="btn btn-sm btn-light border text-primary"><i class="bi bi-file-earmark-image me-1"></i>Lihat KTP/NPWP</button>
-                            </dd>
-                        </dl>
-                    </div>
-                </div>
-                
-                <div class="mt-4 p-3 bg-light rounded-3 border">
-                    <h6 class="fw-bold text-dark mb-2">Catatan Sales (Pengaju: Budi Santoso)</h6>
-                    <p class="mb-0 small text-muted fst-italic">"Toko potensial, lokasi strategis di pinggir jalan raya utama. Rencana order perdana 50 Pail jika disetujui."</p>
-                </div>
-            </div>
-            <div class="modal-footer border-top-0 pt-0 pb-4 px-4 justify-content-between">
-                <button type="button" class="btn btn-outline-danger fw-bold rounded-pill px-4" onclick="Swal.fire('Ditolak', 'Pengajuan pelanggan dikembalikan ke Sales.', 'error')" data-bs-dismiss="modal">
-                    <i class="bi bi-x-circle me-1"></i> Tolak Pengajuan
-                </button>
-                <button type="button" class="btn btn-success fw-bold rounded-pill px-4 shadow-sm" onclick="approveCustomer()" data-bs-dismiss="modal">
-                    <i class="bi bi-check-circle me-1"></i> Approve & Daftarkan
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-@endpush
-@push('modals')
-<!-- Modal Add Customer -->
-<div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content rounded-4 border-0 shadow-lg">
-            <div class="modal-header border-bottom-0 pb-0 pt-4 px-4">
-                <h5 class="modal-title fw-bold text-dark"><i class="bi bi-person-plus text-primary me-2"></i>Tambah Pelanggan Manual</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-4">
-                <p class="text-muted small mb-4">Silakan isi form ini jika pendaftaran tidak dilakukan melalui aplikasi Sales.</p>
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold text-secondary">Nama Pelanggan/Toko</label>
-                    <input type="text" class="form-control" placeholder="Contoh: Toko Bangunan Jaya">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold text-secondary">Nomor Telepon</label>
-                    <input type="text" class="form-control" placeholder="08xx-xxxx-xxxx">
-                </div>
-                <div class="mb-0">
-                    <label class="form-label small fw-semibold text-secondary">Alamat Lengkap</label>
-                    <textarea class="form-control" rows="2"></textarea>
-                </div>
-            </div>
-            <div class="modal-footer border-top-0 pt-0 pb-4 px-4">
-                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Batal</button>
-                <button type="button" class="btn btn-primary fw-bold rounded-pill px-4 shadow-sm" onclick="Swal.fire('Berhasil', 'Pelanggan berhasil ditambahkan manual (Simulasi).', 'success')" data-bs-dismiss="modal">
-                    Simpan Pelanggan
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 @endpush

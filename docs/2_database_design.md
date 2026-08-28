@@ -399,18 +399,54 @@ Data pelanggan / toko.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
+Struktur kolom mengikuti ekspor ERP Berger: `No./id | Ship-to Code | Name | Phone No. | Contact | Email | Address | Address 2 | Territory Code`.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
+| `code` | VARCHAR(30) | NOT NULL, UNIQUE | "No./id" pada ERP, contoh: `IDI10101` |
+| `ship_to_code` | VARCHAR(30) | NULLABLE | Nomor pelanggan di ERP. Kosong bila belum terdaftar di sana |
 | `name` | VARCHAR(200) | NOT NULL | Nama toko/distributor |
-| `address` | TEXT | NOT NULL | Alamat lengkap |
-| `pic_name` | VARCHAR(100) | NOT NULL | Nama Person In Charge |
-| `pic_phone` | VARCHAR(20) | NOT NULL | Nomor kontak PIC |
-| `default_payment_term` | ENUM | NOT NULL | 'cash', 'transfer', 'tempo_30', 'tempo_60', 'tempo_90' |
-| `credit_limit` | DECIMAL(15,2) | NULLABLE | Plafon kredit (opsional, informatif) |
+| `phone` | VARCHAR(25) | NULLABLE | Disimpan sebagai digit saja, dengan kode negara (`6289531435435`) |
+| `contact_name` | VARCHAR(100) | NULLABLE | "Contact" — nama orang yang dihubungi |
+| `email` | VARCHAR(150) | NULLABLE | |
+| `address` | TEXT | NOT NULL | "Address" — alamat jalan |
+| `address_2` | TEXT | NULLABLE | "Address 2" — kelurahan/kecamatan/kota |
+| `territory_code` | VARCHAR(30) | NULLABLE | "Territory Code", contoh: `PROJECT` |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | Hanya customer aktif yang muncul di form Buat Pesanan |
-| `created_by` | BIGINT UNSIGNED | FK → users.id | Manager/Super Admin yang mendaftarkan |
+| `created_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Manager/Super Admin yang mendaftarkan |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
+
+> [!NOTE]
+> **Alamat disimpan dua kolom, ditampilkan satu.** `address` dan `address_2` dipertahankan terpisah agar impor/ekspor ERP tetap setara. Untuk tampilan keduanya digabung lewat accessor `full_address` (`"JL. PAMOYANAN NO. 15 RT 01 RW 01, MEKARMANIK, CIMENYAN"`), sehingga di tabel hanya ada satu kolom ALAMAT.
+
+> [!IMPORTANT]
+> **Syarat pembayaran & limit kredit TIDAK ada di tabel ini** — berbeda dari rancangan awal yang memuat `default_payment_term` dan `credit_limit`.
+>
+> Keputusan bisnis: termin dipilih Sales **per-pesanan**, bukan sifat tetap milik pelanggan — satu pelanggan bisa memakai termin berbeda antar pesanan. Keduanya kini tinggal di tabel `payment_terms` (lihat di bawah) yang mengisi dropdown pada form Buat Pesanan.
+>
+> Kolom `pic_name`/`pic_phone` juga dihapus; ERP hanya menyediakan satu kolom "Contact" yang dipetakan ke `contact_name`.
+>
+> Ada test regresi (`CustomerManagementTest::test_tabel_pelanggan_tidak_menyimpan_termin_dan_limit_kredit`) yang menggagalkan build bila kolom termin/limit kredit menyelinap kembali ke tabel ini.
+
+#### `payment_terms`
+Syarat pembayaran beserta plafon kreditnya. Berdiri sendiri, tidak menempel di `customers`.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
+| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
+| `code` | VARCHAR(30) | NOT NULL, UNIQUE | `cash`, `transfer`, `tempo_30`, `tempo_60`, `tempo_90` |
+| `name` | VARCHAR(100) | NOT NULL | Label pada dropdown, contoh: "Tempo 30 Hari" |
+| `days` | SMALLINT | NOT NULL, DEFAULT 0 | Hari jatuh tempo; `0` = dibayar di muka |
+| `credit_limit` | DECIMAL(15,2) | NULLABLE | Plafon kredit yang melekat pada termin |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Hanya termin aktif yang muncul di dropdown |
+| `sort_order` | SMALLINT | DEFAULT 0 | Urutan tampil |
+| `created_at` / `updated_at` | TIMESTAMP | | |
+
+> [!NOTE]
+> Sistem **belum punya proses pembayaran sama sekali**. Tabel ini disiapkan lebih awal agar form Buat Pesanan (Fase 5) sudah bisa memakai dropdown yang benar, dan modul Billing (Fase 8) tidak perlu mengubah struktur lagi. `credit_limit` sengaja NULL sampai plafonnya ditetapkan.
 
 > [!IMPORTANT]
 > **Perubahan v1.1.** Alur pengajuan customer oleh Sales dihapus (lihat PRD §6.2 F-MASTER-06). Kolom `status` (pending/approved/rejected), `requested_by`, `approved_by`, `approved_at`, dan `rejection_reason` **dihapus**, digantikan `is_active` + `created_by`. Customer dibuat langsung oleh Manager/Super Admin dan langsung aktif.
@@ -997,7 +1033,8 @@ Migration harus dijalankan sesuai urutan dependensi. Berikut urutan yang benar:
 06. create_product_categories_table
 07. create_products_table                 (FK: product_categories)
 08. create_locations_table                (FK: warehouses)
-09. create_customers_table                (FK: users)
+09. create_payment_terms_table            (tanpa FK)
+09b. create_customers_table               (FK: users)
 10. create_inbound_headers_table          (FK: warehouses, users)
 11. create_inbound_details_table          (FK: inbound_headers, products, locations, users)
 12. create_inventory_stocks_table         (FK: products, locations, warehouses, users, inbound_details)

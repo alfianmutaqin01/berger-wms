@@ -615,3 +615,14 @@ main {
 tbody tr {
     transition: background-color 0.15s;
 }
+/* ============================================
+   PAGINATION (Custom Theme)
+   ============================================ */
+.pagination {
+    --bs-pagination-active-bg: var(--primary);
+    --bs-pagination-active-border-color: var(--primary);
+    --bs-pagination-color: var(--primary);
+    --bs-pagination-hover-color: var(--primary-dark);
+    --bs-pagination-focus-color: var(--primary-dark);
+}
+
