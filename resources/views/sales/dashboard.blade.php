@@ -82,9 +82,12 @@
                     <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="mb-0 fw-bold">Toko Merah</h6>
-                            <small class="text-danger">Overdue, hubungi Logistik</small>
+                            {{-- PRD v1.1 §6.6: piutang bersifat INFORMATIF. Pesanan
+                                 tetap boleh dibuat; keputusan meneruskan ada di tangan
+                                 Tim Logistik saat approval, bukan diblokir sistem. --}}
+                            <small class="text-warning">⚠ Menunggak — pesanan tetap dapat dibuat</small>
                         </div>
-                        <button class="btn btn-sm btn-light rounded-pill px-3 disabled">Terblokir</button>
+                        <button onclick="simulateUploadBukti(this, 'Toko Merah')" class="btn btn-sm btn-outline-primary rounded-pill px-3">Upload Bukti</button>
                     </li>
                 </ul>
             </div>

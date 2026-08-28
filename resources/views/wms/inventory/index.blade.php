@@ -90,6 +90,7 @@
                                     <tr>
                                         <th class="ps-4">No. Batch</th>
                                         <th>Tgl Produksi</th>
+                                        <th>Umur Simpan</th>
                                         <th>Expired Date</th>
                                         <th>Lokasi Rak/Pallet</th>
                                         <th class="text-end">Tersedia</th>
@@ -102,6 +103,19 @@
                                         <tr>
                                             <td class="ps-4 font-monospace small text-primary">{{ $batch['batch_no'] }}</td>
                                             <td class="small">{{ \Carbon\Carbon::parse($batch['mfg_date'])->format('d M Y') }}</td>
+                                            <td class="small text-muted">
+                                                @php
+                                                    $mfg = \Carbon\Carbon::parse($batch['mfg_date']);
+                                                    $now = \Carbon\Carbon::now();
+                                                    $diffWeeks = (int) $mfg->diffInWeeks($now);
+                                                    $diffDays = (int) ($mfg->diffInDays($now) % 7);
+                                                @endphp
+                                                @if($diffWeeks > 0)
+                                                    {{ $diffWeeks }} minggu {{ $diffDays }} hari
+                                                @else
+                                                    {{ $diffDays }} hari
+                                                @endif
+                                            </td>
                                             <td class="small">{{ \Carbon\Carbon::parse($batch['exp_date'])->format('d M Y') }}</td>
                                             <td>
                                                 <span class="badge border border-secondary text-secondary me-1">{{ $pallet['location'] }}</span>
@@ -126,6 +140,7 @@
                                     <tr>
                                         <th class="ps-4">No. Batch</th>
                                         <th>Tgl Produksi</th>
+                                        <th>Umur Simpan</th>
                                         <th>Keterangan</th>
                                         <th>Lokasi Rak/Pallet</th>
                                         <th class="text-end pe-4">Qty (Pcs)</th>
@@ -137,6 +152,19 @@
                                         <tr>
                                             <td class="ps-4 font-monospace small text-danger">{{ $batch['batch_no'] }}</td>
                                             <td class="small">{{ \Carbon\Carbon::parse($batch['mfg_date'])->format('d M Y') }}</td>
+                                            <td class="small text-muted">
+                                                @php
+                                                    $mfg = \Carbon\Carbon::parse($batch['mfg_date']);
+                                                    $now = \Carbon\Carbon::now();
+                                                    $diffWeeks = (int) $mfg->diffInWeeks($now);
+                                                    $diffDays = (int) ($mfg->diffInDays($now) % 7);
+                                                @endphp
+                                                @if($diffWeeks > 0)
+                                                    {{ $diffWeeks }} minggu {{ $diffDays }} hari
+                                                @else
+                                                    {{ $diffDays }} hari
+                                                @endif
+                                            </td>
                                             <td class="small">
                                                 @if($batch['is_expired'])
                                                     <span class="badge bg-danger">EXPIRED</span>

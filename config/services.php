@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    /*
+    | Verifikasi Anti-Bot (Google reCAPTCHA v2) — PRD §6.1 F-AUTH-02.
+    | secret_key sengaja boleh kosong di lingkungan lokal/testing: lihat
+    | AuthController::verifyRecaptcha() untuk perilaku saat kosong.
+    */
+    'recaptcha' => [
+        'site_key' => env('RECAPTCHA_SITE_KEY'),
+        'secret_key' => env('RECAPTCHA_SECRET_KEY'),
+    ],
+
 ];

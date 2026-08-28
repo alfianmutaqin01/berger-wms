@@ -107,8 +107,6 @@ erDiagram
         string password
         bigint role_id FK
         bigint warehouse_id FK
-        string google2fa_secret
-        boolean is_mfa_enabled
         int failed_login_attempts
         timestamp locked_until
         timestamp last_lockout_at
@@ -256,9 +254,7 @@ Menyimpan data autentikasi dan profil pengguna.
 | `password` | VARCHAR(255) | NOT NULL | Bcrypt hash |
 | `role_id` | BIGINT UNSIGNED | FK → roles.id | Peran pengguna |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang default |
-| `google2fa_secret` | VARCHAR(255) | NULLABLE, ENCRYPTED | **PENDING REMOVAL** (PRD v1.2) — TOTP diganti Google reCAPTCHA, kolom ini tidak lagi dipakai. Belum dihapus lewat migration; dijadwalkan dibereskan bersamaan saat Verifikasi Anti-Bot dibangun. |
-| `is_mfa_enabled` | BOOLEAN | DEFAULT FALSE | **PENDING REMOVAL** (PRD v1.2) — lihat catatan `google2fa_secret`. reCAPTCHA tidak memerlukan flag per-user seperti ini. |
-| `failed_login_attempts` | INTEGER | DEFAULT 0 | Counter login gagal |
+| `failed_login_attempts` | INTEGER | DEFAULT 0 | Counter percobaan gagal (password salah ATAU verifikasi anti-bot gagal — satu counter bersama, PRD §6.1 F-AUTH-03) |
 | `locked_until` | TIMESTAMP | NULLABLE | Waktu akun bisa dicoba lagi |
 | `last_lockout_at` | TIMESTAMP | NULLABLE | Waktu terakhir terkunci |
 | `lockout_count` | INTEGER | DEFAULT 0 | Counter berapa kali terkunci |
@@ -290,7 +286,7 @@ Mencatat history percobaan login (untuk analisis keamanan).
 | `ip_address` | VARCHAR(45) | NULLABLE | |
 | `user_agent` | TEXT | NULLABLE | |
 | `is_successful` | BOOLEAN | NOT NULL | Berhasil atau gagal |
-| `failure_reason` | VARCHAR(50) | NULLABLE | "wrong_password", "locked", "mfa_failed" |
+| `failure_reason` | VARCHAR(50) | NULLABLE | "wrong_password", "locked", "inactive", "recaptcha_failed" |
 | `created_at` | TIMESTAMP | | |
 
 ---

@@ -927,29 +927,77 @@ Menu sidebar Admin merupakan **superset** dari menu Warehouse. Isinya berbeda an
 ⚙️ Pengaturan Sistem           ← EKSKLUSIF Super Admin
 ```
 
-**Manager — pengawasan & master data, tanpa tugas operasional:**
+**Manager — pengawasan penuh, tanpa tugas tangan langsung:**
 
 ```
 📊 Dashboard (semua data)
-📥 Inbound (lihat saja, tidak bisa kerjakan)
+📈 Laporan & Analisis
+──────────  INVENTORY MANAGEMENT
+🕘 Riwayat Produksi
+🛡️  Verifikasi Logistik
 📊 Data Stok (lihat + EDIT + Transfer)
-📋 Pesanan (lihat saja)
-🚚 Surat Jalan (lihat saja)
-💳 Billing (lihat saja)
-📈 Laporan & Ekspor
-──────────
+──────────  OUTBOUND
+✅ Terima Pesanan
+📋 Daftar Picking
+🖨️  Cetak Surat Jalan
+🛡️  Verifikasi Bukti SJ
+──────────  KEUANGAN & SISTEM
+💳 Billing & Piutang
 👥 Master Customer
 📦 Master Produk
-📂 Kategori Produk
-📍 Master Lokasi Rak
-🏭 Master Gudang
-👤 Manajemen User              ← BARU di v1.1 (kecuali role Super Admin)
-📄 Pengaturan Dokumen          ← BARU di v1.1
-📝 Audit Log
+👤 Manajemen User              (kecuali role Super Admin)
+📄 Pengaturan Dokumen
 ```
 
 > [!IMPORTANT]
-> **Perubahan v1.1.** Menu `👥 Approval Customer` diganti `👥 Master Customer` — tidak ada lagi antrean persetujuan, pelanggan dibuat langsung. Manager kini memperoleh `Manajemen User` dan `Pengaturan Dokumen`, namun **tidak** dapat membuat/mengubah akun ber-role Super Admin, dan **tidak** memperoleh `Pengaturan Sistem`.
+> **Perubahan v1.3.** Manager kini memperoleh menu pengawasan outbound penuh (`Terima Pesanan`, `Daftar Picking`, `Cetak Surat Jalan`, `Verifikasi Bukti SJ`, `Billing`) dan `Verifikasi Logistik`.
+>
+> Empat menu berikut **tetap tertutup** bagi Manager karena merupakan tugas tangan langsung di gudang: `Input Produksi`, `Proses Put-away`, `Proses Picking`, dan `Penerimaan Retur`. Batas inilah yang menjaga prinsip Maker-Checker.
+>
+> Manager juga **tidak** memperoleh `Pengaturan Sistem`, dan **tidak** dapat membuat/mengubah akun ber-role Super Admin.
+
+**Tim Logistik — pemegang alur outbound harian:**
+
+```
+📊 Dashboard (semua data)
+📈 Laporan & Analisis
+──────────  INVENTORY MANAGEMENT
+↩️  Penerimaan Retur
+🛡️  Verifikasi Logistik
+📊 Data Stok (lihat + Transfer, tanpa Adjustment)
+──────────  OUTBOUND
+✅ Terima Pesanan
+📋 Daftar Picking
+🖨️  Cetak Surat Jalan
+🛡️  Verifikasi Bukti SJ
+──────────  KEUANGAN
+💳 Billing & Piutang
+```
+
+**Tim Produksi — hanya lingkup produksi:**
+
+```
+🔧 Dashboard Produksi
+──────────  INVENTORY MANAGEMENT
+📥 Input Produksi
+🕘 Riwayat Produksi
+📊 Data Stok (lihat saja)
+```
+
+**Operator Gudang — hanya tugas fisik di lantai gudang:**
+
+```
+🏷️  Dashboard Operator
+──────────  INVENTORY MANAGEMENT
+📦 Proses Put-away
+↩️  Penerimaan Retur
+📊 Data Stok (lihat saja)
+──────────  OUTBOUND
+📦 Proses Picking
+```
+
+> [!NOTE]
+> **Sumber kebenaran visibilitas menu.** Seluruh sidebar di atas tidak ditulis manual per role — dirender dari matriks tunggal `App\Support\Permission`, yang juga dipakai middleware `can:` pada `routes/web.php`. Menyembunyikan menu tidak mengamankan apa pun; penegakannya ada di route. Karena keduanya membaca matriks yang sama, tampilan menu dan hak akses sebenarnya tidak bisa berbeda.
 
 ### 5.2 Halaman Manajemen Stok (Manager/Super Admin)
 

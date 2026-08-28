@@ -3,25 +3,26 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginAttempt;
-use App\Models\Role;
 use App\Models\User;
 use App\Models\UserSession;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
- * Login, logout, dan penegakan sesi. PRD §6.1 F-AUTH-01/03/04/05.
+ * Login, logout, dan penegakan sesi. PRD §6.1 F-AUTH-01/02/03/04/05.
  *
- * MFA (F-AUTH-02) BELUM diimplementasikan di sini — menyusul di fase
- * terpisah (lihat rencana pembangunan, Fase 1b). Untuk saat ini,
- * login yang berhasil langsung diarahkan ke dashboard sesuai role, BUKAN
- * ke halaman verifikasi MFA seperti yang dideskripsikan PRD.
+ * Verifikasi Anti-Bot (F-AUTH-02, Google reCAPTCHA v2) menyatu di form login
+ * yang sama — BUKAN halaman verifikasi terpisah seperti rancangan MFA lama.
+ * Kegagalannya (token tidak valid/kedaluwarsa/kosong) masuk ke counter lockout
+ * yang sama dengan password salah, lihat User::registerFailedLogin().
  */
 class AuthController extends Controller
 {
@@ -66,6 +67,13 @@ class AuthController extends Controller
             ])->onlyInput('email');
         }
 
+        if (! $this->verifyRecaptcha((string) $request->input('g-recaptcha-response'))) {
+            $user->registerFailedLogin();
+            $this->logAttempt($user->email, false, 'recaptcha_failed', $request);
+
+            return $this->invalidCredentialsResponse();
+        }
+
         if (! Hash::check($credentials['password'], $user->password)) {
             $user->registerFailedLogin();
             $this->logAttempt($user->email, false, 'wrong_password', $request);
@@ -101,19 +109,14 @@ class AuthController extends Controller
     /**
      * PRD §6.1 F-AUTH-05: routing berdasarkan role. Tim Sales -> Portal Sales,
      * seluruh role lain -> Portal Warehouse/Admin (dashboard berbeda per role
-     * operasional, lihat DashboardController).
+     * operasional).
+     *
+     * Pemetaannya tinggal di DashboardController agar redirect setelah login
+     * dan redirect /wms/dashboard tidak bisa berbeda pendapat.
      */
     private function redirectPathFor(User $user): string
     {
-        if ($user->hasRole(Role::SALES)) {
-            return '/sales/dashboard';
-        }
-
-        return match ($user->role?->slug) {
-            Role::PRODUCTION => '/wms/dashboard/produksi',
-            Role::WAREHOUSE_OPERATOR => '/wms/dashboard/operator',
-            default => '/wms/dashboard/admin',
-        };
+        return DashboardController::pathFor($user);
     }
 
     /**
@@ -149,6 +152,37 @@ class AuthController extends Controller
         ]);
 
         return $token;
+    }
+
+    /**
+     * PRD §6.1 F-AUTH-02: verifikasi token widget "Saya bukan robot" ke Google
+     * siteverify. Dipanggil dari request POST /login yang sama — bukan rute
+     * terpisah — sehingga kegagalannya bisa langsung masuk ke alur lockout.
+     *
+     * Secret key kosong DIANGGAP LULUS di luar production, supaya development
+     * lokal tanpa kredensial reCAPTCHA sendiri tidak ikut terkunci (mengikuti
+     * pola pagar environment yang sama dengan CurrentActor). Di production,
+     * secret key kosong berarti verifikasi ke Google gagal terkirim -> token
+     * tidak pernah tervalidasi -> login tertahan, bukan diam-diam dilewati.
+     */
+    private function verifyRecaptcha(string $token): bool
+    {
+        $secret = config('services.recaptcha.secret_key');
+
+        if (blank($secret)) {
+            return ! app()->environment('production');
+        }
+
+        if (blank($token)) {
+            return false;
+        }
+
+        $response = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret' => $secret,
+            'response' => $token,
+        ]);
+
+        return $response->successful() && $response->json('success') === true;
     }
 
     private function logAttempt(string $email, bool $successful, ?string $reason, Request $request): void

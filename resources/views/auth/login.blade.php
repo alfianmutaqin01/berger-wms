@@ -32,7 +32,21 @@
         .login-form-wrapper {
             width: 100%;
             max-width: 420px;
-            padding: 2rem;
+            padding: 1.5rem 2rem;
+        }
+        /* Viewport pendek (laptop kecil, browser dengan chrome tinggi): rapatkan
+           lagi supaya seluruh form tetap muat tanpa scroll. */
+        @media (max-height: 720px) {
+            .login-form-wrapper {
+                padding: 1rem 2rem;
+            }
+            .brand-block {
+                margin-bottom: 1.25rem !important;
+            }
+            .login-footer {
+                margin-top: 1rem !important;
+                padding-top: 0.75rem !important;
+            }
         }
 
         /* Slideshow Layout */
@@ -126,23 +140,23 @@
         <!-- Form Side -->
         <div class="col-12 col-lg-5 login-side bg-white z-2 shadow-sm">
             <div class="login-form-wrapper">
-                <div class="text-center mb-5">
-                    <img src="/images/berger_logo.png" alt="Berger Paints Logo" class="img-fluid mb-4" style="max-height: 55px;">
+                <div class="text-center mb-4 brand-block">
+                    <img src="/images/berger_logo.png" alt="Berger Paints Logo" class="img-fluid mb-3" style="max-height: 48px;">
                     <h4 class="fw-bold text-dark mb-1" style="letter-spacing: -0.5px;">Selamat Datang</h4>
-                    <p class="text-muted" style="font-size: 0.9rem;">Silakan otentikasi kredensial Anda</p>
+                    <p class="text-muted mb-0" style="font-size: 0.9rem;">Silakan otentikasi kredensial Anda</p>
                 </div>
 
                 @if (session('status'))
-                    <div class="alert alert-warning py-2 small mb-4">{{ session('status') }}</div>
+                    <div class="alert alert-warning py-2 small mb-3">{{ session('status') }}</div>
                 @endif
 
                 @if ($errors->any())
-                    <div class="alert alert-danger py-2 small mb-4">{{ $errors->first() }}</div>
+                    <div class="alert alert-danger py-2 small mb-3">{{ $errors->first() }}</div>
                 @endif
 
                 <form action="{{ route('login.attempt') }}" method="POST">
                     @csrf
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <label class="form-label">Email / Username</label>
                         <div class="input-group">
                             <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-person"></i></span>
@@ -150,7 +164,7 @@
                         </div>
                     </div>
 
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <label class="form-label mb-0">Kata Sandi</label>
                             <a href="#" class="text-decoration-none" style="color: #1B4F8A; font-size: 0.85rem; font-weight: 500;">Lupa Sandi?</a>
@@ -164,15 +178,21 @@
                         </div>
                     </div>
 
-                    <div class="mb-4 form-check mt-3">
+                    <div class="mb-3 form-check">
                         <input type="checkbox" name="remember" class="form-check-input" id="remember">
                         <label class="form-check-label text-muted" for="remember" style="font-size: 0.85rem;">Biarkan saya tetap masuk</label>
                     </div>
 
-                    <button type="submit" class="btn btn-login w-100 py-2 mt-2 fw-semibold text-white shadow-sm">Masuk ke Sistem</button>
+                    @if (config('services.recaptcha.site_key'))
+                        <div class="mb-3 d-flex justify-content-center">
+                            <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}" data-callback="onRecaptchaVerified" data-expired-callback="onRecaptchaExpired"></div>
+                        </div>
+                    @endif
+
+                    <button type="submit" id="submitLoginBtn" class="btn btn-login w-100 py-2 fw-semibold text-white shadow-sm" @if(config('services.recaptcha.site_key')) disabled @endif>Masuk ke Sistem</button>
                 </form>
 
-                <div class="text-center mt-5 pt-4 border-top">
+                <div class="text-center mt-4 pt-3 border-top login-footer">
                     <p class="text-muted mb-0" style="font-size: 0.8rem;">&copy; 2026 PT. Berger Paints Indonesia</p>
                 </div>
             </div>
@@ -213,6 +233,19 @@
             }, 6000); // Change image every 6 seconds
         }
     });
+
+    // Tombol submit sengaja nonaktif sampai widget "Saya bukan robot" dicentang
+    // (PRD §6.1 F-AUTH-02) -- server tetap jadi penegak utama, ini murni UX.
+    function onRecaptchaVerified() {
+        document.getElementById('submitLoginBtn').removeAttribute('disabled');
+    }
+
+    function onRecaptchaExpired() {
+        document.getElementById('submitLoginBtn').setAttribute('disabled', 'disabled');
+    }
 </script>
+@if (config('services.recaptcha.site_key'))
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+@endif
 </body>
 </html>

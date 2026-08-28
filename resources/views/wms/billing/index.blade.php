@@ -222,7 +222,10 @@
                         </div>
                     </div>
 
-                    <p class="text-muted small mb-3">Tindakan ini akan memverifikasi bahwa bukti pembayaran fisik/digital telah sah dan <strong>otomatis mencabut blokir order (jika ada)</strong> bagi kustomer bersangkutan.</p>
+                    {{-- PRD v1.1 §6.6: tidak ada blokir order akibat piutang, jadi
+                         tidak ada blokir yang perlu "dicabut" — pelunasan hanya
+                         menghapus penanda ⚠ Menunggak pada customer. --}}
+                    <p class="text-muted small mb-3">Tindakan ini akan memverifikasi bahwa bukti pembayaran fisik/digital telah sah dan <strong>menghapus penandaan ⚠ Menunggak</strong> pada kustomer bersangkutan.</p>
                     
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-dark">Tanggal Bukti Bayar Diterima <span class="text-danger">*</span></label>

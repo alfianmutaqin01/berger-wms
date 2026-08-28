@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.2  
-> **Tanggal:** 27 Agustus 2026 *(revisi dari v1.1, 26 Agustus 2026)*  
+> **Versi:** 1.3  
+> **Tanggal:** 27 Agustus 2026 *(revisi dari v1.2, 27 Agustus 2026)*  
 > **Status:** Draft — Menunggu Final Approval  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
@@ -10,6 +10,20 @@
 ---
 
 ## Riwayat Revisi
+
+### Versi 1.3 — 27 Agustus 2026
+
+Menyelaraskan matriks §5.2 dengan pembatasan sidebar per role yang ditetapkan pemilik produk.
+
+| # | Perubahan | Bagian Terdampak |
+|---|---|---|
+| 1 | **Manager kini boleh mengawasi alur outbound**: Approve/Reject Pesanan, Daftar Picking, Cetak Surat Jalan, Verifikasi Bukti SJ, dan Konfirmasi Pembayaran Billing berubah dari ❌ menjadi ✅. Yang tetap ❌ bagi Manager hanya **tugas tangan langsung**: Input Produksi, Put-away, Proses Picking, dan Penerimaan Retur. | §5.2 |
+| 2 | **Manager juga boleh Verifikasi Inbound** (❌ → ✅), konsisten dengan peran pengawasannya. | §5.2 |
+| 3 | Ditambahkan baris **Daftar Picking (batching)** dan **Riwayat Produksi (lihat)** yang sebelumnya tidak ada di matriks padahal menunya ada di sidebar. | §5.2 |
+| 4 | Penegakan RBAC dipusatkan di `App\Support\Permission` — dipakai bersama oleh sidebar (`@can`) dan middleware route (`can:`), sehingga tampilan menu dan hak akses sebenarnya tidak bisa berbeda. | Implementasi |
+
+> [!NOTE]
+> **Prinsip pembeda Manager vs Super Admin setelah v1.3.** Manager adalah **pengawas**: boleh menyetujui, mencetak, memverifikasi, dan menutup tagihan — tetapi tidak pernah menjadi *maker* pada langkah fisik di gudang. Prinsip Maker-Checker tetap terjaga karena keempat langkah tangan-langsung tersebut tertutup baginya.
 
 ### Versi 1.2 — 27 Agustus 2026
 
@@ -203,16 +217,18 @@ graph TD
 | **Master Customer (CRUD)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Input Inbound (Produksi)** | ✅ | ❌ | ❌ | ✅ | ❌ |
 | **Put-away (Penempatan Rak)** | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Verifikasi Inbound (Ceklis)** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Verifikasi Inbound (Ceklis)** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Lihat Stok** | ✅ | ✅ | ✅ | ✅ (lihat) | ✅ (lihat) |
 | **Edit Stok (Adjustment)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Transfer Stok (Lokasi/Gudang)** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Approve/Reject Pesanan** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Approve/Reject Pesanan** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Daftar Picking (batching)** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Proses Picking** | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Cetak Surat Jalan** | ✅ | ❌ | ✅ | ❌ | ❌ |
-| **Verifikasi Bukti Surat Jalan** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Cetak Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Verifikasi Bukti Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Proses Retur (Alokasi GR/DDP)** | ✅ | ❌ | ✅ | ❌ | ✅ |
-| **Konfirmasi Pembayaran Billing** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Konfirmasi Pembayaran Billing** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Riwayat Produksi (lihat)** | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **Laporan & Ekspor Excel** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Audit Log (Lihat)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Hapus Transaksi** | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -227,7 +243,8 @@ graph TD
 | Seluruh Master Data (termasuk User & Customer) | ✅ | ✅ |
 | Pengaturan Dokumen / nomor urut | ✅ | ✅ |
 | Membuat atau mengubah akun ber-role **Super Admin** | ❌ | ✅ |
-| Tugas operasional harian | ❌ | ✅ |
+| Pengawasan alur outbound (approve pesanan, cetak SJ, verifikasi bukti SJ, billing) | ✅ | ✅ |
+| Tugas operasional **tangan langsung** (input produksi, put-away, proses picking, penerimaan retur) | ❌ | ✅ |
 | Hapus transaksi | ❌ | ✅ |
 | Pengaturan Sistem (cutoff, threshold, session, lockout) | ❌ | ✅ |
 | Unlock akun terkunci (progressive lockout) | ❌ | ✅ |
@@ -948,7 +965,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | Cache & Session | Redis | 7+ |
 | Queue Worker | Laravel Horizon | (latest) |
 | Real-time | Laravel Echo + Pusher/Soketi | (latest) |
-| Verifikasi Anti-Bot | Google reCAPTCHA v2 | google/recaptcha (HTTP client ke Google siteverify) |
+| Verifikasi Anti-Bot | Google reCAPTCHA v2 | `Illuminate\Support\Facades\Http` langsung ke endpoint siteverify — tanpa package tambahan |
 | Excel Export | Maatwebsite/Laravel-Excel | 3.x |
 | Charts | Chart.js atau ApexCharts | (latest) |
 | PDF Generation | DomPDF atau Snappy | (latest) |

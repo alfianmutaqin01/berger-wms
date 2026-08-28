@@ -122,7 +122,11 @@
 </div>
 @endsection
 
-@push('modals')
+{{-- Sebelumnya ada `@push('modals')` nyasar tepat di atas baris ini yang tidak
+     pernah ditutup `@endpush`. Blade membuka output buffer untuk tiap @push,
+     sehingga buffer itu menggantung sepanjang request — terdeteksi sebagai
+     "did not close its own output buffers" saat halaman ini dites. Isi blok
+     di bawah memang skrip, jadi push 'modals' tersebut dihapus. --}}
 @push('scripts')
 <script>
     function approveCustomer() {
