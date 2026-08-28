@@ -174,6 +174,7 @@
                 \App\Support\Permission::BILLING_VIEW,
                 \App\Support\Permission::MASTER_CUSTOMERS,
                 \App\Support\Permission::MASTER_PRODUCTS,
+                \App\Support\Permission::MASTER_LOCATIONS,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
             ])
@@ -192,6 +193,7 @@
             @canany([
                 \App\Support\Permission::MASTER_CUSTOMERS,
                 \App\Support\Permission::MASTER_PRODUCTS,
+                \App\Support\Permission::MASTER_LOCATIONS,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
             ])
@@ -211,6 +213,11 @@
                         @can(\App\Support\Permission::MASTER_PRODUCTS)
                             <li class="nav-item {{ request()->is('wms/master/products') ? 'active' : '' }}">
                                 <a href="/wms/master/products" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Master Products</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::MASTER_LOCATIONS)
+                            <li class="nav-item {{ request()->is('wms/master/locations') ? 'active' : '' }}">
+                                <a href="/wms/master/locations" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Master Lokasi Rak</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_USERS)

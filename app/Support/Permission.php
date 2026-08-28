@@ -73,6 +73,8 @@ class Permission
 
     public const MASTER_PRODUCTS = 'master.products';
 
+    public const MASTER_LOCATIONS = 'master.locations';
+
     public const ADMIN_USERS = 'admin.users';
 
     public const ADMIN_SEQUENCE = 'admin.sequence';
@@ -123,6 +125,11 @@ class Permission
 
         self::MASTER_CUSTOMERS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::MASTER_PRODUCTS => [Role::SUPER_ADMIN, Role::MANAGER],
+
+        // Mengikuti PRD §5.2 "Master Lokasi Rak (CRUD)". Operator & Logistik
+        // tetap melihat lokasi saat put-away/picking, tapi lewat layar
+        // prosesnya masing-masing — bukan lewat halaman master ini.
+        self::MASTER_LOCATIONS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_USERS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_SEQUENCE => [Role::SUPER_ADMIN, Role::MANAGER],
     ];

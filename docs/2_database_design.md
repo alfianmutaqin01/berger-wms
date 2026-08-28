@@ -383,16 +383,50 @@ Master lokasi rak penyimpanan di gudang.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
+Kode berpola `[Rak]-[Level]-[Sel]`, contoh `B-01-01` = Rak B, Level 1, Sel 1.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang pemilik |
-| `code` | VARCHAR(20) | NOT NULL, UNIQUE | Kode lokasi lengkap (contoh: "G-03-04") |
-| `rack` | VARCHAR(5) | NOT NULL | Huruf rak (contoh: "G") |
-| `floor_level` | VARCHAR(5) | NOT NULL | Level lantai (contoh: "03") |
-| `row_position` | VARCHAR(5) | NOT NULL | Posisi baris (contoh: "04") |
-| `is_active` | BOOLEAN | DEFAULT TRUE | Status aktif |
+| `code` | VARCHAR(20) | NOT NULL, UNIQUE per gudang | Kode bin lengkap (contoh: `B-01-01`) |
+| `rack` | VARCHAR(5) | NOT NULL | Kode rak — satu atau **dua** huruf (`B` … `ZD`) |
+| `level` | TINYINT UNSIGNED | NOT NULL | Level 1–5 (seluruh rak setinggi 5 level) |
+| `cell` | SMALLINT UNSIGNED | NOT NULL | Nomor sel/kolom pada level tersebut |
+| `zone` | VARCHAR(30) | NULLABLE | `Fast` / `Slow` / `Middle Moving Area` |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Bin non-aktif tidak dipilih proses put-away |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
+
+> [!IMPORTANT]
+> **`code` unik PER GUDANG, bukan global** — berbeda dari rancangan awal. Penamaan rak `A/B/C` lazim berulang di gudang berbeda; memaksa unik global akan menolak gudang kedua yang memakai penamaan yang sama. Unique constraint-nya `(warehouse_id, code)`.
+
+> [!IMPORTANT]
+> **`level` dan `cell` bertipe angka, bukan string** (rancangan awal memakai `VARCHAR(5)` untuk `floor_level`/`row_position`). Alasannya pengurutan: dengan string, `B-01-10` jatuh **sebelum** `B-01-02` karena dibandingkan sebagai teks — keliru saat operator menyusuri rak berurutan. Nama kolom juga disesuaikan dengan istilah yang dipakai di lapangan (`level`, `cell`).
+>
+> Komponen `rack`/`level`/`cell` **diturunkan dari `code`** saat menyimpan (lihat `Location::parseCode`), sehingga mustahil tidak sinkron.
+
+> [!NOTE]
+> **Denah gudang WH-01: 2.264 bin pada 29 rak.** Tidak ada Rak "A". Pada sebagian besar rak, **Level 4–5 memuat lebih banyak sel daripada Level 1–3** karena bagian bawah terpotong jalur forklift.
+>
+> | Rak | Level 1–3 | Level 4–5 | Per rak | Zona |
+> |---|---|---|---|---|
+> | B–G | 11 sel | 13 sel | 59 | Fast Moving |
+> | H–I | 8 sel | 10 sel | 44 | Fast Moving |
+> | J–O | 12 sel | 14 sel | 64 | Fast Moving |
+> | P | 20 sel | 20 sel | 100 | Slow Moving |
+> | Q–T | 18 sel | 20 sel | 94 | Slow Moving |
+> | U–V | 18 sel | 20 sel | 94 | Middle Moving |
+> | W–X | 18 sel | 18 sel | 90 | Middle Moving |
+> | Y–ZD | 19 sel | 21 sel | 99 | Middle Moving |
+>
+> **Total per zona:** Fast 826 · Slow 476 · Middle 962 = **2.264**.
+>
+> Dibangkitkan `LocationSeeder` dari aturan di atas, bukan disalin baris per baris. Seeder memeriksa sendiri hasilnya terhadap ketiga angka zona dan menggagalkan proses bila tidak cocok — sehingga salah ketik satu angka pada aturan tidak bisa lolos diam-diam.
+
+> [!WARNING]
+> **Ejaan zona pada ekspor ERP salah: "Midle Moving Area".** `Location::normalizeZone()` menormalkannya menjadi `Middle Moving Area`. Tanpa itu, impor akan menghasilkan dua zona berbeda yang sebenarnya sama.
 
 #### `customers`
 Data pelanggan / toko.
