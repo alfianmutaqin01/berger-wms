@@ -108,17 +108,17 @@
                      SATU kolom alamat, sesuai permintaan. --}}
                 <thead class="table-light">
                     <tr>
-                        <th class="text-secondary small fw-semibold text-center" style="width: 46px;">NO</th>
-                        <th class="text-secondary small fw-semibold">KODE</th>
-                        <th class="text-secondary small fw-semibold">SHIP-TO CODE</th>
-                        <th class="text-secondary small fw-semibold" style="min-width: 220px;">NAMA PELANGGAN</th>
-                        <th class="text-secondary small fw-semibold">NO. TELEPON</th>
-                        <th class="text-secondary small fw-semibold">KONTAK</th>
-                        <th class="text-secondary small fw-semibold">EMAIL</th>
-                        <th class="text-secondary small fw-semibold" style="min-width: 300px;">ALAMAT</th>
-                        <th class="text-secondary small fw-semibold text-center">TERRITORY</th>
-                        <th class="text-secondary small fw-semibold text-center">STATUS</th>
-                        <th class="text-secondary small fw-semibold text-center pe-3">AKSI</th>
+                        <th class="text-secondary small fw-semibold text-center text-nowrap" style="width: 46px;">NO</th>
+                        <th class="text-secondary small fw-semibold text-nowrap">KODE</th>
+                        <th class="text-secondary small fw-semibold text-nowrap">SHIP-TO CODE</th>
+                        <th class="text-secondary small fw-semibold text-nowrap" style="min-width: 220px;">NAMA PELANGGAN</th>
+                        <th class="text-secondary small fw-semibold text-nowrap">NO. TELEPON</th>
+                        <th class="text-secondary small fw-semibold text-nowrap">KONTAK</th>
+                        <th class="text-secondary small fw-semibold text-nowrap">EMAIL</th>
+                        <th class="text-secondary small fw-semibold text-nowrap" style="min-width: 300px;">ALAMAT</th>
+                        <th class="text-secondary small fw-semibold text-center text-nowrap">TERRITORY</th>
+                        <th class="text-secondary small fw-semibold text-center text-nowrap">STATUS</th>
+                        <th class="text-secondary small fw-semibold text-center pe-3 text-nowrap">AKSI</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -143,9 +143,9 @@
                             $dimmed = $customer->is_active ? '' : 'opacity-50';
                         @endphp
                         <tr class="{{ $dimmed }}">
-                            <td class="text-center text-muted">{{ $loop->iteration + ($customers->currentPage() - 1) * $customers->perPage() }}</td>
-                            <td class="font-monospace fw-bold text-dark">{{ $customer->code }}</td>
-                            <td class="font-monospace small">
+                            <td class="text-center text-muted align-top">{{ $loop->iteration + ($customers->currentPage() - 1) * $customers->perPage() }}</td>
+                            <td class="font-monospace fw-bold text-dark text-nowrap align-top">{{ $customer->code }}</td>
+                            <td class="font-monospace small text-nowrap align-top">
                                 @if($customer->ship_to_code)
                                     <span class="text-muted">{{ $customer->ship_to_code }}</span>
                                 @else
@@ -153,11 +153,11 @@
                                           title="Belum terdaftar di ERP">Belum ada</span>
                                 @endif
                             </td>
-                            <td class="text-dark fw-semibold">{{ $customer->name }}</td>
-                            <td class="font-monospace small text-nowrap">{{ $customer->phone_label }}</td>
-                            <td class="small">{{ $customer->contact_name ?: '—' }}</td>
-                            <td class="small text-break" style="max-width: 220px;">{{ $customer->email ?: '—' }}</td>
-                            <td class="small text-muted">{{ $customer->full_address }}</td>
+                            <td class="text-dark fw-semibold align-top">{{ $customer->name }}</td>
+                            <td class="font-monospace small text-nowrap align-top">{{ $customer->phone_label }}</td>
+                            <td class="small text-nowrap align-top">{{ $customer->contact_name ?: '—' }}</td>
+                            <td class="small align-top text-lowercase">{{ $customer->email ?: '—' }}</td>
+                            <td class="small text-muted align-top">{{ $customer->full_address }}</td>
                             <td class="text-center">
                                 @if($customer->territory_code)
                                     <span class="badge bg-info-subtle text-info-emphasis border border-info">{{ $customer->territory_code }}</span>
