@@ -313,8 +313,9 @@ Kategori/grup produk untuk pelaporan dan filter.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `name` | VARCHAR(100) | NOT NULL | Nama kategori (contoh: "Cat Tembok") |
+| `name` | VARCHAR(100) | NOT NULL, UNIQUE | Nama kategori — tampil sebagai "Product Type" (contoh: "Alk Primer", "AMC", "Apex Emulsion") |
 | `description` | TEXT | NULLABLE | |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Hanya kategori aktif yang muncul di dropdown |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
@@ -325,18 +326,41 @@ Master data SKU/produk.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `sku` | VARCHAR(50) | NOT NULL, UNIQUE | Kode SKU produk |
-| `name` | VARCHAR(200) | NOT NULL | Nama produk |
-| `description` | TEXT | NULLABLE | Deskripsi lengkap |
-| `category_id` | BIGINT UNSIGNED | FK → product_categories.id | Kategori produk |
-| `uom` | VARCHAR(20) | NOT NULL | Unit of Measure (contoh: "5 Kg", "2.5 Lt") |
-| `max_qty_per_pallet` | INTEGER | NOT NULL | Kapasitas maks per palet |
+| `sku` | VARCHAR(50) | NOT NULL, UNIQUE | Kode SKU dari ERP, contoh: `ID1-F00113202225` |
+| `name` | VARCHAR(200) | NOT NULL | Nama produk (kolom "Description" pada ekspor ERP) |
+| `description` | TEXT | NULLABLE | Deskripsi tambahan |
+| `product_code` | VARCHAR(10) | NOT NULL | Kode lini produk, contoh: `0011` = Royale Smart Clean |
+| `shade_code` | VARCHAR(10) | NOT NULL | Kode warna, contoh: `3202` = White, `B050` = Vanilla Sky |
+| `pack_code` | VARCHAR(10) | NOT NULL | Kode kemasan, contoh: `225` = 2.5 L, `320` = 20 L |
+| `category_id` | BIGINT UNSIGNED | FK → product_categories.id, NULLABLE | "Product Type" (Alk Primer, AMC, dst.) |
+| `uom` | VARCHAR(20) | NOT NULL | Satuan kemasan dari ERP: KG, TIN, PAI, CAN |
+| `pack_unit` | VARCHAR(2) | NULLABLE | `L` atau `KG` — menentukan ukuran mana yang dipakai aturan palet |
+| `unit_volume` | DECIMAL(10,3) | NULLABLE | Volume kemasan dalam liter |
+| `net_weight` | DECIMAL(10,3) | NULLABLE | Berat bersih (kg) |
+| `gross_weight` | DECIMAL(10,3) | NULLABLE | Berat kotor (kg) |
+| `max_qty_per_pallet` | INTEGER | NULLABLE | Kapasitas maks per palet, dihitung otomatis (lihat catatan) |
 | `shelf_life_months` | SMALLINT | NOT NULL, DEFAULT 30 | Masa simpan dalam bulan. Dasar perhitungan `expiry_date` |
 | `stock_threshold_low` | INTEGER | DEFAULT 50 | Batas "Terbatas" untuk Semi-Blind indicator |
 | `is_active` | BOOLEAN | DEFAULT TRUE | Apakah produk masih aktif diproduksi |
+| `created_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Pembuat data |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
+
+> [!IMPORTANT]
+> **`sku` adalah gabungan tiga kode.** Polanya: `ID1-F` + `product_code` + `shade_code` + `pack_code`. Contoh: `ID1-F` + `0011` + `3202` + `225` = `ID1-F00113202225`. Ketiga komponen tetap disimpan terpisah agar bisa difilter (mis. "semua produk warna 3202") tanpa membedah string SKU. SKU hasil impor disimpan **apa adanya**, sehingga data tetap benar bila ERP suatu saat memakai awalan lain.
+
+> [!IMPORTANT]
+> **Tabel ini TIDAK menyimpan jumlah stok.** Kolom `Inventory` pada ekspor ERP (mis. 108, 126, 72) adalah **hasil penjumlahan**, bukan data master. Di sistem ini stok tinggal di `inventory_stocks`, terpecah per gudang × lokasi × batch × tanggal kedaluwarsa — pemecahan itulah yang membuat FIFO (§7.2) dan aturan kedaluwarsa (§7.2.1) bisa berjalan. Angka stok pada layar dihitung dengan `SUM(qty_available) WHERE status='active' AND expiry_date > CURRENT_DATE`.
+>
+> Ada test regresi (`ProductManagementTest::test_tabel_produk_tidak_menyimpan_jumlah_stok`) yang menggagalkan build bila kolom bernama `stock`, `qty`, `quantity`, atau `inventory` menyelinap masuk ke tabel ini.
+
+> [!NOTE]
+> **`max_qty_per_pallet` NULLABLE, berbeda dari rancangan awal.** Kapasitas palet dihitung dari tabel aturan gudang (`App\Support\PalletCapacity`) berdasarkan `pack_unit` + ukuran. Satuan ikut menentukan hasilnya — **20 L memuat 27 pcs, sedangkan 20 Kg memuat 36 pcs** — sehingga tidak bisa diturunkan dari rumus volume/berat semata.
+>
+> Ukuran di luar daftar aturan (mis. 0.25 L) sengaja menghasilkan NULL, **bukan angka tebakan**: salah menghitung kapasitas palet berarti salah membentuk palet di lantai gudang. Produk semacam itu ditandai di halaman Master Produk agar Manager mengisinya manual.
+>
+> **Aturan kapasitas palet:** 0.9 L / 0.9 Kg / 1 Kg → 720 · 2.5 L / 3.6 L / 4 Kg / 5 Kg → 180 · 15 L → 40 · 18 L / 20 L → 27 · 18 Kg / 20 Kg / 25 Kg → 36
 
 #### `locations`
 Master lokasi rak penyimpanan di gudang.

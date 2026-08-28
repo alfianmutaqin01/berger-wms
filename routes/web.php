@@ -11,6 +11,7 @@ use App\Http\Controllers\Wms\InventoryController;
 use App\Http\Controllers\Wms\MasterController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OutboundController;
+use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ReportController;
 use App\Http\Controllers\Wms\UserController;
@@ -162,8 +163,14 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::prefix('master')->group(function () {
         Route::get('/customers', [MasterController::class, 'customers'])
             ->middleware('can:'.Permission::MASTER_CUSTOMERS);
-        Route::get('/products', [MasterController::class, 'products'])
-            ->middleware('can:'.Permission::MASTER_PRODUCTS);
+
+        // Master Produk (PRD §6.2 F-MASTER-02) — sudah terhubung ke database.
+        Route::middleware('can:'.Permission::MASTER_PRODUCTS)->group(function () {
+            Route::get('/products', [ProductController::class, 'index'])->name('wms.products.index');
+            Route::post('/products', [ProductController::class, 'store'])->name('wms.products.store');
+            Route::put('/products/{product}', [ProductController::class, 'update'])->name('wms.products.update');
+            Route::patch('/products/{product}/status', [ProductController::class, 'toggleStatus'])->name('wms.products.status');
+        });
     });
 
     Route::prefix('admin')->group(function () {
