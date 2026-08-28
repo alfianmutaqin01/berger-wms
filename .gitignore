@@ -6,6 +6,9 @@
 /public/storage
 /storage/*.key
 /storage/pail
+# Cadangan database berisi data operasional (termasuk email & hash password) —
+# tidak boleh ikut masuk repositori.
+/storage/backups
 /storage/framework/cache/data/*
 /storage/framework/sessions/*
 /storage/framework/views/*

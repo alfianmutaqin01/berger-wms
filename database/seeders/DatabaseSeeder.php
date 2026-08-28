@@ -11,7 +11,8 @@ class DatabaseSeeder extends Seeder
 
     /**
      * Urutan seeder mengikuti dependensi foreign key:
-     * roles, departments, dan warehouses harus terisi sebelum users dibuat.
+     * roles, departments, dan warehouses harus terisi sebelum users dibuat;
+     * product_categories sebelum products.
      */
     public function run(): void
     {
@@ -20,6 +21,10 @@ class DatabaseSeeder extends Seeder
             DepartmentSeeder::class,
             WarehouseSeeder::class,
             UserSeeder::class,
+            ProductCategorySeeder::class,
+            ProductSeeder::class,
+            PaymentTermSeeder::class,
+            CustomerSeeder::class,
         ]);
     }
 }

@@ -5,12 +5,14 @@ use App\Http\Controllers\EpodController;
 use App\Http\Controllers\Sales\SalesOrderController;
 use App\Http\Controllers\Wms\AdminController;
 use App\Http\Controllers\Wms\BillingController;
+use App\Http\Controllers\Wms\CustomerController;
 use App\Http\Controllers\Wms\DashboardController;
+use App\Http\Controllers\Wms\ImportController;
 use App\Http\Controllers\Wms\InboundController;
 use App\Http\Controllers\Wms\InventoryController;
-use App\Http\Controllers\Wms\MasterController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OutboundController;
+use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ReportController;
 use App\Http\Controllers\Wms\UserController;
@@ -160,10 +162,46 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         ->middleware('can:'.Permission::REPORTS_VIEW);
 
     Route::prefix('master')->group(function () {
-        Route::get('/customers', [MasterController::class, 'customers'])
-            ->middleware('can:'.Permission::MASTER_CUSTOMERS);
-        Route::get('/products', [MasterController::class, 'products'])
-            ->middleware('can:'.Permission::MASTER_PRODUCTS);
+        // Master Pelanggan (PRD §6.2 F-MASTER-06) — sudah terhubung ke database.
+        Route::middleware('can:'.Permission::MASTER_CUSTOMERS)->group(function () {
+            Route::get('/customers', [CustomerController::class, 'index'])->name('wms.customers.index');
+            Route::post('/customers', [CustomerController::class, 'store'])->name('wms.customers.store');
+            Route::put('/customers/{customer}', [CustomerController::class, 'update'])->name('wms.customers.update');
+            Route::patch('/customers/{customer}/status', [CustomerController::class, 'toggleStatus'])->name('wms.customers.status');
+        });
+
+        // Master Produk (PRD §6.2 F-MASTER-02) — sudah terhubung ke database.
+        Route::middleware('can:'.Permission::MASTER_PRODUCTS)->group(function () {
+            Route::get('/products', [ProductController::class, 'index'])->name('wms.products.index');
+            Route::post('/products', [ProductController::class, 'store'])->name('wms.products.store');
+            Route::put('/products/{product}', [ProductController::class, 'update'])->name('wms.products.update');
+            Route::patch('/products/{product}/status', [ProductController::class, 'toggleStatus'])->name('wms.products.status');
+        });
+
+        /*
+        | Impor Excel. Dipagari gate yang sama dengan halaman masternya —
+        | siapa yang boleh mengubah data master, dia pula yang boleh mengimpor.
+        | Dua tahap: preview (tanpa menyentuh DB) lalu store (menyimpan).
+        */
+        Route::post('/products/import/preview', [ImportController::class, 'preview'])
+            ->defaults('type', 'products')->middleware('can:'.Permission::MASTER_PRODUCTS)
+            ->name('wms.products.import.preview');
+        Route::post('/products/import', [ImportController::class, 'store'])
+            ->defaults('type', 'products')->middleware('can:'.Permission::MASTER_PRODUCTS)
+            ->name('wms.products.import');
+        Route::post('/products/import/cancel', [ImportController::class, 'cancel'])
+            ->defaults('type', 'products')->middleware('can:'.Permission::MASTER_PRODUCTS)
+            ->name('wms.products.import.cancel');
+
+        Route::post('/customers/import/preview', [ImportController::class, 'preview'])
+            ->defaults('type', 'customers')->middleware('can:'.Permission::MASTER_CUSTOMERS)
+            ->name('wms.customers.import.preview');
+        Route::post('/customers/import', [ImportController::class, 'store'])
+            ->defaults('type', 'customers')->middleware('can:'.Permission::MASTER_CUSTOMERS)
+            ->name('wms.customers.import');
+        Route::post('/customers/import/cancel', [ImportController::class, 'cancel'])
+            ->defaults('type', 'customers')->middleware('can:'.Permission::MASTER_CUSTOMERS)
+            ->name('wms.customers.import.cancel');
     });
 
     Route::prefix('admin')->group(function () {
