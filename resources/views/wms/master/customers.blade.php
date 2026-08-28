@@ -11,6 +11,13 @@
 </div>
 @endif
 
+@if(session('error'))
+<div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
 @if($errors->any())
 <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
     <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ $errors->first() }}
@@ -65,6 +72,10 @@
             <p class="text-muted small mt-1 mb-0">Pelanggan didaftarkan langsung oleh Manager/Super Admin — tidak melalui pengajuan Sales.</p>
         </div>
         <div>
+            <button type="button" class="btn btn-outline-secondary fw-bold shadow-sm me-2"
+                    data-bs-toggle="modal" data-bs-target="#importExcelModal">
+                <i class="bi bi-upload me-1"></i> Import Excel
+            </button>
             <button class="btn btn-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#customerModal" onclick="openCustomerModal('add')">
                 <i class="bi bi-plus-circle me-1"></i> Tambah Pelanggan
             </button>
@@ -209,6 +220,42 @@
 @endsection
 
 @push('modals')
+<!-- Modal Import Excel -->
+<div class="modal fade" id="importExcelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form action="{{ route('wms.customers.import.preview') }}" method="POST" enctype="multipart/form-data">
+            @csrf
+            <div class="modal-content rounded-4 border-0">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark"><i class="bi bi-file-earmark-spreadsheet text-success me-2"></i> Import Pelanggan dari Excel</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-4">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Berkas Excel (.xlsx / .xls) *</label>
+                        <input class="form-control" type="file" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">Ukuran maksimal 10 MB, hingga 5.000 baris.</div>
+                    </div>
+
+                    <div class="alert alert-light border small mb-0">
+                        <strong>Kolom yang dibaca</strong> (baris pertama harus berisi judul kolom):
+                        <div class="font-monospace mt-2" style="font-size: 0.78rem;">
+                            No./id · Ship-to Code · Name · Phone No. · Contact ·<br>
+                            Email · Address · Address 2 · Territory Code
+                        </div>
+                        <hr class="my-2">
+                        Kode pelanggan yang sudah ada akan <strong>diperbarui</strong>, yang belum ada ditambahkan.
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm"><i class="bi bi-search me-1"></i> Pratinjau Data</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Modal Tambah / Sunting Pelanggan -->
 <div class="modal fade" id="customerModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">

@@ -11,6 +11,13 @@
 </div>
 @endif
 
+@if(session('error'))
+<div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
 @if($errors->any())
 <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
     <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ $errors->first() }}
@@ -65,11 +72,8 @@
                     <p class="text-muted small mt-1 mb-0">Daftar referensi seluruh SKU produk tanpa memuat informasi jumlah stok.</p>
                 </div>
                 <div>
-                    {{-- Impor Excel belum aktif: memerlukan paket pembaca spreadsheet
-                         yang belum terpasang (lihat dokumen arsitektur §1). Tombol sengaja
-                         dinonaktifkan, bukan disembunyikan, agar rencananya tetap terlihat. --}}
-                    <button type="button" class="btn btn-outline-secondary fw-bold shadow-sm me-2" disabled
-                            title="Impor Excel belum tersedia — akan dibangun pada tahap berikutnya.">
+                    <button type="button" class="btn btn-outline-secondary fw-bold shadow-sm me-2"
+                            data-bs-toggle="modal" data-bs-target="#importExcelModal">
                         <i class="bi bi-upload me-1"></i> Import Excel
                     </button>
                     <button class="btn btn-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#productModal" onclick="openProductModal('add')">
@@ -247,6 +251,43 @@
 @endsection
 
 @push('modals')
+<!-- Modal Import Excel -->
+<div class="modal fade" id="importExcelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form action="{{ route('wms.products.import.preview') }}" method="POST" enctype="multipart/form-data">
+            @csrf
+            <div class="modal-content rounded-4 border-0">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark"><i class="bi bi-file-earmark-spreadsheet text-success me-2"></i> Import Produk dari Excel</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-4">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Berkas Excel (.xlsx / .xls) *</label>
+                        <input class="form-control" type="file" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">Ukuran maksimal 10 MB, hingga 5.000 baris.</div>
+                    </div>
+
+                    <div class="alert alert-light border small mb-0">
+                        <strong>Kolom yang dibaca</strong> (baris pertama harus berisi judul kolom):
+                        <div class="font-monospace mt-2" style="font-size: 0.78rem;">
+                            No. · Description · Product Code · Shade Code · Pack Code ·<br>
+                            Base Unit of Measure · Net Weight · Gross Weight · Unit Volume · Product Type
+                        </div>
+                        <hr class="my-2">
+                        Kolom <strong>Inventory diabaikan</strong> — jumlah stok bukan data master.<br>
+                        SKU yang sudah ada akan <strong>diperbarui</strong>, yang belum ada ditambahkan.
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm"><i class="bi bi-search me-1"></i> Pratinjau Data</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Modal Tambah / Sunting Produk -->
 <div class="modal fade" id="productModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
