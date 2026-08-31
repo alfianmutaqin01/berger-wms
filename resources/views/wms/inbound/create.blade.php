@@ -26,7 +26,7 @@
 @endif
 
 <div class="row">
-    <div class="col-12 col-xl-9">
+    <div class="col-12">
         <div class="card shadow-sm border-0 rounded-4">
             <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
                 <h5 class="fw-bold text-dark mb-0"><i class="bi bi-box-arrow-in-right text-primary me-2"></i> Input Produksi</h5>
@@ -40,12 +40,10 @@
                 @csrf
                 <div class="card-body p-4">
 
-                    {{-- Nomor dokumen & tanggal dibangkitkan sistem, bukan diketik
-                         Tim Produksi. Ditampilkan read-only agar terlihat jelas
-                         nomor apa yang akan dipakai. --}}
+                    {{-- Nomor dokumen Input WMS & tanggal dibangkitkan sistem --}}
                     <div class="row g-3 mb-4">
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold text-secondary small">No. Dokumen Produksi</label>
+                            <label class="form-label fw-semibold text-secondary small">No. Dokumen Input WMS</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-magic text-primary"></i></span>
                                 <input type="text" class="form-control bg-light font-monospace fw-bold" value="{{ $documentNumber }}" readonly>
@@ -76,30 +74,6 @@
                     <input type="file" name="file" class="form-control form-control-lg" accept=".xlsx,.xls" required>
                     <div class="form-text mb-3">Ukuran maksimal 10 MB, hingga 5.000 baris.</div>
 
-                    <div class="alert alert-light border small mb-0">
-                        <strong><i class="bi bi-table me-1"></i>Kolom yang dibaca sistem</strong>
-                        — hanya kolom A sampai E; kolom setelahnya diabaikan.
-                        <div class="table-responsive mt-2">
-                            <table class="table table-sm table-bordered mb-0" style="font-size: 0.78rem;">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width:40px;">Kol</th>
-                                        <th>Judul Kolom</th>
-                                        <th>Dipakai sebagai</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr><td class="text-center fw-bold">A</td><td>No.</td><td>Nomor order produksi</td></tr>
-                                    <tr><td class="text-center fw-bold">B</td><td>Source No.</td><td>SKU produk — harus sudah ada di Master Produk</td></tr>
-                                    <tr><td class="text-center fw-bold">C</td><td>Description</td><td>Nama produk (hanya untuk tampilan)</td></tr>
-                                    <tr><td class="text-center fw-bold">D</td><td>Quantity</td><td>Total qty, dipecah otomatis jadi palet</td></tr>
-                                    <tr><td class="text-center fw-bold">E</td><td>QC Number</td><td>Nomor batch</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <hr class="my-2">
-                        Berkas <strong>tidak disimpan</strong> di sistem — hanya hasil pembacaannya.
-                    </div>
                 </div>
 
                 <div class="card-footer bg-light border-top-0 rounded-bottom-4 text-end py-3 px-4">
@@ -111,19 +85,37 @@
         </div>
     </div>
 
-    <div class="col-12 col-xl-3 mt-4 mt-xl-0">
+        <div class="col-12 mt-3">
         <div class="card shadow-sm border-0 rounded-4">
             <div class="card-body p-4">
                 <h6 class="fw-bold text-dark mb-3"><i class="bi bi-info-circle text-primary me-2"></i>Cara Kerja</h6>
-                <ol class="small text-muted ps-3 mb-0">
-                    <li class="mb-2">Unggah berkas produksi.</li>
-                    <li class="mb-2">Sistem membaca SKU, jumlah, dan batch, lalu <strong>memecahnya menjadi palet</strong> sesuai kapasitas kemasan.</li>
-                    <li class="mb-2">Periksa hasilnya di layar pratinjau — <strong>belum ada yang tersimpan</strong>.</li>
-                    <li class="mb-2">Tekan Simpan. Dokumen masuk antrean <strong>Menunggu Put-away</strong>.</li>
-                    <li>Berkas Excel dibuang setelah tersimpan.</li>
-                </ol>
+                <div class="row">
+                    <div class="col-md-6 col-lg-3 mb-2 mb-lg-0">
+                        <div class="d-flex align-items-start">
+                            <span class="badge bg-primary rounded-circle me-2 mt-1 flex-shrink-0 d-flex align-items-center justify-content-center" style="width:24px;height:24px;">1</span>
+                            <span class="small text-muted">Unggah berkas produksi.</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3 mb-2 mb-lg-0">
+                        <div class="d-flex align-items-start">
+                            <span class="badge bg-primary rounded-circle me-2 mt-1 flex-shrink-0 d-flex align-items-center justify-content-center" style="width:24px;height:24px;">2</span>
+                            <span class="small text-muted">Sistem membaca SKU, jumlah, dan batch, lalu <strong>memecahnya menjadi palet</strong> sesuai kapasitas kemasan.</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3 mb-2 mb-lg-0">
+                        <div class="d-flex align-items-start">
+                            <span class="badge bg-primary rounded-circle me-2 mt-1 flex-shrink-0 d-flex align-items-center justify-content-center" style="width:24px;height:24px;">3</span>
+                            <span class="small text-muted">Periksa hasilnya di layar pratinjau &mdash; <strong>belum ada yang tersimpan</strong>.</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="d-flex align-items-start">
+                            <span class="badge bg-primary rounded-circle me-2 mt-1 flex-shrink-0 d-flex align-items-center justify-content-center" style="width:24px;height:24px;">4</span>
+                            <span class="small text-muted">Tekan Simpan. Dokumen masuk antrean <strong>Menunggu Put-away</strong>.</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-</div>
 @endsection

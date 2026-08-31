@@ -84,7 +84,6 @@
             <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-light sticky-top">
                     <tr>
-                        <th class="small text-center" style="width: 60px;">BARIS</th>
                         <th class="small text-nowrap">NO. PRODUKSI</th>
                         <th class="small text-nowrap">SKU</th>
                         <th class="small" style="min-width: 220px;">DESKRIPSI</th>
@@ -98,7 +97,6 @@
                 <tbody>
                     @foreach($rows as $row)
                         <tr class="{{ $row['status'] === 'gagal' ? 'table-danger' : '' }}">
-                            <td class="text-center text-muted small">{{ $row['line'] }}</td>
                             <td class="font-monospace small text-muted text-nowrap">{{ $row['production_order_no'] ?? '—' }}</td>
                             <td class="font-monospace small fw-bold text-dark text-nowrap">{{ $row['sku'] }}</td>
                             <td class="small">{{ $row['description'] }}</td>
@@ -126,7 +124,6 @@
                         </tr>
                         @if($row['status'] === 'gagal' && $row['message'])
                             <tr class="table-danger">
-                                <td></td>
                                 <td colspan="8" class="small text-danger-emphasis pt-0">
                                     <i class="bi bi-exclamation-triangle me-1"></i>{{ $row['message'] }}
                                 </td>
