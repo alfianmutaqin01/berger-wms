@@ -79,7 +79,7 @@ class PutawayTest extends TestCase
             'status' => InboundHeader::STATUS_PUTAWAY_PENDING,
         ], $overrides));
 
-        $product = Product::factory()->create(['max_qty_per_pallet' => 180]);
+        $product = Product::factory()->create(['max_qty_per_pallet' => 180, 'uom' => 'TIN']);
 
         foreach ([[1, 180], [2, 55]] as [$no, $qty]) {
             InboundDetail::factory()->create([
@@ -182,23 +182,31 @@ class PutawayTest extends TestCase
         $this->assertSame(['B-01-01'], $locations->pluck('code')->all());
     }
 
-    public function test_isi_bin_ditampilkan_sebagai_informasi(): void
+    public function test_isi_bin_menampilkan_produk_qty_kapasitas_dan_satuan(): void
     {
         $this->loginAs();
         $header = $this->makeDocument();
         $bin = $this->bin('B-01-01');
-        $header->details()->first()->update(['location_id' => $bin->id, 'qty_actual' => 178]);
+        $palet = $header->details()->first();
+        $palet->update(['location_id' => $bin->id, 'qty_actual' => 178]);
 
         $occupancy = $this->get('/wms/inbound/putaway/IN-260901-001')->viewData('occupancy');
 
-        $this->assertSame(['B-01-01' => 178], $occupancy);
+        $this->assertSame([
+            'product_id' => $palet->product_id,
+            'qty' => 178,
+            'capacity' => 180,
+            'uom' => 'TIN',
+        ], $occupancy['B-01-01']);
     }
 
     /**
-     * SATU BIN = SATU PALET. Bin yang sudah terisi (oleh palet manapun, dari
-     * dokumen manapun) tidak boleh muncul di daftar rekomendasi lokasi.
+     * $locations TIDAK LAGI menyaring bin yang sudah terisi — ketersediaannya
+     * kini tergantung SKU baris yang sedang diisi (bisa berbeda per baris),
+     * jadi penyaringan dipindah ke sisi klien. Server hanya menyaring
+     * berdasarkan gudang & status aktif.
      */
-    public function test_bin_yang_sudah_terisi_tidak_masuk_rekomendasi(): void
+    public function test_locations_memuat_seluruh_bin_aktif_termasuk_yang_sudah_terisi(): void
     {
         $this->loginAs();
         $header = $this->makeDocument();
@@ -208,7 +216,7 @@ class PutawayTest extends TestCase
 
         $locations = $this->get('/wms/inbound/putaway/IN-260901-001')->viewData('locations');
 
-        $this->assertSame(['B-01-02'], $locations->pluck('code')->all());
+        $this->assertSame(['B-01-01', 'B-01-02'], $locations->pluck('code')->all());
     }
 
     public function test_dokumen_yang_sudah_terverifikasi_tidak_bisa_diproses_ulang(): void
@@ -379,12 +387,35 @@ class PutawayTest extends TestCase
         $this->assertNull($milikOrangLain->fresh()->location_id);
     }
 
-    /** SATU BIN = SATU PALET: dua palet tidak boleh berbagi satu bin dalam satu pengiriman. */
-    public function test_dua_palet_tidak_boleh_berbagi_satu_bin_dalam_satu_pengiriman(): void
+    /**
+     * Dua palet dari SKU yang SAMA boleh digabung dalam satu bin selama
+     * jumlahnya masih di bawah kapasitas palet SKU itu — pallet split
+     * (PRD §7.1) boleh disatukan kembali di rak.
+     */
+    public function test_dua_palet_sku_sama_boleh_digabung_dalam_satu_bin(): void
     {
         $this->loginAs();
-        $header = $this->makeDocument();
+        $header = $this->makeDocument(); // kapasitas 180: palet A=180, palet B=55
         $bin = $this->bin('B-01-01');
+        [$paletA, $paletB] = $header->details()->orderBy('pallet_no')->get()->all();
+
+        $this->post('/wms/inbound/putaway/IN-260901-001', [
+            'pallets' => [
+                $paletA->id => ['location_code' => 'B-01-01', 'qty_actual' => 100],
+                $paletB->id => ['location_code' => 'B-01-01', 'qty_actual' => 55],
+            ],
+        ])->assertRedirect();
+
+        $this->assertSame($bin->id, $paletA->fresh()->location_id);
+        $this->assertSame($bin->id, $paletB->fresh()->location_id);
+    }
+
+    /** Gabungan qty yang melebihi kapasitas palet SKU tersebut ditolak. */
+    public function test_gabungan_palet_melebihi_kapasitas_ditolak(): void
+    {
+        $this->loginAs();
+        $header = $this->makeDocument(); // kapasitas 180: palet A=180, palet B=55 -> gabungan 235 > 180
+        $this->bin('B-01-01');
         [$paletA, $paletB] = $header->details()->orderBy('pallet_no')->get()->all();
 
         $this->post('/wms/inbound/putaway/IN-260901-001', [
@@ -400,8 +431,50 @@ class PutawayTest extends TestCase
         $this->assertNull($paletB->fresh()->location_id);
     }
 
-    /** Bin yang sudah ditempati palet dari DOKUMEN LAIN tetap ditolak. */
-    public function test_bin_yang_terisi_dari_dokumen_lain_ditolak(): void
+    /** Dua SKU yang berbeda tidak boleh berbagi satu bin, walau kapasitasnya cukup. */
+    public function test_dua_sku_berbeda_tidak_boleh_berbagi_bin(): void
+    {
+        $this->loginAs();
+        $header = $this->makeDocument();
+        $this->bin('B-01-01');
+        [$paletA, $paletB] = $header->details()->orderBy('pallet_no')->get()->all();
+        // Paksa palet B jadi produk lain, seolah dua SKU berbeda menunjuk bin yang sama.
+        $produkLain = Product::factory()->create(['max_qty_per_pallet' => 180, 'uom' => 'PAIL']);
+        $paletB->update(['product_id' => $produkLain->id]);
+
+        $this->post('/wms/inbound/putaway/IN-260901-001', [
+            'pallets' => [
+                $paletA->id => ['location_code' => 'B-01-01', 'qty_actual' => 100],
+                $paletB->id => ['location_code' => 'B-01-01', 'qty_actual' => 50],
+            ],
+        ])->assertSessionHasErrors("pallets.{$paletB->id}.location_code");
+
+        $this->assertNull($paletA->fresh()->location_id);
+        $this->assertNull($paletB->fresh()->location_id);
+    }
+
+    /** SKU yang SAMA dari DOKUMEN LAIN boleh digabung selama masih ada sisa kapasitas. */
+    public function test_sku_sama_dari_dokumen_lain_boleh_digabung_bila_masih_ada_sisa(): void
+    {
+        $this->loginAs();
+        $sudahAda = $this->makeDocument(['document_number' => 'IN-260901-002']);
+        $bin = $this->bin('B-01-01');
+        $produkBersama = $sudahAda->details()->first()->product;
+        $sudahAda->details()->first()->update(['location_id' => $bin->id, 'qty_actual' => 50]);
+
+        $header = $this->makeDocument();
+        $header->details()->each(fn ($d) => $d->update(['product_id' => $produkBersama->id]));
+        $palet = $header->details()->first();
+
+        $this->post('/wms/inbound/putaway/IN-260901-001', [
+            'pallets' => [$palet->id => ['location_code' => 'B-01-01', 'qty_actual' => 100]],
+        ])->assertSessionDoesntHaveErrors();
+
+        $this->assertSame($bin->id, $palet->fresh()->location_id);
+    }
+
+    /** Bin yang ditempati SKU LAIN dari DOKUMEN LAIN tetap ditolak. */
+    public function test_sku_berbeda_dari_dokumen_lain_ditolak(): void
     {
         $this->loginAs();
         $sudahAda = $this->makeDocument(['document_number' => 'IN-260901-002']);
@@ -416,6 +489,35 @@ class PutawayTest extends TestCase
         ])->assertSessionHasErrors("pallets.{$palet->id}.location_code");
 
         $this->assertNull($palet->fresh()->location_id);
+    }
+
+    /** Produk tanpa kapasitas palet terdaftar: bin yang sudah terisi APAPUN ditolak (jaring pengaman). */
+    public function test_produk_tanpa_kapasitas_terdaftar_tidak_bisa_berbagi_bin(): void
+    {
+        $this->loginAs();
+        $header = InboundHeader::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'document_number' => 'IN-260901-003',
+        ]);
+        $produk = Product::factory()->withoutPalletCapacity()->create();
+        $detailAwal = InboundDetail::factory()->create([
+            'inbound_header_id' => $header->id,
+            'product_id' => $produk->id,
+            'pallet_qty' => 50,
+        ]);
+        $detailBaru = InboundDetail::factory()->create([
+            'inbound_header_id' => $header->id,
+            'product_id' => $produk->id,
+            'pallet_qty' => 20,
+        ]);
+        $bin = $this->bin('B-01-01');
+        $detailAwal->update(['location_id' => $bin->id]);
+
+        $this->post('/wms/inbound/putaway/IN-260901-003', [
+            'pallets' => [$detailBaru->id => ['location_code' => 'B-01-01', 'qty_actual' => 20]],
+        ])->assertSessionHasErrors("pallets.{$detailBaru->id}.location_code");
+
+        $this->assertNull($detailBaru->fresh()->location_id);
     }
 
     /** Menyimpan ulang palet ke bin yang sudah dimilikinya sendiri tetap diterima. */

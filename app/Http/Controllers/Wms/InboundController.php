@@ -360,8 +360,11 @@ class InboundController extends Controller
      * -------------------------------------------------
      * $header    : InboundHeader
      * $details   : Collection<InboundDetail> — eager-load product & location
-     * $locations : Collection<Location> — bin aktif di GUDANG DOKUMEN INI saja
-     * $occupancy : array<string, int> — kode bin => jumlah palet yang sudah ada
+     * $locations : Collection<Location> — SELURUH bin aktif di gudang dokumen
+     *              ini; ketersediaan per baris dihitung di sisi klien karena
+     *              tergantung SKU baris itu (lihat $occupancy)
+     * $occupancy : array<string, array{product_id:int, qty:int, capacity:?int,
+     *              uom:?string}> — kode bin => isi bin saat ini
      * $totals    : array{palet:int, ditempatkan:int}
      *
      * Daftar bin dibatasi ke gudang dokumen. Tanpa itu, Operator bisa memilih
@@ -386,28 +389,34 @@ class InboundController extends Controller
             ->inStorageOrder()
             ->get(['id', 'code', 'zone']);
 
-        // SATU BIN = SATU PALET. Isian di sini dipakai untuk dua hal:
-        //   1. Menyingkirkan bin yang sudah terisi dari daftar rekomendasi.
-        //   2. Menampilkan isinya bila Operator tetap mengetik kode itu
-        //      manual, supaya jelas KENAPA kode tersebut ditolak saat simpan.
-        $perId = InboundDetail::query()
+        // Satu bin adalah satu SLOT PALET: boleh memuat beberapa palet dari
+        // SKU yang SAMA sampai kapasitas palet SKU itu (Product::
+        // max_qty_per_pallet) — pallet split (PRD §7.1) boleh digabung
+        // kembali di bin yang sama. SKU yang berbeda tetap tidak boleh
+        // berbagi bin. Dihitung dari SELURUH dokumen, bukan cuma dokumen ini.
+        $idKeKode = $locations->pluck('code', 'id');
+
+        $occupancy = InboundDetail::query()
             ->whereIn('location_id', $locations->pluck('id'))
-            ->get(['location_id', 'qty_actual', 'pallet_qty'])
-            ->keyBy('location_id');
+            ->with('product:id,uom,max_qty_per_pallet')
+            ->get(['id', 'location_id', 'product_id', 'qty_actual', 'pallet_qty'])
+            ->groupBy('location_id')
+            ->mapWithKeys(function ($group) use ($idKeKode) {
+                $produk = $group->first()->product;
 
-        // Dikunci dengan KODE, bukan id, karena Operator mengetik kode rak —
-        // pencocokan di layar jadi langsung tanpa tabel penerjemah kedua.
-        $occupancy = $locations
-            ->filter(fn (Location $l) => $perId->has($l->id))
-            ->mapWithKeys(fn (Location $l) => [$l->code => $perId[$l->id]->effective_qty])
+                return [$idKeKode[$group->first()->location_id] => [
+                    'product_id' => $group->first()->product_id,
+                    'qty' => $group->sum(fn (InboundDetail $d) => $d->effective_qty),
+                    'capacity' => $produk?->max_qty_per_pallet,
+                    'uom' => $produk?->uom,
+                ]];
+            })
             ->all();
-
-        $availableLocations = $locations->reject(fn (Location $l) => isset($occupancy[$l->code]))->values();
 
         return view('wms.inbound.putaway-process', [
             'header' => $header,
             'details' => $details,
-            'locations' => $availableLocations,
+            'locations' => $locations,
             'occupancy' => $occupancy,
             'totals' => [
                 'palet' => $details->count(),
@@ -419,7 +428,7 @@ class InboundController extends Controller
     /**
      * F-INB-02: menyimpan penempatan palet.
      *
-     * Dua aturan yang membentuk method ini:
+     * Aturan yang membentuk method ini:
      *
      * 1. PUT-AWAY BOLEH SEBAGIAN. Palet yang lokasinya dikosongkan hanya
      *    dilewati, tidak menggagalkan penyimpanan. Memaksa semua palet terisi
@@ -427,6 +436,10 @@ class InboundController extends Controller
      *    setiap kali giliran kerjanya habis.
      * 2. STATUS NAIK HANYA BILA LENGKAP. Dokumen baru berpindah ke
      *    `verification_pending` setelah seluruh paletnya punya lokasi.
+     * 3. SATU BIN = SATU SLOT PALET. Boleh memuat beberapa palet dari SKU
+     *    yang SAMA sampai kapasitas palet SKU itu (Product::max_qty_per_
+     *    pallet) — pallet split (PRD §7.1) boleh digabung kembali di bin
+     *    yang sama. SKU yang berbeda TIDAK boleh berbagi bin.
      *
      * Qty Aktual boleh dikoreksi Operator (PRD §6.3 F-INB-02) — SKU dan batch
      * tidak, karena keduanya berasal dari dokumen produksi dan bukan wewenang
@@ -446,7 +459,7 @@ class InboundController extends Controller
             'pallets.*.qty_actual' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
-        $details = $header->details()->get()->keyBy('id');
+        $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
 
         // Kode bin dipetakan sekali di muka, bukan satu query per palet.
         $bins = Location::where('warehouse_id', $header->warehouse_id)
@@ -454,15 +467,28 @@ class InboundController extends Controller
             ->get(['id', 'code'])
             ->keyBy(fn (Location $l) => strtoupper($l->code));
 
-        // SATU BIN = SATU PALET. Bin yang sudah dipakai palet LAIN (di dokumen
-        // manapun) diperiksa di sini; bin milik palet ini sendiri (put-away
-        // ulang/koreksi) dikecualikan agar tidak menolak dirinya sendiri.
-        $sudahDipakai = InboundDetail::whereNotNull('location_id')
-            ->whereNotIn('id', $details->keys())
-            ->pluck('location_id', 'location_id');
+        // Isi bin SAAT INI di database (dokumen manapun, termasuk palet LAIN
+        // milik dokumen ini sendiri yang sudah lebih dulu ditempatkan),
+        // dikelompokkan per bin dengan kontribusi tiap palet disimpan
+        // terpisah. Kontribusi palet yang SEDANG diproses dikeluarkan nanti
+        // per-baris (bukan di sini) — supaya put-away ulang/koreksi tidak
+        // menabrak dirinya sendiri, TANPA ikut menyembunyikan palet LAIN
+        // milik dokumen yang sama yang kebetulan sudah menghuni bin itu.
+        $penghuniSekarang = InboundDetail::whereNotNull('location_id')
+            ->get(['id', 'location_id', 'product_id', 'qty_actual', 'pallet_qty'])
+            ->groupBy('location_id')
+            ->map(fn ($group) => [
+                'product_id' => $group->first()->product_id,
+                'per_detail' => $group->keyBy('id')->map(fn (InboundDetail $d) => $d->effective_qty),
+            ]);
 
         $penempatan = [];
         $errors = [];
+
+        // location_id => ['product_id'=>, 'qty'=>] — akumulasi DALAM SATU
+        // pengiriman ini, supaya beberapa palet SKU yang SAMA menunjuk bin
+        // yang sama dijumlahkan (boleh digabung sampai kapasitas), sementara
+        // SKU yang berbeda menunjuk bin yang sama tetap ditolak.
         $dipakaiDalamPengiriman = [];
 
         foreach ($validated['pallets'] as $detailId => $input) {
@@ -487,20 +513,6 @@ class InboundController extends Controller
                 continue;
             }
 
-            $locationId = $bins->get($code)->id;
-
-            if ($sudahDipakai->has($locationId)) {
-                $errors["pallets.{$detailId}.location_code"] = "Rak \"{$code}\" sudah terisi palet lain.";
-
-                continue;
-            }
-
-            if (isset($dipakaiDalamPengiriman[$locationId])) {
-                $errors["pallets.{$detailId}.location_code"] = "Rak \"{$code}\" juga dipilih untuk palet lain pada pengiriman ini.";
-
-                continue;
-            }
-
             $qty = $input['qty_actual'] ?? null;
 
             if ($qty === null || $qty === '') {
@@ -509,11 +521,68 @@ class InboundController extends Controller
                 continue;
             }
 
-            $dipakaiDalamPengiriman[$locationId] = true;
+            $qty = (int) $qty;
+            $locationId = $bins->get($code)->id;
+            $kapasitas = $detail->product?->max_qty_per_pallet;
+
+            $terpakai = 0;
+            $produkLain = null;
+
+            if ($sudahAda = $penghuniSekarang->get($locationId)) {
+                // Kontribusi palet ini SENDIRI dikeluarkan dulu — kalau
+                // ternyata dialah satu-satunya penghuni bin itu (put-away
+                // ulang ke bin miliknya sendiri), bin dianggap kosong untuk
+                // pengecekan ini, bukan "sudah terisi dirinya sendiri".
+                $lainnya = $sudahAda['per_detail']->except([$detail->id]);
+
+                if ($lainnya->isNotEmpty()) {
+                    $produkLain = $sudahAda['product_id'];
+                    $terpakai = $lainnya->sum();
+                }
+            }
+
+            if ($dalamPengiriman = $dipakaiDalamPengiriman[$locationId] ?? null) {
+                $produkLain ??= $dalamPengiriman['product_id'];
+                $terpakai += $dalamPengiriman['qty'];
+            }
+
+            if ($produkLain !== null && $produkLain !== $detail->product_id) {
+                $errors["pallets.{$detailId}.location_code"] = "Rak \"{$code}\" sudah terisi produk lain.";
+
+                continue;
+            }
+
+            if ($kapasitas === null) {
+                // Kapasitas palet produk ini belum diketahui di Master
+                // Produk — tanpa angka itu tidak bisa dipastikan sisa
+                // ruangnya, jadi bin yang sudah terisi APAPUN ditolak
+                // sebagai jaring pengaman.
+                if ($terpakai > 0) {
+                    $errors["pallets.{$detailId}.location_code"] =
+                        "Rak \"{$code}\" sudah terisi, dan kapasitas palet produk ini belum diisi di Master Produk.";
+
+                    continue;
+                }
+            } elseif (($terpakai + $qty) > $kapasitas) {
+                $errors["pallets.{$detailId}.location_code"] = sprintf(
+                    'Rak "%s" kelebihan kapasitas: sudah terisi %d, ditambah %d akan melebihi kapasitas %d.',
+                    $code,
+                    $terpakai,
+                    $qty,
+                    $kapasitas
+                );
+
+                continue;
+            }
+
+            $dipakaiDalamPengiriman[$locationId] = [
+                'product_id' => $detail->product_id,
+                'qty' => $terpakai + $qty,
+            ];
 
             $penempatan[$detail->id] = [
                 'location_id' => $locationId,
-                'qty_actual' => (int) $qty,
+                'qty_actual' => $qty,
             ];
         }
 

@@ -54,14 +54,16 @@
                     <div class="small">
                         Palet yang belum sempat ditempatkan boleh dikosongkan — yang sudah terisi tetap tersimpan dan dokumen ini
                         tetap ada di daftar put-away sampai seluruh paletnya punya lokasi.
-                        <strong>Qty Aktual</strong> boleh dikoreksi sesuai hitungan fisik; SKU dan batch tidak dapat diubah di sini.
+                        Satu rak boleh diisi beberapa palet dari <strong>SKU yang sama</strong> sampai kapasitasnya penuh; SKU
+                        berbeda tidak bisa berbagi rak. <strong>Qty Aktual</strong> boleh dikoreksi sesuai hitungan fisik;
+                        SKU dan batch tidak dapat diubah di sini.
                     </div>
                 </div>
 
                 <form method="POST" action="{{ route('wms.inbound.putaway.store', $header->document_number) }}" id="putawayForm">
                     @csrf
 
-                    <div class="table-responsive">
+                    <div class="table-responsive" style="overflow: visible;">
                         <table class="table table-hover align-middle mb-0" id="putawayTable">
                             <thead class="table-light">
                                 <tr>
@@ -82,7 +84,10 @@
                                         $kodeLama = old("pallets.{$detail->id}.location_code", $detail->location?->code);
                                         $qtyLama = old("pallets.{$detail->id}.qty_actual", $detail->qty_actual ?? $detail->pallet_qty);
                                     @endphp
-                                    <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }}">
+                                    <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }}"
+                                        data-product-id="{{ $detail->product_id }}"
+                                        data-capacity="{{ $detail->product?->max_qty_per_pallet }}"
+                                        data-uom="{{ $detail->product?->uom }}">
                                         <td class="text-center text-nowrap">
                                             <span class="fw-bold">#{{ $detail->pallet_no }}</span>
                                             @if($detail->location_id)
@@ -100,7 +105,7 @@
                                         <td class="text-center">
                                             <span class="badge bg-light text-dark border px-2 py-1 qty-sistem"
                                                   data-qty="{{ $detail->pallet_qty }}" title="Dari dokumen produksi">
-                                                {{ number_format($detail->pallet_qty) }}
+                                                {{ number_format($detail->pallet_qty) }} {{ $detail->product?->uom }}
                                             </span>
                                         </td>
                                         <td class="text-center">
@@ -110,13 +115,16 @@
                                                    class="form-control form-control-sm text-center fw-bold qty-aktual @error("pallets.{$detail->id}.qty_actual") is-invalid @enderror">
                                         </td>
                                         <td>
-                                            <input type="text"
-                                                   name="pallets[{{ $detail->id }}][location_code]"
-                                                   value="{{ $kodeLama }}"
-                                                   list="daftarLokasi"
-                                                   placeholder="Ketik / pindai kode rak, mis. B-01-01"
-                                                   autocomplete="off"
-                                                   class="form-control text-uppercase font-monospace lokasi-input @error("pallets.{$detail->id}.location_code") is-invalid @enderror">
+                                            <div class="position-relative">
+                                                <input type="text"
+                                                       name="pallets[{{ $detail->id }}][location_code]"
+                                                       value="{{ $kodeLama }}"
+                                                       placeholder="Ketik kode rak, mis. B-01-01"
+                                                       autocomplete="off"
+                                                       class="form-control text-uppercase font-monospace lokasi-input @error("pallets.{$detail->id}.location_code") is-invalid @enderror">
+                                                <div class="lokasi-dropdown list-group position-absolute w-100 shadow rounded-3 mt-1"
+                                                     style="z-index: 40; max-height: 240px; overflow-y: auto; display: none;"></div>
+                                            </div>
                                             <small class="text-muted lokasi-info d-block mt-1" style="min-height: 1rem;"></small>
                                         </td>
                                     </tr>
@@ -124,15 +132,6 @@
                             </tbody>
                         </table>
                     </div>
-
-                    {{--
-                        Satu datalist dipakai bersama seluruh baris, isinya
-                        DIBANGUN ULANG oleh JS setiap kali ada baris berubah
-                        (lihat perbaruiDatalist()) agar kode yang baru saja
-                        dipilih di baris lain langsung hilang dari rekomendasi
-                        — bukan hanya bin yang sudah tersimpan di database.
-                    --}}
-                    <datalist id="daftarLokasi"></datalist>
 
                     <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
                         <a href="{{ route('wms.inbound.putaway') }}" class="btn btn-outline-secondary px-4">Batal</a>
@@ -150,94 +149,179 @@
 
 @push('scripts')
 <script>
-    // SATU BIN = SATU PALET. ISI_BIN adalah bin yang SUDAH TERSIMPAN di
-    // database (palet manapun, dokumen manapun) — dipakai menjelaskan KENAPA
-    // suatu kode ditolak bila diketik manual, karena bin itu memang sudah
-    // tidak ada di LOKASI_TERSEDIA sejak awal.
+    // ISI_BIN: isi bin SAAT INI di database (dokumen manapun). Kunci = kode
+    // rak. Nilai = { product_id, qty, capacity, uom } milik SKU yang sedang
+    // menghuni bin itu (capacity/uom bisa null bila produknya belum diisi
+    // kapasitas paletnya di Master Produk).
     const ISI_BIN = @json((object) $occupancy);
 
-    // LOKASI_TERSEDIA adalah bin kosong di gudang ini (sudah mengecualikan
-    // ISI_BIN). Dari sinilah datalist dibangun ulang setiap kali ada baris
-    // berubah, supaya kode yang BARU SAJA dipilih di satu baris — walau belum
-    // disimpan — langsung hilang dari rekomendasi baris lain.
-    const LOKASI_TERSEDIA = @json($locations->map(fn ($l) => ['code' => $l->code, 'zone' => $l->zone])->values());
+    // LOKASI: SELURUH bin aktif di gudang dokumen ini. Ketersediaannya untuk
+    // tiap baris dihitung di JS (tergantung SKU baris itu), bukan disaring
+    // dari server, karena bin yang sama bisa tersedia untuk satu SKU dan
+    // tidak tersedia untuk SKU lain.
+    const LOKASI = @json($locations->map(fn ($l) => ['code' => $l->code, 'zone' => $l->zone])->values());
 
     document.addEventListener('DOMContentLoaded', function () {
         const tabel = document.getElementById('putawayTable');
-        const datalist = document.getElementById('daftarLokasi');
+
+        function semuaBarisLokasi() {
+            return Array.from(tabel.querySelectorAll('.lokasi-input'));
+        }
 
         function perbaruiKemajuan() {
-            const isian = tabel.querySelectorAll('.lokasi-input');
+            const isian = semuaBarisLokasi();
             let terisi = 0;
             isian.forEach(i => { if (i.value.trim() !== '') terisi++; });
             const label = document.getElementById('progressLabel');
             label.textContent = terisi + ' / ' + isian.length + ' palet';
         }
 
-        /** Kode yang sedang terisi di baris manapun pada formulir ini sekarang. */
-        function kodeTerpakaiDiFormulir() {
-            const hitung = {};
-            tabel.querySelectorAll('.lokasi-input').forEach(i => {
-                const kode = i.value.trim().toUpperCase();
-                if (kode !== '') hitung[kode] = (hitung[kode] || 0) + 1;
-            });
-            return hitung;
-        }
-
         /**
-         * Membangun ulang <option> datalist: bin kosong DIKURANGI kode yang
-         * sudah diketik di baris manapun. Dipakai bersama seluruh baris —
-         * begitu satu baris memilih B-01-05, baris lain langsung kehilangan
-         * B-01-05 dari rekomendasinya tanpa perlu disimpan dulu.
+         * Total qty SKU `produkId` yang sudah menghuni bin `kode`, dari
+         * database DITAMBAH baris lain di formulir ini yang menunjuk bin
+         * yang sama dengan SKU yang sama — TIDAK termasuk `kecualiInput`
+         * sendiri. Mengembalikan null bila bin itu dihuni SKU LAIN (berarti
+         * tidak bisa dipakai sama sekali oleh baris ini).
          */
-        function perbaruiDatalist() {
-            const dipakai = kodeTerpakaiDiFormulir();
-            datalist.innerHTML = '';
-            LOKASI_TERSEDIA.forEach(l => {
-                if (dipakai[l.code]) return;
-                const opt = document.createElement('option');
-                opt.value = l.code;
-                opt.textContent = l.zone || '';
-                datalist.appendChild(opt);
+        function terpakaiUntukBaris(kode, produkId, kecualiInput) {
+            let terpakai = 0;
+            const isi = ISI_BIN[kode];
+
+            if (isi) {
+                if (isi.product_id !== produkId) return null;
+                terpakai += isi.qty;
+            }
+
+            semuaBarisLokasi().forEach(input => {
+                if (input === kecualiInput) return;
+                if (input.value.trim().toUpperCase() !== kode) return;
+
+                const row = input.closest('tr');
+                if (parseInt(row.dataset.productId, 10) !== produkId) return;
+
+                const qty = parseInt(row.querySelector('.qty-aktual').value, 10);
+                terpakai += isNaN(qty) ? 0 : qty;
             });
+
+            return terpakai;
         }
 
-        /** Menandai tiap baris: kosong / sudah tersimpan di DB / dipilih ganda di formulir ini. */
-        function periksaSemuaBaris() {
-            const hitung = kodeTerpakaiDiFormulir();
+        function infoLokasiElement(input) {
+            return input.closest('td').querySelector('.lokasi-info');
+        }
 
-            tabel.querySelectorAll('.lokasi-input').forEach(input => {
-                const kode = input.value.trim().toUpperCase();
-                const info = input.closest('td').querySelector('.lokasi-info');
+        /** Menandai satu baris: kosong / masih ada sisa / penuh / dihuni SKU lain. */
+        function perbaruiBaris(input) {
+            const row = input.closest('tr');
+            const kode = input.value.trim().toUpperCase();
+            const info = infoLokasiElement(input);
+            const produkId = parseInt(row.dataset.productId, 10);
+            const kapasitas = row.dataset.capacity ? parseInt(row.dataset.capacity, 10) : null;
+            const uom = row.dataset.uom || '';
 
-                if (kode === '') {
-                    input.classList.remove('is-invalid');
-                    info.textContent = '';
-                } else if (hitung[kode] > 1) {
-                    input.classList.add('is-invalid');
-                    info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah dipilih untuk palet lain pada formulir ini.';
-                    info.className = 'text-danger lokasi-info d-block mt-1 small';
-                } else if (ISI_BIN[kode] !== undefined) {
-                    input.classList.add('is-invalid');
-                    info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah terisi ' + ISI_BIN[kode] + ' pcs — tidak tersedia.';
-                    info.className = 'text-danger lokasi-info d-block mt-1 small';
-                } else {
-                    input.classList.remove('is-invalid');
-                    info.innerHTML = '<i class="bi bi-check-circle me-1"></i>Kosong.';
-                    info.className = 'text-success lokasi-info d-block mt-1 small';
-                }
+            if (kode === '') {
+                input.classList.remove('is-invalid');
+                info.textContent = '';
+                return;
+            }
+
+            const isi = ISI_BIN[kode];
+
+            if (isi && isi.product_id !== produkId) {
+                input.classList.add('is-invalid');
+                info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah dihuni produk lain.';
+                info.className = 'text-danger lokasi-info d-block mt-1 small';
+                return;
+            }
+
+            const qtyBaris = parseInt(row.querySelector('.qty-aktual').value, 10) || 0;
+            const terpakaiLain = terpakaiUntukBaris(kode, produkId, input) || 0;
+
+            if (kapasitas && (terpakaiLain + qtyBaris) > kapasitas) {
+                input.classList.add('is-invalid');
+                info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Melebihi kapasitas: rak sudah terisi '
+                    + terpakaiLain + ' ' + uom + ', kapasitas ' + kapasitas + ' ' + uom + '.';
+                info.className = 'text-danger lokasi-info d-block mt-1 small';
+                return;
+            }
+
+            if (kapasitas === null && terpakaiLain > 0) {
+                input.classList.add('is-invalid');
+                info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah terisi, dan kapasitas palet produk ini belum diisi di Master Produk.';
+                info.className = 'text-danger lokasi-info d-block mt-1 small';
+                return;
+            }
+
+            input.classList.remove('is-invalid');
+
+            if (terpakaiLain > 0) {
+                info.innerHTML = '<i class="bi bi-check-circle me-1"></i>Terisi ' + terpakaiLain + '/' + kapasitas + ' ' + uom
+                    + ' — sisa ' + (kapasitas - terpakaiLain) + ' ' + uom + '.';
+                info.className = 'text-warning-emphasis lokasi-info d-block mt-1 small';
+            } else {
+                info.innerHTML = '<i class="bi bi-check-circle me-1"></i>Kosong.';
+                info.className = 'text-success lokasi-info d-block mt-1 small';
+            }
+        }
+
+        function perbaruiSemuaBaris() {
+            // Satu baris berubah bisa memengaruhi sisa kapasitas baris lain
+            // yang menunjuk bin yang sama, jadi seluruh baris dihitung ulang.
+            semuaBarisLokasi().forEach(perbaruiBaris);
+        }
+
+        /** Menampilkan dropdown saran rak untuk `input`, disaring sesuai ketikan. */
+        function tampilkanSaran(input) {
+            const row = input.closest('tr');
+            const dropdown = input.parentElement.querySelector('.lokasi-dropdown');
+            const produkId = parseInt(row.dataset.productId, 10);
+            const kapasitas = row.dataset.capacity ? parseInt(row.dataset.capacity, 10) : null;
+            const uom = row.dataset.uom || '';
+            const ketik = input.value.trim().toUpperCase();
+
+            const cocok = LOKASI.filter(l => ketik === '' || l.code.includes(ketik))
+                .map(l => ({ ...l, terpakai: terpakaiUntukBaris(l.code, produkId, input) }))
+                .filter(l => l.terpakai !== null && (kapasitas === null || l.terpakai < kapasitas))
+                .slice(0, 30);
+
+            if (cocok.length === 0) {
+                dropdown.style.display = 'none';
+                dropdown.innerHTML = '';
+                return;
+            }
+
+            dropdown.innerHTML = cocok.map(l => {
+                const keterangan = l.terpakai > 0
+                    ? ('Terisi ' + l.terpakai + '/' + kapasitas + ' ' + uom + ' — sisa ' + (kapasitas - l.terpakai) + ' ' + uom)
+                    : 'Kosong';
+
+                return '<button type="button" class="list-group-item list-group-item-action py-2 saran-rak" data-kode="' + l.code + '">'
+                    + '<span class="font-monospace fw-semibold">' + l.code + '</span>'
+                    + '<small class="text-muted d-block">' + (l.zone || '') + ' · ' + keterangan + '</small>'
+                    + '</button>';
+            }).join('');
+
+            dropdown.style.display = 'block';
+        }
+
+        function sembunyikanSemuaSaran() {
+            tabel.querySelectorAll('.lokasi-dropdown').forEach(d => {
+                d.style.display = 'none';
+                d.innerHTML = '';
             });
         }
 
         // Delegasi: satu listener untuk seluruh baris, berapa pun jumlah palet.
         tabel.addEventListener('input', function (e) {
             if (e.target.classList.contains('lokasi-input')) {
-                perbaruiDatalist();
-                periksaSemuaBaris();
+                perbaruiSemuaBaris();
+                tampilkanSaran(e.target);
                 perbaruiKemajuan();
             }
 
             if (e.target.classList.contains('qty-aktual')) {
+                perbaruiSemuaBaris();
+
                 const baris = e.target.closest('tr');
                 const sistem = parseInt(baris.querySelector('.qty-sistem').dataset.qty, 10);
                 const aktual = parseInt(e.target.value, 10);
@@ -245,6 +329,45 @@
                 // tempat, bukan baru muncul sebagai temuan saat verifikasi.
                 e.target.classList.toggle('border-danger', !isNaN(aktual) && aktual !== sistem);
                 e.target.classList.toggle('text-danger', !isNaN(aktual) && aktual !== sistem);
+            }
+        });
+
+        // Saran muncul begitu field difokus (klik / tab masuk), bukan cuma
+        // saat mulai mengetik.
+        tabel.addEventListener('focusin', function (e) {
+            if (e.target.classList.contains('lokasi-input')) {
+                tampilkanSaran(e.target);
+            }
+        });
+
+        // Memilih satu saran: isi field lalu TUTUP dropdown-nya. Tidak
+        // memanggil focus() lagi supaya listener focusin di atas tidak
+        // langsung membukanya kembali.
+        tabel.addEventListener('click', function (e) {
+            const tombol = e.target.closest('.saran-rak');
+            if (! tombol) return;
+
+            const dropdown = tombol.closest('.lokasi-dropdown');
+            const input = dropdown.previousElementSibling;
+            input.value = tombol.dataset.kode;
+            dropdown.style.display = 'none';
+            dropdown.innerHTML = '';
+
+            perbaruiSemuaBaris();
+            perbaruiKemajuan();
+        });
+
+        // Klik di luar field & dropdown manapun menutup seluruh dropdown
+        // yang sedang terbuka.
+        document.addEventListener('click', function (e) {
+            if (! e.target.closest('.lokasi-input') && ! e.target.closest('.lokasi-dropdown')) {
+                sembunyikanSemuaSaran();
+            }
+        });
+
+        tabel.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && e.target.classList.contains('lokasi-input')) {
+                e.target.parentElement.querySelector('.lokasi-dropdown').style.display = 'none';
             }
         });
 
@@ -263,16 +386,16 @@
                 return;
             }
 
-            // Bin ganda (dipilih dua kali di formulir ini) atau bin yang
-            // sudah tersimpan di DB TIDAK BOLEH dikirim sama sekali — bukan
-            // sekadar diperingatkan, karena server pasti menolaknya juga.
+            // Rak bentrok (SKU lain, sudah penuh, atau kelebihan kapasitas)
+            // TIDAK BOLEH dikirim sama sekali — bukan sekadar diperingatkan,
+            // karena server pasti menolaknya juga.
             const bermasalah = tabel.querySelectorAll('.lokasi-input.is-invalid');
             if (bermasalah.length > 0) {
                 e.preventDefault();
                 Swal.fire({
                     icon: 'error',
                     title: 'Ada rak yang bentrok',
-                    text: 'Perbaiki dulu baris yang ditandai merah — rak tersebut sudah dipakai palet lain atau dipilih dua kali pada formulir ini.',
+                    text: 'Perbaiki dulu baris yang ditandai merah sebelum menyimpan.',
                     confirmButtonText: 'Mengerti'
                 });
                 return;
@@ -314,10 +437,9 @@
             });
         });
 
-        // Render awal: datalist terisi, dan nilai yang sudah dimuat dari
-        // server (put-away sebagian sebelumnya) langsung ditandai.
-        perbaruiDatalist();
-        periksaSemuaBaris();
+        // Render awal: nilai yang sudah dimuat dari server (put-away
+        // sebagian sebelumnya) langsung ditandai.
+        perbaruiSemuaBaris();
     });
 </script>
 @endpush
