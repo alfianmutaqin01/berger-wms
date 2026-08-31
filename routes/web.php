@@ -182,6 +182,9 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // Master Lokasi Rak (PRD §5.2) — sudah terhubung ke database.
         Route::middleware('can:'.Permission::MASTER_LOCATIONS)->group(function () {
             Route::get('/locations', [LocationController::class, 'index'])->name('wms.locations.index');
+            // Denah gudang — didaftarkan SEBELUM /locations/{location} agar
+            // "map" tidak tertangkap sebagai parameter route model binding.
+            Route::get('/locations/map', [LocationController::class, 'map'])->name('wms.locations.map');
             Route::post('/locations', [LocationController::class, 'store'])->name('wms.locations.store');
             Route::put('/locations/{location}', [LocationController::class, 'update'])->name('wms.locations.update');
             Route::patch('/locations/{location}/status', [LocationController::class, 'toggleStatus'])->name('wms.locations.status');

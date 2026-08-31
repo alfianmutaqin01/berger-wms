@@ -223,6 +223,85 @@ class LocationManagementTest extends TestCase
         $this->assertDatabaseHas('locations', ['id' => $location->id, 'deleted_at' => null]);
     }
 
+    /* --------------------------------------------------------- Denah gudang */
+
+    public function test_denah_dapat_dibuka_dan_menyusun_bin_per_rak_per_level(): void
+    {
+        $this->loginAs();
+
+        foreach ([1, 2] as $level) {
+            foreach ([1, 2, 3] as $cell) {
+                Location::factory()->at('B', $level, $cell)->create([
+                    'warehouse_id' => $this->warehouse->id,
+                    'zone' => Location::ZONE_FAST,
+                ]);
+            }
+        }
+
+        $response = $this->get('/wms/master/locations/map')->assertOk();
+
+        $racks = $response->viewData('racks');
+
+        $this->assertTrue($racks->has('B'));
+        // Struktur: rak => level => daftar bin.
+        $this->assertCount(2, $racks['B']);
+        $this->assertCount(3, $racks['B'][1]);
+    }
+
+    public function test_denah_ditolak_untuk_role_operasional(): void
+    {
+        foreach ([Role::LOGISTICS, Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
+            $this->loginAs($slug);
+            $this->get('/wms/master/locations/map')->assertForbidden();
+        }
+    }
+
+    /**
+     * "map" tidak boleh tertangkap sebagai parameter route model binding.
+     *
+     * Route /locations/{location} dan /locations/map punya bentuk sama; bila
+     * urutan pendaftarannya terbalik, membuka denah akan berakhir 404 karena
+     * Laravel mencari lokasi ber-ID "map".
+     */
+    public function test_rute_denah_tidak_bentrok_dengan_route_model_binding(): void
+    {
+        $this->loginAs();
+
+        $this->get('/wms/master/locations/map')->assertOk();
+    }
+
+    public function test_denah_dapat_disaring_per_zona(): void
+    {
+        $this->loginAs();
+
+        Location::factory()->at('B', 1, 1)->create([
+            'warehouse_id' => $this->warehouse->id, 'zone' => Location::ZONE_FAST,
+        ]);
+        Location::factory()->at('P', 1, 1)->create([
+            'warehouse_id' => $this->warehouse->id, 'zone' => Location::ZONE_SLOW,
+        ]);
+
+        $racks = $this->get('/wms/master/locations/map?zone='.urlencode(Location::ZONE_SLOW))
+            ->assertOk()
+            ->viewData('racks');
+
+        $this->assertTrue($racks->has('P'));
+        $this->assertFalse($racks->has('B'));
+    }
+
+    /** Pelacakan bin: kode yang dicari ditandai agar mudah ditemukan. */
+    public function test_denah_menandai_bin_yang_dilacak(): void
+    {
+        $this->loginAs();
+
+        Location::factory()->at('B', 1, 1)->create(['warehouse_id' => $this->warehouse->id]);
+        Location::factory()->at('B', 1, 2)->create(['warehouse_id' => $this->warehouse->id]);
+
+        $html = $this->get('/wms/master/locations/map?highlight=B-01-01')->assertOk()->getContent();
+
+        $this->assertStringContainsString('bin-highlight', $html);
+    }
+
     /* --------------------------------------------------------------- Seeder */
 
     /**

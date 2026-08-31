@@ -64,6 +64,9 @@
             </p>
         </div>
         <div>
+            <a href="{{ route('wms.locations.map') }}" class="btn btn-outline-secondary fw-bold shadow-sm me-2">
+                <i class="bi bi-map me-1"></i> Denah Gudang
+            </a>
             <button class="btn btn-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#locationModal" onclick="openLocationModal('add')">
                 <i class="bi bi-plus-circle me-1"></i> Tambah Lokasi
             </button>

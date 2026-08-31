@@ -535,6 +535,14 @@ Rincian per item per palet dalam satu inbound.
 #### `inventory_stocks`
 **Tabel paling kritis.** Menyimpan data stok aktual yang ada di gudang, per produk per lokasi per batch.
 
+> [!NOTE]
+> **Keputusan pemilik produk (dikonfirmasi, untuk dibangun di Fase 4):**
+>
+> 1. **Satu bin boleh memuat beberapa produk DAN beberapa batch sekaligus.** Struktur tabel ini sudah mendukungnya — tiap kombinasi produk × lokasi × batch adalah satu baris tersendiri. Jangan menambahkan constraint unik `(location_id)` atau `(location_id, product_id)`; keduanya akan mematahkan aturan ini sekaligus merusak FIFO, yang justru menuntut batch tersimpan terpisah agar stok tertua bisa keluar duluan.
+> 2. **Koreksi stock opname WAJIB menyertakan alasan.** Perubahan qty hasil opname dicatat sebagai `stock_movements` bertipe `ADJUSTMENT` dengan `notes` wajib terisi dan `user_id` pencatat. Baris ledger tidak boleh diubah atau dihapus — ini jejak audit keuangan untuk stok.
+>
+> Halaman **Denah Gudang** (`/wms/master/locations/map`) sudah disiapkan sebagai antarmuka opname: tiap kotak bin punya slot indikator keterisian yang tinggal diisi begitu tabel ini ada, tanpa perlu menyusun ulang denahnya.
+
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
