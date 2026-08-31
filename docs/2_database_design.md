@@ -383,16 +383,50 @@ Master lokasi rak penyimpanan di gudang.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
+Kode berpola `[Rak]-[Level]-[Sel]`, contoh `B-01-01` = Rak B, Level 1, Sel 1.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang pemilik |
-| `code` | VARCHAR(20) | NOT NULL, UNIQUE | Kode lokasi lengkap (contoh: "G-03-04") |
-| `rack` | VARCHAR(5) | NOT NULL | Huruf rak (contoh: "G") |
-| `floor_level` | VARCHAR(5) | NOT NULL | Level lantai (contoh: "03") |
-| `row_position` | VARCHAR(5) | NOT NULL | Posisi baris (contoh: "04") |
-| `is_active` | BOOLEAN | DEFAULT TRUE | Status aktif |
+| `code` | VARCHAR(20) | NOT NULL, UNIQUE per gudang | Kode bin lengkap (contoh: `B-01-01`) |
+| `rack` | VARCHAR(5) | NOT NULL | Kode rak — satu atau **dua** huruf (`B` … `ZD`) |
+| `level` | TINYINT UNSIGNED | NOT NULL | Level 1–5 (seluruh rak setinggi 5 level) |
+| `cell` | SMALLINT UNSIGNED | NOT NULL | Nomor sel/kolom pada level tersebut |
+| `zone` | VARCHAR(30) | NULLABLE | `Fast` / `Slow` / `Middle Moving Area` |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Bin non-aktif tidak dipilih proses put-away |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
+
+> [!IMPORTANT]
+> **`code` unik PER GUDANG, bukan global** — berbeda dari rancangan awal. Penamaan rak `A/B/C` lazim berulang di gudang berbeda; memaksa unik global akan menolak gudang kedua yang memakai penamaan yang sama. Unique constraint-nya `(warehouse_id, code)`.
+
+> [!IMPORTANT]
+> **`level` dan `cell` bertipe angka, bukan string** (rancangan awal memakai `VARCHAR(5)` untuk `floor_level`/`row_position`). Alasannya pengurutan: dengan string, `B-01-10` jatuh **sebelum** `B-01-02` karena dibandingkan sebagai teks — keliru saat operator menyusuri rak berurutan. Nama kolom juga disesuaikan dengan istilah yang dipakai di lapangan (`level`, `cell`).
+>
+> Komponen `rack`/`level`/`cell` **diturunkan dari `code`** saat menyimpan (lihat `Location::parseCode`), sehingga mustahil tidak sinkron.
+
+> [!NOTE]
+> **Denah gudang WH-01: 2.264 bin pada 29 rak.** Tidak ada Rak "A". Pada sebagian besar rak, **Level 4–5 memuat lebih banyak sel daripada Level 1–3** karena bagian bawah terpotong jalur forklift.
+>
+> | Rak | Level 1–3 | Level 4–5 | Per rak | Zona |
+> |---|---|---|---|---|
+> | B–G | 11 sel | 13 sel | 59 | Fast Moving |
+> | H–I | 8 sel | 10 sel | 44 | Fast Moving |
+> | J–O | 12 sel | 14 sel | 64 | Fast Moving |
+> | P | 20 sel | 20 sel | 100 | Slow Moving |
+> | Q–T | 18 sel | 20 sel | 94 | Slow Moving |
+> | U–V | 18 sel | 20 sel | 94 | Middle Moving |
+> | W–X | 18 sel | 18 sel | 90 | Middle Moving |
+> | Y–ZD | 19 sel | 21 sel | 99 | Middle Moving |
+>
+> **Total per zona:** Fast 826 · Slow 476 · Middle 962 = **2.264**.
+>
+> Dibangkitkan `LocationSeeder` dari aturan di atas, bukan disalin baris per baris. Seeder memeriksa sendiri hasilnya terhadap ketiga angka zona dan menggagalkan proses bila tidak cocok — sehingga salah ketik satu angka pada aturan tidak bisa lolos diam-diam.
+
+> [!WARNING]
+> **Ejaan zona pada ekspor ERP salah: "Midle Moving Area".** `Location::normalizeZone()` menormalkannya menjadi `Middle Moving Area`. Tanpa itu, impor akan menghasilkan dua zona berbeda yang sebenarnya sama.
 
 #### `customers`
 Data pelanggan / toko.
@@ -463,7 +497,7 @@ Header dokumen penerimaan barang dari pabrik.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `document_number` | VARCHAR(50) | NOT NULL | Nomor dokumen fisik pabrik (input manual) |
+| `document_number` | VARCHAR(50) | NOT NULL, UNIQUE | Nomor dokumen **dibangkitkan sistem**, format `IN-YYMMDD-NNN` |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang tujuan |
 | `production_date` | DATE | NOT NULL | Tanggal produksi |
 | `status` | ENUM | NOT NULL, DEFAULT 'draft' | 'draft', 'putaway_pending', 'verification_pending', 'verified', 'partial_verified' |
@@ -476,12 +510,31 @@ Header dokumen penerimaan barang dari pabrik.
 #### `inbound_details`
 Rincian per item per palet dalam satu inbound.
 
+> [!IMPORTANT]
+> **Satu baris = satu PALET, bukan satu produk.** Satu baris Excel dari Tim Produksi bisa menghasilkan beberapa baris di sini: 235 pcs kemasan 5 Kg (maks 180/palet) menjadi dua baris — palet 1 berisi 180, palet 2 berisi 55. `total_qty` tetap menyimpan 235 pada keduanya agar asal-usulnya terlacak.
+>
+> **`batch_no` sengaja TIDAK unik.** Pada data produksi nyata, beberapa nomor order produksi berbeda bisa berbagi satu batch QC — mis. `I126080037` dipakai oleh RMO26080301, RMO26080302, dan RMO26080304 sekaligus.
+>
+> **Berkas Excel produksi memuat kolom A–L, tetapi hanya A–E yang dibaca:**
+>
+> | Kolom | Judul | Dipakai sebagai |
+> |---|---|---|
+> | A | No. | `production_order_no` |
+> | B | Source No. | SKU → `product_id` (harus sudah ada di Master Produk) |
+> | C | Description | hanya untuk tampilan pratinjau |
+> | D | Quantity | `total_qty`, lalu dipecah jadi palet |
+> | E | QC Number | `batch_no` |
+>
+> Kolom F dan seterusnya (jadwal, status, user, routing) diabaikan. **Berkas mentahnya tidak disimpan** — hanya hasil pembacaannya, agar tidak menumpuk di server.
+
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `inbound_header_id` | BIGINT UNSIGNED | FK → inbound_headers.id | Header induk |
 | `product_id` | BIGINT UNSIGNED | FK → products.id | Produk yang diterima |
-| `batch_no` | VARCHAR(50) | NOT NULL | Nomor batch produksi |
+| `production_order_no` | VARCHAR(50) | NULLABLE | Nomor order produksi dari kolom A berkas Excel (mis. `RMO26080294`) |
+| `batch_no` | VARCHAR(50) | NOT NULL | Nomor batch, dari kolom E ("QC Number"). **Tidak unik** |
+| `qty_actual` | INTEGER | NULLABLE | Jumlah fisik hasil hitungan Operator saat put-away |
 | `total_qty` | INTEGER | NOT NULL | Total qty sebelum split palet |
 | `pallet_no` | INTEGER | NOT NULL | Urutan palet (1, 2, 3, ...) |
 | `pallet_qty` | INTEGER | NOT NULL | Qty aktual di palet ini |
@@ -500,6 +553,14 @@ Rincian per item per palet dalam satu inbound.
 
 #### `inventory_stocks`
 **Tabel paling kritis.** Menyimpan data stok aktual yang ada di gudang, per produk per lokasi per batch.
+
+> [!NOTE]
+> **Keputusan pemilik produk (dikonfirmasi, untuk dibangun di Fase 4):**
+>
+> 1. **Satu bin boleh memuat beberapa produk DAN beberapa batch sekaligus.** Struktur tabel ini sudah mendukungnya — tiap kombinasi produk × lokasi × batch adalah satu baris tersendiri. Jangan menambahkan constraint unik `(location_id)` atau `(location_id, product_id)`; keduanya akan mematahkan aturan ini sekaligus merusak FIFO, yang justru menuntut batch tersimpan terpisah agar stok tertua bisa keluar duluan.
+> 2. **Koreksi stock opname WAJIB menyertakan alasan.** Perubahan qty hasil opname dicatat sebagai `stock_movements` bertipe `ADJUSTMENT` dengan `notes` wajib terisi dan `user_id` pencatat. Baris ledger tidak boleh diubah atau dihapus — ini jejak audit keuangan untuk stok.
+>
+> Halaman **Denah Gudang** (`/wms/master/locations/map`) sudah disiapkan sebagai antarmuka opname: tiap kotak bin punya slot indikator keterisian yang tinggal diisi begitu tabel ini ada, tanpa perlu menyusun ulang denahnya.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|

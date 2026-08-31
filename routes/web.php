@@ -10,6 +10,7 @@ use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Controllers\Wms\ImportController;
 use App\Http\Controllers\Wms\InboundController;
 use App\Http\Controllers\Wms\InventoryController;
+use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OutboundController;
 use App\Http\Controllers\Wms\ProductController;
@@ -124,13 +125,17 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     Route::prefix('inbound')->group(function () {
         Route::middleware('can:'.Permission::INBOUND_HISTORY)->group(function () {
-            Route::get('/history', [InboundController::class, 'historyIndex']);
+            Route::get('/history', [InboundController::class, 'historyIndex'])->name('wms.inbound.history');
             Route::get('/history/{doc_no}', [InboundController::class, 'historyDetail']);
         });
 
+        // Input Produksi (PRD §6.3 F-INB-01) — sudah terhubung ke database.
+        // Alur tiga langkah: form -> pratinjau (tanpa menyentuh DB) -> simpan.
         Route::middleware('can:'.Permission::INBOUND_CREATE)->group(function () {
-            Route::get('/create', [InboundController::class, 'create']);
-            Route::post('/preview', [InboundController::class, 'previewExcel']);
+            Route::get('/create', [InboundController::class, 'create'])->name('wms.inbound.create');
+            Route::post('/preview', [InboundController::class, 'previewExcel'])->name('wms.inbound.preview');
+            Route::post('/store', [InboundController::class, 'store'])->name('wms.inbound.store');
+            Route::post('/cancel', [InboundController::class, 'cancelPreview'])->name('wms.inbound.cancel');
         });
 
         Route::middleware('can:'.Permission::INBOUND_PUTAWAY)->group(function () {
@@ -176,6 +181,17 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             Route::post('/products', [ProductController::class, 'store'])->name('wms.products.store');
             Route::put('/products/{product}', [ProductController::class, 'update'])->name('wms.products.update');
             Route::patch('/products/{product}/status', [ProductController::class, 'toggleStatus'])->name('wms.products.status');
+        });
+
+        // Master Lokasi Rak (PRD §5.2) — sudah terhubung ke database.
+        Route::middleware('can:'.Permission::MASTER_LOCATIONS)->group(function () {
+            Route::get('/locations', [LocationController::class, 'index'])->name('wms.locations.index');
+            // Denah gudang — didaftarkan SEBELUM /locations/{location} agar
+            // "map" tidak tertangkap sebagai parameter route model binding.
+            Route::get('/locations/map', [LocationController::class, 'map'])->name('wms.locations.map');
+            Route::post('/locations', [LocationController::class, 'store'])->name('wms.locations.store');
+            Route::put('/locations/{location}', [LocationController::class, 'update'])->name('wms.locations.update');
+            Route::patch('/locations/{location}/status', [LocationController::class, 'toggleStatus'])->name('wms.locations.status');
         });
 
         /*

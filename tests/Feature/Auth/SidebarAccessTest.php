@@ -43,6 +43,7 @@ class SidebarAccessTest extends TestCase
         '/wms/billing' => Permission::BILLING_VIEW,
         '/wms/master/customers' => Permission::MASTER_CUSTOMERS,
         '/wms/master/products' => Permission::MASTER_PRODUCTS,
+        '/wms/master/locations' => Permission::MASTER_LOCATIONS,
         '/wms/admin/users' => Permission::ADMIN_USERS,
         '/wms/admin/sequence' => Permission::ADMIN_SEQUENCE,
     ];
@@ -63,6 +64,7 @@ class SidebarAccessTest extends TestCase
         Permission::BILLING_VIEW => 'Billing & Piutang',
         Permission::MASTER_CUSTOMERS => 'Master Customers',
         Permission::MASTER_PRODUCTS => 'Master Products',
+        Permission::MASTER_LOCATIONS => 'Master Lokasi Rak',
         Permission::ADMIN_USERS => 'Manajemen User',
         Permission::ADMIN_SEQUENCE => 'Pengaturan Dokumen',
         Permission::REPORTS_VIEW => 'Laporan & Analisis',

@@ -35,6 +35,10 @@ class PalletCapacity
             '0.90' => 720,
             '2.50' => 180,
             '3.60' => 180,
+            // 5 Liter menyamai 5 Kg (180) — wadahnya sebesar itu juga secara
+            // fisik. Ditambahkan setelah data produksi nyata memuat kemasan
+            // 5 Ltr (LUXATHERM, LUXOL) yang belum tercakup aturan awal.
+            '5.00' => 180,
             '15.00' => 40,
             '18.00' => 27,
             '20.00' => 27,
@@ -79,5 +83,28 @@ class PalletCapacity
     public static function knownSizes(string $unit): array
     {
         return array_keys(self::RULES[strtoupper($unit)] ?? []);
+    }
+
+    /**
+     * Memecah total qty menjadi beberapa palet (PRD §7.1).
+     *
+     * Palet diisi penuh lebih dulu, sisanya menjadi palet terakhir:
+     * 235 pcs dengan kapasitas 180 menghasilkan [180, 55].
+     *
+     * @return list<int> Qty tiap palet, berurutan
+     */
+    public static function split(int $totalQty, int $capacity): array
+    {
+        if ($totalQty <= 0 || $capacity <= 0) {
+            return [];
+        }
+
+        $pallets = array_fill(0, intdiv($totalQty, $capacity), $capacity);
+
+        if ($remainder = $totalQty % $capacity) {
+            $pallets[] = $remainder;
+        }
+
+        return $pallets;
     }
 }

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\UserSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -25,6 +26,18 @@ use Tests\TestCase;
 class ImportTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Berkas unggahan diarahkan ke disk tiruan agar test tidak pernah
+        // menyentuh storage/app/private. Selain menjaga test tetap terisolasi,
+        // ini mencegah folder di sana terbuat oleh proses yang menjalankan
+        // test — kepemilikannya bisa berbeda dari pengguna PHP-FPM, sehingga
+        // permintaan HTTP sungguhan jadi gagal menulis ke folder yang sama.
+        Storage::fake('local');
+    }
 
     private function loginAs(string $roleSlug = Role::SUPER_ADMIN): User
     {
