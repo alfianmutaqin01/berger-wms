@@ -88,4 +88,27 @@ class InboundHeader extends Model
     {
         return $this->details_count ?? $this->details()->count();
     }
+
+    /**
+     * Dokumen yang masih menunggu put-away.
+     *
+     * Termasuk dokumen yang put-away-nya baru sebagian: statusnya tetap
+     * `putaway_pending` sampai SELURUH palet punya lokasi, karena pekerjaan
+     * fisik di lantai gudang lazim terputus di tengah jalan dan Operator harus
+     * bisa melanjutkannya nanti tanpa kehilangan yang sudah ditempatkan.
+     */
+    public function scopeAwaitingPutaway(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_PUTAWAY_PENDING);
+    }
+
+    /**
+     * Apakah seluruh palet sudah punya lokasi rak?
+     *
+     * Menjadi penentu apakah dokumen naik ke tahap verifikasi Logistik.
+     */
+    public function isFullyPlaced(): bool
+    {
+        return $this->details()->whereNull('location_id')->doesntExist();
+    }
 }

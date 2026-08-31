@@ -138,9 +138,15 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             Route::post('/cancel', [InboundController::class, 'cancelPreview'])->name('wms.inbound.cancel');
         });
 
+        // Put-away (PRD §6.3 F-INB-02) — sudah terhubung ke database.
+        // Operator menempatkan tiap palet ke bin dan berwenang mengoreksi
+        // Qty Aktual; SKU & batch dikunci karena berasal dari dokumen produksi.
         Route::middleware('can:'.Permission::INBOUND_PUTAWAY)->group(function () {
-            Route::get('/putaway', [InboundController::class, 'putawayIndex']);
-            Route::get('/putaway/{doc_no}', [InboundController::class, 'putawayProcess']);
+            Route::get('/putaway', [InboundController::class, 'putawayIndex'])->name('wms.inbound.putaway');
+            Route::get('/putaway/{doc_no}', [InboundController::class, 'putawayProcess'])
+                ->name('wms.inbound.putaway.process');
+            Route::post('/putaway/{doc_no}', [InboundController::class, 'putawayStore'])
+                ->name('wms.inbound.putaway.store');
         });
 
         Route::middleware('can:'.Permission::INBOUND_VERIFY)->group(function () {

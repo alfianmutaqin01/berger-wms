@@ -1,87 +1,149 @@
 @extends('layouts.wms')
+
+@section('title', 'Proses Put-away')
 @section('page_title', 'Proses Put-away')
 
 @section('content')
+@if(session('error'))
+<div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
+@if(session('success'))
+<div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-check-circle-fill me-2"></i>{{ session('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
+@if($errors->any())
+<div class="alert alert-danger border-0 shadow-sm rounded-3">
+    <strong><i class="bi bi-exclamation-triangle-fill me-2"></i>Ada isian yang perlu diperbaiki:</strong>
+    <ul class="mb-0 mt-2 small">
+        @foreach($errors->all() as $pesan)
+            <li>{{ $pesan }}</li>
+        @endforeach
+    </ul>
+</div>
+@endif
+
 <div class="row mb-4">
     <div class="col-12">
         <div class="card shadow-sm border-0 rounded-4">
-            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4 d-flex justify-content-between align-items-center">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
                 <div>
                     <h5 class="fw-bold text-dark mb-0">
-                        <a href="/wms/inbound/putaway" class="text-muted text-decoration-none me-2"><i class="bi bi-arrow-left"></i></a>
-                        Proses Put-away Produksi: <span class="text-primary font-monospace">{{ $inbound['doc_no'] }}</span>
+                        <a href="{{ route('wms.inbound.putaway') }}" class="text-muted text-decoration-none me-2"><i class="bi bi-arrow-left"></i></a>
+                        Put-away: <span class="text-primary font-monospace">{{ $header->document_number }}</span>
                     </h5>
                     <p class="text-muted small mt-1 ms-4 mb-0">Tentukan lokasi rak untuk masing-masing palet di bawah ini.</p>
                 </div>
                 <div class="text-end">
-                    <span class="d-block text-muted small">Batch No: <strong class="text-dark font-monospace">{{ $inbound['batch_no'] }}</strong></span>
-                    <span class="d-block text-muted small">Tanggal: <strong class="text-dark">{{ $inbound['date'] }}</strong></span>
+                    <span class="d-block text-muted small">Gudang: <strong class="text-dark">{{ $header->warehouse?->display_label ?? '—' }}</strong></span>
+                    <span class="d-block text-muted small">Tgl Produksi: <strong class="text-dark">{{ $header->production_date->translatedFormat('d M Y') }}</strong></span>
+                    <span class="d-block text-muted small">Kemajuan: <strong class="text-dark" id="progressLabel">{{ $totals['ditempatkan'] }} / {{ $totals['palet'] }} palet</strong></span>
                 </div>
             </div>
+
             <div class="card-body p-4">
-                
-                <div class="alert alert-info border-0 bg-info-subtle text-info-emphasis d-flex align-items-center rounded-3 p-3 mb-4" role="alert">
+
+                <div class="alert alert-info border-0 bg-info-subtle text-info-emphasis d-flex align-items-start rounded-3 p-3 mb-4" role="alert">
                     <i class="bi bi-info-circle-fill fs-4 me-3"></i>
-                    <div>
-                        <small>Jika rak yang Anda pilih tidak memiliki kapasitas yang cukup untuk 1 palet (maks 180 Pail), sistem akan <strong>otomatis memecah</strong> sisanya ke baris baru agar Anda dapat menempatkannya di rak lain.</small>
+                    <div class="small">
+                        Palet yang belum sempat ditempatkan boleh dikosongkan — yang sudah terisi tetap tersimpan dan dokumen ini
+                        tetap ada di daftar put-away sampai seluruh paletnya punya lokasi.
+                        <strong>Qty Aktual</strong> boleh dikoreksi sesuai hitungan fisik; SKU dan batch tidak dapat diubah di sini.
                     </div>
                 </div>
 
-                <div class="table-responsive" style="overflow: visible;">
-                    <table class="table table-hover align-middle mb-0" id="putawayTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="text-secondary small fw-semibold text-center">VERIFIKASI FISIK</th>
-                                <th class="text-secondary small fw-semibold">SKU / DESKRIPSI</th>
-                                <th class="text-secondary small fw-semibold">BATCH</th>
-                                <th class="text-secondary small fw-semibold text-center">QTY SISTEM</th>
-                                  <th class="text-secondary small fw-semibold text-center" style="width: 120px;">QTY AKTUAL</th>
-                                <th class="text-secondary small fw-semibold" style="width: 300px;">LOKASI RAK</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($pallets as $idx => $pallet)
-                            <tr>
-                                <td class="text-center align-middle">
-                                    <div class="form-check form-switch d-flex justify-content-center mb-1">
-                                        <input class="form-check-input verify-checkbox border-secondary" type="checkbox" role="switch" id="verify{{ $idx }}" style="width: 2.5em; height: 1.25em; cursor: pointer;">
-                                    </div>
-                                    <label class="form-check-label small text-muted fw-bold" for="verify{{ $idx }}" style="cursor: pointer;">{{ $pallet['pallet_no'] }}</label>
-                                </td>
-                                <td>
-                                    <span class="badge bg-light text-dark border mb-1">{{ $pallet['sku'] }}</span><br>
-                                    <small class="text-muted">{{ $pallet['description'] }}</small>
-                                </td>
-                                <td><small class="font-monospace text-muted">{{ $pallet['batch'] }}</small></td>
-                                <td class="text-center qty-cell">
-                                      <span class="badge bg-light text-dark border px-2 py-1 original-qty" title="Dari Produksi">{{ $pallet['qty'] }}</span>
-                                  </td>
-                                  <td class="text-center actual-qty-cell" style="width: 120px;">
-                                      <input type="number" class="form-control form-control-sm text-center actual-qty-input fw-bold text-primary border-primary-subtle bg-primary-subtle" value="{{ $pallet['qty'] }}" min="0" required>
-                                  </td>
-                                <td>
-                                    <div class="input-group">
-                                        <button type="button" class="btn btn-outline-secondary" title="Scan QR Code" onclick="openQRScanner(this, '{{ $idx }}')"><i class="bi bi-qr-code-scan"></i></button>
-                                        <input type="text" class="form-control location-input" placeholder="Scan/Input Lokasi" list="locationList{{ $idx }}" required>
-                                        <datalist id="locationList{{ $idx }}">
-                                            @foreach($availableLocations as $loc)
-                                            <option value="{{ $loc }}">
-                                            @endforeach
-                                        </datalist>
-                                    </div>
-                                </td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+                <form method="POST" action="{{ route('wms.inbound.putaway.store', $header->document_number) }}" id="putawayForm">
+                    @csrf
 
-                <div class="mt-5 d-flex justify-content-between align-items-center">
-                    <a href="/wms/inbound/putaway" class="btn btn-outline-secondary px-4">Batal</a>
-                    <button type="button" class="btn btn-success px-5 fw-bold shadow-sm" id="btnSubmitPutaway">
-                        <i class="bi bi-check-circle me-1"></i> Selesaikan Put-away
-                    </button>
-                </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" id="putawayTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-secondary small fw-semibold text-center text-nowrap">PALET</th>
+                                    <th class="text-secondary small fw-semibold" style="min-width: 230px;">SKU / DESKRIPSI</th>
+                                    <th class="text-secondary small fw-semibold text-nowrap">BATCH</th>
+                                    <th class="text-secondary small fw-semibold text-center text-nowrap">QTY SISTEM</th>
+                                    <th class="text-secondary small fw-semibold text-center" style="width: 130px;">QTY AKTUAL</th>
+                                    <th class="text-secondary small fw-semibold" style="min-width: 260px;">LOKASI RAK</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @php $nomorProduksiSebelumnya = null; @endphp
+                                @foreach($details as $detail)
+                                    @php
+                                        $awalKelompok = $detail->production_order_no !== $nomorProduksiSebelumnya;
+                                        $nomorProduksiSebelumnya = $detail->production_order_no;
+                                        $kodeLama = old("pallets.{$detail->id}.location_code", $detail->location?->code);
+                                        $qtyLama = old("pallets.{$detail->id}.qty_actual", $detail->qty_actual ?? $detail->pallet_qty);
+                                    @endphp
+                                    <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }}">
+                                        <td class="text-center text-nowrap">
+                                            <span class="fw-bold">#{{ $detail->pallet_no }}</span>
+                                            @if($detail->location_id)
+                                                <i class="bi bi-check-circle-fill text-success ms-1" title="Sudah ditempatkan"></i>
+                                            @endif
+                                            <small class="d-block text-muted font-monospace" style="font-size: 0.7rem;">
+                                                {{ $awalKelompok ? $detail->production_order_no : '' }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-light text-dark border font-monospace mb-1">{{ $detail->product?->sku ?? '—' }}</span><br>
+                                            <small class="text-muted">{{ $detail->product?->name ?? '—' }}</small>
+                                        </td>
+                                        <td><small class="font-monospace text-muted">{{ $detail->batch_no }}</small></td>
+                                        <td class="text-center">
+                                            <span class="badge bg-light text-dark border px-2 py-1 qty-sistem"
+                                                  data-qty="{{ $detail->pallet_qty }}" title="Dari dokumen produksi">
+                                                {{ number_format($detail->pallet_qty) }}
+                                            </span>
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="number"
+                                                   name="pallets[{{ $detail->id }}][qty_actual]"
+                                                   value="{{ $qtyLama }}" min="0"
+                                                   class="form-control form-control-sm text-center fw-bold qty-aktual @error("pallets.{$detail->id}.qty_actual") is-invalid @enderror">
+                                        </td>
+                                        <td>
+                                            <input type="text"
+                                                   name="pallets[{{ $detail->id }}][location_code]"
+                                                   value="{{ $kodeLama }}"
+                                                   list="daftarLokasi"
+                                                   placeholder="Ketik / pindai kode rak, mis. B-01-01"
+                                                   autocomplete="off"
+                                                   class="form-control text-uppercase font-monospace lokasi-input @error("pallets.{$detail->id}.location_code") is-invalid @enderror">
+                                            <small class="text-muted lokasi-info d-block mt-1" style="min-height: 1rem;"></small>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{--
+                        Satu datalist dipakai bersama seluruh baris. Menyalinnya
+                        per baris akan menggandakan ribuan bin sebanyak jumlah
+                        palet dan membuat halaman berat tanpa manfaat.
+                    --}}
+                    <datalist id="daftarLokasi">
+                        @foreach($locations as $lokasi)
+                            <option value="{{ $lokasi->code }}">{{ $lokasi->zone }}</option>
+                        @endforeach
+                    </datalist>
+
+                    <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
+                        <a href="{{ route('wms.inbound.putaway') }}" class="btn btn-outline-secondary px-4">Batal</a>
+                        <button type="submit" class="btn btn-success px-5 fw-bold shadow-sm">
+                            <i class="bi bi-check-circle me-1"></i> Simpan Put-away
+                        </button>
+                    </div>
+                </form>
+
             </div>
         </div>
     </div>
@@ -90,199 +152,106 @@
 
 @push('scripts')
 <script>
-    const RACK_MAX_CAPACITY = 180;
+    // Isi tiap bin ditampilkan sebagai INFORMASI, bukan larangan: satu bin
+    // memang boleh memuat beberapa palet, bahkan beda produk dan batch.
+    const ISI_BIN = @json((object) $occupancy);
 
-    window.handleLocationSelection = function(inputElem) {
-        let tr = inputElem.closest('tr');
-        let locationString = inputElem.value;
-        if (!locationString) return;
-        
-        // Parse how much is currently in the rack
-        let currentInRack = 0;
-        let match = locationString.match(/Terisi (\d+) Pail/i);
-        if (match) {
-            currentInRack = parseInt(match[1]);
-        } else if (locationString.toLowerCase().includes('kosong')) {
-            currentInRack = 0;
-        } else {
-            currentInRack = 0;
+    document.addEventListener('DOMContentLoaded', function () {
+        const tabel = document.getElementById('putawayTable');
+
+        function perbaruiKemajuan() {
+            const isian = tabel.querySelectorAll('.lokasi-input');
+            let terisi = 0;
+            isian.forEach(i => { if (i.value.trim() !== '') terisi++; });
+            const label = document.getElementById('progressLabel');
+            label.textContent = terisi + ' / ' + isian.length + ' palet';
         }
-        
-        let availableSpace = RACK_MAX_CAPACITY - currentInRack;
-        
-        let qtyCell = tr.querySelector('.qty-cell');
-        let qtyBadge = tr.querySelector('.original-qty');
-        
-        let currentQty = parseInt(qtyBadge.innerText) || 0;
-        
-        if (currentQty > availableSpace && availableSpace > 0) {
-            // Split needed!
-            // 1. Change this row to hold only availableSpace
-            qtyCell.innerHTML = '<span class="badge bg-light text-dark border px-2 py-1 original-qty">' + availableSpace + '</span>';
-            tr.querySelector('.actual-qty-input').value = availableSpace;
-            
-            let remainingQty = currentQty - availableSpace;
-            
-            // 2. Clone row for remainder
-            let newTr = tr.cloneNode(true);
-            let timestamp = new Date().getTime();
-            
-            // Setup new row labels & IDs
-            let verifyLabel = newTr.querySelector('.form-check-label');
-            if (!verifyLabel.innerText.includes('(Sisa)')) {
-                verifyLabel.innerText = verifyLabel.innerText + ' (Sisa)';
+
+        // Delegasi: satu listener untuk seluruh baris, berapa pun jumlah palet.
+        tabel.addEventListener('input', function (e) {
+            if (e.target.classList.contains('lokasi-input')) {
+                const kode = e.target.value.trim().toUpperCase();
+                const info = e.target.closest('td').querySelector('.lokasi-info');
+                const jumlah = ISI_BIN[kode];
+
+                if (kode === '') {
+                    info.textContent = '';
+                } else if (jumlah) {
+                    info.innerHTML = '<i class="bi bi-boxes me-1"></i>Bin ini sudah memuat ' + jumlah + ' palet lain.';
+                    info.className = 'text-warning-emphasis lokasi-info d-block mt-1 small';
+                } else {
+                    info.textContent = '';
+                    info.className = 'text-muted lokasi-info d-block mt-1 small';
+                }
+
+                perbaruiKemajuan();
             }
-            
-            let switchInput = newTr.querySelector('.verify-checkbox');
-            switchInput.id = 'verify_split_' + timestamp;
-            switchInput.checked = false;
-            verifyLabel.setAttribute('for', 'verify_split_' + timestamp);
-            
-            let newLocationInput = newTr.querySelector('.location-input');
-            newLocationInput.value = '';
-            newLocationInput.classList.remove('is-invalid');
-            
-            let scanBtn = newTr.querySelector('button[title="Scan QR Code"]');
-            scanBtn.setAttribute('onclick', 'openQRScanner(this, "split_' + timestamp + '")');
-            
-            let datalist = newTr.querySelector('datalist');
-            datalist.id = 'locationList_split_' + timestamp;
-            newLocationInput.setAttribute('list', 'locationList_split_' + timestamp);
-            
-            let newQtyCell = newTr.querySelector('.qty-cell');
-            newQtyCell.innerHTML = '<span class="badge bg-light text-dark border px-2 py-1 original-qty">' + remainingQty + '</span>';
-            newTr.querySelector('.actual-qty-input').value = remainingQty;
-            
-            newLocationInput.addEventListener('change', function() {
-                handleLocationSelection(this);
-            });
-            
-            tr.parentNode.insertBefore(newTr, tr.nextSibling);
-            
-            Swal.fire({
-                icon: 'warning',
-                title: 'Kapasitas Rak Terbatas',
-                text: 'Rak ' + locationString + ' hanya muat ' + availableSpace + ' pail lagi. Sisa ' + remainingQty + ' pail otomatis dipisahkan ke baris baru.',
-                position: 'center',
-                showConfirmButton: true,
-                confirmButtonText: 'Mengerti'
-            });
-            
-            // Auto focus the new location input
-            setTimeout(() => newLocationInput.focus(), 1000);
-        }
-    };
 
-    window.openQRScanner = function(btnElement, idx) {
-        let inputField = btnElement.closest('.input-group').querySelector('.location-input');
-        
-        Swal.fire({
-            title: 'Scan QR Code Rak',
-            html: '<div class="d-flex flex-column align-items-center justify-content-center bg-dark rounded-3" style="height: 250px; position: relative; overflow: hidden;">' +
-                  '  <div class="border border-success border-2 rounded-3" style="width: 150px; height: 150px; position: absolute; z-index: 2;"></div>' +
-                  '  <div class="bg-success opacity-50" style="width: 150px; height: 2px; position: absolute; top: 50%; z-index: 3; animation: scan 2s linear infinite;"></div>' +
-                  '  <i class="bi bi-camera-video text-secondary opacity-50" style="font-size: 5rem; z-index: 1;"></i>' +
-                  '  <style>@keyframes scan { 0% { transform: translateY(-75px); } 50% { transform: translateY(75px); } 100% { transform: translateY(-75px); } }</style>' +
-                  '</div><p class="mt-3 text-muted small">Membuka kamera... Arahkan ke QR Code di rak.</p>',
-            showConfirmButton: false,
-            showCancelButton: true,
-            cancelButtonText: 'Batal',
-            allowOutsideClick: false,
-            didOpen: () => {
-                // Simulate scanning process
-                setTimeout(() => {
-                    Swal.close();
-                    
-                    const racks = [
-                        'G-03-01 (Kosong)', 
-                        'G-03-02 (Terisi 90 Pail)', 
-                        'G-03-03 (Terisi 120 Pail)', 
-                        'G-03-04 (Terisi 150 Pail)', 
-                        'G-03-05 (Kosong)'
-                    ];
-                    let randomRack = racks[Math.floor(Math.random() * racks.length)];
-                    inputField.value = randomRack;
-                    
-                    // Trigger the change event manually to run auto-split logic
-                    inputField.dispatchEvent(new Event('change'));
-                    
-                    // Only show success if it didn't trigger a split alert
-                    let currentInRack = 0;
-                    let match = randomRack.match(/Terisi (\d+) Pail/i);
-                    if (match) currentInRack = parseInt(match[1]);
-                    let availableSpace = RACK_MAX_CAPACITY - currentInRack;
-                    
-                    let qtyBadge = btnElement.closest('tr').querySelector('.original-qty');
-                    let currentQty = qtyBadge ? parseInt(qtyBadge.innerText) : 0;
-                    
-                    if (!(currentQty > availableSpace && availableSpace > 0)) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'QR Code Terbaca',
-                            text: 'Lokasi Rak: ' + randomRack,
-                            position: 'center',
-                            showConfirmButton: false,
-                            timer: 2000
-                        });
-                    }
-                }, 2000);
+            if (e.target.classList.contains('qty-aktual')) {
+                const baris = e.target.closest('tr');
+                const sistem = parseInt(baris.querySelector('.qty-sistem').dataset.qty, 10);
+                const aktual = parseInt(e.target.value, 10);
+                // Selisih ditandai saat diketik agar salah ketik ketahuan di
+                // tempat, bukan baru muncul sebagai temuan saat verifikasi.
+                e.target.classList.toggle('border-danger', !isNaN(aktual) && aktual !== sistem);
+                e.target.classList.toggle('text-danger', !isNaN(aktual) && aktual !== sistem);
             }
         });
-    };
 
-    document.addEventListener('DOMContentLoaded', function() {
-        // Bind change event to existing inputs
-        document.querySelectorAll('.location-input').forEach(input => {
-            input.addEventListener('change', function() {
-                handleLocationSelection(this);
-            });
-        });
+        document.getElementById('putawayForm').addEventListener('submit', function (e) {
+            const baris = Array.from(tabel.querySelectorAll('tbody tr'));
+            const terisi = baris.filter(r => r.querySelector('.lokasi-input').value.trim() !== '');
 
-        document.getElementById('btnSubmitPutaway').addEventListener('click', function() {
-            let isValid = true;
-            let inputs = document.querySelectorAll('.location-input');
-            inputs.forEach(function(input) {
-                if(!input.value) {
-                    input.classList.add('is-invalid');
-                    isValid = false;
-                } else {
-                    input.classList.remove('is-invalid');
-                }
-            });
-
-            let isVerified = true;
-            let checks = document.querySelectorAll('.verify-checkbox');
-            checks.forEach(function(check) {
-                if(!check.checked) {
-                    isVerified = false;
-                    check.classList.add('is-invalid');
-                } else {
-                    check.classList.remove('is-invalid');
-                }
-            });
-
-            if(!isValid || !isVerified) {
+            if (terisi.length === 0) {
+                e.preventDefault();
                 Swal.fire({
                     icon: 'warning',
-                    title: 'Peringatan',
-                    text: 'Anda belum mengisi lokasi rak atau memastikan seluruh tuas Verifikasi Fisik telah menyala (dicentang).',
-                    position: 'center',
-                    confirmButtonText: 'Periksa Kembali'
+                    title: 'Belum ada lokasi',
+                    text: 'Isi minimal satu lokasi rak sebelum menyimpan.',
+                    confirmButtonText: 'Mengerti'
                 });
                 return;
             }
 
-            Swal.fire({
-                icon: 'success',
-                title: 'Berhasil!',
-                text: 'Proses Put-away dan Verifikasi Fisik berhasil! Status Inbound kini menjadi: Menunggu Verifikasi Final Logistik.',
-                position: 'center',
-                showConfirmButton: true,
-                confirmButtonText: 'Kembali ke Daftar',
-                confirmButtonColor: '#198754'
-            }).then(() => {
-                window.location.href = '/wms/inbound/putaway';
+            const selisih = terisi.filter(r => {
+                const sistem = parseInt(r.querySelector('.qty-sistem').dataset.qty, 10);
+                const aktual = parseInt(r.querySelector('.qty-aktual').value, 10);
+                return !isNaN(aktual) && aktual !== sistem;
             });
+
+            if (this.dataset.dikonfirmasi === '1') {
+                return;
+            }
+
+            e.preventDefault();
+
+            let pesan = terisi.length + ' dari ' + baris.length + ' palet akan disimpan.';
+            if (selisih.length > 0) {
+                pesan += ' ' + selisih.length + ' palet punya selisih antara qty sistem dan qty fisik — selisih ini akan diperiksa saat verifikasi Logistik.';
+            }
+            if (terisi.length < baris.length) {
+                pesan += ' Sisanya bisa dilanjutkan nanti.';
+            }
+
+            Swal.fire({
+                icon: selisih.length > 0 ? 'warning' : 'question',
+                title: 'Simpan put-away?',
+                text: pesan,
+                showCancelButton: true,
+                cancelButtonText: 'Periksa Lagi',
+                confirmButtonText: 'Ya, Simpan',
+                confirmButtonColor: '#198754'
+            }).then(hasil => {
+                if (hasil.isConfirmed) {
+                    this.dataset.dikonfirmasi = '1';
+                    this.submit();
+                }
+            });
+        });
+
+        // Menandai bin yang sudah terisi pada nilai yang dimuat dari server.
+        tabel.querySelectorAll('.lokasi-input').forEach(i => {
+            i.dispatchEvent(new Event('input', { bubbles: true }));
         });
     });
 </script>
