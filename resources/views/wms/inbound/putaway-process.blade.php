@@ -126,15 +126,13 @@
                     </div>
 
                     {{--
-                        Satu datalist dipakai bersama seluruh baris. Menyalinnya
-                        per baris akan menggandakan ribuan bin sebanyak jumlah
-                        palet dan membuat halaman berat tanpa manfaat.
+                        Satu datalist dipakai bersama seluruh baris, isinya
+                        DIBANGUN ULANG oleh JS setiap kali ada baris berubah
+                        (lihat perbaruiDatalist()) agar kode yang baru saja
+                        dipilih di baris lain langsung hilang dari rekomendasi
+                        — bukan hanya bin yang sudah tersimpan di database.
                     --}}
-                    <datalist id="daftarLokasi">
-                        @foreach($locations as $lokasi)
-                            <option value="{{ $lokasi->code }}">{{ $lokasi->zone }}</option>
-                        @endforeach
-                    </datalist>
+                    <datalist id="daftarLokasi"></datalist>
 
                     <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
                         <a href="{{ route('wms.inbound.putaway') }}" class="btn btn-outline-secondary px-4">Batal</a>
@@ -152,14 +150,21 @@
 
 @push('scripts')
 <script>
-    // SATU BIN = SATU PALET. Bin yang terisi sudah disingkirkan dari daftar
-    // rekomendasi ({{ $locations->count() }} bin kosong ditawarkan di sini);
-    // isian ini dipakai untuk menjelaskan KENAPA suatu kode ditolak bila
-    // Operator tetap mengetiknya manual.
+    // SATU BIN = SATU PALET. ISI_BIN adalah bin yang SUDAH TERSIMPAN di
+    // database (palet manapun, dokumen manapun) — dipakai menjelaskan KENAPA
+    // suatu kode ditolak bila diketik manual, karena bin itu memang sudah
+    // tidak ada di LOKASI_TERSEDIA sejak awal.
     const ISI_BIN = @json((object) $occupancy);
+
+    // LOKASI_TERSEDIA adalah bin kosong di gudang ini (sudah mengecualikan
+    // ISI_BIN). Dari sinilah datalist dibangun ulang setiap kali ada baris
+    // berubah, supaya kode yang BARU SAJA dipilih di satu baris — walau belum
+    // disimpan — langsung hilang dari rekomendasi baris lain.
+    const LOKASI_TERSEDIA = @json($locations->map(fn ($l) => ['code' => $l->code, 'zone' => $l->zone])->values());
 
     document.addEventListener('DOMContentLoaded', function () {
         const tabel = document.getElementById('putawayTable');
+        const datalist = document.getElementById('daftarLokasi');
 
         function perbaruiKemajuan() {
             const isian = tabel.querySelectorAll('.lokasi-input');
@@ -169,23 +174,66 @@
             label.textContent = terisi + ' / ' + isian.length + ' palet';
         }
 
-        // Delegasi: satu listener untuk seluruh baris, berapa pun jumlah palet.
-        tabel.addEventListener('input', function (e) {
-            if (e.target.classList.contains('lokasi-input')) {
-                const kode = e.target.value.trim().toUpperCase();
-                const info = e.target.closest('td').querySelector('.lokasi-info');
-                const jumlah = ISI_BIN[kode];
+        /** Kode yang sedang terisi di baris manapun pada formulir ini sekarang. */
+        function kodeTerpakaiDiFormulir() {
+            const hitung = {};
+            tabel.querySelectorAll('.lokasi-input').forEach(i => {
+                const kode = i.value.trim().toUpperCase();
+                if (kode !== '') hitung[kode] = (hitung[kode] || 0) + 1;
+            });
+            return hitung;
+        }
+
+        /**
+         * Membangun ulang <option> datalist: bin kosong DIKURANGI kode yang
+         * sudah diketik di baris manapun. Dipakai bersama seluruh baris —
+         * begitu satu baris memilih B-01-05, baris lain langsung kehilangan
+         * B-01-05 dari rekomendasinya tanpa perlu disimpan dulu.
+         */
+        function perbaruiDatalist() {
+            const dipakai = kodeTerpakaiDiFormulir();
+            datalist.innerHTML = '';
+            LOKASI_TERSEDIA.forEach(l => {
+                if (dipakai[l.code]) return;
+                const opt = document.createElement('option');
+                opt.value = l.code;
+                opt.textContent = l.zone || '';
+                datalist.appendChild(opt);
+            });
+        }
+
+        /** Menandai tiap baris: kosong / sudah tersimpan di DB / dipilih ganda di formulir ini. */
+        function periksaSemuaBaris() {
+            const hitung = kodeTerpakaiDiFormulir();
+
+            tabel.querySelectorAll('.lokasi-input').forEach(input => {
+                const kode = input.value.trim().toUpperCase();
+                const info = input.closest('td').querySelector('.lokasi-info');
 
                 if (kode === '') {
+                    input.classList.remove('is-invalid');
                     info.textContent = '';
-                } else if (jumlah !== undefined) {
-                    info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah terisi ' + jumlah + ' pcs — tidak tersedia.';
+                } else if (hitung[kode] > 1) {
+                    input.classList.add('is-invalid');
+                    info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah dipilih untuk palet lain pada formulir ini.';
+                    info.className = 'text-danger lokasi-info d-block mt-1 small';
+                } else if (ISI_BIN[kode] !== undefined) {
+                    input.classList.add('is-invalid');
+                    info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah terisi ' + ISI_BIN[kode] + ' pcs — tidak tersedia.';
                     info.className = 'text-danger lokasi-info d-block mt-1 small';
                 } else {
+                    input.classList.remove('is-invalid');
                     info.innerHTML = '<i class="bi bi-check-circle me-1"></i>Kosong.';
                     info.className = 'text-success lokasi-info d-block mt-1 small';
                 }
+            });
+        }
 
+        // Delegasi: satu listener untuk seluruh baris, berapa pun jumlah palet.
+        tabel.addEventListener('input', function (e) {
+            if (e.target.classList.contains('lokasi-input')) {
+                perbaruiDatalist();
+                periksaSemuaBaris();
                 perbaruiKemajuan();
             }
 
@@ -210,6 +258,21 @@
                     icon: 'warning',
                     title: 'Belum ada lokasi',
                     text: 'Isi minimal satu lokasi rak sebelum menyimpan.',
+                    confirmButtonText: 'Mengerti'
+                });
+                return;
+            }
+
+            // Bin ganda (dipilih dua kali di formulir ini) atau bin yang
+            // sudah tersimpan di DB TIDAK BOLEH dikirim sama sekali — bukan
+            // sekadar diperingatkan, karena server pasti menolaknya juga.
+            const bermasalah = tabel.querySelectorAll('.lokasi-input.is-invalid');
+            if (bermasalah.length > 0) {
+                e.preventDefault();
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Ada rak yang bentrok',
+                    text: 'Perbaiki dulu baris yang ditandai merah — rak tersebut sudah dipakai palet lain atau dipilih dua kali pada formulir ini.',
                     confirmButtonText: 'Mengerti'
                 });
                 return;
@@ -251,10 +314,10 @@
             });
         });
 
-        // Menandai bin yang sudah terisi pada nilai yang dimuat dari server.
-        tabel.querySelectorAll('.lokasi-input').forEach(i => {
-            i.dispatchEvent(new Event('input', { bubbles: true }));
-        });
+        // Render awal: datalist terisi, dan nilai yang sudah dimuat dari
+        // server (put-away sebagian sebelumnya) langsung ditandai.
+        perbaruiDatalist();
+        periksaSemuaBaris();
     });
 </script>
 @endpush
