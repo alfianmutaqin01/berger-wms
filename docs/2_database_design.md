@@ -497,7 +497,7 @@ Header dokumen penerimaan barang dari pabrik.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `document_number` | VARCHAR(50) | NOT NULL | Nomor dokumen fisik pabrik (input manual) |
+| `document_number` | VARCHAR(50) | NOT NULL, UNIQUE | Nomor dokumen **dibangkitkan sistem**, format `IN-YYMMDD-NNN` |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang tujuan |
 | `production_date` | DATE | NOT NULL | Tanggal produksi |
 | `status` | ENUM | NOT NULL, DEFAULT 'draft' | 'draft', 'putaway_pending', 'verification_pending', 'verified', 'partial_verified' |
@@ -510,12 +510,31 @@ Header dokumen penerimaan barang dari pabrik.
 #### `inbound_details`
 Rincian per item per palet dalam satu inbound.
 
+> [!IMPORTANT]
+> **Satu baris = satu PALET, bukan satu produk.** Satu baris Excel dari Tim Produksi bisa menghasilkan beberapa baris di sini: 235 pcs kemasan 5 Kg (maks 180/palet) menjadi dua baris — palet 1 berisi 180, palet 2 berisi 55. `total_qty` tetap menyimpan 235 pada keduanya agar asal-usulnya terlacak.
+>
+> **`batch_no` sengaja TIDAK unik.** Pada data produksi nyata, beberapa nomor order produksi berbeda bisa berbagi satu batch QC — mis. `I126080037` dipakai oleh RMO26080301, RMO26080302, dan RMO26080304 sekaligus.
+>
+> **Berkas Excel produksi memuat kolom A–L, tetapi hanya A–E yang dibaca:**
+>
+> | Kolom | Judul | Dipakai sebagai |
+> |---|---|---|
+> | A | No. | `production_order_no` |
+> | B | Source No. | SKU → `product_id` (harus sudah ada di Master Produk) |
+> | C | Description | hanya untuk tampilan pratinjau |
+> | D | Quantity | `total_qty`, lalu dipecah jadi palet |
+> | E | QC Number | `batch_no` |
+>
+> Kolom F dan seterusnya (jadwal, status, user, routing) diabaikan. **Berkas mentahnya tidak disimpan** — hanya hasil pembacaannya, agar tidak menumpuk di server.
+
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `inbound_header_id` | BIGINT UNSIGNED | FK → inbound_headers.id | Header induk |
 | `product_id` | BIGINT UNSIGNED | FK → products.id | Produk yang diterima |
-| `batch_no` | VARCHAR(50) | NOT NULL | Nomor batch produksi |
+| `production_order_no` | VARCHAR(50) | NULLABLE | Nomor order produksi dari kolom A berkas Excel (mis. `RMO26080294`) |
+| `batch_no` | VARCHAR(50) | NOT NULL | Nomor batch, dari kolom E ("QC Number"). **Tidak unik** |
+| `qty_actual` | INTEGER | NULLABLE | Jumlah fisik hasil hitungan Operator saat put-away |
 | `total_qty` | INTEGER | NOT NULL | Total qty sebelum split palet |
 | `pallet_no` | INTEGER | NOT NULL | Urutan palet (1, 2, 3, ...) |
 | `pallet_qty` | INTEGER | NOT NULL | Qty aktual di palet ini |

@@ -125,13 +125,17 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     Route::prefix('inbound')->group(function () {
         Route::middleware('can:'.Permission::INBOUND_HISTORY)->group(function () {
-            Route::get('/history', [InboundController::class, 'historyIndex']);
+            Route::get('/history', [InboundController::class, 'historyIndex'])->name('wms.inbound.history');
             Route::get('/history/{doc_no}', [InboundController::class, 'historyDetail']);
         });
 
+        // Input Produksi (PRD §6.3 F-INB-01) — sudah terhubung ke database.
+        // Alur tiga langkah: form -> pratinjau (tanpa menyentuh DB) -> simpan.
         Route::middleware('can:'.Permission::INBOUND_CREATE)->group(function () {
-            Route::get('/create', [InboundController::class, 'create']);
-            Route::post('/preview', [InboundController::class, 'previewExcel']);
+            Route::get('/create', [InboundController::class, 'create'])->name('wms.inbound.create');
+            Route::post('/preview', [InboundController::class, 'previewExcel'])->name('wms.inbound.preview');
+            Route::post('/store', [InboundController::class, 'store'])->name('wms.inbound.store');
+            Route::post('/cancel', [InboundController::class, 'cancelPreview'])->name('wms.inbound.cancel');
         });
 
         Route::middleware('can:'.Permission::INBOUND_PUTAWAY)->group(function () {
