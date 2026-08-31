@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
+use App\Models\InboundDetail;
 use App\Models\InboundHeader;
+use App\Models\Location;
 use App\Models\Warehouse;
 use App\Support\DocumentNumber;
 use App\Support\Inbound\ProductionSheet;
@@ -301,72 +303,330 @@ class InboundController extends Controller
     }
 
     /**
-     * F-INB-02: List Put-away
+     * F-INB-02: Daftar dokumen yang menunggu put-away.
+     *
+     * DATA CONTRACT (view: wms.inbound.putaway-list)
+     * ----------------------------------------------
+     * $documents  : LengthAwarePaginator<InboundHeader> — withCount details
+     *               (total) & details_placed (sudah punya lokasi)
+     * $warehouses : Collection<Warehouse>
+     * $stats      : array{dokumen:int, palet:int, belum:int}
+     * $filters    : array{search:?string, warehouse_id:?string}
+     *
+     * Hanya dokumen berstatus `putaway_pending` yang muncul. Dokumen yang
+     * put-away-nya baru sebagian tetap di daftar ini — lihat kolom kemajuan —
+     * karena pekerjaan fisik lazim terputus dan harus bisa dilanjutkan.
      */
-    public function putawayIndex()
+    public function putawayIndex(Request $request): View
     {
-        $dummyInbounds = [
-            [
-                'batch_no' => 'BCH-202608-01',
-                'doc_no' => 'PROD-8821',
-                'date' => '18 Aug 2026',
-                'total_pallets' => 3,
-                'status' => 'Menunggu Put-away',
-            ],
-            [
-                'batch_no' => 'BCH-202608-02',
-                'doc_no' => 'PROD-8822',
-                'date' => '18 Aug 2026',
-                'total_pallets' => 5,
-                'status' => 'Menunggu Put-away',
-            ],
+        $filters = [
+            'search' => $request->query('search'),
+            'warehouse_id' => $request->query('warehouse_id'),
         ];
 
-        return view('wms.inbound.putaway-list', compact('dummyInbounds'));
+        $base = InboundHeader::query()
+            ->awaitingPutaway()
+            ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
+
+        $documents = (clone $base)
+            ->withCount(['details', 'details as details_placed_count' => fn ($q) => $q->placed()])
+            ->with(['warehouse:id,code,name', 'details:id,inbound_header_id,batch_no'])
+            ->search($filters['search'])
+            // Dokumen terlama didahulukan: barang yang sudah lama menganggur di
+            // area terima adalah yang paling mendesak dimasukkan ke rak.
+            ->oldest('production_date')
+            ->oldest('id')
+            ->paginate(15)
+            ->withQueryString();
+
+        $paletBase = InboundDetail::whereIn('inbound_header_id', (clone $base)->select('id'));
+
+        return view('wms.inbound.putaway-list', [
+            'documents' => $documents,
+            'warehouses' => Warehouse::orderBy('code')->get(),
+            'stats' => [
+                'dokumen' => (clone $base)->count(),
+                'palet' => (clone $paletBase)->count(),
+                'belum' => (clone $paletBase)->whereNull('location_id')->count(),
+            ],
+            'filters' => $filters,
+        ]);
     }
 
     /**
-     * F-INB-02: Detail Put-away
+     * F-INB-02: Layar penempatan palet ke rak.
+     *
+     * DATA CONTRACT (view: wms.inbound.putaway-process)
+     * -------------------------------------------------
+     * $header    : InboundHeader
+     * $details   : Collection<InboundDetail> — eager-load product & location
+     * $locations : Collection<Location> — SELURUH bin aktif di gudang dokumen
+     *              ini; ketersediaan per baris dihitung di sisi klien karena
+     *              tergantung SKU baris itu (lihat $occupancy)
+     * $occupancy : array<string, array{product_id:int, qty:int, capacity:?int,
+     *              uom:?string}> — kode bin => isi bin saat ini
+     * $totals    : array{palet:int, ditempatkan:int}
+     *
+     * Daftar bin dibatasi ke gudang dokumen. Tanpa itu, Operator bisa memilih
+     * bin milik gudang lain — kode rak seperti "B-01-01" berulang antar gudang,
+     * jadi kesalahannya tidak akan terlihat sampai barangnya dicari.
      */
-    public function putawayProcess($doc_no)
+    public function putawayProcess(string $doc_no): View
     {
-        $inbound = ['doc_no' => $doc_no, 'batch_no' => 'BCH-202608-01',
-            'date' => '18 Aug 2026',
-        ];
+        $header = InboundHeader::with('warehouse')
+            ->awaitingPutaway()
+            ->where('document_number', $doc_no)
+            ->firstOrFail();
 
-        $pallets = [
-            [
-                'id' => 1,
-                'pallet_no' => 'PLT-001',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 180,
-                'location' => '',
-            ],
-            [
-                'id' => 2,
-                'pallet_no' => 'PLT-002',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 180,
-                'location' => '',
-            ],
-            [
-                'id' => 3,
-                'pallet_no' => 'PLT-003',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 140,
-                'location' => '',
-            ],
-        ];
+        $details = $header->details()
+            ->with(['product:id,sku,name,uom,max_qty_per_pallet', 'location:id,code'])
+            ->orderBy('production_order_no')
+            ->orderBy('pallet_no')
+            ->get();
 
-        $availableLocations = ['G-03-01 (Kosong)', 'G-03-02 (Kosong)', 'G-03-03 (Kosong)', 'G-03-04 (Kosong)', 'G-03-05 (Kosong)'];
+        $locations = Location::where('warehouse_id', $header->warehouse_id)
+            ->active()
+            ->inStorageOrder()
+            ->get(['id', 'code', 'zone']);
 
-        return view('wms.inbound.putaway-process', compact('inbound', 'pallets', 'availableLocations'));
+        // Satu bin adalah satu SLOT PALET: boleh memuat beberapa palet dari
+        // SKU yang SAMA sampai kapasitas palet SKU itu (Product::
+        // max_qty_per_pallet) — pallet split (PRD §7.1) boleh digabung
+        // kembali di bin yang sama. SKU yang berbeda tetap tidak boleh
+        // berbagi bin. Dihitung dari SELURUH dokumen, bukan cuma dokumen ini.
+        $idKeKode = $locations->pluck('code', 'id');
+
+        $occupancy = InboundDetail::query()
+            ->whereIn('location_id', $locations->pluck('id'))
+            ->with('product:id,uom,max_qty_per_pallet')
+            ->get(['id', 'location_id', 'product_id', 'qty_actual', 'pallet_qty'])
+            ->groupBy('location_id')
+            ->mapWithKeys(function ($group) use ($idKeKode) {
+                $produk = $group->first()->product;
+
+                return [$idKeKode[$group->first()->location_id] => [
+                    'product_id' => $group->first()->product_id,
+                    'qty' => $group->sum(fn (InboundDetail $d) => $d->effective_qty),
+                    'capacity' => $produk?->max_qty_per_pallet,
+                    'uom' => $produk?->uom,
+                ]];
+            })
+            ->all();
+
+        return view('wms.inbound.putaway-process', [
+            'header' => $header,
+            'details' => $details,
+            'locations' => $locations,
+            'occupancy' => $occupancy,
+            'totals' => [
+                'palet' => $details->count(),
+                'ditempatkan' => $details->whereNotNull('location_id')->count(),
+            ],
+        ]);
+    }
+
+    /**
+     * F-INB-02: menyimpan penempatan palet.
+     *
+     * Aturan yang membentuk method ini:
+     *
+     * 1. PUT-AWAY BOLEH SEBAGIAN. Palet yang lokasinya dikosongkan hanya
+     *    dilewati, tidak menggagalkan penyimpanan. Memaksa semua palet terisi
+     *    sekaligus akan membuat Operator kehilangan pekerjaan setengah jalan
+     *    setiap kali giliran kerjanya habis.
+     * 2. STATUS NAIK HANYA BILA LENGKAP. Dokumen baru berpindah ke
+     *    `verification_pending` setelah seluruh paletnya punya lokasi.
+     * 3. SATU BIN = SATU SLOT PALET. Boleh memuat beberapa palet dari SKU
+     *    yang SAMA sampai kapasitas palet SKU itu (Product::max_qty_per_
+     *    pallet) — pallet split (PRD §7.1) boleh digabung kembali di bin
+     *    yang sama. SKU yang berbeda TIDAK boleh berbagi bin.
+     *
+     * Qty Aktual boleh dikoreksi Operator (PRD §6.3 F-INB-02) — SKU dan batch
+     * tidak, karena keduanya berasal dari dokumen produksi dan bukan wewenang
+     * gudang untuk mengubahnya.
+     */
+    public function putawayStore(Request $request, string $doc_no): RedirectResponse
+    {
+        $header = InboundHeader::awaitingPutaway()
+            ->where('document_number', $doc_no)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'pallets' => ['required', 'array'],
+            'pallets.*.location_code' => ['nullable', 'string', 'max:20'],
+            // Batas atas 100.000 mencegah salah ketik yang mustahil secara
+            // fisik; palet terbesar di sistem ini memuat 720 pcs.
+            'pallets.*.qty_actual' => ['nullable', 'integer', 'min:0', 'max:100000'],
+        ]);
+
+        $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
+
+        // Kode bin dipetakan sekali di muka, bukan satu query per palet.
+        $bins = Location::where('warehouse_id', $header->warehouse_id)
+            ->active()
+            ->get(['id', 'code'])
+            ->keyBy(fn (Location $l) => strtoupper($l->code));
+
+        // Isi bin SAAT INI di database (dokumen manapun, termasuk palet LAIN
+        // milik dokumen ini sendiri yang sudah lebih dulu ditempatkan),
+        // dikelompokkan per bin dengan kontribusi tiap palet disimpan
+        // terpisah. Kontribusi palet yang SEDANG diproses dikeluarkan nanti
+        // per-baris (bukan di sini) — supaya put-away ulang/koreksi tidak
+        // menabrak dirinya sendiri, TANPA ikut menyembunyikan palet LAIN
+        // milik dokumen yang sama yang kebetulan sudah menghuni bin itu.
+        $penghuniSekarang = InboundDetail::whereNotNull('location_id')
+            ->get(['id', 'location_id', 'product_id', 'qty_actual', 'pallet_qty'])
+            ->groupBy('location_id')
+            ->map(fn ($group) => [
+                'product_id' => $group->first()->product_id,
+                'per_detail' => $group->keyBy('id')->map(fn (InboundDetail $d) => $d->effective_qty),
+            ]);
+
+        $penempatan = [];
+        $errors = [];
+
+        // location_id => ['product_id'=>, 'qty'=>] — akumulasi DALAM SATU
+        // pengiriman ini, supaya beberapa palet SKU yang SAMA menunjuk bin
+        // yang sama dijumlahkan (boleh digabung sampai kapasitas), sementara
+        // SKU yang berbeda menunjuk bin yang sama tetap ditolak.
+        $dipakaiDalamPengiriman = [];
+
+        foreach ($validated['pallets'] as $detailId => $input) {
+            $detail = $details->get((int) $detailId);
+
+            // Palet dari dokumen lain diabaikan diam-diam: id-nya bisa saja
+            // dikarang lewat peramban, dan tidak ada alasan sah untuk itu.
+            if (! $detail) {
+                continue;
+            }
+
+            $code = strtoupper(trim((string) ($input['location_code'] ?? '')));
+
+            if ($code === '') {
+                continue;
+            }
+
+            if (! $bins->has($code)) {
+                $errors["pallets.{$detailId}.location_code"] =
+                    "Kode lokasi \"{$code}\" tidak ada atau tidak aktif di gudang {$header->warehouse?->code}.";
+
+                continue;
+            }
+
+            $qty = $input['qty_actual'] ?? null;
+
+            if ($qty === null || $qty === '') {
+                $errors["pallets.{$detailId}.qty_actual"] = 'Qty Aktual wajib diisi untuk palet yang ditempatkan.';
+
+                continue;
+            }
+
+            $qty = (int) $qty;
+            $locationId = $bins->get($code)->id;
+            $kapasitas = $detail->product?->max_qty_per_pallet;
+
+            $terpakai = 0;
+            $produkLain = null;
+
+            if ($sudahAda = $penghuniSekarang->get($locationId)) {
+                // Kontribusi palet ini SENDIRI dikeluarkan dulu — kalau
+                // ternyata dialah satu-satunya penghuni bin itu (put-away
+                // ulang ke bin miliknya sendiri), bin dianggap kosong untuk
+                // pengecekan ini, bukan "sudah terisi dirinya sendiri".
+                $lainnya = $sudahAda['per_detail']->except([$detail->id]);
+
+                if ($lainnya->isNotEmpty()) {
+                    $produkLain = $sudahAda['product_id'];
+                    $terpakai = $lainnya->sum();
+                }
+            }
+
+            if ($dalamPengiriman = $dipakaiDalamPengiriman[$locationId] ?? null) {
+                $produkLain ??= $dalamPengiriman['product_id'];
+                $terpakai += $dalamPengiriman['qty'];
+            }
+
+            if ($produkLain !== null && $produkLain !== $detail->product_id) {
+                $errors["pallets.{$detailId}.location_code"] = "Rak \"{$code}\" sudah terisi produk lain.";
+
+                continue;
+            }
+
+            if ($kapasitas === null) {
+                // Kapasitas palet produk ini belum diketahui di Master
+                // Produk — tanpa angka itu tidak bisa dipastikan sisa
+                // ruangnya, jadi bin yang sudah terisi APAPUN ditolak
+                // sebagai jaring pengaman.
+                if ($terpakai > 0) {
+                    $errors["pallets.{$detailId}.location_code"] =
+                        "Rak \"{$code}\" sudah terisi, dan kapasitas palet produk ini belum diisi di Master Produk.";
+
+                    continue;
+                }
+            } elseif (($terpakai + $qty) > $kapasitas) {
+                $errors["pallets.{$detailId}.location_code"] = sprintf(
+                    'Rak "%s" kelebihan kapasitas: sudah terisi %d, ditambah %d akan melebihi kapasitas %d.',
+                    $code,
+                    $terpakai,
+                    $qty,
+                    $kapasitas
+                );
+
+                continue;
+            }
+
+            $dipakaiDalamPengiriman[$locationId] = [
+                'product_id' => $detail->product_id,
+                'qty' => $terpakai + $qty,
+            ];
+
+            $penempatan[$detail->id] = [
+                'location_id' => $locationId,
+                'qty_actual' => $qty,
+            ];
+        }
+
+        if ($errors !== []) {
+            return back()->withErrors($errors)->withInput();
+        }
+
+        if ($penempatan === []) {
+            return back()->with('error', 'Belum ada palet yang diberi lokasi rak.');
+        }
+
+        DB::transaction(function () use ($header, $penempatan, $request) {
+            foreach ($penempatan as $detailId => $nilai) {
+                $header->details()->whereKey($detailId)->update($nilai + [
+                    'putaway_by' => $request->user()?->id,
+                    'putaway_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            if ($header->isFullyPlaced()) {
+                $header->update(['status' => InboundHeader::STATUS_VERIFICATION_PENDING]);
+            }
+        });
+
+        $header->refresh();
+        $tersisa = $header->details()->whereNull('location_id')->count();
+
+        if ($tersisa > 0) {
+            return redirect()->route('wms.inbound.putaway.process', $header->document_number)->with(
+                'success',
+                sprintf(
+                    '%d palet tersimpan. Masih ada %d palet yang belum ditempatkan — dokumen tetap di daftar put-away.',
+                    count($penempatan),
+                    $tersisa
+                )
+            );
+        }
+
+        return redirect()->route('wms.inbound.putaway')->with('success', sprintf(
+            'Put-away dokumen %s selesai: %d palet ditempatkan, kini menunggu verifikasi Logistik.',
+            $header->document_number,
+            $header->details()->count()
+        ));
     }
 
     /**

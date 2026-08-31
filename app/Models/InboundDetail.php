@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -70,5 +71,21 @@ class InboundDetail extends Model
     public function getQtyVarianceAttribute(): ?int
     {
         return $this->qty_actual === null ? null : $this->qty_actual - $this->pallet_qty;
+    }
+
+    /** Palet yang sudah ditempatkan Operator ke sebuah bin. */
+    public function scopePlaced(Builder $query): Builder
+    {
+        return $query->whereNotNull('location_id');
+    }
+
+    /**
+     * Jumlah yang berlaku untuk stok: hasil hitung fisik bila ada.
+     *
+     * Sebelum put-away, `qty_actual` masih kosong dan angka sistem yang dipakai.
+     */
+    public function getEffectiveQtyAttribute(): int
+    {
+        return $this->qty_actual ?? $this->pallet_qty;
     }
 }
