@@ -183,12 +183,37 @@
          * sendiri. Mengembalikan null bila bin itu dihuni SKU LAIN (berarti
          * tidak bisa dipakai sama sekali oleh baris ini).
          */
+        /**
+         * Produk LAIN (product_id berbeda dari `produkId`) yang sudah
+         * menghuni bin `kode` — baik dari database (ISI_BIN) MAUPUN dari
+         * baris lain pada formulir ini yang belum disimpan sama sekali.
+         * Tanpa pengecekan baris-lain-yang-belum-disimpan ini, dua SKU
+         * berbeda bisa sama-sama mengetik bin yang sama dan keduanya
+         * tampak "Kosong" karena belum ada satupun yang tersimpan ke DB.
+         */
+        function produkLainDiBin(kode, produkId, kecualiInput) {
+            const isi = ISI_BIN[kode];
+            if (isi && isi.product_id !== produkId) return isi.product_id;
+
+            let konflik = null;
+
+            semuaBarisLokasi().forEach(input => {
+                if (konflik !== null || input === kecualiInput) return;
+                if (input.value.trim().toUpperCase() !== kode) return;
+
+                const produkBaris = parseInt(input.closest('tr').dataset.productId, 10);
+                if (produkBaris !== produkId) konflik = produkBaris;
+            });
+
+            return konflik;
+        }
+
+        /** Total qty SKU `produkId` (SAJA) yang sudah menghuni bin `kode`. Panggil SETELAH memastikan produkLainDiBin() null. */
         function terpakaiUntukBaris(kode, produkId, kecualiInput) {
             let terpakai = 0;
             const isi = ISI_BIN[kode];
 
-            if (isi) {
-                if (isi.product_id !== produkId) return null;
+            if (isi && isi.product_id === produkId) {
                 terpakai += isi.qty;
             }
 
@@ -225,9 +250,7 @@
                 return;
             }
 
-            const isi = ISI_BIN[kode];
-
-            if (isi && isi.product_id !== produkId) {
+            if (produkLainDiBin(kode, produkId, input) !== null) {
                 input.classList.add('is-invalid');
                 info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah dihuni produk lain.';
                 info.className = 'text-danger lokasi-info d-block mt-1 small';
@@ -239,7 +262,7 @@
 
             if (kapasitas && (terpakaiLain + qtyBaris) > kapasitas) {
                 input.classList.add('is-invalid');
-                info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Melebihi kapasitas: rak sudah terisi '
+                info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak sudah terisi '
                     + terpakaiLain + ' ' + uom + ', kapasitas ' + kapasitas + ' ' + uom + '.';
                 info.className = 'text-danger lokasi-info d-block mt-1 small';
                 return;
@@ -280,8 +303,9 @@
             const ketik = input.value.trim().toUpperCase();
 
             const cocok = LOKASI.filter(l => ketik === '' || l.code.includes(ketik))
+                .filter(l => produkLainDiBin(l.code, produkId, input) === null)
                 .map(l => ({ ...l, terpakai: terpakaiUntukBaris(l.code, produkId, input) }))
-                .filter(l => l.terpakai !== null && (kapasitas === null || l.terpakai < kapasitas))
+                .filter(l => kapasitas === null || l.terpakai < kapasitas)
                 .slice(0, 30);
 
             if (cocok.length === 0) {
