@@ -5,28 +5,30 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Indeks penunjang put-away (PRD §6.3 F-INB-02).
+ * Kunci "satu bin = satu palet" (PRD §6.3 F-INB-02, direvisi 2026-08-31).
  *
- * Layar put-away menghitung isi tiap bin untuk ditampilkan ke Operator, dan
- * denah rak nanti melakukan hal yang sama untuk 2.264 bin sekaligus. Tanpa
- * indeks ini, keduanya memindai seluruh tabel palet.
+ * Keputusan Fase 4 lama sempat menyatakan satu bin boleh memuat beberapa
+ * produk & batch sekaligus. Itu dibatalkan: satu rak fisik hanya memuat satu
+ * palet. UNIQUE di sini menjadi penjaga terakhir di lapisan basis data,
+ * setelah validasi di InboundController::putawayStore.
  *
- * TIDAK dibuat unik: satu bin sengaja boleh memuat beberapa palet, bahkan dari
- * produk dan batch yang berbeda — sesuai kondisi nyata di gudang.
+ * Unik biasa (bukan partial index) sudah cukup: PostgreSQL memperlakukan
+ * setiap NULL sebagai berbeda, jadi banyak palet yang BELUM ditempatkan
+ * (location_id NULL) tidak akan saling bentrok.
  */
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::table('inbound_details', function (Blueprint $table) {
-            $table->index('location_id');
+            $table->unique('location_id');
         });
     }
 
     public function down(): void
     {
         Schema::table('inbound_details', function (Blueprint $table) {
-            $table->dropIndex(['location_id']);
+            $table->dropUnique(['location_id']);
         });
     }
 };

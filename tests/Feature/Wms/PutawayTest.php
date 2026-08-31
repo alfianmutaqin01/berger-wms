@@ -187,11 +187,28 @@ class PutawayTest extends TestCase
         $this->loginAs();
         $header = $this->makeDocument();
         $bin = $this->bin('B-01-01');
-        $header->details()->first()->update(['location_id' => $bin->id]);
+        $header->details()->first()->update(['location_id' => $bin->id, 'qty_actual' => 178]);
 
         $occupancy = $this->get('/wms/inbound/putaway/IN-260901-001')->viewData('occupancy');
 
-        $this->assertSame(['B-01-01' => 1], $occupancy);
+        $this->assertSame(['B-01-01' => 178], $occupancy);
+    }
+
+    /**
+     * SATU BIN = SATU PALET. Bin yang sudah terisi (oleh palet manapun, dari
+     * dokumen manapun) tidak boleh muncul di daftar rekomendasi lokasi.
+     */
+    public function test_bin_yang_sudah_terisi_tidak_masuk_rekomendasi(): void
+    {
+        $this->loginAs();
+        $header = $this->makeDocument();
+        $terisi = $this->bin('B-01-01');
+        $kosong = $this->bin('B-01-02');
+        $header->details()->first()->update(['location_id' => $terisi->id]);
+
+        $locations = $this->get('/wms/inbound/putaway/IN-260901-001')->viewData('locations');
+
+        $this->assertSame(['B-01-02'], $locations->pluck('code')->all());
     }
 
     public function test_dokumen_yang_sudah_terverifikasi_tidak_bisa_diproses_ulang(): void
@@ -362,8 +379,8 @@ class PutawayTest extends TestCase
         $this->assertNull($milikOrangLain->fresh()->location_id);
     }
 
-    /** Satu bin sengaja boleh memuat beberapa palet, bahkan beda batch. */
-    public function test_satu_bin_boleh_memuat_beberapa_palet(): void
+    /** SATU BIN = SATU PALET: dua palet tidak boleh berbagi satu bin dalam satu pengiriman. */
+    public function test_dua_palet_tidak_boleh_berbagi_satu_bin_dalam_satu_pengiriman(): void
     {
         $this->loginAs();
         $header = $this->makeDocument();
@@ -375,10 +392,46 @@ class PutawayTest extends TestCase
                 $paletA->id => ['location_code' => 'B-01-01', 'qty_actual' => 180],
                 $paletB->id => ['location_code' => 'B-01-01', 'qty_actual' => 55],
             ],
-        ]);
+        ])->assertSessionHasErrors("pallets.{$paletB->id}.location_code");
 
-        $this->assertSame($bin->id, $paletA->fresh()->location_id);
-        $this->assertSame($bin->id, $paletB->fresh()->location_id);
+        // Satu pengiriman ditolak SELURUHNYA bila ada satu saja isian yang
+        // salah — palet A pun ikut tidak tersimpan, bukan hanya palet B.
+        $this->assertNull($paletA->fresh()->location_id);
+        $this->assertNull($paletB->fresh()->location_id);
+    }
+
+    /** Bin yang sudah ditempati palet dari DOKUMEN LAIN tetap ditolak. */
+    public function test_bin_yang_terisi_dari_dokumen_lain_ditolak(): void
+    {
+        $this->loginAs();
+        $sudahAda = $this->makeDocument(['document_number' => 'IN-260901-002']);
+        $bin = $this->bin('B-01-01');
+        $sudahAda->details()->first()->update(['location_id' => $bin->id]);
+
+        $header = $this->makeDocument();
+        $palet = $header->details()->first();
+
+        $this->post('/wms/inbound/putaway/IN-260901-001', [
+            'pallets' => [$palet->id => ['location_code' => 'B-01-01', 'qty_actual' => 180]],
+        ])->assertSessionHasErrors("pallets.{$palet->id}.location_code");
+
+        $this->assertNull($palet->fresh()->location_id);
+    }
+
+    /** Menyimpan ulang palet ke bin yang sudah dimilikinya sendiri tetap diterima. */
+    public function test_palet_boleh_disimpan_ulang_ke_bin_miliknya_sendiri(): void
+    {
+        $this->loginAs();
+        $header = $this->makeDocument();
+        $bin = $this->bin('B-01-01');
+        $palet = $header->details()->first();
+        $palet->update(['location_id' => $bin->id, 'qty_actual' => 180]);
+
+        $this->post('/wms/inbound/putaway/IN-260901-001', [
+            'pallets' => [$palet->id => ['location_code' => 'B-01-01', 'qty_actual' => 178]],
+        ])->assertSessionDoesntHaveErrors();
+
+        $this->assertSame(178, $palet->fresh()->qty_actual);
     }
 
     public function test_kode_lokasi_huruf_kecil_tetap_diterima(): void

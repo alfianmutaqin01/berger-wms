@@ -152,8 +152,10 @@
 
 @push('scripts')
 <script>
-    // Isi tiap bin ditampilkan sebagai INFORMASI, bukan larangan: satu bin
-    // memang boleh memuat beberapa palet, bahkan beda produk dan batch.
+    // SATU BIN = SATU PALET. Bin yang terisi sudah disingkirkan dari daftar
+    // rekomendasi ({{ $locations->count() }} bin kosong ditawarkan di sini);
+    // isian ini dipakai untuk menjelaskan KENAPA suatu kode ditolak bila
+    // Operator tetap mengetiknya manual.
     const ISI_BIN = @json((object) $occupancy);
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -176,12 +178,12 @@
 
                 if (kode === '') {
                     info.textContent = '';
-                } else if (jumlah) {
-                    info.innerHTML = '<i class="bi bi-boxes me-1"></i>Bin ini sudah memuat ' + jumlah + ' palet lain.';
-                    info.className = 'text-warning-emphasis lokasi-info d-block mt-1 small';
+                } else if (jumlah !== undefined) {
+                    info.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Rak ini sudah terisi ' + jumlah + ' pcs — tidak tersedia.';
+                    info.className = 'text-danger lokasi-info d-block mt-1 small';
                 } else {
-                    info.textContent = '';
-                    info.className = 'text-muted lokasi-info d-block mt-1 small';
+                    info.innerHTML = '<i class="bi bi-check-circle me-1"></i>Kosong.';
+                    info.className = 'text-success lokasi-info d-block mt-1 small';
                 }
 
                 perbaruiKemajuan();

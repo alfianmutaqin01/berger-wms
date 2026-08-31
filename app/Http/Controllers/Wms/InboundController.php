@@ -386,25 +386,28 @@ class InboundController extends Controller
             ->inStorageOrder()
             ->get(['id', 'code', 'zone']);
 
-        // Satu bin boleh memuat beberapa palet (bahkan beda produk & batch),
-        // jadi isian ini bersifat INFORMASI bagi Operator — bukan larangan.
+        // SATU BIN = SATU PALET. Isian di sini dipakai untuk dua hal:
+        //   1. Menyingkirkan bin yang sudah terisi dari daftar rekomendasi.
+        //   2. Menampilkan isinya bila Operator tetap mengetik kode itu
+        //      manual, supaya jelas KENAPA kode tersebut ditolak saat simpan.
         $perId = InboundDetail::query()
             ->whereIn('location_id', $locations->pluck('id'))
-            ->selectRaw('location_id, count(*) as jumlah')
-            ->groupBy('location_id')
-            ->pluck('jumlah', 'location_id');
+            ->get(['location_id', 'qty_actual', 'pallet_qty'])
+            ->keyBy('location_id');
 
         // Dikunci dengan KODE, bukan id, karena Operator mengetik kode rak —
         // pencocokan di layar jadi langsung tanpa tabel penerjemah kedua.
         $occupancy = $locations
             ->filter(fn (Location $l) => $perId->has($l->id))
-            ->mapWithKeys(fn (Location $l) => [$l->code => (int) $perId[$l->id]])
+            ->mapWithKeys(fn (Location $l) => [$l->code => $perId[$l->id]->effective_qty])
             ->all();
+
+        $availableLocations = $locations->reject(fn (Location $l) => isset($occupancy[$l->code]))->values();
 
         return view('wms.inbound.putaway-process', [
             'header' => $header,
             'details' => $details,
-            'locations' => $locations,
+            'locations' => $availableLocations,
             'occupancy' => $occupancy,
             'totals' => [
                 'palet' => $details->count(),
@@ -451,8 +454,16 @@ class InboundController extends Controller
             ->get(['id', 'code'])
             ->keyBy(fn (Location $l) => strtoupper($l->code));
 
+        // SATU BIN = SATU PALET. Bin yang sudah dipakai palet LAIN (di dokumen
+        // manapun) diperiksa di sini; bin milik palet ini sendiri (put-away
+        // ulang/koreksi) dikecualikan agar tidak menolak dirinya sendiri.
+        $sudahDipakai = InboundDetail::whereNotNull('location_id')
+            ->whereNotIn('id', $details->keys())
+            ->pluck('location_id', 'location_id');
+
         $penempatan = [];
         $errors = [];
+        $dipakaiDalamPengiriman = [];
 
         foreach ($validated['pallets'] as $detailId => $input) {
             $detail = $details->get((int) $detailId);
@@ -476,6 +487,20 @@ class InboundController extends Controller
                 continue;
             }
 
+            $locationId = $bins->get($code)->id;
+
+            if ($sudahDipakai->has($locationId)) {
+                $errors["pallets.{$detailId}.location_code"] = "Rak \"{$code}\" sudah terisi palet lain.";
+
+                continue;
+            }
+
+            if (isset($dipakaiDalamPengiriman[$locationId])) {
+                $errors["pallets.{$detailId}.location_code"] = "Rak \"{$code}\" juga dipilih untuk palet lain pada pengiriman ini.";
+
+                continue;
+            }
+
             $qty = $input['qty_actual'] ?? null;
 
             if ($qty === null || $qty === '') {
@@ -484,8 +509,10 @@ class InboundController extends Controller
                 continue;
             }
 
+            $dipakaiDalamPengiriman[$locationId] = true;
+
             $penempatan[$detail->id] = [
-                'location_id' => $bins->get($code)->id,
+                'location_id' => $locationId,
                 'qty_actual' => (int) $qty,
             ];
         }
