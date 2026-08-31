@@ -72,8 +72,7 @@
 
                     <label class="form-label fw-semibold text-secondary small">Berkas Produksi (.xlsx / .xls) <span class="text-danger">*</span></label>
                     <input type="file" name="file" class="form-control form-control-lg" accept=".xlsx,.xls" required>
-                    <div class="form-text mb-3">Ukuran maksimal 10 MB, hingga 5.000 baris.</div>
-
+                    <div class="form-text">Ukuran maksimal 10 MB, hingga 5.000 baris.</div>
                 </div>
 
                 <div class="card-footer bg-light border-top-0 rounded-bottom-4 text-end py-3 px-4">
@@ -118,4 +117,5 @@
             </div>
         </div>
     </div>
+</div>
 @endsection

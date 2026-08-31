@@ -21,78 +21,105 @@ class InboundController extends Controller
     private const TEMP_DIR = 'inbound';
 
     /**
-     * F-INB-01: Riwayat Input Produksi
+     * F-INB-01: Riwayat Input Produksi.
+     *
+     * DATA CONTRACT (view: wms.inbound.history)
+     * -----------------------------------------
+     * $documents  : LengthAwarePaginator<InboundHeader> — sudah withCount('details')
+     *               dan eager-load warehouse + kolom batch_no tiap detail
+     * $warehouses : Collection<Warehouse>
+     * $statuses   : array<string, string> — slug status => label
+     * $stats      : array{total:int, putaway:int, verifikasi:int, selesai:int}
+     * $filters    : array{search:?string, status:?string, warehouse_id:?string,
+     *                     from:?string, to:?string}
+     *
+     * CATATAN: satu dokumen bisa memuat BEBERAPA batch, karena satu berkas
+     * produksi berisi banyak baris. Karena itu kolom batch menampilkan daftar
+     * unik, bukan satu nilai tunggal seperti pada rancangan mock lama.
      */
-    public function historyIndex()
+    public function historyIndex(Request $request): View
     {
-        $dummyHistory = [
-            [
-                'batch_no' => 'BCH-202608-01',
-                'doc_no' => 'PROD-202608-001',
-                'date' => '19 Aug 2026',
-                'total_pallets' => 3,
-                'status' => 'Menunggu Put-away',
-            ],
-            [
-                'batch_no' => 'BCH-202608-00',
-                'doc_no' => 'PROD-202608-000',
-                'date' => '18 Aug 2026',
-                'total_pallets' => 5,
-                'status' => 'Selesai',
-            ],
+        $filters = [
+            'search' => $request->query('search'),
+            'status' => $request->query('status'),
+            'warehouse_id' => $request->query('warehouse_id'),
+            'from' => $request->query('from'),
+            'to' => $request->query('to'),
         ];
 
-        return view('wms.inbound.history', compact('dummyHistory'));
+        $base = InboundHeader::query()
+            ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
+
+        $documents = (clone $base)
+            ->withCount('details')
+            // Hanya kolom batch_no yang diambil dari detail; memuat seluruh
+            // kolom untuk ratusan palet hanya untuk menampilkan daftar batch
+            // adalah pemborosan.
+            ->with(['warehouse:id,code,name', 'details:id,inbound_header_id,batch_no'])
+            ->search($filters['search'])
+            ->when($filters['status'], fn ($q, $status) => $q->where('status', $status))
+            ->when($filters['from'], fn ($q, $from) => $q->whereDate('production_date', '>=', $from))
+            ->when($filters['to'], fn ($q, $to) => $q->whereDate('production_date', '<=', $to))
+            ->latest('production_date')
+            ->latest('id')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('wms.inbound.history', [
+            'documents' => $documents,
+            'warehouses' => Warehouse::orderBy('code')->get(),
+            'statuses' => InboundHeader::STATUS_LABELS,
+            'stats' => [
+                'total' => (clone $base)->count(),
+                'putaway' => (clone $base)->where('status', InboundHeader::STATUS_PUTAWAY_PENDING)->count(),
+                'verifikasi' => (clone $base)->whereIn('status', [
+                    InboundHeader::STATUS_VERIFICATION_PENDING,
+                    InboundHeader::STATUS_PARTIAL_VERIFIED,
+                ])->count(),
+                'selesai' => (clone $base)->where('status', InboundHeader::STATUS_VERIFIED)->count(),
+            ],
+            'filters' => $filters,
+        ]);
     }
 
     /**
-     * F-INB-01: Detail Riwayat Input Produksi
+     * F-INB-01: Detail Riwayat Input Produksi.
+     *
+     * DATA CONTRACT (view: wms.inbound.history-detail)
+     * ------------------------------------------------
+     * $header  : InboundHeader — eager-load warehouse & creator
+     * $details : Collection<InboundDetail> — eager-load product & location,
+     *            dikelompokkan per nomor produksi
+     * $totals  : array{palet:int, qty:int, produk:int, batch:int}
+     *
+     * Dicari berdasarkan `document_number`, bukan id, agar URL-nya terbaca
+     * manusia dan cocok dengan nomor yang tercetak di dokumen fisik.
      */
-    public function historyDetail($doc_no)
+    public function historyDetail(string $doc_no): View
     {
-        // Mock data detail
-        $inbound = [
-            'doc_no' => $doc_no,
-            'batch_no' => 'BCH-202608-01',
-            'date' => '19 Aug 2026',
-            'status' => 'Menunggu Put-away',
-            'total_pallets' => 3,
-        ];
+        $header = InboundHeader::with(['warehouse', 'creator'])
+            ->where('document_number', $doc_no)
+            ->firstOrFail();
 
-        $pallets = [
-            [
-                'id' => 1,
-                'pallet_no' => 'PLT-001',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'uom' => '5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 180,
-                'max_cap' => 180,
-            ],
-            [
-                'id' => 2,
-                'pallet_no' => 'PLT-002',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'uom' => '5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 180,
-                'max_cap' => 180,
-            ],
-            [
-                'id' => 3,
-                'pallet_no' => 'PLT-003',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'uom' => '5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 140,
-                'max_cap' => 180,
-            ],
-        ];
+        $details = $header->details()
+            ->with(['product:id,sku,name,uom,max_qty_per_pallet', 'location:id,code'])
+            ->orderBy('production_order_no')
+            ->orderBy('pallet_no')
+            ->get();
 
-        return view('wms.inbound.history-detail', compact('inbound', 'pallets'));
+        return view('wms.inbound.history-detail', [
+            'header' => $header,
+            'details' => $details,
+            'totals' => [
+                'palet' => $details->count(),
+                // Qty dijumlahkan dari pallet_qty, BUKAN total_qty: total_qty
+                // berulang pada tiap palet yang berasal dari satu baris
+                // produksi, sehingga menjumlahkannya akan berlipat ganda.
+                'qty' => $details->sum('pallet_qty'),
+                'produk' => $details->pluck('product_id')->unique()->count(),
+                'batch' => $details->pluck('batch_no')->unique()->count(),
+            ],
+        ]);
     }
 
     /**
