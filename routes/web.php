@@ -89,6 +89,33 @@ Route::prefix('sales')->middleware(['auth', 'session.track', 'portal:sales'])->g
     Route::get('/new-order', [SalesOrderController::class, 'create']);
     Route::post('/new-order', [SalesOrderController::class, 'store']);
 
+    /*
+    | Pencarian sambil mengetik untuk form Buat Pesanan.
+    |
+    | Customer dan produk berjumlah ribuan, jadi keduanya TIDAK ikut dikirim
+    | bersama halaman: Sales di lapangan memakai HP dan tidak mungkin
+    | menggulir ribuan baris. Kedua endpoint ini menuntut minimal 2 huruf dan
+    | membatasi hasilnya, sehingga kolom kosong tidak pernah menumpahkan
+    | seluruh isi tabel.
+    */
+    Route::get('/lookup/customers', [SalesOrderController::class, 'lookupCustomers']);
+    Route::get('/lookup/products', [SalesOrderController::class, 'lookupProducts']);
+
+    /*
+    | Pesanan milik Sales sendiri. Kepemilikan diperiksa di controller
+    | (pastikanMilikSendiri) dan menjawab 404 untuk pesanan orang lain —
+    | menjawab 403 justru membocorkan bahwa nomor pesanan itu ada.
+    |
+    | Ubah/hapus HANYA berlaku untuk draft (F-OUT-01 #7); begitu disubmit,
+    | pesanan sudah masuk antrean Logistik dan tidak boleh berubah.
+    */
+    Route::get('/orders/{order}', [SalesOrderController::class, 'show']);
+    Route::get('/orders/{order}/document', [SalesOrderController::class, 'document']);
+    Route::get('/orders/{order}/edit', [SalesOrderController::class, 'edit']);
+    Route::put('/orders/{order}', [SalesOrderController::class, 'update']);
+    Route::delete('/orders/{order}', [SalesOrderController::class, 'destroy']);
+    Route::post('/orders/{order}/submit', [SalesOrderController::class, 'submit']);
+
     // Dihapus pada PRD v1.1:
     // - GET /customers  -> Sales tidak lagi mengelola/mengajukan pelanggan
     //                      (kini lewat Master Customer di Portal WMS).

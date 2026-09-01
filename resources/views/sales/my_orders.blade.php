@@ -1,527 +1,142 @@
 @extends('layouts.soms')
-@section('page_title', 'Riwayat Pesanan (My Orders)')
+
+@section('title', 'Pesanan Saya')
+@section('page_title', 'Pesanan Saya')
 
 @section('content')
-<div class="row">
-    <div class="col-12">
-        <form id="hiddenReturnForm" method="POST" action="/sales/report-return" class="d-none">
-            @csrf
-            <input type="hidden" name="po_number" id="hr_po">
-            <input type="hidden" name="customer" id="hr_customer">
-            <input type="hidden" name="sku" id="hr_sku">
-            <input type="hidden" name="qty" id="hr_qty">
-            <input type="hidden" name="reason" id="hr_reason">
-        </form>
-
-        <!-- Mobile Filter (Shown on mobile only) -->
-        <div class="d-lg-none mb-3 d-flex gap-2 overflow-x-auto pb-2" style="white-space: nowrap; -webkit-overflow-scrolling: touch;">
-            <button class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm">Semua</button>
-            <button class="btn btn-sm btn-outline-secondary bg-white rounded-pill px-3 shadow-sm">Draft</button>
-            <button class="btn btn-sm btn-outline-secondary bg-white rounded-pill px-3 shadow-sm">Menunggu Diterima</button>
-        </div>
-        
-        <!-- Desktop Filters -->
-        <div class="d-none d-lg-flex justify-content-between align-items-center mb-4">
-            <div>
-                <button class="btn btn-primary rounded-pill px-4 shadow-sm me-2">Semua</button>
-                <button class="btn btn-outline-secondary bg-white rounded-pill px-4 shadow-sm me-2">Draft</button>
-                <button class="btn btn-outline-secondary bg-white rounded-pill px-4 shadow-sm">Menunggu Diterima</button>
-            </div>
-            <div class="input-group w-auto">
-                <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
-                <input type="text" class="form-control" placeholder="Cari No. PO atau Customer...">
-            </div>
-        </div>
-
-        @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm" role="alert">
-            <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-        @endif
-
-        <!-- Orders List / Grid -->
-        <div class="row g-3">
-            
-            <!-- Order Card 1: Waiting Approval -->
-            <div class="col-12 col-md-6 col-lg-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100 position-relative">
-                    <div class="position-absolute top-0 end-0 mt-3 me-3">
-                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill"><i class="bi bi-hourglass-split me-1"></i> Menunggu Diterima</span>
-                    </div>
-                    <div class="card-body p-4">
-                        <small class="text-muted d-block mb-1">PO-2608-001</small>
-                        <h5 class="fw-bold text-dark mb-3">CV Bangun Jaya</h5>
-                        
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <small class="text-muted"><i class="bi bi-box me-1"></i> Item:</small>
-                            <span class="fw-semibold">120 Qty (2 SKU)</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <small class="text-muted"><i class="bi bi-credit-card me-1"></i> Payment:</small>
-                            <span class="fw-semibold">Tempo 30 Hari</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <small class="text-muted"><i class="bi bi-calendar3 me-1"></i> Tgl Order:</small>
-                            <span class="fw-semibold">18 Ags 2026</span>
-                        </div>
-
-                        <div class="border-top pt-3 d-flex gap-2">
-                            <button class="btn btn-light text-primary w-100 rounded-pill" onclick="showOrderDetail('PO-2608-001')"><i class="bi bi-eye"></i> Detail</button>
-                            <!-- No Edit button because it's already submitted -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Order Card 2: Draft -->
-            <div class="col-12 col-md-6 col-lg-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100 position-relative">
-                    <div class="position-absolute top-0 end-0 mt-3 me-3">
-                        <span class="badge bg-secondary px-3 py-2 rounded-pill"><i class="bi bi-pencil-square me-1"></i> Draft</span>
-                    </div>
-                    <div class="card-body p-4">
-                        <small class="text-muted d-block mb-1">DRAFT-992</small>
-                        <h5 class="fw-bold text-dark mb-3">Kusumana Food</h5>
-                        
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <small class="text-muted"><i class="bi bi-box me-1"></i> Item:</small>
-                            <span class="fw-semibold">50 Qty (1 SKU)</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <small class="text-muted"><i class="bi bi-credit-card me-1"></i> Payment:</small>
-                            <span class="fw-semibold">-</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <small class="text-muted"><i class="bi bi-calendar3 me-1"></i> Tgl Order:</small>
-                            <span class="fw-semibold">18 Ags 2026</span>
-                        </div>
-
-                        <div class="border-top pt-3 d-flex gap-2">
-                            <button class="btn btn-outline-primary w-50 rounded-pill" onclick="continueDraft('DRAFT-992')"><i class="bi bi-pencil"></i> Lanjutkan</button>
-                            <button class="btn btn-outline-danger w-50 rounded-pill" onclick="deleteDraft(this, 'DRAFT-992')"><i class="bi bi-trash"></i> Hapus</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-                        <!-- Terkirim / Upload Surat Jalan Simulation -->
-            <div class="col-12 col-md-6 col-lg-4">
-                <div class="card border border-success shadow-sm rounded-4 h-100 position-relative" style="background-color: #f8fff9;">
-                    <div class="position-absolute top-0 end-0 mt-3 me-3">
-                        <span class="badge bg-success text-white px-3 py-2 rounded-pill"><i class="bi bi-check-circle me-1"></i> Terkirim</span>
-                    </div>
-                    <div class="card-body p-4">
-                        <small class="text-success fw-bold d-block mb-1">PO-1508-011</small>
-                        <h5 class="fw-bold text-dark mb-3">PT Sentosa Abadi</h5>
-                        
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <small class="text-muted"><i class="bi bi-box me-1"></i> Item:</small>
-                            <span class="fw-semibold">150 Qty (3 SKU)</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <small class="text-muted"><i class="bi bi-calendar3 me-1"></i> Tgl Order:</small>
-                            <span class="fw-semibold">15 Ags 2026</span>
-                        </div>
-
-                        <div class="border-top pt-3 mt-4">
-                            <button class="btn btn-success w-100 rounded-pill mb-2 fw-semibold shadow-sm" onclick="confirmDelivery('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-file-earmark-check me-2"></i>Selesaikan SJ</button>
-                            <button class="btn btn-outline-danger w-100 rounded-pill mb-2 fw-semibold" onclick="openRejectionModal('PO-1508-011', 'PT Sentosa Abadi', this)"><i class="bi bi-exclamation-triangle me-2"></i>Lapor Penolakan</button>
-                            <button class="btn btn-light text-primary w-100 rounded-pill" onclick="showOrderDetail('PO-1508-011', true)"><i class="bi bi-eye"></i> Detail Lengkap</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-<!-- New Order Placed by Simulation -->
-            @if(session('success'))
-            <div class="col-12 col-md-6 col-lg-4">
-                <div class="card border border-primary shadow-sm rounded-4 h-100 position-relative">
-                    <div class="position-absolute top-0 end-0 mt-3 me-3">
-                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill"><i class="bi bi-hourglass-split me-1"></i> Menunggu Diterima</span>
-                    </div>
-                    <div class="card-body p-4">
-                        <small class="text-primary fw-bold d-block mb-1">PO-NEW (Baru Saja)</small>
-                        <h5 class="fw-bold text-dark mb-3">Pemesanan Baru</h5>
-                        
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <small class="text-muted"><i class="bi bi-box me-1"></i> Item:</small>
-                            <span class="fw-semibold">Berdasarkan Input</span>
-                        </div>
-                        <div class="border-top pt-3 mt-4">
-                            <button class="btn btn-primary w-100 rounded-pill" onclick="showOrderDetail('PO-NEW')"><i class="bi bi-eye"></i> Detail</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            @endif
-
-        </div>
-
-    </div>
+@if(session('success'))
+<div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-check-circle-fill me-2"></i>{{ session('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
 </div>
+@endif
+
+@if(session('error'))
+<div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-receipt text-primary me-2"></i>Pesanan Saya</h5>
+        <p class="text-muted small mb-0">Draft masih bisa diubah dan dihapus. Setelah dikirim, pesanan terkunci.</p>
+    </div>
+    <a href="{{ url('/sales/new-order') }}" class="btn btn-primary fw-bold">
+        <i class="bi bi-plus-lg me-1"></i> Buat Pesanan
+    </a>
+</div>
+
+<form method="GET" action="{{ url('/sales/my-orders') }}" class="row g-2 mb-4">
+    <div class="col-12 col-md-6">
+        <div class="input-group">
+            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" name="search" value="{{ $filters['search'] }}" class="form-control border-start-0"
+                   placeholder="Nomor PO, nomor PO customer, nama customer...">
+        </div>
+    </div>
+    <div class="col-8 col-md-4">
+        <select name="status" class="form-select">
+            <option value="">Semua Status</option>
+            @foreach($statuses as $slug => $label)
+                <option value="{{ $slug }}" @selected($filters['status'] === $slug)>{{ $label }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div class="col-4 col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-funnel"></i></button>
+        <a href="{{ url('/sales/my-orders') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise"></i></a>
+    </div>
+</form>
+
+@forelse($orders as $order)
+    <div class="card border-0 shadow-sm rounded-4 mb-3">
+        <div class="card-body p-3 p-md-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                <div>
+                    <a href="{{ url('/sales/orders/'.$order->id) }}" class="fw-bold font-monospace text-decoration-none">
+                        {{ $order->order_number }}
+                    </a>
+                    @if($order->customer_po_number)
+                        <span class="badge bg-light text-dark border ms-1 font-monospace" title="Nomor PO customer">
+                            PO cust: {{ $order->customer_po_number }}
+                        </span>
+                    @endif
+                    <div class="text-dark">{{ $order->customer?->name ?? '—' }}</div>
+                </div>
+                <span class="badge bg-{{ $order->status_color }}">{{ $order->status_label }}</span>
+            </div>
+
+            <div class="d-flex flex-wrap gap-3 small text-muted mb-3">
+                <span><i class="bi bi-building me-1"></i>{{ $order->warehouse?->code }}</span>
+                <span><i class="bi bi-credit-card me-1"></i>{{ $order->paymentTerm?->name }}</span>
+                <span>
+                    <i class="bi bi-box-seam me-1"></i>
+                    @if($order->isDocumentBased() && $order->details_count === 0)
+                        Rincian menyusul dari Logistik
+                    @else
+                        {{ $order->details_count }} item
+                    @endif
+                </span>
+                <span>
+                    <i class="bi bi-clock me-1"></i>
+                    {{ ($order->submitted_at ?? $order->created_at)->translatedFormat('d M Y, H:i') }}
+                </span>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url('/sales/orders/'.$order->id) }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-eye me-1"></i>Detail
+                </a>
+
+                {{-- Ubah, hapus, dan kirim HANYA muncul untuk draft. Tombol
+                     yang tampil lalu ditolak server adalah cacat UX; aturan
+                     yang sama ditegakkan lagi di controller. --}}
+                @if($order->isEditable())
+                    <a href="{{ url('/sales/orders/'.$order->id.'/edit') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-pencil me-1"></i>Ubah
+                    </a>
+
+                    <form method="POST" action="{{ url('/sales/orders/'.$order->id.'/submit') }}" class="d-inline">
+                        @csrf
+                        <button type="submit" class="btn btn-sm btn-primary" @disabled(! $cutoffOpen)
+                                title="{{ $cutoffOpen ? 'Kirim ke Logistik' : 'Order ditutup pukul '.$cutoffLabel }}">
+                            <i class="bi bi-send me-1"></i>Kirim
+                        </button>
+                    </form>
+
+                    <form method="POST" action="{{ url('/sales/orders/'.$order->id) }}" class="d-inline"
+                          onsubmit="return confirm('Hapus draft {{ $order->order_number }}? Tindakan ini tidak bisa dibatalkan.');">
+                        @csrf @method('DELETE')
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                            <i class="bi bi-trash me-1"></i>Hapus
+                        </button>
+                    </form>
+                @endif
+            </div>
+        </div>
+    </div>
+@empty
+    <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-body text-center py-5 text-muted">
+            <i class="bi bi-receipt fs-1 d-block mb-3 opacity-50"></i>
+            Belum ada pesanan yang cocok dengan filter ini.
+            <div class="mt-3">
+                <a href="{{ url('/sales/new-order') }}" class="btn btn-primary">Buat Pesanan Pertama</a>
+            </div>
+        </div>
+    </div>
+@endforelse
+
+@if($orders->hasPages())
+    <div class="mt-4">{{ $orders->links() }}</div>
+@endif
+
+@unless($cutoffOpen)
+<p class="text-center text-muted small mt-3">
+    <i class="bi bi-clock-history me-1"></i>
+    Order ditutup pukul {{ $cutoffLabel }}. Draft tetap bisa disimpan dan dikirim besok.
+</p>
+@endunless
 @endsection
-
-@push('modals')
-<!-- Modal Penolakan -->
-<div class="modal fade" id="rejectionModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content rounded-4 border-0">
-            <div class="modal-header border-bottom-0 pb-0">
-                <h5 class="modal-title fw-bold text-dark"><i class="bi bi-exclamation-triangle text-danger me-2"></i> Lapor Penolakan Barang</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body py-4">
-                <div class="alert alert-warning border-0 rounded-3 small">
-                    Pelaporan penolakan untuk PO: <strong id="rejPoNumber" class="text-dark"></strong> (<span id="rejCustomer" class="text-dark"></span>). 
-                    Pastikan Surat Jalan asli yang sudah diberi catatan penolakan dilampirkan.
-                </div>
-
-                <div class="mb-4">
-                    <label class="form-label small fw-semibold text-secondary">Bukti Surat Jalan (Wajib)</label>
-                    <input class="form-control" type="file" id="rejFile" accept="image/png, image/jpeg, application/pdf">
-                </div>
-
-                <hr class="mb-4">
-                
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h6 class="fw-bold mb-0">Detail Barang Ditolak</h6>
-                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill fw-semibold px-3" onclick="addRejectionItem()">
-                        <i class="bi bi-plus-lg"></i> Tambah Barang
-                    </button>
-                </div>
-
-                <div id="rejectionItemsContainer">
-                    <!-- Dynamic rows go here -->
-                </div>
-
-            </div>
-            <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
-                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Batal</button>
-                <button type="button" class="btn btn-danger px-4 fw-bold shadow-sm" onclick="submitRejection()"><i class="bi bi-send me-1"></i> Kirim Laporan</button>
-            </div>
-        </div>
-    </div>
-</div>
-@endpush
-
-@push('scripts')
-<script>
-    function showOrderDetail(poNumber, isFinished = false) {
-                let custName = (poNumber === 'PO-1508-011') ? 'PT Sentosa Abadi' : 'CV Bangun Jaya';
-        let statusBadge = (poNumber === 'PO-1508-011') ? '<span class="fw-bold text-success">Selesai / Terkirim</span>' : '';
-
-        let timelineHtml = `
-            <div class="position-relative mb-4 mt-3 px-1">
-                <!-- Garis Penghubung Abu-abu -->
-                <div class="position-absolute w-100" style="height: 4px; background-color: #e9ecef; top: 16px; left: 0; z-index: 1;"></div>
-                <!-- Garis Penghubung Hijau (Progress) -->
-                <div class="position-absolute" style="height: 4px; background-color: #198754; top: 16px; left: 0; width: ${isFinished ? '100%' : '25%'}; z-index: 2;"></div>
-                
-                <div class="d-flex justify-content-between position-relative" style="z-index: 3;">
-                    <div class="text-center" style="width: 20%; background: transparent;">
-                        <div class="bg-success text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto shadow-sm" style="width: 36px; height: 36px; border: 4px solid #fff;">
-                            <i class="bi bi-check-lg"></i>
-                        </div>
-                        <div class="small fw-bold text-success mb-1" style="font-size: 0.75rem; line-height: 1.1;">Submit</div>
-                        <div class="text-muted" style="font-size: 0.65rem;">18 Ags<br>09:15</div>
-                    </div>
-                    
-                    <div class="text-center" style="width: 20%; background: transparent;">
-                        <div class="${isFinished ? 'bg-success text-white' : 'bg-warning text-dark'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto shadow-sm" style="width: 36px; height: 36px; border: 4px solid #fff;">
-                            <i class="${isFinished ? 'bi bi-check-lg' : 'bi bi-hourglass-split'}"></i>
-                        </div>
-                        <div class="small fw-bold ${isFinished ? 'text-success' : 'text-warning'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Approval</div>
-                        <div class="${isFinished ? 'text-muted' : 'text-warning fw-semibold'}" style="font-size: 0.65rem;">${isFinished ? '18 Ags<br>10:00' : 'Menunggu'}</div>
-                    </div>
-
-                    <div class="text-center" style="width: 20%; background: transparent;">
-                        <div class="${isFinished ? 'bg-success text-white border-0' : 'bg-light text-muted border'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto" style="width: 36px; height: 36px; border: 4px solid #fff !important;">
-                            <i class="${isFinished ? 'bi bi-check-lg' : 'bi bi-box-seam'}"></i>
-                        </div>
-                        <div class="small ${isFinished ? 'text-success fw-bold' : 'text-muted fw-semibold'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Diproses</div>
-                        <div class="text-muted" style="font-size: 0.65rem;">${isFinished ? '19 Ags<br>08:00' : '-'}</div>
-                    </div>
-
-                    <div class="text-center" style="width: 20%; background: transparent;">
-                        <div class="${isFinished ? 'bg-success text-white border-0' : 'bg-light text-muted border'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto" style="width: 36px; height: 36px; border: 4px solid #fff !important;">
-                            <i class="${isFinished ? 'bi bi-check-lg' : 'bi bi-truck'}"></i>
-                        </div>
-                        <div class="small ${isFinished ? 'text-success fw-bold' : 'text-muted fw-semibold'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Dikirim</div>
-                        <div class="text-muted" style="font-size: 0.65rem;">${isFinished ? '19 Ags<br>14:00' : '-'}</div>
-                    </div>
-
-                    <div class="text-center" style="width: 20%; background: transparent;">
-                        <div class="${isFinished ? 'bg-success text-white border-0' : 'bg-light text-muted border'} rounded-circle d-inline-flex align-items-center justify-content-center mb-2 mx-auto" style="width: 36px; height: 36px; border: 4px solid #fff !important;">
-                            <i class="bi bi-house-check"></i>
-                        </div>
-                        <div class="small ${isFinished ? 'text-success fw-bold' : 'text-muted fw-semibold'} mb-1" style="font-size: 0.75rem; line-height: 1.1;">Selesai</div>
-                        <div class="text-muted" style="font-size: 0.65rem;">${isFinished ? 'Hari Ini<br>09:00' : '-'}</div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        Swal.fire({
-            title: 'Detail ' + poNumber,
-            html: `
-                <div class="text-start mt-3">
-                    ${timelineHtml}
-                    <div class="p-3 bg-light rounded-3 mb-3 border">
-                        <p class="mb-1"><small class="text-muted">Customer:</small> <strong></strong></p>
-                        <p class="mb-1"><small class="text-muted">Tgl Order:</small> <strong>18 Ags 2026</strong></p>
-                        <p class="mb-0"><small class="text-muted">Status Tracking:</small> </p>
-                    </div>
-                    <h6 class="fw-bold mb-2">Item Pesanan:</h6>
-                    <ul class="list-group list-group-flush border rounded-3 mb-2">
-                        <li class="list-group-item d-flex justify-content-between align-items-center py-2">
-                            <div>
-                                <span class="fw-bold text-dark d-block">Cat Tembok Putih 5Kg</span>
-                                <small class="text-muted">BP-5KG-WHT</small>
-                            </div>
-                            <span class="badge bg-primary rounded-pill">100 Pail</span>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center py-2">
-                            <div>
-                                <span class="fw-bold text-dark d-block">Cat Pelapis Biru 20Kg</span>
-                                <small class="text-muted">BP-20KG-BLU</small>
-                            </div>
-                            <span class="badge bg-primary rounded-pill">20 Pail</span>
-                        </li>
-                    </ul>
-                </div>
-            `,
-            confirmButtonText: 'Tutup',
-            confirmButtonColor: '#6c757d',
-            width: '600px'
-        });
-    }
-
-    function deleteDraft(btnElement, draftId) {
-        Swal.fire({
-            title: 'Hapus Draft ' + draftId + '?',
-            text: "Data yang dihapus tidak dapat dikembalikan!",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#dc3545',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: '<i class="bi bi-trash"></i> Ya, Hapus!',
-            cancelButtonText: 'Batal'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Terhapus!',
-                    text: 'Draft pesanan Anda telah dihapus.',
-                    icon: 'success',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
-                
-                // Animasi hapus (fadeOut) menggunakan vanilla JS
-                const card = btnElement.closest('.col-12');
-                card.style.transition = 'opacity 0.4s';
-                card.style.opacity = '0';
-                setTimeout(() => {
-                    card.remove();
-                }, 400);
-            }
-        });
-    }
-
-    function continueDraft(draftId) {
-        Swal.fire({
-            title: 'Lanjutkan ' + draftId + '?',
-            text: "Anda akan dialihkan ke form pemesanan untuk melengkapi draft ini.",
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#0d6efd',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Ya, Lanjutkan',
-            cancelButtonText: 'Nanti saja'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Menampilkan loading sederhana sebelum redirect
-                Swal.fire({
-                    title: 'Memuat data...',
-                    allowOutsideClick: false,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    }
-                });
-                // Simulasi redirect
-                setTimeout(() => {
-                    window.location.href = '/sales/new-order?draft=' + draftId;
-                }, 800);
-            }
-        });
-    }
-    function confirmDelivery(poNumber, customer, btnElement) {
-        Swal.fire({
-            title: 'Upload Surat Jalan',
-            html: `
-                <div class="text-start mt-2">
-                    <p class="mb-3 text-muted">Barang untuk <strong>${customer}</strong> terpantau sudah sampai. Silakan unggah foto Surat Jalan yang telah ditandatangani toko.</p>
-                    <div class="border border-2 border-dashed rounded-3 p-4 text-center bg-light" style="cursor: pointer;" onclick="document.getElementById('fileInputMock2').click()">
-                        <i class="bi bi-camera display-6 text-muted mb-2"></i>
-                        <p class="mb-0 text-muted fw-semibold">Jepret atau Pilih Foto</p>
-                        <small class="text-secondary">Max 5MB</small>
-                        <input type="file" id="fileInputMock2" class="d-none" accept="image/png, image/jpeg" onchange="document.getElementById('fileNameDisplay2').textContent = this.files[0]?.name || ''">
-                    </div>
-                    <p id="fileNameDisplay2" class="text-primary mt-2 text-center fw-semibold small mb-0"></p>
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonText: '<i class="bi bi-upload"></i> Simpan Selesai',
-            cancelButtonText: 'Nanti',
-            confirmButtonColor: '#198754',
-            preConfirm: () => {
-                const file = document.getElementById('fileInputMock2').files[0];
-                if (!file) {
-                    Swal.showValidationMessage('Anda belum memilih foto surat jalan!');
-                    return false;
-                }
-                return true;
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Memproses...',
-                    html: 'Mohon tunggu',
-                    allowOutsideClick: false,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    }
-                });
-
-                setTimeout(() => {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Selesai!',
-                        text: 'Pesanan ' + poNumber + ' telah resmi ditutup.',
-                        confirmButtonColor: '#198754'
-                    });
-                    
-                    // Ganti UI Button
-                    btnElement.className = 'btn btn-outline-secondary w-100 rounded-pill mb-2 disabled';
-                    btnElement.innerHTML = '<i class="bi bi-check2-all me-1"></i>Selesai & Tertutup';
-                    
-                    // Sembunyikan tombol Penolakan karena pesanan sudah diselesaikan tanpa kendala
-                    const rejectionBtn = btnElement.nextElementSibling;
-                    if (rejectionBtn) {
-                        rejectionBtn.classList.add('d-none');
-                    }
-                    
-                    // Ubah badge
-                    const card = btnElement.closest('.card');
-                    card.classList.remove('border-success');
-                    card.style.backgroundColor = '#ffffff';
-                    card.style.opacity = '0.7';
-                }, 1200);
-            }
-        });
-    }
-    let currentRejectionBtn = null;
-    let rejectionItemCount = 0;
-
-    function openRejectionModal(poNumber, customer, btnElement) {
-        document.getElementById('rejPoNumber').textContent = poNumber;
-        document.getElementById('rejCustomer').textContent = customer;
-        document.getElementById('rejFile').value = '';
-        document.getElementById('rejectionItemsContainer').innerHTML = '';
-        currentRejectionBtn = btnElement;
-        
-        // Add one initial item row
-        addRejectionItem();
-
-        const modal = new bootstrap.Modal(document.getElementById('rejectionModal'));
-        modal.show();
-    }
-
-    function addRejectionItem() {
-        rejectionItemCount++;
-        const container = document.getElementById('rejectionItemsContainer');
-        const rowId = 'rejRow_' + rejectionItemCount;
-        
-        const rowHTML = `
-            <div class="row align-items-end mb-3 pb-3 border-bottom" id="${rowId}">
-                <div class="col-md-5">
-                    <label class="form-label small fw-semibold">Pilih SKU Ditolak</label>
-                    <select class="form-select form-select-sm rej-sku">
-                        <option value="BP-5KG-WHT">Cat Tembok Putih 5Kg</option>
-                        <option value="BP-20KG-BLU">Cat Pelapis Biru 20Kg</option>
-                        <option value="BP-5KG-RED">Cat Kayu Merah 5Kg</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small fw-semibold">Qty</label>
-                    <input type="number" class="form-control form-control-sm rej-qty" min="1" value="1">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label small fw-semibold">Alasan</label>
-                    <select class="form-select form-select-sm rej-reason">
-                        <option value="Kemasan Rusak/Bocor">Kemasan Rusak/Bocor</option>
-                        <option value="Kualitas Buruk/Beku">Kualitas Buruk/Beku</option>
-                        <option value="Salah Varian">Salah Varian</option>
-                        <option value="Kelebihan Kirim">Kelebihan Kirim</option>
-                    </select>
-                </div>
-                <div class="col-md-1 text-end">
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRejectionItem('${rowId}')"><i class="bi bi-trash"></i></button>
-                </div>
-            </div>
-        `;
-        container.insertAdjacentHTML('beforeend', rowHTML);
-    }
-
-    function removeRejectionItem(rowId) {
-        const row = document.getElementById(rowId);
-        if (row) row.remove();
-    }
-
-    function submitRejection() {
-        const file = document.getElementById('rejFile').files[0];
-        if (!file) {
-            Swal.fire('File Wajib Diunggah', 'Mohon lampirkan bukti foto Surat Jalan yang telah dicoret/diberi catatan penolakan.', 'warning');
-            return;
-        }
-
-        const container = document.getElementById('rejectionItemsContainer');
-        if (container.children.length === 0) {
-            Swal.fire('Data Kosong', 'Harap masukkan setidaknya 1 barang yang ditolak.', 'warning');
-            return;
-        }
-
-        // Mock success submission
-        Swal.fire({
-            title: 'Mengirim Laporan...',
-            allowOutsideClick: false,
-            didOpen: () => { Swal.showLoading(); }
-        });
-
-        setTimeout(() => {
-            const modalEl = document.getElementById('rejectionModal');
-            const modal = bootstrap.Modal.getInstance(modalEl);
-            if (modal) modal.hide();
-
-            Swal.fire({
-                icon: 'success',
-                title: 'Penolakan Dilaporkan!',
-                text: 'Laporan penolakan dan bukti Surat Jalan telah dikirim ke Logistik.',
-                confirmButtonColor: '#198754'
-            });
-
-            // Update UI Button
-            if (currentRejectionBtn) {
-                const card = currentRejectionBtn.closest('.card');
-                currentRejectionBtn.className = 'btn btn-outline-secondary w-100 rounded-pill mb-2 disabled';
-                currentRejectionBtn.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Menunggu Proses Penolakan';
-                const finishBtn = currentRejectionBtn.previousElementSibling;
-                if (finishBtn) finishBtn.classList.add('disabled');
-                
-                card.classList.remove('border-success');
-                card.classList.add('border-danger');
-                card.style.opacity = '0.85';
-            }
-        }, 1200);
-    }
-</script>
-@endpush

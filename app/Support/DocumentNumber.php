@@ -7,21 +7,124 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Pembangkit nomor dokumen berurutan per hari.
+ * Pembangkit nomor dokumen.
  *
- * Format: {AWALAN}-{YYMMDD}-{NNN}, contoh: IN-260828-001.
- * Nomor urut kembali ke 001 setiap ganti hari.
+ * Kelas ini memuat DUA MEKANISME yang hidup berdampingan. Bedanya penting:
  *
- * CATATAN: ini implementasi sementara yang menghitung dokumen hari berjalan.
- * Fase 10 akan menggantinya dengan tabel `document_sequences` yang menyimpan
- * penghitung secara eksplisit per gudang dan jenis dokumen. Antarmukanya
- * (`next()`) sengaja dibuat sesederhana ini agar penggantian nanti tidak
- * menyentuh pemanggilnya.
+ * 1. BERBASIS HITUNGAN (peek/reserve/format) — dipakai dokumen inbound sejak
+ *    Fase 3. Format {AWALAN}-{YYMMDD}-{NNN}, mis. IN-260828-001; urut kembali
+ *    ke 001 tiap ganti hari, dihitung dari isi tabelnya.
+ *
+ * 2. BERBASIS TABEL document_sequences (forSalesOrder/next) — ditambahkan
+ *    Fase 5. Penghitungnya disimpan eksplisit dan barisnya dikunci, sehingga
+ *    dua orang yang menyimpan bersamaan tidak berebut nomor yang sama.
+ *
+ * Mekanisme kedua lebih kuat dan pada akhirnya harus menggantikan yang
+ * pertama. Inbound SENGAJA belum dipindahkan di Fase 5: memindahkannya
+ * mengubah penomoran dokumen yang sudah dipakai di lapangan, dan itu
+ * perubahan tersendiri yang butuh persetujuan pemilik produk. Jangan
+ * memakai mekanisme pertama untuk dokumen BARU.
  */
 class DocumentNumber
 {
     /** Dokumen produksi masuk. */
     public const PREFIX_INBOUND = 'IN';
+
+    /* ------------------------------------------------------------------
+     | Berbasis tabel document_sequences (Fase 5 ke atas)
+     |------------------------------------------------------------------ */
+
+    public const TYPE_SALES_ORDER = 'sales_order';
+
+    public const TYPE_DELIVERY_NOTE = 'delivery_note';
+
+    /**
+     * Nomor PO: PO{YYMMDD}{urut 3 digit}.
+     *
+     * Urutannya BERJALAN TERUS SEPANJANG BULAN dan baru kembali ke 001 saat
+     * ganti bulan — keputusan pemilik produk. Jadi pesanan pertama tanggal 2
+     * September MELANJUTKAN angka dari tanggal 1, bukan mengulang dari awal:
+     *
+     *   1 Sep pesanan ke-1  -> PO260901001
+     *   1 Sep pesanan ke-2  -> PO260901002
+     *   2 Sep pesanan ke-1  -> PO260902003
+     *   1 Okt pesanan ke-1  -> PO261001001
+     *
+     * Bagian tanggal mengikuti tanggal pembuatan, jadi nomornya tetap
+     * memberi tahu kapan pesanan itu dibuat tanpa membuka datanya.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forSalesOrder(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_SALES_ORDER,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'PO'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Menaikkan penghitung lalu mengembalikan nomor barunya.
+     *
+     * MENGAPA PAKAI TABEL, BUKAN MAX(nomor) + 1: dua orang yang menekan
+     * simpan pada detik yang sama akan sama-sama membaca nomor terakhir yang
+     * sama, lalu sama-sama menulis nomor berikutnya yang sama — dan yang
+     * kalah ditolak unique constraint tepat setelah formulirnya selesai
+     * diisi. Baris di document_sequences dikunci lebih dulu (lockForUpdate)
+     * sehingga yang kedua MENUNGGU GILIRAN alih-alih gagal.
+     *
+     * WAJIB dipanggil di dalam DB::transaction: kunci baris hanya berlaku
+     * selama transaksi, di luar itu ia dilepas seketika dan penjagaannya
+     * tidak ada artinya.
+     *
+     * @param  int|null  $month  NULL bila urutannya hanya reset tiap tahun.
+     * @param  int|null  $warehouseId  NULL bila penomorannya lintas gudang.
+     */
+    public static function next(string $type, int $year, ?int $month = null, ?int $warehouseId = null): int
+    {
+        $kunci = [
+            'document_type' => $type,
+            'period_year' => $year,
+            'period_month' => $month,
+            'warehouse_id' => $warehouseId,
+        ];
+
+        // Baris periode ini mungkin belum ada (dokumen pertama di bulan itu).
+        // insertOrIgnore, bukan firstOrCreate: bila dua proses berlomba
+        // membuatnya, yang kalah cukup diabaikan — bukan dilempar sebagai
+        // pelanggaran unique constraint.
+        DB::table('document_sequences')->insertOrIgnore($kunci + [
+            'last_number' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Dicari satu per satu, BUKAN ->where($kunci): nilai null pada where()
+        // menghasilkan "kolom = NULL" yang tidak pernah cocok dengan apa pun
+        // di SQL, sehingga barisnya seolah hilang setiap kali.
+        $query = DB::table('document_sequences');
+        foreach ($kunci as $kolom => $nilai) {
+            $nilai === null ? $query->whereNull($kolom) : $query->where($kolom, $nilai);
+        }
+
+        $baris = $query->lockForUpdate()->first();
+        $berikutnya = ((int) $baris->last_number) + 1;
+
+        DB::table('document_sequences')
+            ->where('id', $baris->id)
+            ->update(['last_number' => $berikutnya, 'updated_at' => now()]);
+
+        return $berikutnya;
+    }
+
+    /* ------------------------------------------------------------------
+     | Berbasis hitungan isi tabel (inbound, Fase 3)
+     |------------------------------------------------------------------ */
 
     /**
      * Nomor berikutnya yang BELUM dipakai.
