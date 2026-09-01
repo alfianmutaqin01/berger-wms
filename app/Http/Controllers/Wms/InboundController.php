@@ -10,6 +10,7 @@ use App\Models\Warehouse;
 use App\Support\DocumentNumber;
 use App\Support\Inbound\BinAllocator;
 use App\Support\Inbound\ProductionSheet;
+use App\Support\Inventory\StockActivator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -676,10 +677,12 @@ class InboundController extends Controller
      * 4. Perpindahan lokasi tetap tunduk aturan kapasitas bin yang SAMA
      *    dengan put-away — lewat App\Support\Inbound\BinAllocator.
      *
-     * CATATAN STOK: PRD langkah 9-10 meminta stok resmi aktif di
-     * `inventory_stocks` + entri `IN` di `stock_movements`. Kedua tabel itu
-     * baru dibangun pada FASE 4, jadi di sini verifikasi hanya menandai
-     * palet; pengaktifan stoknya menyusul. Lihat rencana pembangunan Fase 3c/4.
+     * 5. STOK RESMI AKTIF di sini (PRD langkah 9-10): tiap palet yang
+     *    diverifikasi menghasilkan baris `inventory_stocks` + entri `IN` di
+     *    `stock_movements`, lewat App\Support\Inventory\StockActivator.
+     *    Keduanya berada di dalam transaksi yang sama dengan penandaan
+     *    paletnya — stok aktif tanpa palet terverifikasi (atau sebaliknya)
+     *    adalah keadaan yang tidak bisa dibetulkan sendiri oleh sistem.
      */
     public function verifyStore(Request $request, string $doc_no): RedirectResponse
     {
@@ -780,12 +783,23 @@ class InboundController extends Controller
         }
 
         DB::transaction(function () use ($header, $perubahan, $request) {
+            $activator = new StockActivator;
+            $userId = $request->user()?->id;
+
             foreach ($perubahan as $detailId => $nilai) {
                 $header->details()->whereKey($detailId)->update($nilai + [
-                    'verified_by' => $request->user()?->id,
+                    'verified_by' => $userId,
                     'verified_at' => now(),
                     'updated_at' => now(),
                 ]);
+
+                // Stok RESMI AKTIF di sini (PRD §6.3 F-INB-03 langkah 9-10).
+                // Dibaca ulang dari basis data supaya memakai qty & lokasi
+                // yang baru saja disimpan, bukan nilai model yang basi.
+                $activator->activate(
+                    $header->details()->with(['product:id,shelf_life_months', 'header'])->findOrFail($detailId),
+                    $userId
+                );
             }
 
             $header->update(['status' => $header->resolveVerificationStatus()]);
@@ -806,7 +820,7 @@ class InboundController extends Controller
         }
 
         return redirect()->route('wms.inbound.verify')->with('success', sprintf(
-            'Verifikasi dokumen %s selesai: %d palet terverifikasi. Pengaktifan stok menyusul pada Fase 4 (Inventory).',
+            'Verifikasi dokumen %s selesai: %d palet terverifikasi dan stoknya kini aktif.',
             $header->document_number,
             $header->details()->count()
         ));
