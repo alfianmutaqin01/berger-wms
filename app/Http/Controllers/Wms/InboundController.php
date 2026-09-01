@@ -826,25 +826,38 @@ class InboundController extends Controller
         ));
     }
 
+    /**
+     * Daftar retur menunggu pengecekan — masih kosong sampai Fase 7.
+     *
+     * Sumbernya BUKAN lagi session. Dulu halaman ini membaca
+     * session('pending_returns') yang diisi SalesOrderController::reportReturn
+     * dengan data karangan; keduanya kini sudah dilucuti, jadi membacanya
+     * hanya menyisakan jalur data palsu yang menunggu dipakai orang lain.
+     * Fase 7 mengisinya dari tabel sales_returns.
+     */
     public function returnsIndex()
     {
-        $pendingReturns = session('pending_returns', []);
-
-        return view('wms.inbound.returns', compact('pendingReturns'));
+        return view('wms.inbound.returns', ['pendingReturns' => []]);
     }
 
+    /**
+     * BELUM TERPASANG — dijadwalkan Fase 7 (Retur).
+     *
+     * Sebelumnya method ini menjawab "Barang retur berhasil dialokasikan ke
+     * GR/DDP" sambil hanya menggeser data di SESSION: tidak ada baris
+     * inventory_stocks yang bertambah, tidak ada entri stock_movements, tidak
+     * ada apa pun yang tersimpan. Operator akan mengira barang retur sudah
+     * masuk Good Stock — lalu barang itu tidak pernah muncul saat picking.
+     *
+     * Stok yang salah lebih berbahaya daripada fitur yang belum ada, karena
+     * kekeliruannya baru ketahuan di ujung, saat barang gagal dikirim.
+     */
     public function processReturn($id, Request $request)
     {
-        $pending = session('pending_returns', []);
-        $newPending = [];
-        foreach ($pending as $retur) {
-            if ($retur['id'] !== $id) {
-                $newPending[] = $retur;
-            }
-        }
-        session(['pending_returns' => $newPending]);
-        session()->put('processed_return_'.$id, $request->alokasi);
-
-        return redirect()->back()->with('success', 'Barang retur berhasil dialokasikan ke '.$request->alokasi.'.');
+        return redirect()->back()->with(
+            'error',
+            'Pemrosesan retur belum tersedia (dijadwalkan Fase 7). '.
+            'Jangan mencatat alokasinya di luar sistem — tunggu modulnya aktif.'
+        );
     }
 }

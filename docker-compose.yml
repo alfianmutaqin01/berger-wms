@@ -26,6 +26,17 @@ services:
       context: .
       dockerfile: docker/php/Dockerfile
       target: development
+    # Master PHP-FPM tetap root (ia yang menurunkan hak worker ke www-data),
+    # tapi entrypoint ini mengembalikan kepemilikan storage/ dan
+    # bootstrap/cache ke www-data sebelum melayani. Lihat berkasnya untuk
+    # sebab lengkapnya — singkatnya, berkas milik root di
+    # storage/framework/views membuat halaman mati dengan
+    # "touch(): Utime failed: Operation not permitted".
+    entrypoint: ["/bin/sh", "/var/www/html/docker/php/dev-entrypoint.sh"]
+    # WAJIB ditulis ulang: menyetel `entrypoint` di Compose ikut MENGHAPUS
+    # CMD bawaan image, sehingga tanpa baris ini container hidup sebentar
+    # lalu keluar dengan kode 0 tanpa pesan apa pun.
+    command: ["php-fpm"]
     volumes:
       - .:/var/www/html
     # APP_ENV dan APP_DEBUG sengaja TIDAK didefinisikan di sini.
@@ -51,6 +62,10 @@ services:
       context: .
       dockerfile: docker/php/Dockerfile
       target: development
+    # Proses PHP biasa — tidak butuh root sama sekali. Dijalankan sebagai
+    # www-data supaya berkas yang ditulisnya (log, cache, berkas antrean)
+    # tidak pernah menjadi milik root dan mematikan halaman bagi PHP-FPM.
+    user: www-data
     command: php artisan queue:work redis --sleep=3 --tries=3 --timeout=60
     volumes:
       - .:/var/www/html
@@ -69,6 +84,10 @@ services:
       context: .
       dockerfile: docker/php/Dockerfile
       target: development
+    # Alasan sama dengan queue: proses PHP biasa, tidak butuh root. Ini yang
+    # paling rawan — ia berjalan setiap 60 detik sepanjang hari, jadi sebagai
+    # root ia akan terus-menerus melahirkan berkas milik root di storage/.
+    user: www-data
     command: >
       sh -c "while true; do
         php /var/www/html/artisan schedule:run --no-interaction;

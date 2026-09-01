@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#
+# Pembungkus Pint, alasannya sama dengan bin/artisan: mencegah berkas cache
+# milik root lahir di storage/. Lihat komentar di bin/artisan.
+
+set -euo pipefail
+
+exec docker compose exec -u www-data php-fpm ./vendor/bin/pint "$@"
