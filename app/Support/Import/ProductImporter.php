@@ -31,6 +31,24 @@ class ProductImporter extends Importer
         return 'sku';
     }
 
+    protected function table(): string
+    {
+        return 'products';
+    }
+
+    /** Nama kolom sebagaimana tertulis di berkas ekspor ERP. */
+    protected function columnLabels(): array
+    {
+        return [
+            'sku' => 'No.',
+            'name' => 'Description',
+            'product_code' => 'Product Code',
+            'shade_code' => 'Shade Code',
+            'pack_code' => 'Pack Code',
+            'uom' => 'Base Unit of Measure',
+        ];
+    }
+
     protected function existingKeys(): array
     {
         return Product::withTrashed()->pluck('sku')->all();

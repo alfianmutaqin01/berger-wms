@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Wms;
 
+use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -25,11 +26,9 @@ class StoreCustomerRequest extends FormRequest
                 ? strtoupper(trim($this->input('territory_code')))
                 : null,
             // Nomor dari ERP memakai kode negara tanpa tanda plus dan kadang
-            // mengandung spasi/strip. Disimpan sebagai digit saja agar
-            // pencarian dan pencocokan tidak terganggu variasi penulisan.
-            'phone' => filled($this->input('phone'))
-                ? preg_replace('/\D/', '', $this->input('phone'))
-                : null,
+            // mengandung spasi/strip; satu sel juga bisa memuat dua nomor
+            // dipisah garis miring. Aturannya di App\Support\PhoneNumber.
+            'phone' => PhoneNumber::normalize($this->input('phone')),
         ]);
     }
 
@@ -39,7 +38,7 @@ class StoreCustomerRequest extends FormRequest
             'code' => ['required', 'string', 'max:30', Rule::unique('customers', 'code')->whereNull('deleted_at')],
             'ship_to_code' => ['nullable', 'string', 'max:30'],
             'name' => ['required', 'string', 'max:200'],
-            'phone' => ['nullable', 'string', 'max:25'],
+            'phone' => ['nullable', 'string', 'max:50'],
             'contact_name' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:150'],
             'address' => ['required', 'string', 'max:500'],

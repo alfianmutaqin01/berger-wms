@@ -11,6 +11,16 @@
 </div>
 @endif
 
+@if(session('warning'))
+{{-- Impor yang sebagian barisnya dilewati: berhasil, tapi ada yang perlu
+     diperbaiki di berkas. Bukan hijau (bukan mulus) dan bukan merah (bukan
+     gagal total). --}}
+<div class="alert alert-warning alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+    <i class="bi bi-exclamation-circle-fill me-2"></i>{{ session('warning') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+</div>
+@endif
+
 @if(session('error'))
 <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
     <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}
