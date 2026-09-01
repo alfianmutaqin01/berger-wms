@@ -640,13 +640,20 @@ Header pesanan penjualan.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `order_number` | VARCHAR(30) | NOT NULL, UNIQUE | Nomor PO otomatis (contoh: "PO-KRW-2026-00001") |
+| `order_number` | VARCHAR(30) | NOT NULL, UNIQUE | Nomor PO otomatis. Format **`PO{YYMMDD}{urut 3 digit}`**, mis. `PO260901001` |
+| `customer_po_number` | VARCHAR(50) | NULLABLE | Nomor PO milik customer (metode dokumen). **Sengaja TIDAK unique** |
+| `bc_so_number` | VARCHAR(50) | NULLABLE | Nomor SO dari sistem BC, diisi Logistik saat menerima pesanan |
 | `customer_id` | BIGINT UNSIGNED | FK → customers.id | Pelanggan |
 | `user_id` | BIGINT UNSIGNED | FK → users.id | Sales yang membuat |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang tujuan (dispatch code) |
-| `payment_term` | ENUM | NOT NULL | 'cash', 'transfer', 'tempo_30', 'tempo_60', 'tempo_90' |
-| `status` | ENUM | NOT NULL, DEFAULT 'pending' | Lihat daftar status di bawah |
-| `submitted_at` | TIMESTAMP | NOT NULL | Waktu submit oleh Sales (awal SLA) |
+| `payment_term_id` | BIGINT UNSIGNED | FK → payment_terms.id | Syarat pembayaran |
+| `status` | VARCHAR(30) | NOT NULL, DEFAULT 'draft' | Lihat daftar status di bawah |
+| `order_source` | VARCHAR(20) | NOT NULL, DEFAULT 'manual' | 'manual' (Sales mengisi rincian) atau 'document' (rincian menyusul dari Logistik) |
+| `document_path` | VARCHAR(500) | NULLABLE | Dokumen PO customer yang diunggah |
+| `document_name` | VARCHAR(255) | NULLABLE | Nama berkas asli |
+| `document_size` | INTEGER | NULLABLE | Ukuran berkas (bytes) |
+| `document_mime` | VARCHAR(100) | NULLABLE | Tipe MIME berkas |
+| `submitted_at` | TIMESTAMP | **NULLABLE** | Waktu submit oleh Sales (awal SLA). NULL selama masih draft |
 | `approved_at` | TIMESTAMP | NULLABLE | Waktu approve oleh Logistik |
 | `approved_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Logistik yang approve |
 | `rejected_at` | TIMESTAMP | NULLABLE | Waktu reject (jika ditolak) |
@@ -664,6 +671,7 @@ Header pesanan penjualan.
 
 | Status | Kode Enum | Deskripsi |
 |---|---|---|
+| Draft | `draft` | Belum disubmit. Masih boleh diubah dan dihapus Sales |
 | Menunggu Diterima | `pending` | PO baru disubmit Sales |
 | Disetujui | `approved` | Logistik sudah approve, FIFO allocated |
 | Ditolak | `rejected` | Logistik menolak PO |

@@ -76,7 +76,7 @@
                     <span>New Order</span>
                 </a>
             </li>
-            <li class="nav-item {{ request()->is('sales/my-orders') ? 'active' : '' }}">
+            <li class="nav-item {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'active' : '' }}">
                 <a href="/sales/my-orders" class="nav-link">
                     <i class="bi bi-list-check"></i>
                     <span>My Orders</span>
@@ -125,8 +125,8 @@
             </span>
             <span class="d-block mt-1">Pesanan Baru</span>
         </a>
-        <a href="/sales/my-orders" class="nav-link text-center text-decoration-none {{ request()->is('sales/my-orders') ? 'active' : '' }}">
-            <i class="bi {{ request()->is('sales/my-orders') ? 'bi-clipboard-data-fill' : 'bi-clipboard-data' }}"></i>
+        <a href="/sales/my-orders" class="nav-link text-center text-decoration-none {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'active' : '' }}">
+            <i class="bi {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'bi-clipboard-data-fill' : 'bi-clipboard-data' }}"></i>
             <span class="d-block">Pesanan Saya</span>
         </a>
     </div>

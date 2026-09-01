@@ -3,47 +3,546 @@
 namespace App\Http\Controllers\Sales;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Sales\SalesOrderRequest;
+use App\Models\Customer;
+use App\Models\PaymentTerm;
+use App\Models\Product;
+use App\Models\SalesOrder;
+use App\Models\Warehouse;
+use App\Support\DocumentNumber;
+use App\Support\OrderCutoff;
+use App\Support\StockIndicator;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\View\View;
 
+/**
+ * Portal Sales — pembuatan dan riwayat pesanan (PRD §6.5 F-OUT-01).
+ *
+ * BATAS FASE 5: controller ini hanya memegang sisi Sales — draft, submit,
+ * riwayat, dan detail. Approval, alokasi FIFO, serta pencatatan Lost Sales
+ * (§7.3) ada di Fase 6 bersama layar Logistik yang memicunya.
+ *
+ * Dua aturan yang membentuk hampir seluruh isi berkas ini:
+ *
+ *   1. SEMI-BLIND. Sales tidak pernah menerima angka stok, hanya indikator
+ *      ✅/⚠️/❌ (F-INV-03). Karena itu tidak ada satu pun angka qty stok yang
+ *      dikirim ke view Portal Sales.
+ *   2. DRAFT vs TERKUNCI. Draft boleh diubah dan dihapus; begitu disubmit,
+ *      pesanan masuk antrean Logistik dan tidak boleh berubah lagi
+ *      (F-OUT-01 #7).
+ */
 class SalesOrderController extends Controller
 {
-    public function create()
+    private const DISK = 'local';
+
+    private const FOLDER = 'sales-orders';
+
+    /** Panjang minimal kata kunci sebelum pencarian dijalankan. */
+    private const MIN_CARI = 2;
+
+    /** Batas saran yang ditampilkan; cukup untuk dibaca sekali lihat di HP. */
+    private const MAKS_SARAN = 20;
+
+    /* ------------------------------------------------------- Buat pesanan */
+
+    public function create(Request $request): View
     {
-        return view('sales.new_order');
+        return view('sales.new_order', $this->formData($request));
     }
 
-    public function store(Request $request)
+    public function store(SalesOrderRequest $request): RedirectResponse
     {
-        // Dummy logic: Redirect back to my_orders with a success message
-        return redirect('/sales/my-orders')->with('success', 'Pesanan berhasil dibuat.');
+        $data = $request->validated();
+
+        if ($galat = $this->galatDokumen($request, null)) {
+            return back()->withInput()->withErrors(['document' => $galat]);
+        }
+
+        $order = DB::transaction(function () use ($request, $data): SalesOrder {
+            $order = new SalesOrder([
+                // Nomor internal SELALU dibuat, termasuk untuk pesanan
+                // bermetode dokumen — nomor PO customer tidak dijamin unik
+                // antar pelanggan, jadi tidak bisa jadi identitas sistem.
+                'order_number' => DocumentNumber::forSalesOrder(),
+                'user_id' => $request->user()->id,
+                'status' => SalesOrder::STATUS_DRAFT,
+            ]);
+
+            $this->isiDari($order, $data, $request->file('document'));
+            $order->save();
+
+            $this->tulisRincian($order, $data);
+
+            if ($request->wantsSubmit()) {
+                $this->tandaiTerkirim($order);
+            }
+
+            return $order;
+        });
+
+        return redirect('/sales/my-orders')->with(
+            'success',
+            $request->wantsSubmit()
+                ? 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.'
+                : 'Draft pesanan '.$order->order_number.' tersimpan. Masih bisa diubah sebelum dikirim.'
+        );
     }
 
-    public function history()
+    /* -------------------------------------------------------- Ubah draft */
+
+    public function edit(Request $request, SalesOrder $order): View
     {
-        return view('sales.my_orders');
+        $this->pastikanMilikSendiri($request, $order);
+        abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
+
+        return view('sales.new_order', $this->formData($request, $order));
     }
 
-    public function reportReturn(Request $request)
+    public function update(SalesOrderRequest $request, SalesOrder $order): RedirectResponse
     {
-        $retur = [
-            'id' => 'RET-'.rand(1000, 9999),
-            'po' => $request->po_number,
-            'customer' => $request->customer,
-            'sku' => $request->sku,
-            'qty' => $request->qty,
-            'reason' => $request->reason,
-            'time' => now()->format('H:i').' WIB',
-            'date' => 'Hari Ini',
+        $this->pastikanMilikSendiri($request, $order);
+        abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
+
+        $data = $request->validated();
+
+        if ($galat = $this->galatDokumen($request, $order)) {
+            return back()->withInput()->withErrors(['document' => $galat]);
+        }
+
+        DB::transaction(function () use ($request, $order, $data): void {
+            $this->isiDari($order, $data, $request->file('document'));
+            $order->save();
+
+            // Rincian ditulis ulang seluruhnya, bukan disamakan baris per
+            // baris: form mengirim keadaan akhir yang dikehendaki Sales, dan
+            // menyamakan selisihnya hanya menambah jalan untuk keliru.
+            $order->details()->delete();
+            $this->tulisRincian($order, $data);
+
+            if ($request->wantsSubmit()) {
+                $this->tandaiTerkirim($order);
+            }
+        });
+
+        return redirect('/sales/my-orders')->with(
+            'success',
+            $request->wantsSubmit()
+                ? 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.'
+                : 'Draft pesanan '.$order->order_number.' diperbarui.'
+        );
+    }
+
+    public function destroy(Request $request, SalesOrder $order): RedirectResponse
+    {
+        $this->pastikanMilikSendiri($request, $order);
+        abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa dihapus.');
+
+        $nomor = $order->order_number;
+
+        DB::transaction(function () use ($order): void {
+            $this->hapusDokumen($order->document_path);
+            $order->details()->delete();
+            $order->delete();
+        });
+
+        return redirect('/sales/my-orders')->with('success', 'Draft pesanan '.$nomor.' dihapus.');
+    }
+
+    /**
+     * Mengirim draft yang sudah tersimpan, tanpa membuka formulirnya lagi.
+     *
+     * Cutoff diperiksa DI SINI juga, bukan hanya di SalesOrderRequest: draft
+     * bisa dibuat pagi lalu dikirim lewat tombol ini pada sore hari.
+     */
+    public function submit(Request $request, SalesOrder $order): RedirectResponse
+    {
+        $this->pastikanMilikSendiri($request, $order);
+        abort_unless($order->isEditable(), 403, 'Pesanan ini sudah pernah dikirim.');
+
+        if (! OrderCutoff::isOpen()) {
+            return back()->with('error', OrderCutoff::closedMessage());
+        }
+
+        if (! $order->isDocumentBased() && $order->details()->doesntExist()) {
+            return back()->with('error', 'Draft ini belum punya item pesanan. Lengkapi dulu sebelum dikirim.');
+        }
+
+        $this->tandaiTerkirim($order);
+
+        return back()->with('success', 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.');
+    }
+
+    /* ------------------------------------------------------- Riwayat */
+
+    public function history(Request $request): View
+    {
+        $filters = [
+            'search' => $request->query('search'),
+            'status' => $request->query('status'),
         ];
-        session()->push('pending_returns', $retur);
-        session()->put('po_has_return_'.$request->po_number, true);
 
-        return redirect()->back()->with('success', 'Laporan Penolakan untuk '.$request->po_number.' telah dikirim ke Gudang.');
+        $orders = SalesOrder::query()
+            ->ownedBy($request->user()->id)
+            ->with(['customer:id,code,name', 'warehouse:id,code', 'paymentTerm:id,code,name'])
+            ->withCount('details')
+            ->search($filters['search'])
+            ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
+            // Draft di atas: itu satu-satunya yang masih menunggu tindakan
+            // Sales sendiri. Sisanya urut dari yang terbaru.
+            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [SalesOrder::STATUS_DRAFT])
+            ->latest('id')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('sales.my_orders', [
+            'orders' => $orders,
+            'filters' => $filters,
+            'statuses' => SalesOrder::STATUS_LABELS,
+            'cutoffOpen' => OrderCutoff::isOpen(),
+            'cutoffLabel' => OrderCutoff::label(),
+        ]);
     }
 
-    // Dihapus pada PRD v1.1:
-    // - tracking()  -> view 'sales.tracking' tidak pernah ada (selalu error 500).
-    //                  Tracking ditampilkan sebagai timeline di halaman My Orders.
-    // - customers() -> Sales tidak lagi mengelola/mengajukan pelanggan.
-    //                  Pengelolaan pindah ke Master Customer di Portal WMS.
+    /** Detail + timeline status (docs/4 §3.3.3). */
+    public function show(Request $request, SalesOrder $order): View
+    {
+        $this->pastikanMilikSendiri($request, $order);
+
+        $order->load([
+            'customer', 'warehouse:id,code,name', 'paymentTerm',
+            'details.product:id,sku,name,uom',
+            'user:id,full_name', 'approvedBy:id,full_name', 'rejectedBy:id,full_name',
+        ]);
+
+        return view('sales.order_detail', [
+            'order' => $order,
+            'timeline' => $this->timeline($order),
+        ]);
+    }
+
+    /** Mengunduh kembali dokumen PO yang diunggah. */
+    public function document(Request $request, SalesOrder $order)
+    {
+        $this->pastikanMilikSendiri($request, $order);
+        abort_if(blank($order->document_path), 404);
+
+        return Storage::disk(self::DISK)->download($order->document_path, $order->document_name);
+    }
+
+    /* ------------------------------------------------------- Penolakan */
+
+    public function reportReturn(Request $request): RedirectResponse
+    {
+        // Retur adalah lingkup Fase 7 (rencana pembangunan). Sengaja dibiarkan apa adanya
+        // agar tidak ada mekanisme setengah jadi yang menyentuh stok.
+        return back()->with('error', 'Pelaporan penolakan barang belum tersedia (dijadwalkan Fase 7).');
+    }
+
+    /* -------------------------------------------------------- Pencarian */
+
+    /**
+     * Cari customer sambil mengetik.
+     *
+     * MINIMAL DUA HURUF. Tanpa batas ini, kolom kosong akan mengembalikan
+     * seluruh pelanggan — persis daftar raksasa yang justru mau dihindari.
+     */
+    public function lookupCustomers(Request $request): JsonResponse
+    {
+        $q = trim((string) $request->query('q'));
+
+        if (mb_strlen($q) < self::MIN_CARI) {
+            return response()->json([]);
+        }
+
+        $hasil = Customer::active()
+            ->search($q)
+            ->orderBy('name')
+            ->limit(self::MAKS_SARAN)
+            ->get(['id', 'code', 'name'])
+            ->map(fn (Customer $c) => [
+                'id' => $c->id,
+                'code' => $c->code,
+                'name' => $c->name,
+            ]);
+
+        return response()->json($hasil);
+    }
+
+    /**
+     * Cari produk sambil mengetik, lengkap dengan indikator ketersediaannya.
+     *
+     * Yang dikembalikan HANYA yang cocok dengan yang diketik — mengetik
+     * "APKO" tidak boleh memunculkan satu pun produk non-APKO.
+     *
+     * Indikator ikut di sini, BUKAN angka stoknya (Semi-Blind, F-INV-03).
+     * Karena ini titik satu-satunya tempat Sales melihat ketersediaan, aturan
+     * itu ditegakkan di sini juga, bukan hanya di halaman formulirnya.
+     */
+    public function lookupProducts(Request $request): JsonResponse
+    {
+        $q = trim((string) $request->query('q'));
+        $warehouseId = (int) $request->query('warehouse_id');
+
+        if (mb_strlen($q) < self::MIN_CARI) {
+            return response()->json([]);
+        }
+
+        $produk = Product::query()
+            ->where('is_active', true)
+            ->search($q)
+            ->orderBy('sku')
+            ->limit(self::MAKS_SARAN)
+            ->get(['id', 'sku', 'name', 'uom', 'stock_threshold_low']);
+
+        // Ketersediaan diambil sekali untuk seluruh hasil, bukan per produk.
+        $tersedia = $warehouseId > 0
+            ? StockIndicator::availabilityByWarehouse($warehouseId)
+            : collect();
+
+        return response()->json($produk->map(function (Product $p) use ($tersedia, $warehouseId) {
+            $kode = $warehouseId > 0
+                ? StockIndicator::for($p, $tersedia->get($p->id, 0))
+                : null;
+
+            return [
+                'id' => $p->id,
+                'sku' => $p->sku,
+                'name' => $p->name,
+                'uom' => $p->uom,
+                'indicator' => $kode,
+                'label' => $kode ? StockIndicator::label($kode) : null,
+                'badge' => $kode ? StockIndicator::badge($kode) : null,
+            ];
+        }));
+    }
+
+    /* ------------------------------------------------------- Pembantu */
+
+    /**
+     * Pesanan hanya boleh dilihat dan diubah oleh Sales yang membuatnya.
+     *
+     * 404, bukan 403: menjawab "terlarang" pada nomor pesanan orang lain
+     * berarti memberi tahu bahwa nomor itu ada.
+     */
+    private function pastikanMilikSendiri(Request $request, SalesOrder $order): void
+    {
+        abort_unless($order->user_id === $request->user()->id, 404);
+    }
+
+    /**
+     * Data yang dibutuhkan form Buat Pesanan, baik untuk baru maupun ubah.
+     *
+     * DAFTAR PRODUK DAN CUSTOMER TIDAK DIKIRIM KE SINI. Keduanya berjumlah
+     * ribuan; menaruhnya di halaman berarti Sales di lapangan mengunduh
+     * berkas raksasa lewat kuota, lalu menggulir ribuan baris di layar HP
+     * untuk mencari satu SKU. Keduanya dicari lewat lookupProducts() dan
+     * lookupCustomers() sambil mengetik. Yang dikirim di sini hanya nilai
+     * yang SUDAH terpilih, supaya labelnya tampil saat halaman dibuka.
+     */
+    private function formData(Request $request, ?SalesOrder $order = null): array
+    {
+        return [
+            'order' => $order,
+            'warehouses' => Warehouse::orderBy('code')->get(['id', 'code', 'name']),
+            'paymentTerms' => PaymentTerm::where('is_active', true)->orderBy('sort_order')->get(['id', 'code', 'name', 'days']),
+            'customerTerpilih' => $this->customerTerpilih($order),
+            'produkTerpilih' => $this->produkTerpilih($order),
+            'indikatorLabel' => StockIndicator::LABELS,
+            'indikatorBadge' => StockIndicator::BADGES,
+            'cutoffOpen' => OrderCutoff::isOpen(),
+            'cutoffLabel' => OrderCutoff::label(),
+            'dokumenConfig' => config('wms.order_document'),
+        ];
+    }
+
+    /**
+     * Customer yang sudah terpilih, untuk mengisi label kolom pencarian.
+     *
+     * Tanpa ini, membuka draft atau kembali dari validasi yang gagal akan
+     * memperlihatkan kolom customer yang KOSONG padahal id-nya tersimpan —
+     * Sales akan mengira pilihannya hilang lalu memilih ulang.
+     */
+    private function customerTerpilih(?SalesOrder $order): ?array
+    {
+        $id = old('customer_id', $order?->customer_id);
+
+        if (blank($id)) {
+            return null;
+        }
+
+        $customer = Customer::find($id, ['id', 'code', 'name']);
+
+        return $customer ? [
+            'id' => $customer->id,
+            'code' => $customer->code,
+            'name' => $customer->name,
+        ] : null;
+    }
+
+    /**
+     * Produk pada baris item yang sudah terisi, dengan alasan yang sama.
+     *
+     * @return array<int, array{id:int, sku:string, name:string, uom:string}>
+     */
+    private function produkTerpilih(?SalesOrder $order): array
+    {
+        $items = old('items', $order
+            ? $order->details->map(fn ($d) => ['product_id' => $d->product_id, 'qty' => $d->qty_ordered])->values()->all()
+            : []);
+
+        $ids = collect($items)->pluck('product_id')->filter()->unique();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return Product::whereIn('id', $ids)
+            ->get(['id', 'sku', 'name', 'uom'])
+            ->mapWithKeys(fn (Product $p) => [$p->id => [
+                'id' => $p->id, 'sku' => $p->sku, 'name' => $p->name, 'uom' => $p->uom,
+            ]])
+            ->all();
+    }
+
+    /** Menyalin isian form ke model, termasuk mengganti berkas bila ada. */
+    private function isiDari(SalesOrder $order, array $data, ?UploadedFile $berkas): void
+    {
+        $order->fill([
+            'customer_id' => $data['customer_id'],
+            'warehouse_id' => $data['warehouse_id'],
+            'payment_term_id' => $data['payment_term_id'],
+            'order_source' => $data['order_source'],
+            'notes' => $data['notes'] ?? null,
+            'customer_po_number' => $data['order_source'] === SalesOrder::SOURCE_DOCUMENT
+                ? $data['customer_po_number']
+                : null,
+        ]);
+
+        if ($berkas !== null) {
+            // Berkas lama dihapus SETELAH yang baru tersimpan, supaya
+            // kegagalan penyimpanan tidak meninggalkan pesanan tanpa dokumen.
+            $lama = $order->document_path;
+
+            $order->fill([
+                'document_path' => $berkas->store(self::FOLDER, self::DISK),
+                'document_name' => $berkas->getClientOriginalName(),
+                'document_size' => $berkas->getSize(),
+                'document_mime' => $berkas->getMimeType(),
+            ]);
+
+            $this->hapusDokumen($lama);
+        }
+
+        // Berpindah ke metode rincian: dokumen lamanya tidak lagi berarti.
+        if ($data['order_source'] === SalesOrder::SOURCE_MANUAL && filled($order->document_path)) {
+            $this->hapusDokumen($order->document_path);
+            $order->fill([
+                'document_path' => null, 'document_name' => null,
+                'document_size' => null, 'document_mime' => null,
+            ]);
+        }
+    }
+
+    /**
+     * Menulis baris item.
+     *
+     * Pesanan bermetode dokumen sengaja TIDAK punya baris item di Fase 5 —
+     * rinciannya diisi Logistik saat approval sambil membaca dokumennya.
+     */
+    private function tulisRincian(SalesOrder $order, array $data): void
+    {
+        if ($data['order_source'] === SalesOrder::SOURCE_DOCUMENT) {
+            return;
+        }
+
+        foreach ($data['items'] ?? [] as $item) {
+            $order->details()->create([
+                'product_id' => $item['product_id'],
+                'qty_ordered' => $item['qty'],
+            ]);
+        }
+    }
+
+    /** Submit: status berpindah dan SLA (§7.6) mulai dihitung dari sini. */
+    private function tandaiTerkirim(SalesOrder $order): void
+    {
+        $order->forceFill([
+            'status' => SalesOrder::STATUS_PENDING,
+            'submitted_at' => now(),
+        ])->save();
+    }
+
+    /**
+     * Memeriksa keberadaan dokumen pada metode dokumen.
+     *
+     * Tidak bisa ditaruh di FormRequest karena aturannya bergantung pada
+     * pesanan yang sedang disunting: saat mengubah draft, berkas yang sudah
+     * tersimpan tetap sah walau tidak diunggah ulang.
+     */
+    private function galatDokumen(SalesOrderRequest $request, ?SalesOrder $order): ?string
+    {
+        if ($request->input('order_source') !== SalesOrder::SOURCE_DOCUMENT) {
+            return null;
+        }
+
+        if ($request->hasFile('document') || filled($order?->document_path)) {
+            return null;
+        }
+
+        return 'Unggah dokumen PO customer — pesanan bermetode dokumen tidak bisa diproses Logistik tanpa berkasnya.';
+    }
+
+    private function hapusDokumen(?string $path): void
+    {
+        if (filled($path) && Storage::disk(self::DISK)->exists($path)) {
+            Storage::disk(self::DISK)->delete($path);
+        }
+    }
+
+    /**
+     * Timeline status untuk halaman detail (docs/4 §3.3.3).
+     *
+     * Hanya tahap yang SUDAH terjadi yang punya waktu dan pelaku; sisanya
+     * ditandai belum. Tahap Fase 6 ke atas sengaja tetap ditampilkan sebagai
+     * "belum" supaya Sales melihat pesanannya masih akan melewati apa.
+     */
+    private function timeline(SalesOrder $order): array
+    {
+        return [
+            [
+                'judul' => 'Draft Dibuat',
+                'waktu' => $order->created_at,
+                'oleh' => $order->user?->full_name,
+                'selesai' => true,
+            ],
+            [
+                'judul' => 'Dikirim ke Logistik',
+                'waktu' => $order->submitted_at,
+                'oleh' => $order->user?->full_name,
+                'selesai' => $order->submitted_at !== null,
+            ],
+            [
+                'judul' => $order->rejected_at ? 'Ditolak' : 'Disetujui',
+                'waktu' => $order->rejected_at ?? $order->approved_at,
+                'oleh' => ($order->rejectedBy ?? $order->approvedBy)?->full_name,
+                'selesai' => $order->approved_at !== null || $order->rejected_at !== null,
+                'gagal' => $order->rejected_at !== null,
+            ],
+            [
+                'judul' => 'Picking Selesai',
+                'waktu' => $order->picking_completed_at,
+                'selesai' => $order->picking_completed_at !== null,
+            ],
+            [
+                'judul' => 'Selesai',
+                'waktu' => $order->completed_at,
+                'selesai' => $order->completed_at !== null,
+            ],
+        ];
+    }
 }
