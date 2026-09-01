@@ -586,20 +586,44 @@ class SalesOrderTest extends TestCase
 
     /* ------------------------------------------------------------ Detail */
 
-    public function test_detail_menampilkan_item_dan_timeline(): void
+    public function test_detail_menampilkan_item_dan_tahapan(): void
     {
         $sales = $this->loginAs();
-        $produk = $this->produk(['sku' => 'ID1-FTESTSKU']);
+        $produk = $this->produk(['sku' => 'ID1-FTESTSKU', 'name' => 'Apko Wall Sealer 5Kg']);
         $order = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
         SalesOrderDetail::factory()->create([
             'sales_order_id' => $order->id, 'product_id' => $produk->id, 'qty_ordered' => 42,
         ]);
 
-        $this->get('/sales/orders/'.$order->id)
-            ->assertOk()
-            ->assertSee('ID1-FTESTSKU')
-            ->assertSee('42')
-            ->assertSee('Dikirim ke Logistik');
+        $halaman = $this->get('/sales/orders/'.$order->id)->assertOk();
+
+        $halaman->assertSee('ID1-FTESTSKU')
+            ->assertSee('Apko Wall Sealer 5Kg')
+            ->assertSee('42');
+
+        // Stepper memuat SELURUH tahap, termasuk yang belum terjadi, supaya
+        // Sales melihat pesanannya masih akan melewati apa.
+        foreach (['Draft', 'Dikirim', 'Diterima', 'Dikemas', 'Selesai'] as $tahap) {
+            $halaman->assertSee($tahap);
+        }
+    }
+
+    /**
+     * UOM tidak ditampilkan di rincian item (permintaan pemilik produk).
+     *
+     * Layar Sales dipakai dari HP; satuan tidak menambah keputusan apa pun di
+     * sana dan hanya memakan lebar yang dibutuhkan nama produk.
+     */
+    public function test_detail_tidak_menampilkan_uom(): void
+    {
+        $sales = $this->loginAs();
+        $produk = $this->produk(['uom' => 'KALENG']);
+        $order = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id, 'product_id' => $produk->id,
+        ]);
+
+        $this->get('/sales/orders/'.$order->id)->assertOk()->assertDontSee('KALENG');
     }
 
     /** Sebelum disetujui, qty_approved 0 berarti "belum dinilai", bukan "nol". */
@@ -609,6 +633,32 @@ class SalesOrderTest extends TestCase
         $order = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
         SalesOrderDetail::factory()->create(['sales_order_id' => $order->id, 'qty_ordered' => 42]);
 
-        $this->get('/sales/orders/'.$order->id)->assertOk()->assertDontSee('Lost Sales</td>');
+        // "Disetujui 0" akan terbaca sebagai "tidak ada yang disetujui",
+        // padahal artinya pesanan ini belum dinilai Logistik.
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertDontSee('Disetujui')
+            ->assertDontSee('Tidak terpenuhi');
+    }
+
+    /** Sesudah approval, qty disetujui dan Lost Sales barulah muncul. */
+    public function test_qty_disetujui_muncul_setelah_approval(): void
+    {
+        $sales = $this->loginAs();
+        $order = SalesOrder::factory()->submitted()->create([
+            'user_id' => $sales->id,
+            'status' => SalesOrder::STATUS_APPROVED,
+            'approved_at' => now(),
+        ]);
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'qty_ordered' => 100, 'qty_approved' => 80, 'lost_qty' => 20,
+        ]);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertSee('Disetujui')
+            ->assertSee('80')
+            ->assertSee('Tidak terpenuhi');
     }
 }
