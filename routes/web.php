@@ -149,9 +149,16 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.inbound.putaway.store');
         });
 
+        // Verifikasi Maker-Checker (PRD §6.3 F-INB-03) — sudah terhubung ke
+        // database. Logistik adalah CHECKER: boleh mengoreksi qty & lokasi
+        // hasil put-away, tapi tidak SKU/batch. Palet yang sudah terverifikasi
+        // terkunci di sini — koreksinya lewat Menu Stok (F-INB-04).
         Route::middleware('can:'.Permission::INBOUND_VERIFY)->group(function () {
-            Route::get('/verify', [InboundController::class, 'verifyIndex']);
-            Route::get('/verify/{doc_no}', [InboundController::class, 'verifyProcess']);
+            Route::get('/verify', [InboundController::class, 'verifyIndex'])->name('wms.inbound.verify');
+            Route::get('/verify/{doc_no}', [InboundController::class, 'verifyProcess'])
+                ->name('wms.inbound.verify.process');
+            Route::post('/verify/{doc_no}', [InboundController::class, 'verifyStore'])
+                ->name('wms.inbound.verify.store');
         });
 
         Route::middleware('can:'.Permission::INBOUND_RETURNS)->group(function () {

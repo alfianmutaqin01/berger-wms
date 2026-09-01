@@ -536,6 +536,35 @@ class PutawayTest extends TestCase
         $this->assertSame(178, $palet->fresh()->qty_actual);
     }
 
+    /**
+     * Melanjutkan put-away sebagian: palet yang SUDAH tersimpan di sebuah bin
+     * ikut terkirim ulang bersama palet baru yang menuju bin yang sama.
+     *
+     * Menjaga dari kesalahan hitung ganda: isi bin dari database dan nilai
+     * yang sedang dikirim untuk palet yang SAMA tidak boleh dijumlahkan dua
+     * kali. A(100) sudah di B-01-01, B(50) menyusul -> 150 dari kapasitas
+     * 180, harus DITERIMA.
+     */
+    public function test_melanjutkan_putaway_ke_bin_yang_sudah_memuat_palet_sendiri(): void
+    {
+        $this->loginAs();
+        $header = $this->makeDocument();
+        $bin = $this->bin('B-01-01');
+        [$paletA, $paletB] = $header->details()->orderBy('pallet_no')->get()->all();
+        $paletA->update(['pallet_qty' => 100, 'location_id' => $bin->id, 'qty_actual' => 100]);
+        $paletB->update(['pallet_qty' => 50]);
+
+        $this->post('/wms/inbound/putaway/IN-260901-001', [
+            'pallets' => [
+                $paletA->id => ['location_code' => 'B-01-01', 'qty_actual' => 100],
+                $paletB->id => ['location_code' => 'B-01-01', 'qty_actual' => 50],
+            ],
+        ])->assertSessionDoesntHaveErrors();
+
+        $this->assertSame($bin->id, $paletA->fresh()->location_id);
+        $this->assertSame($bin->id, $paletB->fresh()->location_id);
+    }
+
     public function test_kode_lokasi_huruf_kecil_tetap_diterima(): void
     {
         $this->loginAs();
