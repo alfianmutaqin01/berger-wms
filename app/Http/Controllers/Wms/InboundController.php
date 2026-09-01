@@ -8,6 +8,7 @@ use App\Models\InboundHeader;
 use App\Models\Location;
 use App\Models\Warehouse;
 use App\Support\DocumentNumber;
+use App\Support\Inbound\BinAllocator;
 use App\Support\Inbound\ProductionSheet;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -389,35 +390,11 @@ class InboundController extends Controller
             ->inStorageOrder()
             ->get(['id', 'code', 'zone']);
 
-        // Satu bin adalah satu SLOT PALET: boleh memuat beberapa palet dari
-        // SKU yang SAMA sampai kapasitas palet SKU itu (Product::
-        // max_qty_per_pallet) — pallet split (PRD §7.1) boleh digabung
-        // kembali di bin yang sama. SKU yang berbeda tetap tidak boleh
-        // berbagi bin. Dihitung dari SELURUH dokumen, bukan cuma dokumen ini.
-        $idKeKode = $locations->pluck('code', 'id');
-
-        $occupancy = InboundDetail::query()
-            ->whereIn('location_id', $locations->pluck('id'))
-            ->with('product:id,uom,max_qty_per_pallet')
-            ->get(['id', 'location_id', 'product_id', 'qty_actual', 'pallet_qty'])
-            ->groupBy('location_id')
-            ->mapWithKeys(function ($group) use ($idKeKode) {
-                $produk = $group->first()->product;
-
-                return [$idKeKode[$group->first()->location_id] => [
-                    'product_id' => $group->first()->product_id,
-                    'qty' => $group->sum(fn (InboundDetail $d) => $d->effective_qty),
-                    'capacity' => $produk?->max_qty_per_pallet,
-                    'uom' => $produk?->uom,
-                ]];
-            })
-            ->all();
-
         return view('wms.inbound.putaway-process', [
             'header' => $header,
             'details' => $details,
             'locations' => $locations,
-            'occupancy' => $occupancy,
+            'occupancy' => BinAllocator::occupancyByCode($locations),
             'totals' => [
                 'palet' => $details->count(),
                 'ditempatkan' => $details->whereNotNull('location_id')->count(),
@@ -460,36 +437,14 @@ class InboundController extends Controller
         ]);
 
         $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
+        $allocator = BinAllocator::forWarehouse($header->warehouse_id, $header->warehouse?->code);
 
-        // Kode bin dipetakan sekali di muka, bukan satu query per palet.
-        $bins = Location::where('warehouse_id', $header->warehouse_id)
-            ->active()
-            ->get(['id', 'code'])
-            ->keyBy(fn (Location $l) => strtoupper($l->code));
-
-        // Isi bin SAAT INI di database (dokumen manapun, termasuk palet LAIN
-        // milik dokumen ini sendiri yang sudah lebih dulu ditempatkan),
-        // dikelompokkan per bin dengan kontribusi tiap palet disimpan
-        // terpisah. Kontribusi palet yang SEDANG diproses dikeluarkan nanti
-        // per-baris (bukan di sini) — supaya put-away ulang/koreksi tidak
-        // menabrak dirinya sendiri, TANPA ikut menyembunyikan palet LAIN
-        // milik dokumen yang sama yang kebetulan sudah menghuni bin itu.
-        $penghuniSekarang = InboundDetail::whereNotNull('location_id')
-            ->get(['id', 'location_id', 'product_id', 'qty_actual', 'pallet_qty'])
-            ->groupBy('location_id')
-            ->map(fn ($group) => [
-                'product_id' => $group->first()->product_id,
-                'per_detail' => $group->keyBy('id')->map(fn (InboundDetail $d) => $d->effective_qty),
-            ]);
-
-        $penempatan = [];
         $errors = [];
 
-        // location_id => ['product_id'=>, 'qty'=>] — akumulasi DALAM SATU
-        // pengiriman ini, supaya beberapa palet SKU yang SAMA menunjuk bin
-        // yang sama dijumlahkan (boleh digabung sampai kapasitas), sementara
-        // SKU yang berbeda menunjuk bin yang sama tetap ditolak.
-        $dipakaiDalamPengiriman = [];
+        // TAHAP 1 — kumpulkan kandidat & periksa isian dasarnya. Belum
+        // menyentuh aturan kapasitas: seluruh kandidat harus diketahui lebih
+        // dulu supaya bisa dilepas bersama-sama pada tahap 2.
+        $kandidat = [];
 
         foreach ($validated['pallets'] as $detailId => $input) {
             $detail = $details->get((int) $detailId);
@@ -500,15 +455,14 @@ class InboundController extends Controller
                 continue;
             }
 
-            $code = strtoupper(trim((string) ($input['location_code'] ?? '')));
+            $code = $allocator->normalize((string) ($input['location_code'] ?? ''));
 
             if ($code === '') {
                 continue;
             }
 
-            if (! $bins->has($code)) {
-                $errors["pallets.{$detailId}.location_code"] =
-                    "Kode lokasi \"{$code}\" tidak ada atau tidak aktif di gudang {$header->warehouse?->code}.";
+            if (! $allocator->has($code)) {
+                $errors["pallets.{$detailId}.location_code"] = $allocator->unknownCodeMessage($code);
 
                 continue;
             }
@@ -521,68 +475,27 @@ class InboundController extends Controller
                 continue;
             }
 
-            $qty = (int) $qty;
-            $locationId = $bins->get($code)->id;
-            $kapasitas = $detail->product?->max_qty_per_pallet;
+            $kandidat[$detail->id] = ['detail' => $detail, 'code' => $code, 'qty' => (int) $qty];
+        }
 
-            $terpakai = 0;
-            $produkLain = null;
+        // TAHAP 2 — lepas seluruh kandidat dari isi bin lama, lalu tempatkan.
+        // Tanpa pelepasan ini, palet yang disimpan ulang terhitung dua kali.
+        $allocator->release(array_keys($kandidat));
 
-            if ($sudahAda = $penghuniSekarang->get($locationId)) {
-                // Kontribusi palet ini SENDIRI dikeluarkan dulu — kalau
-                // ternyata dialah satu-satunya penghuni bin itu (put-away
-                // ulang ke bin miliknya sendiri), bin dianggap kosong untuk
-                // pengecekan ini, bukan "sudah terisi dirinya sendiri".
-                $lainnya = $sudahAda['per_detail']->except([$detail->id]);
+        $penempatan = [];
 
-                if ($lainnya->isNotEmpty()) {
-                    $produkLain = $sudahAda['product_id'];
-                    $terpakai = $lainnya->sum();
-                }
-            }
+        foreach ($kandidat as $detailId => $calon) {
+            $hasil = $allocator->place($calon['detail'], $calon['code'], $calon['qty']);
 
-            if ($dalamPengiriman = $dipakaiDalamPengiriman[$locationId] ?? null) {
-                $produkLain ??= $dalamPengiriman['product_id'];
-                $terpakai += $dalamPengiriman['qty'];
-            }
-
-            if ($produkLain !== null && $produkLain !== $detail->product_id) {
-                $errors["pallets.{$detailId}.location_code"] = "Rak \"{$code}\" sudah terisi produk lain.";
+            if (isset($hasil['error'])) {
+                $errors["pallets.{$detailId}.location_code"] = $hasil['error'];
 
                 continue;
             }
 
-            if ($kapasitas === null) {
-                // Kapasitas palet produk ini belum diketahui di Master
-                // Produk — tanpa angka itu tidak bisa dipastikan sisa
-                // ruangnya, jadi bin yang sudah terisi APAPUN ditolak
-                // sebagai jaring pengaman.
-                if ($terpakai > 0) {
-                    $errors["pallets.{$detailId}.location_code"] =
-                        "Rak \"{$code}\" sudah terisi, dan kapasitas palet produk ini belum diisi di Master Produk.";
-
-                    continue;
-                }
-            } elseif (($terpakai + $qty) > $kapasitas) {
-                $errors["pallets.{$detailId}.location_code"] = sprintf(
-                    'Rak "%s" kelebihan kapasitas: sudah terisi %d, ditambah %d akan melebihi kapasitas %d.',
-                    $code,
-                    $terpakai,
-                    $qty,
-                    $kapasitas
-                );
-
-                continue;
-            }
-
-            $dipakaiDalamPengiriman[$locationId] = [
-                'product_id' => $detail->product_id,
-                'qty' => $terpakai + $qty,
-            ];
-
-            $penempatan[$detail->id] = [
-                'location_id' => $locationId,
-                'qty_actual' => $qty,
+            $penempatan[$detailId] = [
+                'location_id' => $hasil['location_id'],
+                'qty_actual' => $calon['qty'],
             ];
         }
 
@@ -630,66 +543,273 @@ class InboundController extends Controller
     }
 
     /**
-     * F-INB-03: List Verifikasi Logistik
+     * F-INB-03: Daftar dokumen yang menunggu verifikasi Logistik.
+     *
+     * DATA CONTRACT (view: wms.inbound.verify-list)
+     * ---------------------------------------------
+     * $documents  : LengthAwarePaginator<InboundHeader> — withCount details
+     *               (total) & details_verified_count
+     * $warehouses : Collection<Warehouse>
+     * $stats      : array{dokumen:int, palet:int, belum:int, selisih:int}
+     * $filters    : array{search:?string, warehouse_id:?string}
+     *
+     * `selisih` menghitung palet yang qty fisiknya BERBEDA dari qty sistem —
+     * itulah yang paling perlu perhatian Logistik, karena di situlah angka
+     * final stok diputuskan (PRD §6.3 catatan Maker-Checker).
      */
-    public function verifyIndex()
+    public function verifyIndex(Request $request): View
     {
-        $dummyVerifications = [
-            [
-                'batch_no' => 'BCH-202608-01',
-                'doc_no' => 'PROD-8821',
-                'date' => '18 Aug 2026',
-                'total_pallets' => 3,
-                'status' => 'Menunggu Verifikasi',
-            ],
+        $filters = [
+            'search' => $request->query('search'),
+            'warehouse_id' => $request->query('warehouse_id'),
         ];
 
-        return view('wms.inbound.verify-list', compact('dummyVerifications'));
+        $base = InboundHeader::query()
+            ->awaitingVerification()
+            ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
+
+        $documents = (clone $base)
+            ->withCount([
+                'details',
+                'details as details_verified_count' => fn ($q) => $q->where('is_verified', true),
+            ])
+            ->with(['warehouse:id,code,name', 'details:id,inbound_header_id,batch_no'])
+            ->search($filters['search'])
+            // Dokumen terlama didahulukan: barang yang sudah lama menunggu
+            // verifikasi adalah stok yang belum bisa dijual sama sekali.
+            ->oldest('production_date')
+            ->oldest('id')
+            ->paginate(15)
+            ->withQueryString();
+
+        $paletBase = InboundDetail::whereIn('inbound_header_id', (clone $base)->select('id'));
+
+        return view('wms.inbound.verify-list', [
+            'documents' => $documents,
+            'warehouses' => Warehouse::orderBy('code')->get(),
+            'stats' => [
+                'dokumen' => (clone $base)->count(),
+                'palet' => (clone $paletBase)->count(),
+                'belum' => (clone $paletBase)->where('is_verified', false)->count(),
+                'selisih' => (clone $paletBase)
+                    ->where('is_verified', false)
+                    ->whereNotNull('qty_actual')
+                    ->whereColumn('qty_actual', '!=', 'pallet_qty')
+                    ->count(),
+            ],
+            'filters' => $filters,
+        ]);
     }
 
     /**
-     * F-INB-03: Detail Verifikasi Logistik
+     * F-INB-03: Layar verifikasi fisik oleh Logistik.
+     *
+     * DATA CONTRACT (view: wms.inbound.verify-process)
+     * ------------------------------------------------
+     * $header    : InboundHeader
+     * $details   : Collection<InboundDetail> — eager-load product, location,
+     *              putawayBy, verifiedBy
+     * $locations : Collection<Location> — bin aktif di gudang dokumen ini
+     * $occupancy : array<string, array{...}> — isi tiap bin, format sama
+     *              dengan layar put-away
+     * $totals    : array{palet:int, terverifikasi:int, selisih:int}
+     *
+     * Logistik boleh mengoreksi Qty dan Lokasi (PRD §6.3 F-INB-03 langkah 8),
+     * TAPI TIDAK batch/SKU — lihat catatan panjang di verifyStore().
      */
-    public function verifyProcess($doc_no)
+    public function verifyProcess(string $doc_no): View
     {
-        $inbound = ['doc_no' => $doc_no, 'batch_no' => 'BCH-202608-01',
-            'date' => '18 Aug 2026',
-        ];
+        $header = InboundHeader::with('warehouse')
+            ->awaitingVerification()
+            ->where('document_number', $doc_no)
+            ->firstOrFail();
 
-        // This simulates pallets that ALREADY have locations set by Operator Gudang
-        $pallets = [
-            [
-                'id' => 1,
-                'pallet_no' => 'PLT-001',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 180,
-                'location' => 'G-03-01',
-            ],
-            [
-                'id' => 2,
-                'pallet_no' => 'PLT-002',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 180,
-                'location' => 'G-03-02',
-            ],
-            [
-                'id' => 3,
-                'pallet_no' => 'PLT-003',
-                'sku' => 'BP-5KG-WHT',
-                'description' => 'Cat Tembok Berger White 5Kg',
-                'batch' => 'BCH-202608-01',
-                'qty' => 140,
-                'location' => 'G-03-03',
-            ],
-        ];
+        $details = $header->details()
+            ->with([
+                'product:id,sku,name,uom,max_qty_per_pallet',
+                'location:id,code',
+                'putawayBy:id,full_name',
+                'verifiedBy:id,full_name',
+            ])
+            ->orderBy('production_order_no')
+            ->orderBy('pallet_no')
+            ->get();
 
-        $availableLocations = ['G-03-01 (Kosong)', 'G-03-02 (Kosong)', 'G-03-03 (Kosong)', 'G-03-04 (Kosong)', 'G-03-05 (Kosong)'];
+        $locations = Location::where('warehouse_id', $header->warehouse_id)
+            ->active()
+            ->inStorageOrder()
+            ->get(['id', 'code', 'zone']);
 
-        return view('wms.inbound.verify-process', compact('inbound', 'pallets', 'availableLocations'));
+        return view('wms.inbound.verify-process', [
+            'header' => $header,
+            'details' => $details,
+            'locations' => $locations,
+            'occupancy' => BinAllocator::occupancyByCode($locations),
+            'totals' => [
+                'palet' => $details->count(),
+                'terverifikasi' => $details->where('is_verified', true)->count(),
+                'selisih' => $details->filter(fn (InboundDetail $d) => $d->qty_variance !== null && $d->qty_variance !== 0)->count(),
+            ],
+        ]);
+    }
+
+    /**
+     * F-INB-03: menyimpan hasil verifikasi Logistik.
+     *
+     * Aturan yang membentuk method ini:
+     *
+     * 1. VERIFIKASI BOLEH SEBAGIAN (PRD §6.3 F-INB-03 langkah 8: Logistik
+     *    boleh MENUNDA). Palet yang belum dicentang tidak menggagalkan
+     *    penyimpanan palet yang sudah; dokumen turun ke `partial_verified`
+     *    dan tetap muncul di daftar sampai seluruh paletnya selesai.
+     * 2. VERIFIKASI TIDAK BISA DIBATALKAN LEWAT LAYAR INI. Palet yang sudah
+     *    `is_verified` diabaikan dari perubahan apa pun — PRD §6.3 F-INB-04
+     *    menegaskan koreksi pasca-verifikasi HANYA lewat Menu Stok oleh
+     *    Manager/Super Admin, karena begitu terverifikasi angkanya sudah
+     *    menjadi stok resmi yang mungkin sudah ikut teralokasi ke order.
+     * 3. QTY & LOKASI boleh dikoreksi, BATCH & SKU TIDAK. PRD langkah 8
+     *    menyebut "qty, lokasi, batch", tapi batch adalah nomor QC yang
+     *    menjadi jejak telusur balik ke dokumen produksi — mengubahnya di
+     *    gudang memutus rantai itu tanpa jejak. Dikunci mengikuti rancangan
+     *    layar (mock) dan konsisten dengan put-away; lihat catatan Fase 3c
+     *    di rencana pembangunan.
+     * 4. Perpindahan lokasi tetap tunduk aturan kapasitas bin yang SAMA
+     *    dengan put-away — lewat App\Support\Inbound\BinAllocator.
+     *
+     * CATATAN STOK: PRD langkah 9-10 meminta stok resmi aktif di
+     * `inventory_stocks` + entri `IN` di `stock_movements`. Kedua tabel itu
+     * baru dibangun pada FASE 4, jadi di sini verifikasi hanya menandai
+     * palet; pengaktifan stoknya menyusul. Lihat rencana pembangunan Fase 3c/4.
+     */
+    public function verifyStore(Request $request, string $doc_no): RedirectResponse
+    {
+        $header = InboundHeader::with('warehouse')
+            ->awaitingVerification()
+            ->where('document_number', $doc_no)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'pallets' => ['required', 'array'],
+            'pallets.*.verified' => ['nullable', 'boolean'],
+            'pallets.*.location_code' => ['nullable', 'string', 'max:20'],
+            'pallets.*.qty_actual' => ['nullable', 'integer', 'min:0', 'max:100000'],
+        ]);
+
+        $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
+        $allocator = BinAllocator::forWarehouse($header->warehouse_id, $header->warehouse?->code);
+
+        $errors = [];
+
+        // TAHAP 1 — kumpulkan kandidat & periksa isian dasarnya. Aturan
+        // kapasitas belum disentuh: seluruh kandidat harus diketahui lebih
+        // dulu supaya bisa dilepas bersama-sama pada tahap 2.
+        $kandidat = [];
+
+        foreach ($validated['pallets'] as $detailId => $input) {
+            $detail = $details->get((int) $detailId);
+
+            // Palet dari dokumen lain diabaikan diam-diam: id-nya bisa saja
+            // dikarang lewat peramban, dan tidak ada alasan sah untuk itu.
+            if (! $detail) {
+                continue;
+            }
+
+            // Sudah terverifikasi -> terkunci (aturan 2 di atas).
+            if ($detail->is_verified) {
+                continue;
+            }
+
+            if (! filter_var($input['verified'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                continue;
+            }
+
+            $code = $allocator->normalize((string) ($input['location_code'] ?? ''));
+
+            if ($code === '') {
+                $errors["pallets.{$detailId}.location_code"] = 'Lokasi rak wajib diisi untuk palet yang diverifikasi.';
+
+                continue;
+            }
+
+            if (! $allocator->has($code)) {
+                $errors["pallets.{$detailId}.location_code"] = $allocator->unknownCodeMessage($code);
+
+                continue;
+            }
+
+            $qty = $input['qty_actual'] ?? null;
+
+            if ($qty === null || $qty === '') {
+                $errors["pallets.{$detailId}.qty_actual"] = 'Qty wajib diisi untuk palet yang diverifikasi.';
+
+                continue;
+            }
+
+            $kandidat[$detail->id] = ['detail' => $detail, 'code' => $code, 'qty' => (int) $qty];
+        }
+
+        // TAHAP 2 — palet yang diverifikasi SUDAH menghuni bin sejak put-away;
+        // lepas dulu supaya jumlahnya tidak terhitung dua kali (dari database
+        // dan dari kiriman formulir).
+        $allocator->release(array_keys($kandidat));
+
+        $perubahan = [];
+
+        foreach ($kandidat as $detailId => $calon) {
+            $hasil = $allocator->place($calon['detail'], $calon['code'], $calon['qty']);
+
+            if (isset($hasil['error'])) {
+                $errors["pallets.{$detailId}.location_code"] = $hasil['error'];
+
+                continue;
+            }
+
+            $perubahan[$detailId] = [
+                'location_id' => $hasil['location_id'],
+                'qty_actual' => $calon['qty'],
+                'is_verified' => true,
+            ];
+        }
+
+        if ($errors !== []) {
+            return back()->withErrors($errors)->withInput();
+        }
+
+        if ($perubahan === []) {
+            return back()->with('error', 'Belum ada palet yang dicentang untuk diverifikasi.');
+        }
+
+        DB::transaction(function () use ($header, $perubahan, $request) {
+            foreach ($perubahan as $detailId => $nilai) {
+                $header->details()->whereKey($detailId)->update($nilai + [
+                    'verified_by' => $request->user()?->id,
+                    'verified_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $header->update(['status' => $header->resolveVerificationStatus()]);
+        });
+
+        $header->refresh();
+        $tersisa = $header->details()->where('is_verified', false)->count();
+
+        if ($tersisa > 0) {
+            return redirect()->route('wms.inbound.verify.process', $header->document_number)->with(
+                'success',
+                sprintf(
+                    '%d palet terverifikasi. Masih ada %d palet yang belum diverifikasi — dokumen tetap di daftar verifikasi.',
+                    count($perubahan),
+                    $tersisa
+                )
+            );
+        }
+
+        return redirect()->route('wms.inbound.verify')->with('success', sprintf(
+            'Verifikasi dokumen %s selesai: %d palet terverifikasi. Pengaktifan stok menyusul pada Fase 4 (Inventory).',
+            $header->document_number,
+            $header->details()->count()
+        ));
     }
 
     public function returnsIndex()

@@ -62,6 +62,18 @@ class InboundDetail extends Model
         return $this->belongsTo(Location::class);
     }
 
+    /** Operator yang menempatkan palet ini (maker pada alur Maker-Checker). */
+    public function putawayBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'putaway_by');
+    }
+
+    /** Logistik yang memverifikasi palet ini (checker pada alur Maker-Checker). */
+    public function verifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
     /**
      * Selisih antara jumlah fisik dan jumlah sistem.
      *

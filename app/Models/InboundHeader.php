@@ -111,4 +111,40 @@ class InboundHeader extends Model
     {
         return $this->details()->whereNull('location_id')->doesntExist();
     }
+
+    /**
+     * Dokumen yang menunggu verifikasi Logistik (F-INB-03).
+     *
+     * `partial_verified` ikut masuk: dokumen yang baru sebagian diverifikasi
+     * HARUS tetap muncul di daftar, karena PRD §6.3 F-INB-03 langkah 8
+     * mengizinkan Logistik MENUNDA verifikasi di tengah jalan. Kalau
+     * statusnya dikeluarkan dari daftar, sisa paletnya tidak akan pernah
+     * bisa diselesaikan lewat layar manapun.
+     */
+    public function scopeAwaitingVerification(Builder $query): Builder
+    {
+        return $query->whereIn('status', [
+            self::STATUS_VERIFICATION_PENDING,
+            self::STATUS_PARTIAL_VERIFIED,
+        ]);
+    }
+
+    /**
+     * Status yang seharusnya dipegang dokumen ini menurut isi paletnya.
+     *
+     * Dihitung dari data, bukan dari urutan aksi — sehingga tidak bisa
+     * tertinggal tidak sinkron kalau suatu saat ada jalur lain yang mengubah
+     * palet.
+     */
+    public function resolveVerificationStatus(): string
+    {
+        $total = $this->details()->count();
+        $terverifikasi = $this->details()->where('is_verified', true)->count();
+
+        return match (true) {
+            $total > 0 && $terverifikasi === $total => self::STATUS_VERIFIED,
+            $terverifikasi > 0 => self::STATUS_PARTIAL_VERIFIED,
+            default => self::STATUS_VERIFICATION_PENDING,
+        };
+    }
 }
