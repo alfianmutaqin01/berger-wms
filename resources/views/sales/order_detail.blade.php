@@ -40,6 +40,17 @@
                     <span class="badge bg-{{ $order->status_color }} flex-shrink-0">{{ $order->status_label }}</span>
                 </div>
 
+                @if($order->isEditable())
+                    {{-- Seluruh stepper masih abu-abu pada draft — perjalanan
+                         pesanan baru dimulai saat dikirim. Tanpa keterangan
+                         ini, layar penuh bulatan kosong terbaca sebagai
+                         halaman yang gagal memuat data. --}}
+                    <div class="alert alert-secondary border-0 small py-2 mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Draft belum dikirim. Perjalanan pesanan dimulai setelah dikirim ke Logistik.
+                    </div>
+                @endif
+
                 <!-- ============ Stepper status ============ -->
                 {{-- Mendatar dan muat satu layar. Garis digambar sebagai dua
                      batang bertumpuk: abu-abu penuh sebagai latar, lalu batang

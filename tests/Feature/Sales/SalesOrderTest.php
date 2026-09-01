@@ -635,6 +635,30 @@ class SalesOrderTest extends TestCase
     }
 
     /**
+     * Tahap "Dibuat" menyala saat pesanan DIKIRIM, bukan saat draft disimpan.
+     *
+     * Keputusan pemilik produk: draft yang tersimpan di laci Sales belum jadi
+     * pesanan. Memakai created_at akan menandai draft sebagai sudah berjalan
+     * padahal Logistik belum pernah melihatnya.
+     */
+    public function test_tahap_dibuat_menyala_saat_dikirim_bukan_saat_draft(): void
+    {
+        $sales = $this->loginAs();
+
+        $draft = SalesOrder::factory()->create(['user_id' => $sales->id]);
+        $tahapDraft = $this->get('/sales/orders/'.$draft->id)->viewData('timeline')[0];
+
+        $this->assertFalse($tahapDraft['selesai']);
+        $this->assertNull($tahapDraft['waktu']);
+
+        $terkirim = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
+        $tahapTerkirim = $this->get('/sales/orders/'.$terkirim->id)->viewData('timeline')[0];
+
+        $this->assertTrue($tahapTerkirim['selesai']);
+        $this->assertEquals($terkirim->submitted_at, $tahapTerkirim['waktu']);
+    }
+
+    /**
      * Hanya SATU tahap yang boleh bertanda "menunggu", dan hanya pada pesanan
      * yang memang sedang berjalan.
      */

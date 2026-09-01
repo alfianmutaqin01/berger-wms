@@ -535,12 +535,14 @@ class SalesOrderController extends Controller
             [
                 'judul' => 'Dibuat',
                 'ikon' => 'bi-file-earmark-text',
-                // Draft belum punya submitted_at; created_at yang dipakai
-                // supaya tahap pertama tetap menunjukkan kapan pesanan ini
-                // mulai ada, bukan tampil kosong.
-                'waktu' => $order->submitted_at ?? $order->created_at,
+                // submitted_at, BUKAN created_at. Menurut pemilik produk,
+                // pesanan baru "dibuat" saat DIKIRIM ke Logistik — draft
+                // yang tersimpan di laci Sales belum jadi pesanan. Memakai
+                // created_at akan menandai draft sebagai sudah berjalan
+                // padahal Logistik belum pernah melihatnya.
+                'waktu' => $order->submitted_at,
                 'oleh' => $order->user?->full_name,
-                'selesai' => true,
+                'selesai' => $order->submitted_at !== null,
                 'gagal' => false,
             ],
             [
