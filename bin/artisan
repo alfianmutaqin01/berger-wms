@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# Pembungkus artisan yang SELALU berjalan sebagai www-data di dalam container.
+#
+#   ./bin/artisan migrate
+#   ./bin/artisan test --filter=SalesOrderTest
+#   ./bin/artisan tinker
+#
+# MENGAPA ADA: `docker compose exec php-fpm php artisan ...` berjalan sebagai
+# ROOT, dan berkas yang dibuatnya (view Blade terkompilasi, cache) jadi milik
+# root. PHP-FPM berjalan sebagai www-data dan tidak bisa menyentuh mtime
+# berkas milik root, sehingga halaman mati dengan "touch(): Utime failed:
+# Operation not permitted". Sudah lima kali terjadi di proyek ini.
+#
+# Aturannya sudah ditulis di rencana pembangunan §5b, tapi aturan yang bergantung pada
+# ingatan akan dilanggar lagi. Berkas ini membuat cara yang BENAR menjadi
+# cara yang paling mudah diketik.
+
+set -euo pipefail
+
+exec docker compose exec -u www-data php-fpm php artisan "$@"
