@@ -16,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
@@ -505,43 +506,66 @@ class SalesOrderController extends Controller
     }
 
     /**
-     * Timeline status untuk halaman detail (docs/4 §3.3.3).
+     * Tahapan pesanan untuk stepper di halaman detail (docs/4 §3.3.3).
      *
-     * Hanya tahap yang SUDAH terjadi yang punya waktu dan pelaku; sisanya
-     * ditandai belum. Tahap Fase 6 ke atas sengaja tetap ditampilkan sebagai
-     * "belum" supaya Sales melihat pesanannya masih akan melewati apa.
+     * BENTUKNYA STEPPER MENDATAR, bukan daftar menurun. Portal Sales dipakai
+     * dari HP (docs/4 §3 "Mobile-First"): lima tahap yang ditumpuk ke bawah
+     * mendorong item pesanan keluar layar, sehingga Sales harus menggulir
+     * hanya untuk tahu pesanannya sampai mana. Lima bulatan berjajar muat
+     * dalam satu pandangan.
+     *
+     * Judul sengaja SATU KATA — di lebar 360px, label dua kata membuat
+     * kolomnya pecah dan bulatannya tidak lagi sejajar.
+     *
+     * Tahap milik Fase 6 ke atas tetap ditampilkan sebagai "belum", supaya
+     * Sales melihat pesanannya masih akan melewati apa.
+     *
+     * @return array<int, array{judul:string, ikon:string, waktu:?Carbon, oleh:?string, selesai:bool, gagal:bool}>
      */
     private function timeline(SalesOrder $order): array
     {
+        $ditolak = $order->rejected_at !== null;
+
         return [
             [
-                'judul' => 'Draft Dibuat',
+                'judul' => 'Draft',
+                'ikon' => 'bi-pencil',
                 'waktu' => $order->created_at,
                 'oleh' => $order->user?->full_name,
                 'selesai' => true,
+                'gagal' => false,
             ],
             [
-                'judul' => 'Dikirim ke Logistik',
+                'judul' => 'Dikirim',
+                'ikon' => 'bi-send',
                 'waktu' => $order->submitted_at,
                 'oleh' => $order->user?->full_name,
                 'selesai' => $order->submitted_at !== null,
+                'gagal' => false,
             ],
             [
-                'judul' => $order->rejected_at ? 'Ditolak' : 'Disetujui',
+                'judul' => $ditolak ? 'Ditolak' : 'Diterima',
+                'ikon' => $ditolak ? 'bi-x-lg' : 'bi-check2-circle',
                 'waktu' => $order->rejected_at ?? $order->approved_at,
                 'oleh' => ($order->rejectedBy ?? $order->approvedBy)?->full_name,
-                'selesai' => $order->approved_at !== null || $order->rejected_at !== null,
-                'gagal' => $order->rejected_at !== null,
+                'selesai' => $order->approved_at !== null || $ditolak,
+                'gagal' => $ditolak,
             ],
             [
-                'judul' => 'Picking Selesai',
+                'judul' => 'Dikemas',
+                'ikon' => 'bi-box-seam',
                 'waktu' => $order->picking_completed_at,
+                'oleh' => null,
                 'selesai' => $order->picking_completed_at !== null,
+                'gagal' => false,
             ],
             [
                 'judul' => 'Selesai',
+                'ikon' => 'bi-house-check',
                 'waktu' => $order->completed_at,
+                'oleh' => null,
                 'selesai' => $order->completed_at !== null,
+                'gagal' => false,
             ],
         ];
     }
