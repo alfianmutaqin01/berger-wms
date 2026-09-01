@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PhoneNumber;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -92,19 +93,13 @@ class Customer extends Model
     }
 
     /**
-     * Nomor telepon dalam format yang enak dibaca.
+     * Nomor telepon dalam format yang enak dibaca, mis. "+6289531435435".
      *
-     * Data ERP menyimpannya dengan kode negara tanpa tanda plus
-     * ("6289531435435"), sehingga di layar diberi awalan "+".
+     * Satu pelanggan bisa punya lebih dari satu nomor; aturan pemisahan dan
+     * penulisannya ada di App\Support\PhoneNumber.
      */
     public function getPhoneLabelAttribute(): string
     {
-        if (blank($this->phone)) {
-            return '—';
-        }
-
-        $digits = preg_replace('/\D/', '', $this->phone);
-
-        return str_starts_with($digits, '62') ? '+'.$digits : $this->phone;
+        return PhoneNumber::label($this->phone);
     }
 }

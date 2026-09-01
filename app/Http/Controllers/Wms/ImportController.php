@@ -110,11 +110,25 @@ class ImportController extends Controller
             $summary['perbarui']
         );
 
-        if ($summary['gagal'] > 0) {
-            $message .= sprintf(' %d baris dilewati karena datanya tidak lengkap.', $summary['gagal']);
+        if ($summary['gagal'] === 0) {
+            return redirect()->route($config['index_route'])->with('success', $message);
         }
 
-        return redirect()->route($config['index_route'])->with('success', $message);
+        // Baris yang gagal dilaporkan berikut ALASANNYA. Sebelumnya hanya
+        // jumlahnya yang disebut, dengan alasan seragam "datanya tidak
+        // lengkap" — menyesatkan bila sebabnya lain (mis. isi kolom melampaui
+        // panjang maksimum), dan tidak memberi tahu baris mana yang harus
+        // diperbaiki di berkas.
+        $message .= sprintf(' %d baris dilewati:', $summary['gagal']);
+
+        $shown = array_slice($summary['galat'], 0, 10);
+        $message .= ' '.implode(' ', $shown);
+
+        if (count($summary['galat']) > count($shown)) {
+            $message .= sprintf(' (dan %d baris lain)', count($summary['galat']) - count($shown));
+        }
+
+        return redirect()->route($config['index_route'])->with('warning', $message);
     }
 
     /** Membatalkan pratinjau: buang berkas sementara agar tidak menumpuk. */
