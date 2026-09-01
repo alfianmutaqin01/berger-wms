@@ -3,6 +3,7 @@
 namespace App\Support\Import;
 
 use App\Models\Customer;
+use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -22,6 +23,25 @@ class CustomerImporter extends Importer
     protected function keyColumn(): string
     {
         return 'code';
+    }
+
+    protected function table(): string
+    {
+        return 'customers';
+    }
+
+    /** Nama kolom sebagaimana tertulis di berkas ekspor ERP. */
+    protected function columnLabels(): array
+    {
+        return [
+            'code' => 'No./id',
+            'ship_to_code' => 'Ship-to Code',
+            'name' => 'Name',
+            'phone' => 'Phone No.',
+            'contact_name' => 'Contact',
+            'email' => 'Email',
+            'territory_code' => 'Territory Code',
+        ];
     }
 
     protected function existingKeys(): array
@@ -60,9 +80,9 @@ class CustomerImporter extends Importer
             'data' => [
                 'ship_to_code' => $this->value($row, ['ship_to_code', 'shipto_code']),
                 'name' => $name,
-                // Nomor dari ERP ditulis dengan kode negara tanpa tanda plus dan
-                // kadang mengandung spasi/strip; disimpan sebagai digit saja.
-                'phone' => $this->digits($this->value($row, ['phone_no', 'phone', 'telepon'])),
+                // Satu sel bisa memuat dua nomor dipisah garis miring; lihat
+                // App\Support\PhoneNumber untuk aturan pemisahannya.
+                'phone' => PhoneNumber::normalize($this->value($row, ['phone_no', 'phone', 'telepon'])),
                 'contact_name' => $this->value($row, ['contact', 'kontak', 'pic']),
                 'email' => $this->value($row, ['email']),
                 'address' => $address,
@@ -91,15 +111,6 @@ class CustomerImporter extends Importer
 
             return true;
         });
-    }
-
-    private function digits(?string $value): ?string
-    {
-        if (blank($value)) {
-            return null;
-        }
-
-        return preg_replace('/\D/', '', $value) ?: null;
     }
 
     private function upper(?string $value): ?string

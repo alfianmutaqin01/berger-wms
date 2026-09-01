@@ -2,6 +2,8 @@
 
 namespace App\Support\Import;
 
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
 /**
@@ -20,6 +22,9 @@ abstract class Importer
     /** Pesan galat baris yang sedang diproses. */
     private ?string $rowError = null;
 
+    /** Batas panjang kolom, dibaca sekali dari skema lalu disimpan. */
+    private ?array $columnLimits = null;
+
     public function __construct(?int $actorId = null)
     {
         $this->actorId = $actorId;
@@ -30,6 +35,22 @@ abstract class Importer
 
     /** Nama kolom kunci untuk mencocokkan data lama, contoh: 'sku'. */
     abstract protected function keyColumn(): string;
+
+    /** Tabel tujuan — dipakai untuk membaca batas panjang kolom dari skema. */
+    abstract protected function table(): string;
+
+    /**
+     * Nama kolom berkas untuk tiap kolom database, dipakai di pesan galat.
+     *
+     * Tanpa ini pesan menyebut nama kolom database ("contact_name"), padahal
+     * yang perlu diperbaiki pengguna adalah kolom di berkas Excel ("Contact").
+     *
+     * @return array<string, string>
+     */
+    protected function columnLabels(): array
+    {
+        return [];
+    }
 
     /** @return array{key: string, label: string, data: array}|null */
     abstract protected function mapRow(array $row): ?array;
@@ -57,8 +78,7 @@ abstract class Importer
             $summary['total']++;
             $lineNumber = $index + 2; // +1 karena judul, +1 karena Excel mulai dari 1
 
-            $this->rowError = null;
-            $mapped = $this->mapRow($row);
+            $mapped = $this->prepareRow($row);
 
             if ($mapped === null) {
                 $summary['gagal']++;
@@ -96,7 +116,19 @@ abstract class Importer
     /**
      * Menyimpan isi berkas ke database.
      *
-     * @return array{baru:int, perbarui:int, gagal:int}
+     * Satu baris bermasalah TIDAK boleh menghentikan sisa berkas. Tiap
+     * `persist()` adalah transaksinya sendiri, jadi galat yang dibiarkan naik
+     * akan meninggalkan impor separuh jalan: baris sebelumnya sudah tersimpan,
+     * baris sesudahnya tidak pernah dicoba, dan pengguna hanya melihat pesan
+     * SQLSTATE mentah. Persis itu yang terjadi pada impor 1.863 pelanggan yang
+     * berhenti di baris 1.731. Kini galat basis data dicatat sebagai kegagalan
+     * BARIS ITU saja lalu dilaporkan.
+     *
+     * Hanya QueryException yang ditangkap — kesalahan basis data memang milik
+     * datanya. Galat jenis lain tetap dibiarkan naik karena itu cacat program,
+     * bukan cacat berkas, dan menyembunyikannya justru mempersulit.
+     *
+     * @return array{baru:int, perbarui:int, gagal:int, galat: list<string>}
      */
     public function import(string $path): array
     {
@@ -104,24 +136,113 @@ abstract class Importer
 
         $this->assertHeaders($rows[0]);
 
-        $summary = ['baru' => 0, 'perbarui' => 0, 'gagal' => 0];
+        $summary = ['baru' => 0, 'perbarui' => 0, 'gagal' => 0, 'galat' => []];
 
-        foreach ($rows as $row) {
-            $this->rowError = null;
-            $mapped = $this->mapRow($row);
+        foreach ($rows as $index => $row) {
+            $lineNumber = $index + 2;
+            $mapped = $this->prepareRow($row);
 
             if ($mapped === null) {
                 $summary['gagal']++;
+                $summary['galat'][] = "Baris {$lineNumber}: ".($this->rowError ?? 'Baris tidak dapat dibaca.');
 
                 continue;
             }
 
-            $this->persist($mapped['key'], $mapped['data'])
-                ? $summary['baru']++
-                : $summary['perbarui']++;
+            try {
+                $this->persist($mapped['key'], $mapped['data'])
+                    ? $summary['baru']++
+                    : $summary['perbarui']++;
+            } catch (QueryException $e) {
+                $summary['gagal']++;
+                $summary['galat'][] = "Baris {$lineNumber} ({$mapped['key']}): ditolak basis data.";
+                report($e);
+            }
         }
 
         return $summary;
+    }
+
+    /**
+     * Memetakan satu baris lalu memeriksa panjangnya terhadap skema tabel.
+     *
+     * @return array{key: string, label: string, data: array}|null
+     */
+    private function prepareRow(array $row): ?array
+    {
+        $this->rowError = null;
+
+        $mapped = $this->mapRow($row);
+
+        if ($mapped === null) {
+            return null;
+        }
+
+        $tooLong = $this->tooLong($mapped['data'] + [$this->keyColumn() => $mapped['key']]);
+
+        if ($tooLong !== null) {
+            $this->fail($tooLong);
+
+            return null;
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * Mencari nilai yang melebihi panjang kolomnya, bila ada.
+     *
+     * Batasnya DIBACA DARI SKEMA, bukan ditulis ulang di sini. Daftar panjang
+     * yang disalin tangan pasti berselisih dengan migrasi cepat atau lambat,
+     * dan selisih itu muncul sebagai galat SQLSTATE mentah di tengah impor —
+     * tepat bentuk kegagalan yang hendak dicegah pemeriksaan ini.
+     */
+    private function tooLong(array $data): ?string
+    {
+        foreach ($this->columnLimits() as $column => $limit) {
+            $value = $data[$column] ?? null;
+
+            if (! is_string($value) || mb_strlen($value) <= $limit) {
+                continue;
+            }
+
+            $label = $this->columnLabels()[$column] ?? $column;
+
+            return sprintf(
+                'Kolom %s terlalu panjang: %d karakter, maksimum %d. Isi: "%s".',
+                $label,
+                mb_strlen($value),
+                $limit,
+                mb_strimwidth($value, 0, 40, '…')
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Panjang maksimum tiap kolom VARCHAR pada tabel tujuan.
+     *
+     * @return array<string, int>
+     */
+    private function columnLimits(): array
+    {
+        if ($this->columnLimits !== null) {
+            return $this->columnLimits;
+        }
+
+        $limits = [];
+
+        foreach (Schema::getColumns($this->table()) as $column) {
+            // "character varying(25)" -> 25. Sengaja hanya tipe teks
+            // berpanjang-tetap: "timestamp(0)" juga memuat angka dalam kurung,
+            // tetapi angka itu presisi detik, bukan batas panjang.
+            if (preg_match('/^(?:character varying|character|varchar|char|bpchar)\((\d+)\)$/i', trim((string) $column['type']), $match)) {
+                $limits[$column['name']] = (int) $match[1];
+            }
+        }
+
+        return $this->columnLimits = $limits;
     }
 
     /** Menandai baris yang sedang diproses sebagai gagal, dengan alasannya. */

@@ -81,6 +81,14 @@ class ImportTest extends TestCase
         ], $rows);
     }
 
+    private function customerFile(array $rows): UploadedFile
+    {
+        return $this->makeXlsx([
+            'No./id', 'Ship-to Code', 'Name', 'Phone No.', 'Contact', 'Email',
+            'Address', 'Address 2', 'Territory Code',
+        ], $rows);
+    }
+
     /* -------------------------------------------------------------- Produk */
 
     public function test_pratinjau_produk_tidak_menyimpan_apa_pun(): void
@@ -266,6 +274,98 @@ class ImportTest extends TestCase
 
         // Ship-to Code kosong tetap NULL, bukan string kosong.
         $this->assertNull(Customer::where('code', 'IDI10102')->value('ship_to_code'));
+    }
+
+    /**
+     * Sel ekspor ERP yang memuat dua nomor sekaligus.
+     *
+     * Dulu semua karakter bukan angka dibuang, sehingga
+     * "6285775005758/6282233024171" menyatu menjadi 26 digit — melampaui
+     * kolom dan menghentikan seluruh impor dengan galat SQLSTATE 22001.
+     */
+    public function test_pelanggan_dengan_dua_nomor_telepon_tersimpan_keduanya(): void
+    {
+        $this->loginAs();
+
+        $file = $this->customerFile([
+            ['IDR13294', '', 'CV MAKMUR CITRA ABADI', '6285775005758/6282233024171', '', '',
+                'JL. RAYA MENGANTI WIYUNG, 18, WIYUNG', 'WIYUNG', 'JAWA TIMUR'],
+        ]);
+
+        $preview = $this->post('/wms/master/customers/import/preview', ['file' => $file]);
+        $this->submitImport($preview, 'customers')->assertSessionHas('success');
+
+        $pelanggan = Customer::where('code', 'IDR13294')->firstOrFail();
+
+        $this->assertSame('6285775005758 / 6282233024171', $pelanggan->phone);
+        $this->assertSame('+6285775005758 / +6282233024171', $pelanggan->phone_label);
+    }
+
+    /**
+     * Isi yang melampaui panjang kolom dilaporkan sebagai kegagalan BARIS,
+     * lengkap dengan nama kolomnya seperti tertulis di berkas — bukan galat
+     * basis data mentah, dan tanpa menyentuh database.
+     */
+    public function test_isi_melebihi_panjang_kolom_ditandai_di_pratinjau(): void
+    {
+        $this->loginAs();
+
+        $file = $this->customerFile([
+            ['IDI10101', '', 'PT AMAN', '6289531435435', '', '', 'JL SEHAT 1', '', 'PROJECT'],
+            ['IDI10102', '', 'PT KEPANJANGAN', str_repeat('9', 60), '', '', 'JL SEHAT 2', '', 'PROJECT'],
+        ]);
+
+        $this->post('/wms/master/customers/import/preview', ['file' => $file])
+            ->assertOk()
+            ->assertViewHas('summary', fn ($s) => $s['baru'] === 1 && $s['gagal'] === 1)
+            ->assertViewHas('rows', function ($rows) {
+                $gagal = collect($rows)->firstWhere('status', 'gagal');
+
+                return $gagal !== null
+                    && str_contains($gagal['message'], 'Phone No.')
+                    && str_contains($gagal['message'], 'maksimum 50');
+            });
+
+        $this->assertSame(0, Customer::count());
+    }
+
+    /**
+     * Yang paling penting: satu baris bermasalah TIDAK boleh menghentikan
+     * sisa berkas. Sebelumnya impor 1.863 pelanggan berhenti di baris 1.731
+     * dan meninggalkan data separuh jalan tanpa penjelasan.
+     */
+    public function test_satu_baris_gagal_tidak_menghentikan_baris_sesudahnya(): void
+    {
+        $this->loginAs();
+
+        $file = $this->customerFile([
+            ['IDI10101', '', 'PT SEBELUM', '6281111111111', '', '', 'JL A', '', 'PROJECT'],
+            ['IDI10102', '', 'PT RUSAK', str_repeat('9', 60), '', '', 'JL B', '', 'PROJECT'],
+            ['IDI10103', '', 'PT SESUDAH', '6283333333333', '', '', 'JL C', '', 'PROJECT'],
+        ]);
+
+        $preview = $this->post('/wms/master/customers/import/preview', ['file' => $file]);
+        $this->submitImport($preview, 'customers')->assertSessionHas('warning');
+
+        // Baris sesudah yang gagal tetap masuk.
+        $this->assertTrue(Customer::where('code', 'IDI10101')->exists());
+        $this->assertFalse(Customer::where('code', 'IDI10102')->exists());
+        $this->assertTrue(Customer::where('code', 'IDI10103')->exists());
+    }
+
+    /** Alasan kegagalan ikut ditampilkan, bukan sekadar jumlahnya. */
+    public function test_pesan_impor_menyebut_baris_dan_alasan_kegagalan(): void
+    {
+        $this->loginAs();
+
+        $file = $this->customerFile([
+            ['IDI10102', '', 'PT RUSAK', str_repeat('9', 60), '', '', 'JL B', '', 'PROJECT'],
+        ]);
+
+        $preview = $this->post('/wms/master/customers/import/preview', ['file' => $file]);
+        $this->submitImport($preview, 'customers')
+            ->assertSessionHas('warning', fn ($pesan) => str_contains($pesan, 'Baris 2')
+                && str_contains($pesan, 'Phone No.'));
     }
 
     /* ---------------------------------------------------------- Otorisasi */
