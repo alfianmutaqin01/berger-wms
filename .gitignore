@@ -1,24 +1,53 @@
-*.log
-.DS_Store
-.env
-.env.backup
-.env.production
-.phpactor.json
-.phpunit.result.cache
-/.fleet
-/.idea
-/.nova
-/.phpunit.cache
-/.vscode
-/.zed
-/auth.json
-/node_modules
-/public/build
+# Laravel
+/vendor/
+/node_modules/
+/public/build/
 /public/hot
 /public/storage
 /storage/*.key
 /storage/pail
-/vendor
+# Cadangan database berisi data operasional (termasuk email & hash password) —
+# tidak boleh ikut masuk repositori.
+/storage/backups
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+
+# Environment (secrets)
+.env
+.env.backup
+.env.production
+
+# IDE
+.idea/
+.vscode/
+.fleet/
+.nova/
+.zed/
+*.swp
+*.swo
+
+# Testing
+.phpunit.result.cache
+.phpunit.cache/
+coverage/
+
+# Auth
+auth.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Composer binary (install via Docker, not project file)
+composer.phar
+
+# Docker persistent data (local only)
+docker/data/
+
+# Logs
+*.log
+
+# Legacy
 Homestead.json
 Homestead.yaml
-Thumbs.db

@@ -1,10 +1,19 @@
 # Desain Database
 ## Sistem WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.0  
-> **Tanggal:** 14 Agustus 2026  
+> **Versi:** 1.1  
+> **Tanggal:** 26 Agustus 2026 *(revisi dari v1.0, 14 Agustus 2026)*  
 > **Database Engine:** PostgreSQL 16+  
 > **ORM:** Laravel Eloquent  
+
+> [!NOTE]
+> **Perubahan v1.1** (menyusul PRD v1.1):
+> - `customers` — kolom approval dihapus, diganti `is_active` + `created_by` + `credit_limit`
+> - `products` — tambah `shelf_life_months` (default 30)
+> - `inventory_stocks` — tambah `expiry_date`, `ddp_reason`, `sales_return_detail_id`; `status` menjadi `active`/`ddp`/`expired`
+> - `stock_movements` — tambah tipe `TRANSFER_OUT`, `TRANSFER_IN`, `RETURN_IN`
+> - **Tabel baru:** `sales_returns`, `sales_return_details`
+> - Total migration 25 → 28
 
 ---
 
@@ -77,6 +86,11 @@ erDiagram
     sales_orders ||--o{ delivery_notes : "delivered via"
     sales_orders ||--o{ delivery_proofs : "proven by"
     sales_orders ||--o{ customer_billings : "generates"
+    sales_orders ||--o{ sales_returns : "returned via"
+    
+    sales_returns ||--o{ sales_return_details : "has many"
+    sales_return_details ||--o{ inventory_stocks : "restocks as"
+    products ||--o{ sales_return_details : "returned as"
     
     customer_billings ||--o{ billing_payments : "paid via"
 
@@ -93,8 +107,6 @@ erDiagram
         string password
         bigint role_id FK
         bigint warehouse_id FK
-        string google2fa_secret
-        boolean is_mfa_enabled
         int failed_login_attempts
         timestamp locked_until
         timestamp last_lockout_at
@@ -117,6 +129,7 @@ erDiagram
         bigint category_id FK
         string uom
         int max_qty_per_pallet
+        smallint shelf_life_months
     }
     
     locations {
@@ -135,10 +148,35 @@ erDiagram
         string pic_name
         string pic_phone
         string default_payment_term
+        decimal credit_limit
+        boolean is_active
+        bigint created_by FK
+    }
+    
+    sales_returns {
+        bigint id PK
+        string return_number UK
+        bigint sales_order_id FK
+        bigint customer_id FK
+        bigint warehouse_id FK
         string status
-        bigint requested_by FK
-        bigint approved_by FK
-        timestamp approved_at
+        string proof_file_path
+        bigint reported_by FK
+        bigint processed_by FK
+        text check_notes
+    }
+    
+    sales_return_details {
+        bigint id PK
+        bigint sales_return_id FK
+        bigint product_id FK
+        string batch_no
+        date production_date
+        int qty_reported
+        int qty_received
+        string rejection_reason
+        string allocation
+        bigint location_id FK
     }
     
     inventory_stocks {
@@ -150,10 +188,13 @@ erDiagram
         int qty_available
         int qty_allocated
         date production_date
+        date expiry_date
         string status
+        string ddp_reason
         bigint verified_by FK
         timestamp verified_at
         bigint inbound_detail_id FK
+        bigint sales_return_detail_id FK
     }
     
     sales_orders {
@@ -213,9 +254,7 @@ Menyimpan data autentikasi dan profil pengguna.
 | `password` | VARCHAR(255) | NOT NULL | Bcrypt hash |
 | `role_id` | BIGINT UNSIGNED | FK → roles.id | Peran pengguna |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang default |
-| `google2fa_secret` | VARCHAR(255) | NULLABLE, ENCRYPTED | Secret key TOTP |
-| `is_mfa_enabled` | BOOLEAN | DEFAULT FALSE | Apakah MFA sudah disetup |
-| `failed_login_attempts` | INTEGER | DEFAULT 0 | Counter login gagal |
+| `failed_login_attempts` | INTEGER | DEFAULT 0 | Counter percobaan gagal (password salah ATAU verifikasi anti-bot gagal — satu counter bersama, PRD §6.1 F-AUTH-03) |
 | `locked_until` | TIMESTAMP | NULLABLE | Waktu akun bisa dicoba lagi |
 | `last_lockout_at` | TIMESTAMP | NULLABLE | Waktu terakhir terkunci |
 | `lockout_count` | INTEGER | DEFAULT 0 | Counter berapa kali terkunci |
@@ -231,7 +270,7 @@ Melacak sesi aktif per user untuk enforce max 2 device.
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `user_id` | BIGINT UNSIGNED | FK → users.id | |
-| `session_id` | VARCHAR(255) | NOT NULL, UNIQUE | Laravel session ID |
+| `session_id` | VARCHAR(255) | NOT NULL, UNIQUE | Token device, diterbitkan `AuthController` saat login (BUKAN Laravel session ID — session ID Laravel berubah tiap `regenerate()`/tanpa cookie, sehingga tidak stabil dipakai sebagai identitas device; lihat cookie `device_token`, dikecualikan dari enkripsi di `bootstrap/app.php`) |
 | `ip_address` | VARCHAR(45) | NULLABLE | IPv4/IPv6 |
 | `user_agent` | TEXT | NULLABLE | Browser/Device info |
 | `last_activity_at` | TIMESTAMP | NOT NULL | Waktu aktivitas terakhir |
@@ -247,7 +286,7 @@ Mencatat history percobaan login (untuk analisis keamanan).
 | `ip_address` | VARCHAR(45) | NULLABLE | |
 | `user_agent` | TEXT | NULLABLE | |
 | `is_successful` | BOOLEAN | NOT NULL | Berhasil atau gagal |
-| `failure_reason` | VARCHAR(50) | NULLABLE | "wrong_password", "locked", "mfa_failed" |
+| `failure_reason` | VARCHAR(50) | NULLABLE | "wrong_password", "locked", "inactive", "recaptcha_failed" |
 | `created_at` | TIMESTAMP | | |
 
 ---
@@ -274,8 +313,9 @@ Kategori/grup produk untuk pelaporan dan filter.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `name` | VARCHAR(100) | NOT NULL | Nama kategori (contoh: "Cat Tembok") |
+| `name` | VARCHAR(100) | NOT NULL, UNIQUE | Nama kategori — tampil sebagai "Product Type" (contoh: "Alk Primer", "AMC", "Apex Emulsion") |
 | `description` | TEXT | NULLABLE | |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Hanya kategori aktif yang muncul di dropdown |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
@@ -286,53 +326,166 @@ Master data SKU/produk.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `sku` | VARCHAR(50) | NOT NULL, UNIQUE | Kode SKU produk |
-| `name` | VARCHAR(200) | NOT NULL | Nama produk |
-| `description` | TEXT | NULLABLE | Deskripsi lengkap |
-| `category_id` | BIGINT UNSIGNED | FK → product_categories.id | Kategori produk |
-| `uom` | VARCHAR(20) | NOT NULL | Unit of Measure (contoh: "5 Kg", "2.5 Lt") |
-| `max_qty_per_pallet` | INTEGER | NOT NULL | Kapasitas maks per palet |
+| `sku` | VARCHAR(50) | NOT NULL, UNIQUE | Kode SKU dari ERP, contoh: `ID1-F00113202225` |
+| `name` | VARCHAR(200) | NOT NULL | Nama produk (kolom "Description" pada ekspor ERP) |
+| `description` | TEXT | NULLABLE | Deskripsi tambahan |
+| `product_code` | VARCHAR(10) | NOT NULL | Kode lini produk, contoh: `0011` = Royale Smart Clean |
+| `shade_code` | VARCHAR(10) | NOT NULL | Kode warna, contoh: `3202` = White, `B050` = Vanilla Sky |
+| `pack_code` | VARCHAR(10) | NOT NULL | Kode kemasan, contoh: `225` = 2.5 L, `320` = 20 L |
+| `category_id` | BIGINT UNSIGNED | FK → product_categories.id, NULLABLE | "Product Type" (Alk Primer, AMC, dst.) |
+| `uom` | VARCHAR(20) | NOT NULL | Satuan kemasan dari ERP: KG, TIN, PAIL, CAN |
+| `pack_size` | DECIMAL(10,3) | NULLABLE | Ukuran **wadah** (nominal), contoh: 20 untuk pail 20 Ltr. **Dasar aturan palet** |
+| `pack_unit` | VARCHAR(2) | NULLABLE | `L` atau `KG` — satuan dari `pack_size` |
+| `unit_volume` | DECIMAL(10,3) | NULLABLE | Volume **isi sebenarnya** menurut ERP — bisa lebih kecil dari `pack_size` |
+| `net_weight` | DECIMAL(10,3) | NULLABLE | Berat bersih (kg) |
+| `gross_weight` | DECIMAL(10,3) | NULLABLE | Berat kotor (kg) |
+| `max_qty_per_pallet` | INTEGER | NULLABLE | Kapasitas maks per palet, dihitung otomatis (lihat catatan) |
+| `shelf_life_months` | SMALLINT | NOT NULL, DEFAULT 30 | Masa simpan dalam bulan. Dasar perhitungan `expiry_date` |
 | `stock_threshold_low` | INTEGER | DEFAULT 50 | Batas "Terbatas" untuk Semi-Blind indicator |
 | `is_active` | BOOLEAN | DEFAULT TRUE | Apakah produk masih aktif diproduksi |
+| `created_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Pembuat data |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
+
+> [!IMPORTANT]
+> **`sku` adalah gabungan tiga kode.** Polanya: `ID1-F` + `product_code` + `shade_code` + `pack_code`. Contoh: `ID1-F` + `0011` + `3202` + `225` = `ID1-F00113202225`. Ketiga komponen tetap disimpan terpisah agar bisa difilter (mis. "semua produk warna 3202") tanpa membedah string SKU. SKU hasil impor disimpan **apa adanya**, sehingga data tetap benar bila ERP suatu saat memakai awalan lain.
+
+> [!IMPORTANT]
+> **Tabel ini TIDAK menyimpan jumlah stok.** Kolom `Inventory` pada ekspor ERP (mis. 108, 126, 72) adalah **hasil penjumlahan**, bukan data master. Di sistem ini stok tinggal di `inventory_stocks`, terpecah per gudang × lokasi × batch × tanggal kedaluwarsa — pemecahan itulah yang membuat FIFO (§7.2) dan aturan kedaluwarsa (§7.2.1) bisa berjalan. Angka stok pada layar dihitung dengan `SUM(qty_available) WHERE status='active' AND expiry_date > CURRENT_DATE`.
+>
+> Ada test regresi (`ProductManagementTest::test_tabel_produk_tidak_menyimpan_jumlah_stok`) yang menggagalkan build bila kolom bernama `stock`, `qty`, `quantity`, atau `inventory` menyelinap masuk ke tabel ini.
+
+> [!CAUTION]
+> **`pack_size` vs `unit_volume` — jangan tertukar.** Keduanya sama-sama angka liter, tapi artinya berbeda:
+>
+> | Kolom | Arti | Contoh (Blue Smoke 20Ltr) |
+> |---|---|---|
+> | `pack_size` | Ukuran **wadah** | `20.000` |
+> | `unit_volume` | **Isi sebenarnya** menurut ERP | `19.400` |
+>
+> Wadah tinting base sengaja tidak diisi penuh agar ada ruang untuk pewarna. **Aturan palet WAJIB memakai `pack_size`** — satu pail tetap memakan tempat satu pail 20 L di atas palet, berapa pun isinya. Memakai `unit_volume` membuat sebagian besar produk salah dianggap tidak punya aturan palet.
+>
+> `pack_size` dan `pack_unit` diisi otomatis dengan membaca ukuran di ujung nama produk ("…20Ltr", "…4Kg") lewat `App\Support\PackSize`.
+
+> [!NOTE]
+> **`max_qty_per_pallet` NULLABLE, berbeda dari rancangan awal.** Kapasitas palet dihitung dari tabel aturan gudang (`App\Support\PalletCapacity`) berdasarkan `pack_unit` + `pack_size`. Satuan ikut menentukan hasilnya — **20 L memuat 27 pcs, sedangkan 20 Kg memuat 36 pcs** — sehingga tidak bisa diturunkan dari rumus volume/berat semata.
+>
+> Ukuran di luar daftar aturan (mis. 0.25 L) sengaja menghasilkan NULL, **bukan angka tebakan**: salah menghitung kapasitas palet berarti salah membentuk palet di lantai gudang. Produk semacam itu ditandai di halaman Master Produk agar Manager mengisinya manual.
+>
+> **Aturan kapasitas palet:** 0.9 L / 0.9 Kg / 1 Kg → 720 · 2.5 L / 3.6 L / 4 Kg / 5 Kg → 180 · 15 L → 40 · 18 L / 20 L → 27 · 18 Kg / 20 Kg / 25 Kg → 36
+
+> [!NOTE]
+> **Product Type "Tidak ditemukan" pada ekspor ERP** dipetakan menjadi `category_id = NULL`, bukan dibuatkan kategori bernama itu. Nilai tersebut adalah penanda bahwa pencarian kategori di ERP gagal — bila dijadikan kategori, masalah datanya akan tersamarkan. Di layar tampil sebagai badge "Belum berkategori".
 
 #### `locations`
 Master lokasi rak penyimpanan di gudang.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
+Kode berpola `[Rak]-[Level]-[Sel]`, contoh `B-01-01` = Rak B, Level 1, Sel 1.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang pemilik |
-| `code` | VARCHAR(20) | NOT NULL, UNIQUE | Kode lokasi lengkap (contoh: "G-03-04") |
-| `rack` | VARCHAR(5) | NOT NULL | Huruf rak (contoh: "G") |
-| `floor_level` | VARCHAR(5) | NOT NULL | Level lantai (contoh: "03") |
-| `row_position` | VARCHAR(5) | NOT NULL | Posisi baris (contoh: "04") |
-| `is_active` | BOOLEAN | DEFAULT TRUE | Status aktif |
+| `code` | VARCHAR(20) | NOT NULL, UNIQUE per gudang | Kode bin lengkap (contoh: `B-01-01`) |
+| `rack` | VARCHAR(5) | NOT NULL | Kode rak — satu atau **dua** huruf (`B` … `ZD`) |
+| `level` | TINYINT UNSIGNED | NOT NULL | Level 1–5 (seluruh rak setinggi 5 level) |
+| `cell` | SMALLINT UNSIGNED | NOT NULL | Nomor sel/kolom pada level tersebut |
+| `zone` | VARCHAR(30) | NULLABLE | `Fast` / `Slow` / `Middle Moving Area` |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Bin non-aktif tidak dipilih proses put-away |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
+
+> [!IMPORTANT]
+> **`code` unik PER GUDANG, bukan global** — berbeda dari rancangan awal. Penamaan rak `A/B/C` lazim berulang di gudang berbeda; memaksa unik global akan menolak gudang kedua yang memakai penamaan yang sama. Unique constraint-nya `(warehouse_id, code)`.
+
+> [!IMPORTANT]
+> **`level` dan `cell` bertipe angka, bukan string** (rancangan awal memakai `VARCHAR(5)` untuk `floor_level`/`row_position`). Alasannya pengurutan: dengan string, `B-01-10` jatuh **sebelum** `B-01-02` karena dibandingkan sebagai teks — keliru saat operator menyusuri rak berurutan. Nama kolom juga disesuaikan dengan istilah yang dipakai di lapangan (`level`, `cell`).
+>
+> Komponen `rack`/`level`/`cell` **diturunkan dari `code`** saat menyimpan (lihat `Location::parseCode`), sehingga mustahil tidak sinkron.
+
+> [!NOTE]
+> **Denah gudang WH-01: 2.264 bin pada 29 rak.** Tidak ada Rak "A". Pada sebagian besar rak, **Level 4–5 memuat lebih banyak sel daripada Level 1–3** karena bagian bawah terpotong jalur forklift.
+>
+> | Rak | Level 1–3 | Level 4–5 | Per rak | Zona |
+> |---|---|---|---|---|
+> | B–G | 11 sel | 13 sel | 59 | Fast Moving |
+> | H–I | 8 sel | 10 sel | 44 | Fast Moving |
+> | J–O | 12 sel | 14 sel | 64 | Fast Moving |
+> | P | 20 sel | 20 sel | 100 | Slow Moving |
+> | Q–T | 18 sel | 20 sel | 94 | Slow Moving |
+> | U–V | 18 sel | 20 sel | 94 | Middle Moving |
+> | W–X | 18 sel | 18 sel | 90 | Middle Moving |
+> | Y–ZD | 19 sel | 21 sel | 99 | Middle Moving |
+>
+> **Total per zona:** Fast 826 · Slow 476 · Middle 962 = **2.264**.
+>
+> Dibangkitkan `LocationSeeder` dari aturan di atas, bukan disalin baris per baris. Seeder memeriksa sendiri hasilnya terhadap ketiga angka zona dan menggagalkan proses bila tidak cocok — sehingga salah ketik satu angka pada aturan tidak bisa lolos diam-diam.
+
+> [!WARNING]
+> **Ejaan zona pada ekspor ERP salah: "Midle Moving Area".** `Location::normalizeZone()` menormalkannya menjadi `Middle Moving Area`. Tanpa itu, impor akan menghasilkan dua zona berbeda yang sebenarnya sama.
 
 #### `customers`
 Data pelanggan / toko.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
+Struktur kolom mengikuti ekspor ERP Berger: `No./id | Ship-to Code | Name | Phone No. | Contact | Email | Address | Address 2 | Territory Code`.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
+| `code` | VARCHAR(30) | NOT NULL, UNIQUE | "No./id" pada ERP, contoh: `IDI10101` |
+| `ship_to_code` | VARCHAR(30) | NULLABLE | Nomor pelanggan di ERP. Kosong bila belum terdaftar di sana |
 | `name` | VARCHAR(200) | NOT NULL | Nama toko/distributor |
-| `address` | TEXT | NOT NULL | Alamat lengkap |
-| `pic_name` | VARCHAR(100) | NOT NULL | Nama Person In Charge |
-| `pic_phone` | VARCHAR(20) | NOT NULL | Nomor kontak PIC |
-| `default_payment_term` | ENUM | NOT NULL | 'cash', 'transfer', 'tempo_30', 'tempo_60', 'tempo_90' |
-| `status` | ENUM | NOT NULL, DEFAULT 'pending' | 'pending', 'approved', 'rejected' |
-| `requested_by` | BIGINT UNSIGNED | FK → users.id | Sales yang mengajukan |
-| `approved_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Manager/SA yang menyetujui |
-| `approved_at` | TIMESTAMP | NULLABLE | Waktu approval |
-| `rejection_reason` | TEXT | NULLABLE | Alasan ditolak |
+| `phone` | VARCHAR(25) | NULLABLE | Disimpan sebagai digit saja, dengan kode negara (`6289531435435`) |
+| `contact_name` | VARCHAR(100) | NULLABLE | "Contact" — nama orang yang dihubungi |
+| `email` | VARCHAR(150) | NULLABLE | |
+| `address` | TEXT | NOT NULL | "Address" — alamat jalan |
+| `address_2` | TEXT | NULLABLE | "Address 2" — kelurahan/kecamatan/kota |
+| `territory_code` | VARCHAR(30) | NULLABLE | "Territory Code", contoh: `PROJECT` |
+| `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | Hanya customer aktif yang muncul di form Buat Pesanan |
+| `created_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Manager/Super Admin yang mendaftarkan |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
 | `deleted_at` | TIMESTAMP | NULLABLE | Soft delete |
+
+> [!NOTE]
+> **Alamat disimpan dua kolom, ditampilkan satu.** `address` dan `address_2` dipertahankan terpisah agar impor/ekspor ERP tetap setara. Untuk tampilan keduanya digabung lewat accessor `full_address` (`"JL. PAMOYANAN NO. 15 RT 01 RW 01, MEKARMANIK, CIMENYAN"`), sehingga di tabel hanya ada satu kolom ALAMAT.
+
+> [!IMPORTANT]
+> **Syarat pembayaran & limit kredit TIDAK ada di tabel ini** — berbeda dari rancangan awal yang memuat `default_payment_term` dan `credit_limit`.
+>
+> Keputusan bisnis: termin dipilih Sales **per-pesanan**, bukan sifat tetap milik pelanggan — satu pelanggan bisa memakai termin berbeda antar pesanan. Keduanya kini tinggal di tabel `payment_terms` (lihat di bawah) yang mengisi dropdown pada form Buat Pesanan.
+>
+> Kolom `pic_name`/`pic_phone` juga dihapus; ERP hanya menyediakan satu kolom "Contact" yang dipetakan ke `contact_name`.
+>
+> Ada test regresi (`CustomerManagementTest::test_tabel_pelanggan_tidak_menyimpan_termin_dan_limit_kredit`) yang menggagalkan build bila kolom termin/limit kredit menyelinap kembali ke tabel ini.
+
+#### `payment_terms`
+Syarat pembayaran beserta plafon kreditnya. Berdiri sendiri, tidak menempel di `customers`.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
+| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
+| `code` | VARCHAR(30) | NOT NULL, UNIQUE | `cash`, `transfer`, `tempo_30`, `tempo_60`, `tempo_90` |
+| `name` | VARCHAR(100) | NOT NULL | Label pada dropdown, contoh: "Tempo 30 Hari" |
+| `days` | SMALLINT | NOT NULL, DEFAULT 0 | Hari jatuh tempo; `0` = dibayar di muka |
+| `credit_limit` | DECIMAL(15,2) | NULLABLE | Plafon kredit yang melekat pada termin |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Hanya termin aktif yang muncul di dropdown |
+| `sort_order` | SMALLINT | DEFAULT 0 | Urutan tampil |
+| `created_at` / `updated_at` | TIMESTAMP | | |
+
+> [!NOTE]
+> Sistem **belum punya proses pembayaran sama sekali**. Tabel ini disiapkan lebih awal agar form Buat Pesanan (Fase 5) sudah bisa memakai dropdown yang benar, dan modul Billing (Fase 8) tidak perlu mengubah struktur lagi. `credit_limit` sengaja NULL sampai plafonnya ditetapkan.
+
+> [!IMPORTANT]
+> **Perubahan v1.1.** Alur pengajuan customer oleh Sales dihapus (lihat PRD §6.2 F-MASTER-06). Kolom `status` (pending/approved/rejected), `requested_by`, `approved_by`, `approved_at`, dan `rejection_reason` **dihapus**, digantikan `is_active` + `created_by`. Customer dibuat langsung oleh Manager/Super Admin dan langsung aktif.
+>
+> **Status menunggak tidak disimpan sebagai kolom.** Penanda `⚠ Menunggak` dihitung *on-the-fly* dari `customer_billings` yang berstatus belum lunas, sehingga selalu akurat tanpa risiko data basi. Gunakan Eloquent accessor / scope, bukan kolom denormalisasi.
 
 ---
 
@@ -344,7 +497,7 @@ Header dokumen penerimaan barang dari pabrik.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `document_number` | VARCHAR(50) | NOT NULL | Nomor dokumen fisik pabrik (input manual) |
+| `document_number` | VARCHAR(50) | NOT NULL, UNIQUE | Nomor dokumen **dibangkitkan sistem**, format `IN-YYMMDD-NNN` |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang tujuan |
 | `production_date` | DATE | NOT NULL | Tanggal produksi |
 | `status` | ENUM | NOT NULL, DEFAULT 'draft' | 'draft', 'putaway_pending', 'verification_pending', 'verified', 'partial_verified' |
@@ -357,12 +510,31 @@ Header dokumen penerimaan barang dari pabrik.
 #### `inbound_details`
 Rincian per item per palet dalam satu inbound.
 
+> [!IMPORTANT]
+> **Satu baris = satu PALET, bukan satu produk.** Satu baris Excel dari Tim Produksi bisa menghasilkan beberapa baris di sini: 235 pcs kemasan 5 Kg (maks 180/palet) menjadi dua baris — palet 1 berisi 180, palet 2 berisi 55. `total_qty` tetap menyimpan 235 pada keduanya agar asal-usulnya terlacak.
+>
+> **`batch_no` sengaja TIDAK unik.** Pada data produksi nyata, beberapa nomor order produksi berbeda bisa berbagi satu batch QC — mis. `I126080037` dipakai oleh RMO26080301, RMO26080302, dan RMO26080304 sekaligus.
+>
+> **Berkas Excel produksi memuat kolom A–L, tetapi hanya A–E yang dibaca:**
+>
+> | Kolom | Judul | Dipakai sebagai |
+> |---|---|---|
+> | A | No. | `production_order_no` |
+> | B | Source No. | SKU → `product_id` (harus sudah ada di Master Produk) |
+> | C | Description | hanya untuk tampilan pratinjau |
+> | D | Quantity | `total_qty`, lalu dipecah jadi palet |
+> | E | QC Number | `batch_no` |
+>
+> Kolom F dan seterusnya (jadwal, status, user, routing) diabaikan. **Berkas mentahnya tidak disimpan** — hanya hasil pembacaannya, agar tidak menumpuk di server.
+
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
 | `inbound_header_id` | BIGINT UNSIGNED | FK → inbound_headers.id | Header induk |
 | `product_id` | BIGINT UNSIGNED | FK → products.id | Produk yang diterima |
-| `batch_no` | VARCHAR(50) | NOT NULL | Nomor batch produksi |
+| `production_order_no` | VARCHAR(50) | NULLABLE | Nomor order produksi dari kolom A berkas Excel (mis. `RMO26080294`) |
+| `batch_no` | VARCHAR(50) | NOT NULL | Nomor batch, dari kolom E ("QC Number"). **Tidak unik** |
+| `qty_actual` | INTEGER | NULLABLE | Jumlah fisik hasil hitungan Operator saat put-away |
 | `total_qty` | INTEGER | NOT NULL | Total qty sebelum split palet |
 | `pallet_no` | INTEGER | NOT NULL | Urutan palet (1, 2, 3, ...) |
 | `pallet_qty` | INTEGER | NOT NULL | Qty aktual di palet ini |
@@ -382,6 +554,14 @@ Rincian per item per palet dalam satu inbound.
 #### `inventory_stocks`
 **Tabel paling kritis.** Menyimpan data stok aktual yang ada di gudang, per produk per lokasi per batch.
 
+> [!NOTE]
+> **Keputusan pemilik produk (dikonfirmasi, untuk dibangun di Fase 4):**
+>
+> 1. **Satu bin boleh memuat beberapa produk DAN beberapa batch sekaligus.** Struktur tabel ini sudah mendukungnya — tiap kombinasi produk × lokasi × batch adalah satu baris tersendiri. Jangan menambahkan constraint unik `(location_id)` atau `(location_id, product_id)`; keduanya akan mematahkan aturan ini sekaligus merusak FIFO, yang justru menuntut batch tersimpan terpisah agar stok tertua bisa keluar duluan.
+> 2. **Koreksi stock opname WAJIB menyertakan alasan.** Perubahan qty hasil opname dicatat sebagai `stock_movements` bertipe `ADJUSTMENT` dengan `notes` wajib terisi dan `user_id` pencatat. Baris ledger tidak boleh diubah atau dihapus — ini jejak audit keuangan untuk stok.
+>
+> Halaman **Denah Gudang** (`/wms/master/locations/map`) sudah disiapkan sebagai antarmuka opname: tiap kotak bin punya slot indikator keterisian yang tinggal diisi begitu tabel ini ada, tanpa perlu menyusun ulang denahnya.
+
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
@@ -392,8 +572,11 @@ Rincian per item per palet dalam satu inbound.
 | `qty_available` | INTEGER | NOT NULL, DEFAULT 0 | Qty yang tersedia untuk dialokasikan |
 | `qty_allocated` | INTEGER | NOT NULL, DEFAULT 0 | Qty yang sudah dialokasikan untuk order |
 | `production_date` | DATE | NOT NULL | Tanggal produksi (untuk FIFO) |
-| `status` | ENUM | NOT NULL, DEFAULT 'active' | 'active', 'quarantine' |
-| `inbound_detail_id` | BIGINT UNSIGNED | FK → inbound_details.id | Asal palet inbound |
+| `expiry_date` | DATE | NOT NULL | `production_date` + `products.shelf_life_months` |
+| `status` | ENUM | NOT NULL, DEFAULT 'active' | 'active', 'ddp', 'expired' |
+| `ddp_reason` | VARCHAR(100) | NULLABLE | Alasan masuk DDP: 'EXPIRED', 'RETURN_DAMAGED', 'WRITE_OFF', 'OPNAME' |
+| `inbound_detail_id` | BIGINT UNSIGNED | FK → inbound_details.id, NULLABLE | Asal palet inbound (NULL bila berasal dari retur) |
+| `sales_return_detail_id` | BIGINT UNSIGNED | FK → sales_return_details.id, NULLABLE | Asal retur (NULL bila berasal dari inbound) |
 | `verified_by` | BIGINT UNSIGNED | FK → users.id | Logistik yang memverifikasi |
 | `verified_at` | TIMESTAMP | NOT NULL | Waktu stok aktif |
 | `created_at` | TIMESTAMP | | |
@@ -401,7 +584,19 @@ Rincian per item per palet dalam satu inbound.
 
 > [!IMPORTANT]
 > **Constraint:** `qty_available` >= 0, `qty_allocated` >= 0. Tidak boleh ada stok minus.  
-> **Composite Index:** (`product_id`, `warehouse_id`, `production_date`) — untuk query FIFO.
+> **Composite Index:** (`product_id`, `warehouse_id`, `status`, `production_date`) — untuk query FIFO.  
+> **Index tambahan:** (`status`, `expiry_date`) — untuk *sweep* harian batch kedaluwarsa dan peringatan dini 90 hari.
+
+**Status stok dan artinya:**
+
+| `status` | Ikut FIFO? | Muncul di Picking List? | Keterangan |
+|---|:---:|:---:|---|
+| `active` | ✅ | ✅ | Good Stock, layak jual |
+| `ddp` | ❌ | ❌ | Rusak / karantina (retur, write-off, temuan opname) |
+| `expired` | ❌ | ❌ | Lewat `expiry_date`, dipindahkan otomatis oleh scheduled job |
+
+> [!WARNING]
+> **Query FIFO WAJIB menyaring `status = 'active'` DAN `expiry_date > CURRENT_DATE`.** Melewatkan salah satunya berarti barang rusak atau kedaluwarsa berpotensi terkirim ke pelanggan. Lihat PRD §7.2 dan §7.2.1.
 
 #### `stock_movements`
 **Tabel Ledger.** Mencatat SETIAP mutasi stok sebagai jurnal yang tidak boleh di-update atau di-delete.
@@ -412,21 +607,30 @@ Rincian per item per palet dalam satu inbound.
 | `product_id` | BIGINT UNSIGNED | FK → products.id | Produk yang dimutasi |
 | `location_id` | BIGINT UNSIGNED | FK → locations.id, NULLABLE | Lokasi rak (null jika adjustment) |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang |
-| `movement_type` | ENUM | NOT NULL | 'IN', 'OUT', 'ALLOCATED', 'DEALLOCATED', 'ADJUSTMENT' |
+| `movement_type` | ENUM | NOT NULL | 'IN', 'OUT', 'ALLOCATED', 'DEALLOCATED', 'ADJUSTMENT', **'TRANSFER_OUT'**, **'TRANSFER_IN'**, **'RETURN_IN'** |
 | `qty_change` | INTEGER | NOT NULL | Perubahan qty (positif = tambah, negatif = kurang) |
 | `qty_before` | INTEGER | NOT NULL | Qty sebelum perubahan |
 | `qty_after` | INTEGER | NOT NULL | Qty setelah perubahan |
-| `reference_type` | VARCHAR(50) | NOT NULL | 'inbound', 'sales_order', 'adjustment' |
+| `reference_type` | VARCHAR(50) | NOT NULL | 'inbound', 'sales_order', 'adjustment', **'stock_transfer'**, **'sales_return'** |
 | `reference_id` | BIGINT UNSIGNED | NOT NULL | ID dari tabel referensi |
 | `batch_no` | VARCHAR(50) | NULLABLE | Nomor batch (jika relevan) |
-| `notes` | TEXT | NULLABLE | Catatan (wajib diisi untuk ADJUSTMENT) |
+| `notes` | TEXT | NULLABLE | Catatan (wajib diisi untuk ADJUSTMENT, TRANSFER, dan RETURN_IN) |
 | `user_id` | BIGINT UNSIGNED | FK → users.id | Siapa yang melakukan |
 | `created_at` | TIMESTAMP | | Waktu mutasi (immutable) |
 
 > [!CAUTION]
 > Tabel ini bersifat **IMMUTABLE** (append-only). Tidak ada operasi UPDATE atau DELETE. Ini adalah audit trail finansial untuk stok.
 
----
+**Catatan tipe mutasi baru (v1.1):**
+
+| Tipe | Kapan dipakai | Aturan |
+|---|---|---|
+| `TRANSFER_OUT` / `TRANSFER_IN` | Perpindahan stok antar lokasi rak atau antar gudang | Selalu **berpasangan** dalam satu transaksi database. Total `qty_change` kedua entri harus nol |
+| `RETURN_IN` | Barang retur diterima kembali di gudang | Satu entri per baris retur. `batch_no` dan `production_date` **wajib sama dengan aslinya** agar FIFO & expiry tidak rusak |
+| `ADJUSTMENT` (reason `EXPIRED`) | Scheduled job memindahkan batch kedaluwarsa ke DDP | Bukan perubahan qty, melainkan perubahan `status`. Tetap dicatat demi jejak audit |
+
+> [!NOTE]
+> **Keputusan desain: transfer stok TIDAK memakai tabel header terpisah.** Perpindahan cukup direkam sebagai pasangan `TRANSFER_OUT`/`TRANSFER_IN` di ledger ini. Alasannya: transfer adalah mutasi stok murni tanpa siklus hidup dokumen (tidak ada approval, tidak ada status bertahap), sehingga tabel header hanya akan menduplikasi data. Nomor dokumen `TRF-{YYYY}-` dibangkitkan dari `document_sequences` dan disimpan di kolom `reference_id` + `notes`.
 
 ### 3.5 Tabel Outbound (Sales Order)
 
@@ -436,13 +640,20 @@ Header pesanan penjualan.
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
 | `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `order_number` | VARCHAR(30) | NOT NULL, UNIQUE | Nomor PO otomatis (contoh: "PO-KRW-2026-00001") |
+| `order_number` | VARCHAR(30) | NOT NULL, UNIQUE | Nomor PO otomatis. Format **`PO{YYMMDD}{urut 3 digit}`**, mis. `PO260901001` |
+| `customer_po_number` | VARCHAR(50) | NULLABLE | Nomor PO milik customer (metode dokumen). **Sengaja TIDAK unique** |
+| `bc_so_number` | VARCHAR(50) | NULLABLE | Nomor SO dari sistem BC, diisi Logistik saat menerima pesanan |
 | `customer_id` | BIGINT UNSIGNED | FK → customers.id | Pelanggan |
 | `user_id` | BIGINT UNSIGNED | FK → users.id | Sales yang membuat |
 | `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang tujuan (dispatch code) |
-| `payment_term` | ENUM | NOT NULL | 'cash', 'transfer', 'tempo_30', 'tempo_60', 'tempo_90' |
-| `status` | ENUM | NOT NULL, DEFAULT 'pending' | Lihat daftar status di bawah |
-| `submitted_at` | TIMESTAMP | NOT NULL | Waktu submit oleh Sales (awal SLA) |
+| `payment_term_id` | BIGINT UNSIGNED | FK → payment_terms.id | Syarat pembayaran |
+| `status` | VARCHAR(30) | NOT NULL, DEFAULT 'draft' | Lihat daftar status di bawah |
+| `order_source` | VARCHAR(20) | NOT NULL, DEFAULT 'manual' | 'manual' (Sales mengisi rincian) atau 'document' (rincian menyusul dari Logistik) |
+| `document_path` | VARCHAR(500) | NULLABLE | Dokumen PO customer yang diunggah |
+| `document_name` | VARCHAR(255) | NULLABLE | Nama berkas asli |
+| `document_size` | INTEGER | NULLABLE | Ukuran berkas (bytes) |
+| `document_mime` | VARCHAR(100) | NULLABLE | Tipe MIME berkas |
+| `submitted_at` | TIMESTAMP | **NULLABLE** | Waktu submit oleh Sales (awal SLA). NULL selama masih draft |
 | `approved_at` | TIMESTAMP | NULLABLE | Waktu approve oleh Logistik |
 | `approved_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Logistik yang approve |
 | `rejected_at` | TIMESTAMP | NULLABLE | Waktu reject (jika ditolak) |
@@ -460,7 +671,8 @@ Header pesanan penjualan.
 
 | Status | Kode Enum | Deskripsi |
 |---|---|---|
-| Menunggu Approval | `pending` | PO baru disubmit Sales |
+| Draft | `draft` | Belum disubmit. Masih boleh diubah dan dihapus Sales |
+| Menunggu Diterima | `pending` | PO baru disubmit Sales |
 | Disetujui | `approved` | Logistik sudah approve, FIFO allocated |
 | Ditolak | `rejected` | Logistik menolak PO |
 | Proses Picking | `picking` | Operator sedang mengambil barang |
@@ -528,6 +740,54 @@ Bukti foto Surat Jalan yang ditandatangani.
 | `mime_type` | VARCHAR(50) | NOT NULL | 'image/png' atau 'image/jpeg' |
 | `uploaded_by` | BIGINT UNSIGNED | FK → users.id | Sales/Kurir yang upload |
 | `created_at` | TIMESTAMP | | |
+
+---
+
+### 3.5.1 Tabel Retur (Reverse Logistics)
+
+#### `sales_returns`
+Header dokumen retur. Satu dokumen per pelaporan penolakan oleh Sales.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
+| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
+| `return_number` | VARCHAR(30) | NOT NULL, UNIQUE | Format `RTN-{YYYY}{MM}-{urut}` |
+| `sales_order_id` | BIGINT UNSIGNED | FK → sales_orders.id | PO asal barang yang diretur |
+| `customer_id` | BIGINT UNSIGNED | FK → customers.id | Pelanggan yang menolak (denormalized) |
+| `warehouse_id` | BIGINT UNSIGNED | FK → warehouses.id | Gudang tujuan pengembalian |
+| `status` | ENUM | NOT NULL, DEFAULT 'pending_check' | 'pending_check', 'processed', 'cancelled' |
+| `proof_file_path` | VARCHAR(500) | NOT NULL | Foto SJ bercatatan penolakan (wajib) |
+| `reported_by` | BIGINT UNSIGNED | FK → users.id | Sales yang melapor |
+| `reported_at` | TIMESTAMP | NOT NULL | Waktu pelaporan |
+| `processed_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Petugas gudang yang mengecek fisik |
+| `processed_at` | TIMESTAMP | NULLABLE | Waktu pengecekan selesai |
+| `check_notes` | TEXT | NULLABLE | Catatan pengecekan fisik (wajib saat memproses) |
+| `created_at` | TIMESTAMP | | |
+| `updated_at` | TIMESTAMP | | |
+
+#### `sales_return_details`
+Rincian barang yang diretur beserta keputusan alokasinya.
+
+| Kolom | Tipe | Constraint | Deskripsi |
+|---|---|---|---|
+| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
+| `sales_return_id` | BIGINT UNSIGNED | FK → sales_returns.id, ON DELETE CASCADE | Header retur |
+| `product_id` | BIGINT UNSIGNED | FK → products.id | SKU yang diretur |
+| `batch_no` | VARCHAR(50) | NOT NULL | Batch asli dari pengiriman — **wajib dipertahankan** |
+| `production_date` | DATE | NOT NULL | Tanggal produksi asli — **wajib dipertahankan** |
+| `qty_reported` | INTEGER | NOT NULL | Qty yang dilaporkan Sales |
+| `qty_received` | INTEGER | NULLABLE | Qty yang benar-benar diterima gudang |
+| `rejection_reason` | ENUM | NOT NULL | Alasan penolakan pelanggan: 'damaged_packaging', 'poor_quality', 'wrong_variant', 'over_delivery' |
+| `allocation` | ENUM | NULLABLE | 'GR' (kembali ke Good Stock) atau 'DDP' (karantina/rusak) |
+| `location_id` | BIGINT UNSIGNED | FK → locations.id, NULLABLE | Lokasi penempatan setelah diproses |
+| `created_at` | TIMESTAMP | | |
+| `updated_at` | TIMESTAMP | | |
+
+> [!IMPORTANT]
+> **`batch_no` dan `production_date` WAJIB disalin dari pengiriman aslinya**, tidak boleh dibuat baru. Membuat batch baru akan merusak dua hal sekaligus: urutan FIFO (barang lama akan tampak baru dan mengendap di gudang) dan perhitungan `expiry_date` (barang kedaluwarsa akan tampak masih segar).
+
+> [!NOTE]
+> **Validasi expiry saat retur:** bila `production_date + shelf_life_months <= CURRENT_DATE` pada saat retur diproses, sistem **memaksa** `allocation = 'DDP'` meskipun petugas memilih 'GR'. Barang kedaluwarsa tidak boleh kembali ke Good Stock dalam kondisi apa pun.
 
 ---
 
@@ -821,6 +1081,10 @@ PROCESS:
 | max_login_attempts           | 5     | Max percobaan login sebelum lockout  |
 | initial_lockout_minutes      | 5     | Durasi lockout pertama (menit)       |
 | audit_archive_months         | 24    | Umur audit log sebelum di-archive    |
+| default_shelf_life_months    | 30    | Masa simpan default produk baru      |
+| expiry_warning_days          | 90    | Ambang peringatan dini kedaluwarsa   |
+| return_number_prefix         | RTN   | Prefix nomor dokumen retur           |
+| transfer_number_prefix       | TRF   | Prefix nomor dokumen transfer stok   |
 ```
 
 ---
@@ -838,7 +1102,8 @@ Migration harus dijalankan sesuai urutan dependensi. Berikut urutan yang benar:
 06. create_product_categories_table
 07. create_products_table                 (FK: product_categories)
 08. create_locations_table                (FK: warehouses)
-09. create_customers_table                (FK: users)
+09. create_payment_terms_table            (tanpa FK)
+09b. create_customers_table               (FK: users)
 10. create_inbound_headers_table          (FK: warehouses, users)
 11. create_inbound_details_table          (FK: inbound_headers, products, locations, users)
 12. create_inventory_stocks_table         (FK: products, locations, warehouses, users, inbound_details)
@@ -848,14 +1113,23 @@ Migration harus dijalankan sesuai urutan dependensi. Berikut urutan yang benar:
 16. create_sales_order_allocations_table  (FK: sales_order_details, inventory_stocks)
 17. create_delivery_notes_table           (FK: sales_orders, users)
 18. create_delivery_proofs_table          (FK: sales_orders, users)
-19. create_customer_billings_table        (FK: sales_orders, customers)
-20. create_billing_payments_table         (FK: customer_billings, users)
-21. create_order_trackings_table          (FK: sales_orders, users)
-22. create_notifications_table            (FK: users)
-23. create_audit_logs_table               (FK: users)
-24. create_system_settings_table
-25. create_document_sequences_table       (FK: warehouses)
+19. create_sales_returns_table            (FK: sales_orders, customers, warehouses, users)
+20. create_sales_return_details_table     (FK: sales_returns, products, locations)
+21. create_customer_billings_table        (FK: sales_orders, customers)
+22. create_billing_payments_table         (FK: customer_billings, users)
+23. create_order_trackings_table          (FK: sales_orders, users)
+24. create_notifications_table            (FK: users)
+25. create_audit_logs_table               (FK: users)
+26. create_system_settings_table
+27. create_document_sequences_table       (FK: warehouses)
+28. add_sales_return_fk_to_inventory_stocks_table
 ```
+
+> [!IMPORTANT]
+> **Dependensi melingkar `inventory_stocks` ↔ `sales_return_details`.**
+> `inventory_stocks` (no. 12) memiliki kolom `sales_return_detail_id` yang menunjuk tabel no. 20 — yang belum ada saat migration 12 dijalankan.
+>
+> **Solusi:** pada migration 12, buat kolom tersebut sebagai kolom biasa yang nullable **tanpa** foreign key constraint. Constraint-nya ditambahkan belakangan lewat migration no. 28. Jangan menukar urutan 12 dan 20 — `sales_return_details` sendiri bergantung pada `products` dan `locations`.
 
 > [!TIP]
 > Gunakan `php artisan migrate:fresh --seed` saat development. Seeder harus mengisi: roles, system_settings, dan 1 user Super Admin default.

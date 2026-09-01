@@ -8,7 +8,8 @@
     "require": {
         "php": "^8.3",
         "laravel/framework": "^13.0",
-        "laravel/tinker": "^3.0"
+        "laravel/tinker": "^3.0",
+        "phpoffice/phpspreadsheet": "^5.9"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -78,6 +79,13 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "platform": {
+            "php": "8.3.33",
+            "ext-gd": "8.3.33",
+            "ext-zip": "1.22.3",
+            "ext-mbstring": "8.3.33",
+            "ext-simplexml": "8.3.33"
         }
     },
     "minimum-stability": "dev",

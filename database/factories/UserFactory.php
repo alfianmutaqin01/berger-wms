@@ -2,43 +2,72 @@
 
 namespace Database\Factories;
 
+use App\Models\Department;
+use App\Models\Role;
+use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
+ * @extends Factory<User>
  */
 class UserFactory extends Factory
 {
-    /**
-     * The current password being used by the factory.
-     */
+    /** Hash password di-cache agar pembuatan banyak user di test tetap cepat. */
     protected static ?string $password;
 
     /**
-     * Define the model's default state.
-     *
      * @return array<string, mixed>
      */
     public function definition(): array
     {
         return [
-            'name' => fake()->name(),
+            'employee_id' => 'EMP-'.fake()->unique()->numberBetween(100000, 999999),
+            'full_name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
-            'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'phone_number' => '08'.fake()->numerify('##########'),
+            'role_id' => Role::factory(),
+            'department_id' => Department::factory(),
+            'warehouse_id' => null,
+            'manager_id' => null,
+            'is_active' => true,
             'remember_token' => Str::random(10),
         ];
     }
 
-    /**
-     * Indicate that the model's email address should be unverified.
-     */
-    public function unverified(): static
+    /** User dengan role tertentu berdasarkan slug; role dibuat bila belum ada. */
+    public function withRole(string $slug): static
     {
-        return $this->state(fn (array $attributes) => [
-            'email_verified_at' => null,
+        return $this->state(fn () => [
+            'role_id' => Role::firstOrCreate(
+                ['slug' => $slug],
+                ['name' => Str::headline($slug), 'level' => 99]
+            )->id,
+        ]);
+    }
+
+    public function superAdmin(): static
+    {
+        return $this->withRole(Role::SUPER_ADMIN);
+    }
+
+    public function manager(): static
+    {
+        return $this->withRole(Role::MANAGER);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(fn () => ['is_active' => false]);
+    }
+
+    public function atWarehouse(?Warehouse $warehouse = null): static
+    {
+        return $this->state(fn () => [
+            'warehouse_id' => ($warehouse ?? Warehouse::factory()->create())->id,
         ]);
     }
 }

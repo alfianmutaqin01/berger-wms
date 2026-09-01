@@ -1,10 +1,18 @@
 # Panduan UI/UX
 ## Sistem WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.0  
-> **Tanggal:** 14 Agustus 2026  
+> **Versi:** 1.1  
+> **Tanggal:** 26 Agustus 2026 *(revisi dari v1.0, 14 Agustus 2026)*  
 > **CSS Framework:** Bootstrap 5.3+  
-> **Pendekatan:** Mobile-first (Sales) | Desktop-first (Warehouse/Admin)
+> **Pendekatan:** Adaptif/Hybrid (Sales) | Desktop-first (Warehouse/Admin)
+
+> [!NOTE]
+> **Perubahan v1.1:**
+> - §3.1–3.2 — Portal Sales menjadi **hybrid**: bottom nav di `<992px`, sidebar di `≥992px`. Menu Customer dihapus (5 → 4 item)
+> - §3.3.4 — "Form Ajukan Customer Baru" diganti **"Lapor Penolakan Barang"**
+> - §3.3.2 — Customer menunggak menjadi **peringatan**, bukan pemblokiran
+> - §4.3.8–4.3.9 — Wireframe baru: **Penerimaan Retur** dan **Data Stok Good/DDP**
+> - §5.1 — Menu sidebar Admin dipisah antara Super Admin dan Manager; `Approval Customer` → `Master Customer`
 
 ---
 
@@ -150,7 +158,11 @@
 
 ## 3. Portal Sales (Mobile-First)
 
-### 3.1 Layout Structure
+### 3.1 Layout Structure — Adaptif (Hybrid)
+
+Portal Sales memakai **dua bentuk navigasi yang bertukar pada breakpoint `lg` (992px)**. Sales bekerja dari HP saat di lapangan dan dari desktop saat di kantor, sehingga keduanya harus terasa native.
+
+**Mobile & tablet portrait (`< 992px`) — bottom navigation:**
 
 ```
 ┌──────────────────────────┐
@@ -159,40 +171,53 @@
 │  🔔 Berger Sales    👤  │ ← Top navbar (putih, compact)
 ├──────────────────────────┤
 │                          │
-│                          │
 │     Content Area         │ ← Scrollable content
 │     (Cards, Forms,       │
 │      Lists, Timeline)    │
 │                          │
-│                          │
 ├──────────────────────────┤
-│  🏠   📋   ➕   👥   ⚙️  │ ← Bottom navigation (fixed)
-│ Home  Order  New  Cust  Me│
+│    🏠     📋    ➕    👤  │ ← Bottom navigation (fixed)
+│   Home   Order  New   Me  │
 └──────────────────────────┘
 ```
 
-### 3.2 Bottom Navigation Bar
+**Desktop (`≥ 992px`) — sidebar, konsisten dengan Portal WMS:**
+
+```
+┌────────────┬─────────────────────────────────────┐
+│  Berger    │  🔔 Selamat Pagi, {nama}      👤   │
+│  SOMS      ├─────────────────────────────────────┤
+│            │                                     │
+│ ▸ Dashboard│         Content Area                │
+│ ▸ New Order│         (Cards, Forms, Tables)      │
+│ ▸ My Orders│                                     │
+│            │                                     │
+└────────────┴─────────────────────────────────────┘
+```
+
+> [!IMPORTANT]
+> **Perubahan v1.1.** Menu **Customer** dihapus dari navigasi Sales (dari 5 item menjadi 4). Sales tidak lagi memiliki halaman daftar maupun form pengajuan pelanggan — pelanggan didaftarkan oleh Manager/Super Admin melalui Master Customer di Portal WMS. Lihat PRD §6.2 F-MASTER-06.
+
+### 3.2 Navigation Bar
+
+**Bottom navigation — hanya tampil di bawah `lg`:**
 
 ```html
-<!-- Fixed bottom navigation -->
-<nav class="navbar fixed-bottom navbar-light bg-white border-top shadow-sm">
+<!-- Fixed bottom navigation: mobile & tablet portrait saja -->
+<nav class="navbar fixed-bottom navbar-light bg-white border-top shadow-sm d-lg-none">
     <div class="container-fluid d-flex justify-content-around">
         <a href="/sales/dashboard" class="nav-link text-center">
             <i class="bi bi-house-fill"></i>
             <span class="d-block small">Home</span>
         </a>
-        <a href="/sales/orders" class="nav-link text-center">
+        <a href="/sales/my-orders" class="nav-link text-center">
             <i class="bi bi-clipboard-data"></i>
             <span class="d-block small">Order</span>
         </a>
-        <a href="/sales/orders/create" class="nav-link text-center">
+        <a href="/sales/new-order" class="nav-link text-center">
             <div class="btn btn-primary rounded-circle p-2">
                 <i class="bi bi-plus-lg text-white"></i>
             </div>
-        </a>
-        <a href="/sales/customers" class="nav-link text-center">
-            <i class="bi bi-shop"></i>
-            <span class="d-block small">Customer</span>
         </a>
         <a href="/sales/profile" class="nav-link text-center">
             <i class="bi bi-person"></i>
@@ -201,6 +226,25 @@
     </div>
 </nav>
 ```
+
+**Sidebar — hanya tampil pada `lg` ke atas:**
+
+```html
+<!-- Sidebar: desktop saja. Struktur & style sama dengan layouts/wms.blade.php -->
+<nav id="sidebar" class="sidebar d-none d-lg-flex">
+    <!-- Dashboard | New Order | My Orders -->
+</nav>
+```
+
+**Aturan implementasi:**
+
+| Aturan | Detail |
+|---|---|
+| Sumber tunggal daftar menu | Definisikan item menu **satu kali** sebagai partial, lalu render di kedua bentuk. Jangan menduplikasi daftar menu — perbedaan antar keduanya adalah bug yang menunggu terjadi |
+| Padding bawah konten | Saat bottom nav aktif, `<main>` wajib memiliki `padding-bottom` minimal **70px** agar konten terakhir tidak tertutup |
+| Tap target | Minimal **44×44px** pada bottom nav |
+| Tidak boleh tampil bersamaan | Gunakan `d-lg-none` dan `d-none d-lg-flex`. Dua navigasi aktif sekaligus adalah cacat visual |
+| Role Switcher | **Tidak boleh** muncul di Portal Sales. Partial `navbar-top` yang dipakai bersama harus menerima flag untuk menyembunyikannya |
 
 ### 3.3 Halaman-Halaman Portal Sales
 
@@ -228,7 +272,7 @@
 │ ┌───────────────────────── ┐│
 │ │ PO-KRW-2026-00145  →    ││
 │ │ Toko Jaya Makmur        ││
-│ │ ⏳ Menunggu Approval     ││
+│ │ ⏳ Menunggu Diterima     ││
 │ │ 14 Aug 2026, 09:15      ││
 │ └───────────────────────── ┘│
 │ ┌───────────────────────── ┐│
@@ -306,7 +350,10 @@
 **Fitur khusus:**
 - **Pencarian customer:** Autocomplete/searchable dropdown
 - **Indikator stok Semi-Blind:** Badge ✅⚠️❌ di samping nama produk (TANPA angka)
-- **Validasi real-time:** Customer blocked → tampilkan alert merah, jam lewat 15:00 → tombol disabled
+- **Validasi real-time:**
+  - Customer bertagihan → tampilkan **badge peringatan** `⚠ Menunggak` berwarna kuning beserta alert informatif. **Tombol Simpan Draft dan Submit tetap aktif** — peringatan ini tidak memblokir apa pun.
+  - Jam lewat 15:00 → tombol **Submit** disabled, tombol **Simpan Draft** tetap aktif.
+- **Konsistensi teks vs perilaku:** bila alert menyatakan pesanan boleh dilanjutkan, tombol **wajib** tetap aktif. Teks dan perilaku tombol yang bertentangan adalah cacat UX yang harus ditolak saat review.
 - **Multi-item:** Tombol "+ Tambah Produk" untuk menambah baris item
 
 #### 3.3.3 Detail & Tracking Pesanan
@@ -373,18 +420,47 @@
 - **Preview foto:** Thumbnail foto yang akan diupload sebelum submit
 - **SLA display:** Setelah complete, tampilkan durasi total (contoh: "Selesai dalam 26 jam 45 menit")
 
-#### 3.3.4 Form Ajukan Customer Baru
-**Deskripsi:** Form sederhana untuk mengajukan toko/customer baru.
+#### 3.3.4 Lapor Penolakan Barang
+**Deskripsi:** Modal yang dibuka dari kartu pesanan berstatus **Dalam Pengiriman** atau **Menunggu Verifikasi Bukti** di halaman My Orders.
+
+```
+┌─────────────────────────────────────────────┐
+│ ⚠ Lapor Penolakan Barang              [×]  │
+├─────────────────────────────────────────────┤
+│ PO: PO-1508-011  ·  PT Sentosa Abadi        │
+│                                             │
+│ Bukti Surat Jalan (Wajib) *                 │
+│ ┌─────────────────────────────────────────┐ │
+│ │  📷  Ambil Foto / Pilih File            │ │
+│ └─────────────────────────────────────────┘ │
+│ PNG/JPG · maks 5MB · SJ dengan catatan      │
+│                                             │
+│ Detail Barang Ditolak      [+ Tambah Baris] │
+│ ┌─────────────────────────────────────────┐ │
+│ │ SKU ▼    │ Qty │ Alasan ▼      │  🗑    │ │
+│ └─────────────────────────────────────────┘ │
+│                                             │
+│              [Batal]  [Kirim Laporan]       │
+└─────────────────────────────────────────────┘
+```
 
 ```
 Fields:
-- Nama Toko/Customer *
-- Alamat Lengkap *
-- Nama PIC (Person in Charge) *
-- Nomor HP PIC *
-- Tipe Pembayaran Default * (dropdown: Cash/Transfer/Tempo 30/60/90)
-- Tombol: "Ajukan Customer"
+- Bukti foto Surat Jalan bercatatan penolakan * (PNG/JPG, maks 5MB, capture kamera)
+- Baris barang (repeatable, minimal 1):
+  · SKU * (dropdown, dibatasi SKU yang ada di PO tersebut)
+  · Qty * (tidak boleh melebihi qty terkirim)
+  · Alasan * (Kemasan Rusak/Bocor · Kualitas Buruk/Beku · Salah Varian · Kelebihan Kirim)
+- Tombol: "Kirim Laporan"
 ```
+
+**Interaksi:**
+- Tombol Kirim **disabled** sampai bukti foto terlampir dan minimal 1 baris terisi.
+- Setelah terkirim, kartu PO berubah warna menjadi merah dengan badge **"Menunggu Proses Retur"**, dan tombol "Selesaikan SJ" dinonaktifkan.
+- Sales **tidak** dapat mengedit atau membatalkan laporan retur yang sudah terkirim — koreksi dilakukan oleh gudang saat pengecekan fisik.
+
+> [!NOTE]
+> **Sub-bab "Form Ajukan Customer Baru" dihapus pada v1.1.** Sales tidak lagi mengajukan pelanggan baru. Halaman tersebut digantikan oleh Master Customer di Portal WMS (lihat §5.1).
 
 ---
 
@@ -541,7 +617,7 @@ Fields:
 - **Alert info:** Peringatan bahwa verifikasi bersifat final (koreksi hanya via menu Stok)
 
 #### 4.3.3 Halaman Pesanan — Approval (Tim Logistik)
-**Deskripsi:** Daftar pesanan masuk yang menunggu approval.
+**Deskripsi:** Daftar pesanan masuk yang Menunggu Diterima.
 
 **Wireframe Layout:**
 ```
@@ -728,33 +804,200 @@ Modal:
 └──────────────────────────────┘
 ```
 
+#### 4.3.8 Halaman Penerimaan Retur (Logistik / Operator)
+**Deskripsi:** Antrean laporan retur dari Sales yang menunggu pengecekan fisik di gudang.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Inbound Retur (Reverse Logistics)      🔍 Cari No. Dok / SKU...│
+├──────────────────────────────────────────────────────────────────┤
+│ ┌──────────┬─────────┬────────┬─────┬────────────┬────────────┐ │
+│ │Dokumen   │ Waktu   │ SKU    │ Qty │ Alasan     │ Aksi       │ │
+│ ├──────────┼─────────┼────────┼─────┼────────────┼────────────┤ │
+│ │RTN-2608-1│Hari ini │BP-5KG- │ 12  │⚠ Kemasan   │[Proses     │ │
+│ │PO-1508-11│ 14:20   │WHT     │Pail │  Rusak     │ Fisik]     │ │
+│ │Sentosa   │         │        │     │            │            │ │
+│ └──────────┴─────────┴────────┴─────┴────────────┴────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Modal "Proses Fisik" — keputusan alokasi:**
+
+```
+┌──────────────────────────────────────────────┐
+│  Verifikasi Fisik Retur                 [×] │
+├──────────────────────────────────────────────┤
+│  BP-5KG-WHT · 12 Pail · Batch BCH-2607-042   │
+│  Tgl Produksi: 15 Jul 2026                   │
+│  Exp Date: 15 Jan 2029        ✅ Masih layak │
+│                                              │
+│  Qty Diterima Fisik *  [ 12 ]                │
+│                                              │
+│  Alokasi / Keputusan *                       │
+│  ┌────────────────────────────────────────┐  │
+│  │ ⦿ Masukkan ke Good Stock (GR)          │  │
+│  │   Lecet minor, kemasan masih layak jual│  │
+│  ├────────────────────────────────────────┤  │
+│  │ ○ Masukkan ke Stok DDP (Rusak)         │  │
+│  │   Penyok parah, bocor, kemasan hancur  │  │
+│  └────────────────────────────────────────┘  │
+│                                              │
+│  Catatan Pengecekan *                        │
+│  ┌────────────────────────────────────────┐  │
+│  │ Kaleng sedikit penyok, isi aman.       │  │
+│  └────────────────────────────────────────┘  │
+│                                              │
+│           [Batal]  [💾 Konfirmasi Alokasi]   │
+└──────────────────────────────────────────────┘
+```
+
+**Aturan tampilan:**
+- Batch, tanggal produksi, dan **Exp Date** wajib ditampilkan agar petugas dapat menilai kelayakan sebelum memilih GR.
+- Bila batch sudah melewati Exp Date, opsi **GR dikunci (disabled)** dengan keterangan *"Batch sudah kedaluwarsa — wajib masuk DDP"*.
+- Catatan pengecekan bersifat **wajib**; tombol konfirmasi disabled hingga terisi.
+
+#### 4.3.9 Halaman Data Stok — Good Stock vs DDP
+**Deskripsi:** Stok setiap SKU ditampilkan sebagai accordion. Saat dibuka, isinya terbagi dua blok berwarna.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ▼ BP-5KG-WHT  Cat Tembok Berger White 5Kg                        │
+│                    [PAIL]  Good Stock: 480  ·  DDP Stock: 22     │
+├──────────────────────────────────────────────────────────────────┤
+│ 🟢 GOOD STOCK (Layak Jual)                                       │
+│ ┌─────────┬──────────┬──────────┬─────────┬────────┬──────────┐ │
+│ │Batch    │Tgl Prod  │Exp Date  │Lokasi   │Tersedia│Di-book   │ │
+│ ├─────────┼──────────┼──────────┼─────────┼────────┼──────────┤ │
+│ │BCH-2608 │01 Ags 26 │01 Feb 29 │A-01 PLT1│  300   │    50    │ │
+│ │BCH-2606 │10 Jun 26 │10 Des 28 │A-02 PLT2│  180   │     0    │ │
+│ └─────────┴──────────┴──────────┴─────────┴────────┴──────────┘ │
+├──────────────────────────────────────────────────────────────────┤
+│ 🔴 STOK DDP (Rusak / Karantina / Expired)                        │
+│ ┌─────────┬──────────┬────────────────┬──────────┬────────────┐ │
+│ │Batch    │Tgl Prod  │Keterangan      │Lokasi    │Qty         │ │
+│ ├─────────┼──────────┼────────────────┼──────────┼────────────┤ │
+│ │BCH-2301 │15 Jan 23 │🔴 EXPIRED      │DDP-1     │    20      │ │
+│ │BCH-2608 │01 Ags 26 │🟠 RETUR/RUSAK  │DDP-2     │     2      │ │
+│ └─────────┴──────────┴────────────────┴──────────┴────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Aturan tampilan:**
+- Blok Good Stock memakai `bg-success-subtle`, blok DDP memakai `bg-danger-subtle` — perbedaan warna harus jelas sekilas pandang.
+- Batch yang akan kedaluwarsa dalam **≤ 90 hari** ditandai badge kuning `⚠ Segera Exp` pada blok Good Stock.
+- Blok DDP **selalu ditampilkan** meski kosong (`0 Pcs`), agar ketiadaan stok rusak terbaca sebagai informasi, bukan sebagai data yang belum dimuat.
+- Kolom **Exp Date** wajib ada di blok Good Stock.
+
 ---
 
 ## 5. Portal Admin (Desktop-First)
 
 ### 5.1 Menu Sidebar Admin
 
-Menu sidebar Admin merupakan **superset** dari menu Warehouse, ditambah:
+Menu sidebar Admin merupakan **superset** dari menu Warehouse. Isinya berbeda antara Super Admin dan Manager:
+
+**Super Admin — akses penuh Portal Warehouse:**
 
 ```
 📊 Dashboard (semua data)
-📥 Inbound (lihat semua, tidak bisa verifikasi)
-📦 Stok (lihat + EDIT)
-📋 Pesanan (lihat semua)
-🚚 Surat Jalan (lihat semua)
-💳 Billing (lihat semua)
+──────────  INVENTORY MANAGEMENT
+📥 Input Produksi              (bisa kerjakan)
+🕘 Riwayat Produksi
+📦 Proses Put-away             (bisa kerjakan)
+↩️  Penerimaan Retur            (bisa kerjakan)
+🛡️  Verifikasi Logistik         (bisa kerjakan)
+📊 Data Stok (lihat + EDIT + Transfer)
+──────────  OUTBOUND
+✅ Terima Pesanan              (bisa kerjakan)
+📋 Daftar Picking
+📦 Proses Picking              (bisa kerjakan)
+🖨️  Cetak Surat Jalan           (bisa kerjakan)
+🛡️  Verifikasi Bukti SJ         (bisa kerjakan)
+──────────  KEUANGAN & SISTEM
+💳 Billing & Piutang           (bisa konfirmasi lunas)
 📈 Laporan & Ekspor
-──────────
-👤 Manajemen User
+👥 Master Customer
 📦 Master Produk
 📂 Kategori Produk
 📍 Master Lokasi Rak
 🏭 Master Gudang
-👥 Approval Customer
-──────────
+👤 Manajemen User              (termasuk role Super Admin)
+📄 Pengaturan Dokumen
 📝 Audit Log
-⚙️ Pengaturan Sistem
+⚙️ Pengaturan Sistem           ← EKSKLUSIF Super Admin
 ```
+
+**Manager — pengawasan penuh, tanpa tugas tangan langsung:**
+
+```
+📊 Dashboard (semua data)
+📈 Laporan & Analisis
+──────────  INVENTORY MANAGEMENT
+🕘 Riwayat Produksi
+🛡️  Verifikasi Logistik
+📊 Data Stok (lihat + EDIT + Transfer)
+──────────  OUTBOUND
+✅ Terima Pesanan
+📋 Daftar Picking
+🖨️  Cetak Surat Jalan
+🛡️  Verifikasi Bukti SJ
+──────────  KEUANGAN & SISTEM
+💳 Billing & Piutang
+👥 Master Customer
+📦 Master Produk
+👤 Manajemen User              (kecuali role Super Admin)
+📄 Pengaturan Dokumen
+```
+
+> [!IMPORTANT]
+> **Perubahan v1.3.** Manager kini memperoleh menu pengawasan outbound penuh (`Terima Pesanan`, `Daftar Picking`, `Cetak Surat Jalan`, `Verifikasi Bukti SJ`, `Billing`) dan `Verifikasi Logistik`.
+>
+> Empat menu berikut **tetap tertutup** bagi Manager karena merupakan tugas tangan langsung di gudang: `Input Produksi`, `Proses Put-away`, `Proses Picking`, dan `Penerimaan Retur`. Batas inilah yang menjaga prinsip Maker-Checker.
+>
+> Manager juga **tidak** memperoleh `Pengaturan Sistem`, dan **tidak** dapat membuat/mengubah akun ber-role Super Admin.
+
+**Tim Logistik — pemegang alur outbound harian:**
+
+```
+📊 Dashboard (semua data)
+📈 Laporan & Analisis
+──────────  INVENTORY MANAGEMENT
+↩️  Penerimaan Retur
+🛡️  Verifikasi Logistik
+📊 Data Stok (lihat + Transfer, tanpa Adjustment)
+──────────  OUTBOUND
+✅ Terima Pesanan
+📋 Daftar Picking
+🖨️  Cetak Surat Jalan
+🛡️  Verifikasi Bukti SJ
+──────────  KEUANGAN
+💳 Billing & Piutang
+```
+
+**Tim Produksi — hanya lingkup produksi:**
+
+```
+🔧 Dashboard Produksi
+──────────  INVENTORY MANAGEMENT
+📥 Input Produksi
+🕘 Riwayat Produksi
+📊 Data Stok (lihat saja)
+```
+
+**Operator Gudang — hanya tugas fisik di lantai gudang:**
+
+```
+🏷️  Dashboard Operator
+──────────  INVENTORY MANAGEMENT
+📦 Proses Put-away
+↩️  Penerimaan Retur
+📊 Data Stok (lihat saja)
+──────────  OUTBOUND
+📦 Proses Picking
+```
+
+> [!NOTE]
+> **Sumber kebenaran visibilitas menu.** Seluruh sidebar di atas tidak ditulis manual per role — dirender dari matriks tunggal `App\Support\Permission`, yang juga dipakai middleware `can:` pada `routes/web.php`. Menyembunyikan menu tidak mengamankan apa pun; penegakannya ada di route. Karena keduanya membaca matriks yang sama, tampilan menu dan hak akses sebenarnya tidak bisa berbeda.
 
 ### 5.2 Halaman Manajemen Stok (Manager/Super Admin)
 
@@ -869,7 +1112,7 @@ Modal:
 
 ```html
 <!-- Badge warna berdasarkan status order -->
-<span class="badge bg-warning text-dark">⏳ Menunggu Approval</span>
+<span class="badge bg-warning text-dark">⏳ Menunggu Diterima</span>
 <span class="badge bg-success">✅ Disetujui</span>
 <span class="badge bg-danger">❌ Ditolak</span>
 <span class="badge bg-info">🔄 Proses Picking</span>
@@ -903,7 +1146,7 @@ Modal:
             <button type="button" class="btn-close btn-close-white"></button>
         </div>
         <div class="toast-body">
-            Pesanan baru #PO-KRW-2026-00145 dari Ahmad menunggu approval.
+            Pesanan baru #PO-KRW-2026-00145 dari Ahmad Menunggu Diterima.
         </div>
     </div>
 </div>
@@ -963,7 +1206,7 @@ Modal:
                 <i class="bi bi-cart-check text-success me-2 mt-1"></i>
                 <div>
                     <small class="fw-bold">Pesanan Baru</small>
-                    <p class="mb-0 small text-muted">PO-00145 dari Ahmad menunggu approval</p>
+                    <p class="mb-0 small text-muted">PO-00145 dari Ahmad Menunggu Diterima</p>
                     <small class="text-muted">2 menit lalu</small>
                 </div>
             </div>

@@ -1,59 +1,93 @@
-version: '3.8'
+# ===========================================
+# Berger WMS â€” Docker Compose (Development)
+# ===========================================
 
 services:
+  # --- Nginx Reverse Proxy ---
   nginx:
-    build:
-      context: .
-      dockerfile: docker/nginx/Dockerfile
+    image: nginx:1.27-alpine
     ports:
       - "8080:80"
     volumes:
       - .:/var/www/html:ro
-      - ./public:/var/www/html/public:ro
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - php-fpm
+      php-fpm:
+        condition: service_started
     networks:
       - frontend
       - backend
     restart: unless-stopped
 
+  # --- PHP-FPM Application ---
   php-fpm:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
+      target: development
+    # Master PHP-FPM tetap root (ia yang menurunkan hak worker ke www-data),
+    # tapi entrypoint ini mengembalikan kepemilikan storage/ dan
+    # bootstrap/cache ke www-data sebelum melayani. Lihat berkasnya untuk
+    # sebab lengkapnya — singkatnya, berkas milik root di
+    # storage/framework/views membuat halaman mati dengan
+    # "touch(): Utime failed: Operation not permitted".
+    entrypoint: ["/bin/sh", "/var/www/html/docker/php/dev-entrypoint.sh"]
+    # WAJIB ditulis ulang: menyetel `entrypoint` di Compose ikut MENGHAPUS
+    # CMD bawaan image, sehingga tanpa baris ini container hidup sebentar
+    # lalu keluar dengan kode 0 tanpa pesan apa pun.
+    command: ["php-fpm"]
     volumes:
       - .:/var/www/html
-      - ./storage:/var/www/html/storage
-    environment:
-      - APP_ENV=local
-      - APP_DEBUG=true
+    # APP_ENV dan APP_DEBUG sengaja TIDAK didefinisikan di sini.
+    #
+    # Keduanya sudah diatur di .env, jadi mendefinisikannya ulang hanya duplikasi.
+    # Lebih buruk lagi: environment variable milik container berstatus "sudah ada"
+    # bagi PHPUnit, sehingga <env name="APP_ENV" value="testing"/> di phpunit.xml
+    # tidak berlaku dan seluruh feature test berjalan di environment "local".
+    # Akibatnya middleware CSRF tidak dilewati dan setiap POST/PUT/PATCH pada test
+    # gagal dengan HTTP 419 tanpa pesan yang menjelaskan sebabnya.
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
 
-  horizon:
+  # --- Queue Worker (use queue:work until Horizon is installed) ---
+  queue:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
-    command: php artisan horizon
+      target: development
+    # Proses PHP biasa — tidak butuh root sama sekali. Dijalankan sebagai
+    # www-data supaya berkas yang ditulisnya (log, cache, berkas antrean)
+    # tidak pernah menjadi milik root dan mematikan halaman bagi PHP-FPM.
+    user: www-data
+    command: php artisan queue:work redis --sleep=3 --tries=3 --timeout=60
     volumes:
       - .:/var/www/html
     depends_on:
-      - php-fpm
-      - redis
+      php-fpm:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
 
+  # --- Laravel Scheduler (Cron) ---
   scheduler:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
+      target: development
+    # Alasan sama dengan queue: proses PHP biasa, tidak butuh root. Ini yang
+    # paling rawan — ia berjalan setiap 60 detik sepanjang hari, jadi sebagai
+    # root ia akan terus-menerus melahirkan berkas milik root di storage/.
+    user: www-data
     command: >
       sh -c "while true; do
         php /var/www/html/artisan schedule:run --no-interaction;
@@ -62,25 +96,33 @@ services:
     volumes:
       - .:/var/www/html
     depends_on:
-      - php-fpm
+      php-fpm:
+        condition: service_started
     networks:
       - backend
     restart: unless-stopped
 
+  # --- PostgreSQL Database ---
   postgres:
     image: postgres:16-alpine
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: \
-      POSTGRES_USER: \
-      POSTGRES_PASSWORD: \
+      POSTGRES_DB: wms_berger
+      POSTGRES_USER: wms_user
+      POSTGRES_PASSWORD: secret
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wms_user -d wms_berger"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - backend
     restart: unless-stopped
 
+  # --- Redis (Cache + Session + Queue) ---
   redis:
     image: redis:7-alpine
     ports:
@@ -88,8 +130,28 @@ services:
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - backend
+    restart: unless-stopped
+
+  # --- Soketi (WebSocket Server) ---
+  soketi:
+    image: quay.io/soketi/soketi:1.6-16-alpine
+    ports:
+      - "6001:6001"
+    environment:
+      SOKETI_DEBUG: "1"
+      SOKETI_DEFAULT_APP_ID: "berger-wms"
+      SOKETI_DEFAULT_APP_KEY: "app-key"
+      SOKETI_DEFAULT_APP_SECRET: "app-secret"
+    networks:
+      - backend
+      - frontend
     restart: unless-stopped
 
 volumes:

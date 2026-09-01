@@ -1,9 +1,12 @@
 # Strategi Testing
 ## Sistem WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.0  
-> **Tanggal:** 14 Agustus 2026  
+> **Versi:** 1.1  
+> **Tanggal:** 26 Agustus 2026 *(revisi dari v1.0, 14 Agustus 2026)*  
 > **Testing Framework:** PHPUnit (Unit + Feature), Laravel Dusk (Browser)
+
+> [!NOTE]
+> **Perubahan v1.1:** skenario "blokir customer" diganti menjadi *guard test* yang justru memastikan order **tidak** terblokir. Ditambahkan `ExpiryServiceTest`, `SalesReturnServiceTest`, `StockTransferServiceTest`, serta skenario E2E untuk retur dan masa kedaluwarsa.
 
 ---
 
@@ -102,14 +105,15 @@ Unit test menguji satu class/method secara terisolasi. Dependencies di-mock jika
 | # | Test Case | Expected |
 |---|---|---|
 | 1 | Create order — valid data | Order created, status pending, tracking recorded |
-| 2 | Create order — customer blocked (billing unpaid) | Exception thrown, order NOT created |
-| 3 | Create order — customer not approved | Exception thrown |
+| 2 | **Create order — customer punya tagihan belum lunas** | **Order TETAP DIBUAT.** Flag `is_overdue` = TRUE pada payload. Tidak ada exception |
+| 3 | Create order — customer non-aktif (`is_active` = false) | Exception thrown |
 | 4 | Create order — after cutoff time (15:00) | Exception thrown |
 | 5 | Approve order — normal | Status → approved, stock allocated, tracking recorded |
 | 6 | Approve order — partial fulfillment | Qty adjusted, lost_qty calculated |
 | 7 | Reject order — with reason | Status → rejected, notification sent |
 | 8 | Complete order — cash/transfer | Status → completed, NO billing created |
 | 9 | Complete order — tempo 30 | Status → completed_billing, billing created, due date +30 days |
+| 10 | **Approve order milik customer menunggak** | Berhasil, dan `audit_logs` mencatat identitas penyetuju |
 
 #### `BillingServiceTest`
 
@@ -118,11 +122,54 @@ Unit test menguji satu class/method secara terisolasi. Dependencies di-mock jika
 | 1 | Create billing — tempo 30 | due_date = complete_date + 30 days |
 | 2 | Create billing — tempo 60 | due_date = complete_date + 60 days |
 | 3 | Create billing — tempo 90 | due_date = complete_date + 90 days |
-| 4 | Check customer blocked — has unpaid billing | Returns TRUE (blocked) |
-| 5 | Check customer blocked — all paid | Returns FALSE (not blocked) |
-| 6 | Check customer blocked — cash customer | Returns FALSE (not blocked) |
-| 7 | Confirm payment — update status | Status → paid, customer unblocked |
+| 4 | **Flag overdue — has unpaid billing** | Returns TRUE (**ditandai**, bukan diblokir) |
+| 5 | Flag overdue — all paid | Returns FALSE |
+| 6 | Flag overdue — cash customer | Returns FALSE |
+| 7 | Confirm payment — update status | Status → paid, flag menunggak hilang |
 | 8 | Check overdue — past due date | Status auto-update to overdue |
+| 9 | **Customer menunggak tetap bisa order** | `createOrder()` sukses tanpa exception |
+
+> [!IMPORTANT]
+> **Regresi yang wajib dijaga (v1.1).** Sistem **tidak boleh** memblokir pembuatan PO karena alasan piutang. Test case no. 2 dan no. 9 di atas adalah *guard test* — bila keduanya gagal, artinya logika blokir lama tanpa sengaja masuk kembali ke kode.
+
+#### `ExpiryServiceTest`
+
+| # | Test Case | Expected |
+|---|---|---|
+| 1 | Hitung expiry — produk default | `expiry_date` = `production_date` + 30 bulan |
+| 2 | Hitung expiry — `shelf_life_months` custom (18) | `expiry_date` = `production_date` + 18 bulan |
+| 3 | Sweep harian — batch lewat expiry | `status` `active` → `expired`, tercatat di `stock_movements` |
+| 4 | Sweep harian — batch belum lewat | Status tidak berubah |
+| 5 | Peringatan dini — expiry dalam 90 hari | Masuk daftar peringatan + notifikasi terkirim |
+| 6 | Peringatan dini — expiry 120 hari lagi | Tidak masuk daftar |
+| 7 | **FIFO melewati stok `expired`** | Stok expired **tidak** teralokasi meski `production_date` paling tua |
+| 8 | **FIFO melewati stok `ddp`** | Stok DDP **tidak** teralokasi |
+| 9 | Semi-blind indicator | Hanya menghitung `status = 'active'`; stok DDP diabaikan |
+
+#### `SalesReturnServiceTest`
+
+| # | Test Case | Expected |
+|---|---|---|
+| 1 | Lapor retur — data valid + bukti foto | Dokumen `RTN-…` dibuat, status `pending_check`, notifikasi ke Logistik |
+| 2 | Lapor retur — tanpa bukti foto | Validation error, dokumen tidak dibuat |
+| 3 | Lapor retur — qty melebihi qty terkirim | Validation error |
+| 4 | Lapor retur — PO sudah `completed` | Exception thrown (di luar jendela retur) |
+| 5 | Proses alokasi **GR** | `qty_available` bertambah pada batch asli; `batch_no` & `production_date` **tidak berubah** |
+| 6 | Proses alokasi **DDP** | Baris stok baru `status = 'ddp'`, `ddp_reason` = `RETURN_DAMAGED` |
+| 7 | **GR pada batch kedaluwarsa** | **Dipaksa ke DDP** meski petugas memilih GR |
+| 8 | Proses tanpa catatan pengecekan | Validation error |
+| 9 | Qty retur vs Lost Sales | Retur **tidak** dicatat sebagai lost sales |
+
+#### `StockTransferServiceTest`
+
+| # | Test Case | Expected |
+|---|---|---|
+| 1 | Transfer antar rak — kapasitas cukup | Qty pindah; `TRANSFER_OUT` + `TRANSFER_IN` berpasangan |
+| 2 | Transfer antar gudang | `warehouse_id` berubah, `batch_no` & `production_date` **dipertahankan** |
+| 3 | Transfer melebihi `qty_available` | Exception thrown |
+| 4 | **Transfer qty yang sudah teralokasi** | Exception thrown — `qty_allocated` tidak boleh dipindah |
+| 5 | Transfer ke lokasi penuh | Exception thrown |
+| 6 | Integritas ledger | Jumlah `qty_change` pasangan TRANSFER = 0 |
 
 #### `SlaCalculationServiceTest`
 
@@ -146,11 +193,12 @@ Unit test menguji satu class/method secara terisolasi. Dependencies di-mock jika
 
 | Model | Test Cases |
 |---|---|
-| `User` | Relasi ke role, warehouse. Scope by role. MFA enabled check. |
+| `User` | Relasi ke role, warehouse. Scope by role. Progressive lockout state. |
 | `Product` | Relasi ke category. Scope aktif. Max pallet qty accessor. |
 | `InventoryStock` | Scope by warehouse. Scope available (qty > 0). FIFO scope (order by production_date). |
 | `SalesOrder` | Relasi ke details, customer, user. Status scopes. SLA accessor. |
-| `Customer` | Scope approved. Scope blocked (has unpaid billing). |
+| `Customer` | Scope active (`is_active`). Accessor `is_overdue` (punya billing belum lunas) — **informatif, bukan pemblokir**. |
+| `SalesReturn` | Relasi ke details, sales_order, customer. Scope pending_check. Generator `return_number`. |
 | `CustomerBilling` | Scope unpaid. Scope overdue. Due date calculation. |
 
 ---
@@ -163,16 +211,16 @@ Feature tests mengirim HTTP request ke endpoint dan memverifikasi response, data
 
 | # | Test | Method | URL | Expected |
 |---|---|---|---|---|
-| 1 | Login berhasil (email + password) | POST | /login | Redirect ke MFA page |
+| 1 | Login berhasil (email + password + reCAPTCHA) | POST | /login | Redirect ke dashboard sesuai role |
 | 2 | Login gagal — email salah | POST | /login | Error message, failed_login_attempts +1 |
 | 3 | Login gagal — password salah | POST | /login | Error message, failed_login_attempts +1 |
-| 4 | Login lockout setelah 5x gagal | POST | /login (x5) | Account locked 5 menit |
-| 5 | Progressive lockout | POST | /login (x6) | Locked 10 menit |
-| 6 | MFA verify berhasil | POST | /mfa/verify | Redirect ke dashboard |
-| 7 | MFA verify gagal | POST | /mfa/verify | Error, stay on MFA page |
-| 8 | Akses halaman tanpa login | GET | /warehouse/dashboard | Redirect ke /login |
-| 9 | Akses halaman tanpa MFA | GET | /warehouse/dashboard | Redirect ke /mfa/verify |
-| 10 | Akses portal salah (sales → warehouse) | GET | /warehouse/dashboard | 403 Forbidden |
+| 4 | Login lockout setelah 3x gagal | POST | /login (x3) | Account locked 5 menit |
+| 5 | Progressive lockout | POST | /login (x4) | Locked 10 menit |
+| 6 | Verifikasi anti-bot gagal | POST | /login | Error message, counter yang sama dengan #2/#3 |
+| 7 | *(dicadangkan)* | | | |
+| 8 | Akses halaman tanpa login | GET | /wms/dashboard/admin | Redirect ke /login |
+| 9 | *(dicadangkan — tidak ada langkah verifikasi terpisah setelah password)* | | | |
+| 10 | Akses portal salah (sales → warehouse) | GET | /wms/dashboard/admin | 403 Forbidden |
 | 11 | Auto-logout setelah idle | GET | any (after 1h) | Redirect ke /login |
 | 12 | Max 2 sessions — 3rd login | POST | /login (3rd device) | Oldest session terminated |
 
@@ -207,9 +255,11 @@ Feature tests mengirim HTTP request ke endpoint dan memverifikasi response, data
 | # | Test | Role | Expected |
 |---|---|---|---|
 | 1 | Create order — valid | Sales | Created, status=pending, notification sent |
-| 2 | Create order — customer blocked (billing) | Sales | 422, error message |
-| 3 | Create order — customer not approved | Sales | 422, error message |
+| 2 | **Create order — customer menunggak** | Sales | **201 Created.** Response memuat flag peringatan. BUKAN 422 |
+| 3 | Create order — customer non-aktif | Sales | 422, error message |
 | 4 | Create order — after 15:00 cutoff | Sales | 422, cutoff error message |
+| 5 | Sales akses `/sales/customers` | Sales | **404** — route sudah dihapus di v1.1 |
+| 6 | Lapor retur — dengan bukti foto | Sales | 201, dokumen RTN dibuat |
 | 5 | Approve order — full stock | Logistik | All qty approved, stock allocated |
 | 6 | Approve order — partial stock | Logistik | Qty adjusted, lost_qty recorded |
 | 7 | Approve order — zero stock | Logistik | All lost_qty, qty_approved=0 |
@@ -232,8 +282,9 @@ Feature tests mengirim HTTP request ke endpoint dan memverifikasi response, data
 |---|---|---|---|
 | 1 | List unpaid billings | Logistik | Only unpaid shown |
 | 2 | Confirm payment | Logistik | Status → paid |
-| 3 | Customer unblocked after payment | Logistik | Sales can create new order |
+| 3 | **Flag menunggak hilang setelah lunas** | Logistik | Badge `⚠ Menunggak` tidak lagi muncul untuk customer tersebut |
 | 4 | Overdue detection | System | Billing past due_date → status=overdue |
+| 5 | **Order tetap bisa dibuat saat menunggak** | Sales | Berhasil, tidak ada pemblokiran |
 
 ### 4.6 Stock Feature Tests
 
@@ -279,7 +330,7 @@ Browser tests menggunakan **Laravel Dusk** untuk mensimulasikan interaksi penggu
 
 | # | Skenario | Langkah | Verifikasi |
 |---|---|---|---|
-| 1 | **Login Flow Lengkap** | Input email → password → MFA code → dashboard | Dashboard tampil sesuai role |
+| 1 | **Login Flow Lengkap** | Input email → password → verifikasi anti-bot → dashboard | Dashboard tampil sesuai role |
 | 2 | **Sales: Create Order** | Login Sales → New Order → Pilih customer → Add items → Submit | Order muncul di daftar pending |
 | 3 | **Logistik: Approve Order** | Login Logistik → Pesanan → Detail → Approve | Status berubah, notification ke Sales |
 | 4 | **Operator: Picking** | Login Operator → Picking List → Ceklis items → Siap Loading | Status berubah ke ready_to_ship |
@@ -287,9 +338,12 @@ Browser tests menggunakan **Laravel Dusk** untuk mensimulasikan interaksi penggu
 | 6 | **Sales: Upload Proof** | Login Sales → Detail Order → Upload foto → Submit | Foto tersimpan, status berubah |
 | 7 | **Logistik: Verify & Complete** | Login Logistik → Verifikasi → Download → Complete | Status=completed |
 | 8 | **Full Inbound Flow** | Produksi input → Operator put-away → Logistik verify | Stok aktif bertambah |
-| 9 | **Billing Block Flow** | Complete order tempo → Sales coba order lagi → Blocked → Logistik confirm → Unblocked | Order blocked then allowed |
-| 10 | **Cutoff Time** | Login Sales → Try submit after 15:00 | Submit button disabled |
+| 9 | **Billing Warning Flow** | Complete order tempo → Sales order lagi → **badge peringatan muncul, order tetap jalan** → Logistik confirm → badge hilang | Order selalu berhasil; hanya badge yang berubah |
+| 10 | **Cutoff Time** | Login Sales → Try submit after 15:00 | Submit button disabled, Draft tetap aktif |
 | 11 | **Progressive Lockout** | Wrong password 5x → Locked → Wait → Try again | Progressive timing |
+| 12 | **Full Return Flow** | Sales lapor retur + foto → Gudang proses fisik → pilih GR → cek Data Stok | Qty kembali ke batch asli, `production_date` tidak berubah |
+| 13 | **Expired ke DDP** | Set batch lewat expiry → jalankan sweep → buat PO SKU tsb | Batch pindah ke blok DDP; FIFO melewatinya |
+| 14 | **Put-away koreksi Qty** | Operator ubah Qty Aktual → submit → Logistik buka verifikasi | Selisih tampil & ditandai untuk Logistik |
 | 12 | **Notification Sound** | Sales submit → Logistik page open → Toast + sound | Visual + audio notification |
 
 ---
@@ -439,19 +493,47 @@ public function test_only_manager_and_super_admin_can_edit_stock()
 ```
 1. Complete order dengan payment term Tempo 30
 2. Verifikasi: Billing record dibuat, due date = +30 hari
-3. Sales coba buat order baru untuk customer yang sama
-4. Verifikasi: Order DIBLOKIR dengan pesan error
-5. Logistik konfirmasi pembayaran
-6. Verifikasi: Customer unblocked
-7. Sales berhasil buat order baru
+3. Sales buat order baru untuk customer yang sama
+4. Verifikasi: Badge peringatan "⚠ Menunggak" MUNCUL,
+   namun order TETAP BERHASIL dibuat (tidak diblokir)
+5. Verifikasi: Peringatan ikut tampil di halaman Approval Logistik
+6. Logistik konfirmasi pembayaran
+7. Verifikasi: Badge peringatan hilang untuk customer tersebut
+```
+
+#### Skenario 6: Siklus Retur (GR & DDP)
+```
+1. PO berstatus "Dalam Pengiriman"
+2. Sales lapor penolakan: upload foto SJ + 2 baris SKU + alasan
+3. Verifikasi: Dokumen RTN-… dibuat, notifikasi masuk ke Logistik
+4. Gudang buka Penerimaan Retur → Proses Fisik
+5. Baris 1 dialokasikan GR, baris 2 dialokasikan DDP
+6. Verifikasi Data Stok:
+   - Baris 1 kembali ke batch ASLI (batch_no & production_date tidak berubah)
+   - Baris 2 muncul di blok DDP dengan reason RETURN_DAMAGED
+7. Verifikasi stock_movements: 2 entri RETURN_IN tercatat
+8. Verifikasi: qty retur TIDAK dihitung sebagai lost sales
+```
+
+#### Skenario 7: Masa Kedaluwarsa & Stok DDP
+```
+1. Buat batch dengan production_date 31 bulan lalu (shelf life 30 bulan)
+2. Jalankan scheduled job expiry sweep
+3. Verifikasi: status batch berubah active → expired
+4. Verifikasi: batch pindah ke blok "STOK DDP" di halaman Data Stok
+5. Sales buat PO untuk SKU tersebut
+6. Verifikasi: FIFO MELEWATI batch expired, memilih batch yang lebih baru
+7. Verifikasi: bila hanya batch expired yang tersisa → Lost Sales, bukan terkirim
+8. Buat batch yang expiry-nya 60 hari lagi
+9. Verifikasi: badge "⚠ Segera Exp" muncul + notifikasi peringatan dini terkirim
 ```
 
 #### Skenario 5: Keamanan & Akses
 ```
 1. Sales coba akses URL warehouse → 403
 2. Logistik coba edit stok → 403
-3. Login salah 5 kali → akun terkunci
-4. Login dengan MFA code → berhasil
+3. Login salah 3 kali → akun terkunci
+4. Login dengan kredensial + reCAPTCHA benar → berhasil
 5. Buka di device ke-3 → device pertama logout
 ```
 
@@ -538,14 +620,12 @@ tests/
 │   │   └── CustomerBillingTest.php
 │   └── Middleware/
 │       ├── CheckRoleTest.php
-│       ├── CheckMfaTest.php
 │       ├── EnforceMaxSessionsTest.php
 │       ├── CheckOrderCutoffTest.php
-│       └── CheckCustomerBlockedTest.php
+│       └── CustomerOverdueFlagTest.php
 ├── Feature/
 │   ├── Auth/
 │   │   ├── LoginTest.php
-│   │   ├── MfaTest.php
 │   │   ├── LockoutTest.php
 │   │   └── SessionTest.php
 │   ├── MasterData/
@@ -567,7 +647,7 @@ tests/
 │   ├── Billing/
 │   │   ├── BillingListTest.php
 │   │   ├── ConfirmPaymentTest.php
-│   │   └── CustomerBlockTest.php
+│   │   └── CustomerOverdueFlagTest.php
 │   ├── Stock/
 │   │   ├── ViewStockTest.php
 │   │   ├── AdjustStockTest.php
@@ -587,7 +667,7 @@ tests/
     ├── LoginFlowTest.php
     ├── FullOrderFlowTest.php
     ├── FullInboundFlowTest.php
-    ├── BillingBlockFlowTest.php
+    ├── BillingWarningFlowTest.php
     └── NotificationSoundTest.php
 ```
 
@@ -603,12 +683,20 @@ tests/
 - [ ] Code coverage ≥ 80% overall
 - [ ] RBAC: Setiap endpoint tested untuk semua 6 role
 - [ ] File upload: Semua tipe file berbahaya ditolak
-- [ ] Progressive lockout berfungsi sesuai spec
-- [ ] MFA (Google Authenticator) berfungsi
+- [ ] Progressive lockout berfungsi sesuai spec (3 kali gagal, 5/10/30/60/120 menit)
+- [ ] Verifikasi anti-bot (Google reCAPTCHA) berfungsi
 - [ ] Session: Idle timeout 1 jam berfungsi
 - [ ] Session: Max 2 device berfungsi
 - [ ] Order cutoff 15:00 berfungsi
-- [ ] Customer billing block berfungsi
+- [ ] Penandaan customer menunggak berfungsi **dan TIDAK memblokir pembuatan order**
+- [ ] Perhitungan `expiry_date` benar dan sweep harian memindahkan batch kedaluwarsa ke DDP
+- [ ] FIFO terbukti melewati stok berstatus `ddp` dan `expired`
+- [ ] Alur retur GR/DDP mempertahankan `batch_no` dan `production_date` asli
+- [ ] Transfer stok mencatat pasangan `TRANSFER_OUT`/`TRANSFER_IN` yang seimbang
+- [ ] Operator dapat mengoreksi Qty Aktual saat put-away, selisih tampil di layar verifikasi Logistik
+- [ ] Manager dapat CRUD user **kecuali** akun ber-role Super Admin
+- [ ] Route `/sales/customers` sudah dihapus (mengembalikan 404)
+- [ ] **Role Switcher sudah dihapus dari navbar**
 - [ ] FIFO allocation menghasilkan urutan yang benar
 - [ ] Partial fulfillment dan lost sales terhitung benar
 - [ ] Pallet auto-split benar untuk semua UoM

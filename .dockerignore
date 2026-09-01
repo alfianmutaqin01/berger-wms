@@ -1,0 +1,46 @@
+# Git
+.git
+.github
+
+# Dependencies (rebuilt in Docker)
+node_modules
+vendor
+
+# Environment (secrets)
+.env
+.env.*
+!.env.ci
+!.env.example
+
+# Build artifacts
+public/build
+public/hot
+
+# Storage (runtime data)
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+
+# Tests & Dev tools
+tests/
+phpunit.xml
+.phpunit.result.cache
+
+# Docker data
+docker-compose*.yml
+
+# IDE
+.idea/
+.vscode/
+.fleet/
+*.swp
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# OS files
+.DS_Store
+Thumbs.db
