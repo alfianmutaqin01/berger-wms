@@ -85,13 +85,26 @@ class InventoryTest extends TestCase
         ], $overrides));
     }
 
+    /**
+     * Seluruh batch yang benar-benar terlihat di layar, dari kedua blok.
+     *
+     * Daftarnya kini bersarang (satu baris SKU -> blok good + blok DDP), jadi
+     * pengujian isi daftar meratakannya dulu supaya yang diperiksa tetap
+     * "batch mana yang terlihat", bukan bentuk strukturnya.
+     */
+    private function batchDiLayar(string $url = '/wms/inventory')
+    {
+        return collect($this->get($url)->viewData('barisSku'))
+            ->flatMap(fn (array $baris) => $baris['good']->merge($baris['ddp']));
+    }
+
     /* ---------------------------------------------------------------- Akses */
 
     public function test_semua_role_operasional_boleh_melihat_stok(): void
     {
         foreach ([Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
             $this->loginAs($slug);
-            $this->get('/wms/inventory')->assertOk()->assertViewHas('stocks');
+            $this->get('/wms/inventory')->assertOk()->assertViewHas('barisSku');
         }
     }
 
@@ -126,17 +139,86 @@ class InventoryTest extends TestCase
 
     /* --------------------------------------------------------------- Daftar */
 
-    public function test_daftar_menampilkan_stok_per_batch(): void
+    /**
+     * Satu SKU = SATU baris accordion, isinya batch-batchnya (docs/4 §4.3.9).
+     *
+     * Inilah yang membuat halaman tetap terbaca: satu SKU dengan lima palet
+     * tidak lagi menghabiskan lima baris layar.
+     */
+    public function test_satu_sku_jadi_satu_baris_dengan_batch_di_dalamnya(): void
     {
         $this->loginAs();
         $produk = Product::factory()->create(['uom' => 'TIN']);
-        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BATCH-A']);
-        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BATCH-B', 'location_id' => $this->bin('B-01-02')->id]);
+        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BATCH-A', 'qty_available' => 100]);
+        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BATCH-B', 'qty_available' => 80, 'location_id' => $this->bin('B-01-02')->id]);
 
-        $stocks = $this->get('/wms/inventory')->viewData('stocks');
+        $baris = $this->get('/wms/inventory')->viewData('barisSku');
 
-        // Dua batch produk yang SAMA tetap dua baris — tidak dilebur.
-        $this->assertCount(2, $stocks);
+        $this->assertCount(1, $baris, 'Dua batch dari SKU yang sama harus jadi satu baris.');
+        $this->assertSame($produk->id, $baris[0]['product']->id);
+
+        // Batch TETAP tidak dilebur di dalam blok — FIFO menuntut tiap batch
+        // punya tanggal produksi dan kedaluwarsanya sendiri.
+        $this->assertCount(2, $baris[0]['good']);
+        $this->assertSame(180, $baris[0]['total_good']);
+    }
+
+    /**
+     * Isi accordion terbagi dua blok: Good Stock dan DDP (docs/4 §4.3.9).
+     *
+     * Batch rusak/kedaluwarsa tidak boleh berdampingan dengan yang layak jual
+     * dalam satu daftar — di situlah salah ambil barang bermula.
+     */
+    public function test_accordion_memisahkan_blok_good_stock_dan_ddp(): void
+    {
+        $this->loginAs();
+        $produk = Product::factory()->create(['uom' => 'TIN']);
+        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BATCH-BAIK', 'qty_available' => 100]);
+        $this->stock([
+            'product_id' => $produk->id, 'batch_no' => 'BATCH-RUSAK', 'qty_available' => 20,
+            'location_id' => $this->bin('B-01-02')->id,
+        ])->update(['status' => InventoryStock::STATUS_DDP, 'ddp_reason' => InventoryStock::DDP_RETURN_DAMAGED]);
+
+        $baris = $this->get('/wms/inventory')->viewData('barisSku');
+
+        $this->assertCount(1, $baris);
+        $this->assertSame(['BATCH-BAIK'], $baris[0]['good']->pluck('batch_no')->all());
+        $this->assertSame(['BATCH-RUSAK'], $baris[0]['ddp']->pluck('batch_no')->all());
+        $this->assertSame(100, $baris[0]['total_good']);
+        $this->assertSame(20, $baris[0]['total_ddp']);
+    }
+
+    /**
+     * Blok DDP tetap dirender meski kosong (docs/4 §4.3.9).
+     *
+     * Ketiadaan stok rusak harus terbaca sebagai informasi, bukan sebagai
+     * data yang gagal dimuat.
+     */
+    public function test_blok_ddp_tetap_tampil_walau_kosong(): void
+    {
+        $this->loginAs();
+        $this->stock();
+
+        $this->get('/wms/inventory')
+            ->assertOk()
+            ->assertSee('STOK DDP (Rusak / Karantina / Expired)')
+            ->assertSee('Tidak ada stok DDP untuk SKU ini.');
+    }
+
+    /** Batch kedaluwarsa hasil sweep ikut muncul di blok DDP, bukan hilang. */
+    public function test_batch_kedaluwarsa_muncul_di_blok_ddp(): void
+    {
+        $this->loginAs();
+        $this->stock([
+            'batch_no' => 'BATCH-EXP',
+            'production_date' => now()->subYears(3)->toDateString(),
+            'expiry_date' => now()->subMonth()->toDateString(),
+        ])->update(['status' => InventoryStock::STATUS_EXPIRED, 'ddp_reason' => InventoryStock::DDP_EXPIRED]);
+
+        $baris = $this->get('/wms/inventory')->viewData('barisSku');
+
+        $this->assertSame(['BATCH-EXP'], $baris[0]['ddp']->pluck('batch_no')->all());
+        $this->assertTrue($baris[0]['good']->isEmpty());
     }
 
     public function test_ringkasan_memisahkan_good_stock_dan_ddp(): void
@@ -165,10 +247,10 @@ class InventoryTest extends TestCase
             'product_id' => Product::factory()->create()->id,
         ]);
 
-        $stocks = $this->get('/wms/inventory?status='.InventoryStock::STATUS_DDP)->viewData('stocks');
+        $batch = $this->batchDiLayar('/wms/inventory?status='.InventoryStock::STATUS_DDP);
 
-        $this->assertCount(1, $stocks);
-        $this->assertSame(InventoryStock::STATUS_DDP, $stocks->first()->status);
+        $this->assertCount(1, $batch);
+        $this->assertSame(InventoryStock::STATUS_DDP, $batch->first()->status);
     }
 
     public function test_filter_hampir_kedaluwarsa(): void
@@ -180,9 +262,7 @@ class InventoryTest extends TestCase
             'location_id' => $this->bin('B-01-02')->id,
         ]);
 
-        $stocks = $this->get('/wms/inventory?expiring=1')->viewData('stocks');
-
-        $this->assertCount(1, $stocks);
+        $this->assertCount(1, $this->batchDiLayar('/wms/inventory?expiring=1'));
     }
 
     public function test_pencarian_lewat_batch_dan_sku(): void
@@ -192,11 +272,11 @@ class InventoryTest extends TestCase
         $this->stock(['product_id' => $produk->id, 'batch_no' => 'BATCH-CARI']);
         $this->stock(['batch_no' => 'BATCH-LAIN', 'location_id' => $this->bin('B-01-02')->id]);
 
-        $this->assertCount(1, $this->get('/wms/inventory?search=BATCH-CARI')->viewData('stocks'));
-        $this->assertCount(1, $this->get('/wms/inventory?search=ID1-FTESTSKU')->viewData('stocks'));
+        $this->assertCount(1, $this->batchDiLayar('/wms/inventory?search=BATCH-CARI'));
+        $this->assertCount(1, $this->batchDiLayar('/wms/inventory?search=ID1-FTESTSKU'));
     }
 
-    /** Yang paling dekat kedaluwarsa tampil lebih dulu. */
+    /** SKU yang salah satu batch-nya paling dekat kedaluwarsa tampil lebih dulu. */
     public function test_diurutkan_dari_yang_paling_mendesak(): void
     {
         $this->loginAs();
@@ -207,9 +287,9 @@ class InventoryTest extends TestCase
             'location_id' => $this->bin('B-01-02')->id,
         ]);
 
-        $stocks = $this->get('/wms/inventory')->viewData('stocks');
+        $baris = $this->get('/wms/inventory')->viewData('barisSku');
 
-        $this->assertSame('HAMPIR-HABIS', $stocks->first()->batch_no);
+        $this->assertSame('HAMPIR-HABIS', $baris[0]['good']->first()->batch_no);
     }
 
     /* -------------------------------------------------- Umur simpan di layar */
@@ -219,7 +299,7 @@ class InventoryTest extends TestCase
         $this->loginAs();
         $this->stock(['expiry_date' => now()->addMonths(6)->toDateString()]);
 
-        $this->get('/wms/inventory')->assertOk()->assertSee('6 bulan pas');
+        $this->get('/wms/inventory')->assertOk()->assertSee('6 bln 0 minggu');
     }
 
     /* ------------------------------------------------ Aturan boleh dijual */

@@ -68,7 +68,8 @@
     <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
         <h5 class="fw-bold text-dark mb-0"><i class="bi bi-layers text-primary me-2"></i> Ketersediaan Stok Gudang</h5>
         <p class="text-muted small mt-1 mb-0">
-            Satu baris = satu batch di satu rak. Batch sengaja tidak dilebur agar urutan FIFO dan masa simpan tetap terlacak.
+            Satu baris = satu SKU. Klik barisnya untuk melihat rincian batch, rak, dan sisa umur simpan.
+            Batch sengaja tidak dilebur agar urutan FIFO tetap terlacak.
         </p>
     </div>
 
@@ -122,116 +123,189 @@
             </div>
         </form>
 
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th class="text-secondary small fw-semibold" style="min-width: 210px;">SKU / PRODUK</th>
-                        <th class="text-secondary small fw-semibold text-nowrap">BATCH</th>
-                        <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
-                        <th class="text-secondary small fw-semibold text-end text-nowrap">TERSEDIA</th>
-                        <th class="text-secondary small fw-semibold text-end text-nowrap">TERALOKASI</th>
-                        <th class="text-secondary small fw-semibold text-nowrap">TGL PRODUKSI</th>
-                        <th class="text-secondary small fw-semibold text-nowrap">EXPIRED</th>
-                        <th class="text-secondary small fw-semibold text-nowrap" style="min-width: 140px;">SISA UMUR SIMPAN</th>
-                        <th class="text-secondary small fw-semibold text-nowrap">STATUS</th>
-                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
-                        <th class="text-secondary small fw-semibold text-center">AKSI</th>
-                        @endcanany
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse($stocks as $stock)
-                        @php
-                            // Sisa umur simpan diwarnai supaya batch yang harus
-                            // dijual duluan terlihat tanpa harus dibaca satu per satu.
-                            $warnaUmur = match($stock->shelf_life_urgency) {
-                                'expired' => 'text-danger fw-bold',
-                                'critical' => 'text-danger fw-semibold',
-                                'warning' => 'text-warning-emphasis fw-semibold',
-                                default => 'text-muted',
-                            };
-                            $warnaStatus = match($stock->status) {
-                                \App\Models\InventoryStock::STATUS_ACTIVE => 'success',
-                                \App\Models\InventoryStock::STATUS_DDP => 'secondary',
-                                default => 'danger',
-                            };
-                        @endphp
-                        <tr>
-                            <td>
-                                <span class="badge bg-light text-dark border font-monospace mb-1">{{ $stock->product?->sku ?? '—' }}</span><br>
-                                <small class="text-muted">{{ $stock->product?->name ?? '—' }}</small>
-                            </td>
-                            <td><small class="font-monospace text-muted">{{ $stock->batch_no }}</small></td>
-                            <td>
-                                <span class="badge bg-primary-subtle text-primary-emphasis border border-primary font-monospace">{{ $stock->location?->code ?? '—' }}</span>
-                                <small class="d-block text-muted" style="font-size: 0.7rem;">{{ $stock->warehouse?->code }}</small>
-                            </td>
-                            <td class="text-end fw-bold text-nowrap">
-                                {{ number_format($stock->qty_available) }}
-                                <small class="text-muted fw-normal">{{ $stock->product?->uom }}</small>
-                            </td>
-                            <td class="text-end text-nowrap">
-                                @if($stock->qty_allocated > 0)
-                                    <span class="badge bg-primary-subtle text-primary-emphasis border border-primary">{{ number_format($stock->qty_allocated) }}</span>
-                                @else
-                                    <span class="text-muted">—</span>
-                                @endif
-                            </td>
-                            <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M Y') }}</td>
-                            <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M Y') }}</td>
-                            <td class="text-nowrap small {{ $warnaUmur }}">
-                                @if($stock->shelf_life_urgency === 'critical' || $stock->shelf_life_urgency === 'expired')
-                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
-                                @endif
-                                {{ $stock->shelf_life_label }}
-                            </td>
-                            <td class="text-nowrap">
-                                <span class="badge bg-{{ $warnaStatus }}-subtle text-{{ $warnaStatus }}-emphasis border border-{{ $warnaStatus }}">
-                                    {{ $stock->status_label }}
-                                </span>
-                                @if($stock->ddp_reason_label)
-                                    <small class="d-block text-muted" style="font-size: 0.7rem;">{{ $stock->ddp_reason_label }}</small>
-                                @endif
-                            </td>
-                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
-                            <td class="text-center text-nowrap">
-                                @can(\App\Support\Permission::INVENTORY_ADJUST)
-                                <button type="button" class="btn btn-sm btn-outline-warning" title="Koreksi stok"
-                                        data-bs-toggle="modal" data-bs-target="#modalAdjust"
-                                        data-stock="{{ $stock->id }}" data-sku="{{ $stock->product?->sku }}"
-                                        data-batch="{{ $stock->batch_no }}" data-qty="{{ $stock->qty_available }}"
-                                        data-alloc="{{ $stock->qty_allocated }}">
-                                    <i class="bi bi-pencil-square"></i>
-                                </button>
-                                @endcan
-                                @can(\App\Support\Permission::INVENTORY_TRANSFER)
-                                <button type="button" class="btn btn-sm btn-outline-primary" title="Pindah rak"
-                                        data-bs-toggle="modal" data-bs-target="#modalTransfer"
-                                        data-stock="{{ $stock->id }}" data-sku="{{ $stock->product?->sku }}"
-                                        data-batch="{{ $stock->batch_no }}" data-qty="{{ $stock->qty_available }}"
-                                        data-loc="{{ $stock->location?->code }}">
-                                    <i class="bi bi-arrow-left-right"></i>
-                                </button>
-                                @endcan
-                            </td>
-                            @endcanany
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="10" class="text-center py-5 text-muted">
-                                <i class="bi bi-inbox fs-1 d-block mb-3 opacity-50"></i>
-                                Belum ada stok yang cocok dengan filter ini.
-                                <small class="d-block mt-2">Stok muncul setelah palet inbound diverifikasi Logistik.</small>
-                            </td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
+        @php
+            // Saat filter status dipasang, salah satu blok memang sengaja
+            // dikosongkan. Dibedakan dari "benar-benar tidak ada stok" supaya
+            // blok kosong tidak terbaca sebagai data yang gagal dimuat.
+            $statusDisaring = (bool) $filters['status'];
+        @endphp
 
-        @if($stocks->hasPages())
-            <div class="mt-4">{{ $stocks->links() }}</div>
+        @forelse($barisSku as $baris)
+            @php
+                $p = $baris['product'];
+                $idAcc = 'sku'.$p->id;
+            @endphp
+            <div class="border rounded-4 mb-3 overflow-hidden {{ $baris['kritis'] ? 'border-danger border-2' : '' }}">
+                <!-- Baris tertutup: hanya SKU dan angka ringkas -->
+                <button class="btn w-100 text-start d-flex flex-wrap align-items-center gap-2 gap-md-3 p-3 bg-white collapsed"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#{{ $idAcc }}"
+                        aria-expanded="false" aria-controls="{{ $idAcc }}">
+                    <i class="bi bi-chevron-right chevron-sku text-muted flex-shrink-0"></i>
+                    <span class="badge bg-light text-dark border font-monospace">{{ $p->sku }}</span>
+                    <span class="fw-semibold text-dark flex-grow-1">{{ $p->name }}</span>
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary">{{ $p->uom }}</span>
+                    <span class="small text-nowrap">
+                        <span class="text-muted">Good Stock:</span>
+                        <strong class="text-success">{{ number_format($baris['total_good']) }}</strong>
+                    </span>
+                    <span class="text-muted">·</span>
+                    <span class="small text-nowrap">
+                        <span class="text-muted">DDP Stock:</span>
+                        <strong class="{{ $baris['total_ddp'] > 0 ? 'text-danger' : 'text-muted' }}">{{ number_format($baris['total_ddp']) }}</strong>
+                    </span>
+                    @if($baris['kritis'])
+                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill me-1"></i>Segera Exp</span>
+                    @endif
+                </button>
+
+                <div class="collapse" id="{{ $idAcc }}">
+                    <!-- ============ BLOK GOOD STOCK ============ -->
+                    <div class="bg-success-subtle px-3 pt-3 pb-1 border-top">
+                        <h6 class="fw-bold text-success-emphasis mb-2 small">
+                            <i class="bi bi-circle-fill me-1" style="font-size: 0.6rem;"></i>GOOD STOCK (Layak Jual)
+                        </h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle bg-white rounded-3 mb-3">
+                                <thead>
+                                    <tr>
+                                        <th class="text-secondary small fw-semibold">BATCH</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">TGL PROD</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">EXP DATE</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap" style="min-width: 130px;">SISA UMUR SIMPAN</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
+                                        <th class="text-secondary small fw-semibold text-end">TERSEDIA</th>
+                                        <th class="text-secondary small fw-semibold text-end">DI-BOOK</th>
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                        <th class="text-secondary small fw-semibold text-center">AKSI</th>
+                                        @endcanany
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse($baris['good'] as $stock)
+                                        @php
+                                            $warnaUmur = match($stock->shelf_life_urgency) {
+                                                'expired' => 'text-danger fw-bold',
+                                                'critical' => 'text-danger fw-semibold',
+                                                'warning' => 'text-warning-emphasis fw-semibold',
+                                                default => 'text-muted',
+                                            };
+                                        @endphp
+                                        <tr>
+                                            <td><small class="font-monospace">{{ $stock->batch_no }}</small></td>
+                                            <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
+                                            <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M y') }}</td>
+                                            <td class="text-nowrap small {{ $warnaUmur }}">
+                                                {{ $stock->shelf_life_label }}
+                                                @if($stock->shelf_life_urgency === 'critical')
+                                                    <span class="badge bg-warning text-dark ms-1">⚠ Segera Exp</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-primary-subtle text-primary-emphasis border border-primary font-monospace">{{ $stock->location?->code ?? '—' }}</span>
+                                                <small class="d-block text-muted" style="font-size: 0.7rem;">{{ $stock->warehouse?->code }}</small>
+                                            </td>
+                                            <td class="text-end fw-bold text-nowrap">
+                                                {{ number_format($stock->qty_available) }}
+                                                <small class="text-muted fw-normal">{{ $p->uom }}</small>
+                                            </td>
+                                            <td class="text-end text-nowrap">
+                                                @if($stock->qty_allocated > 0)
+                                                    <span class="badge bg-primary-subtle text-primary-emphasis border border-primary">{{ number_format($stock->qty_allocated) }}</span>
+                                                @else
+                                                    <span class="text-muted">—</span>
+                                                @endif
+                                            </td>
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                            <td class="text-center text-nowrap">
+                                                @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
+                                            </td>
+                                            @endcanany
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="8" class="text-center text-muted small py-3">
+                                                {{ $statusDisaring ? 'Disembunyikan oleh filter status.' : 'Tidak ada Good Stock untuk SKU ini.' }}
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ============ BLOK STOK DDP ============ -->
+                    {{-- Selalu dirender meski kosong (docs/4 §4.3.9): ketiadaan
+                         stok rusak harus terbaca sebagai informasi. --}}
+                    <div class="bg-danger-subtle px-3 pt-3 pb-1 border-top">
+                        <h6 class="fw-bold text-danger-emphasis mb-2 small">
+                            <i class="bi bi-circle-fill me-1" style="font-size: 0.6rem;"></i>STOK DDP (Rusak / Karantina / Expired)
+                        </h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle bg-white rounded-3 mb-3">
+                                <thead>
+                                    <tr>
+                                        <th class="text-secondary small fw-semibold">BATCH</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">TGL PROD</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">EXP DATE</th>
+                                        <th class="text-secondary small fw-semibold" style="min-width: 150px;">KETERANGAN</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
+                                        <th class="text-secondary small fw-semibold text-end">QTY</th>
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                        <th class="text-secondary small fw-semibold text-center">AKSI</th>
+                                        @endcanany
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse($baris['ddp'] as $stock)
+                                        <tr>
+                                            <td><small class="font-monospace">{{ $stock->batch_no }}</small></td>
+                                            <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
+                                            <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M y') }}</td>
+                                            <td class="small text-nowrap">
+                                                @if($stock->status === \App\Models\InventoryStock::STATUS_EXPIRED)
+                                                    <span class="text-danger fw-semibold">🔴 {{ $stock->status_label }}</span>
+                                                @else
+                                                    <span class="text-warning-emphasis fw-semibold">🟠 {{ $stock->ddp_reason_label ?? $stock->status_label }}</span>
+                                                @endif
+                                                <small class="d-block text-muted">{{ $stock->shelf_life_label }}</small>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary font-monospace">{{ $stock->location?->code ?? '—' }}</span>
+                                                <small class="d-block text-muted" style="font-size: 0.7rem;">{{ $stock->warehouse?->code }}</small>
+                                            </td>
+                                            <td class="text-end fw-bold text-nowrap">
+                                                {{ number_format($stock->qty_available) }}
+                                                <small class="text-muted fw-normal">{{ $p->uom }}</small>
+                                            </td>
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                            <td class="text-center text-nowrap">
+                                                @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
+                                            </td>
+                                            @endcanany
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7" class="text-center text-muted small py-3">
+                                                {{ $statusDisaring ? 'Disembunyikan oleh filter status.' : 'Tidak ada stok DDP untuk SKU ini.' }}
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @empty
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox fs-1 d-block mb-3 opacity-50"></i>
+                Belum ada stok yang cocok dengan filter ini.
+                <small class="d-block mt-2">Stok muncul setelah palet inbound diverifikasi Logistik.</small>
+            </div>
+        @endforelse
+
+        @if($halaman->hasPages())
+            <div class="mt-4">{{ $halaman->links() }}</div>
         @endif
     </div>
 </div>
@@ -328,6 +402,14 @@
 </div>
 @endcan
 @endsection
+
+@push('styles')
+<style>
+    /* Panah baris SKU berputar saat accordion terbuka. */
+    .chevron-sku { transition: transform 0.2s ease; }
+    [aria-expanded="true"] .chevron-sku { transform: rotate(90deg); }
+</style>
+@endpush
 
 @push('scripts')
 <script>

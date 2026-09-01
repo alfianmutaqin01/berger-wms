@@ -596,8 +596,16 @@ html, body {
     70% { box-shadow: 0 0 0 6px rgba(13, 110, 253, 0); }
     100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0); }
 }
+/* TANPA `forwards`. Dengan fill-mode itu, keyframe terakhir (transform:
+   translateY(0)) menempel permanen di <main>. Elemen yang punya transform
+   selain `none` menjadi containing block bagi keturunannya yang
+   position: fixed — akibatnya SETIAP modal Bootstrap di dalam <main>
+   terkurung di area konten: ikut ter-scroll bersama tabel dan tertimpa
+   backdrop, bukan melayang di tengah layar. Keadaan akhir animasi ini
+   sama persis dengan keadaan alami elemennya (opacity 1, tanpa geseran),
+   jadi menghapus `forwards` tidak mengubah apa pun yang terlihat. */
 main {
-    animation: fadeInUp 0.4s ease-out forwards;
+    animation: fadeInUp 0.4s ease-out;
 }
 .card {
     transition: transform 0.2s ease, box-shadow 0.2s ease;

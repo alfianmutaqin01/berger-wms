@@ -40,12 +40,17 @@ class ShelfLifeTest extends TestCase
         $this->assertSame('5 bln 3 minggu', $this->label('2027-02-25'));
     }
 
-    /** Tanpa sisa minggu ditulis "pas", bukan "0 minggu". */
-    public function test_bulan_bulat_ditulis_pas(): void
+    /**
+     * Bulan bulat tetap menyebut minggunya: "6 bln 0 minggu", bukan "6 bulan pas".
+     *
+     * Diminta pemilik produk supaya bentuk labelnya seragam — angka bulan dan
+     * angka minggu selalu ada di posisi yang sama saat kolomnya dibaca sekilas.
+     */
+    public function test_bulan_bulat_tetap_menulis_nol_minggu(): void
     {
-        $this->assertSame('6 bulan pas', $this->label('2027-03-01'));
-        $this->assertSame('30 bulan pas', $this->label('2029-03-01'));
-        $this->assertSame('1 bulan pas', $this->label('2026-10-01'));
+        $this->assertSame('6 bln 0 minggu', $this->label('2027-03-01'));
+        $this->assertSame('30 bln 0 minggu', $this->label('2029-03-01'));
+        $this->assertSame('1 bln 0 minggu', $this->label('2026-10-01'));
     }
 
     /** Di bawah satu bulan, minggu dan hari yang ditampilkan. */
@@ -64,8 +69,8 @@ class ShelfLifeTest extends TestCase
      */
     public function test_bulan_mengikuti_kalender_bukan_30_hari(): void
     {
-        // Februari pendek: 1 Feb -> 1 Mar tetap "1 bulan pas".
-        $this->assertSame('1 bulan pas', ShelfLife::remainingLabel(
+        // Februari pendek: 1 Feb -> 1 Mar tetap "1 bln 0 minggu".
+        $this->assertSame('1 bln 0 minggu', ShelfLife::remainingLabel(
             Carbon::parse('2027-03-01'),
             Carbon::parse('2027-02-01')
         ));
@@ -84,7 +89,7 @@ class ShelfLifeTest extends TestCase
     public function test_sudah_lewat_ditandai_kedaluwarsa(): void
     {
         $this->assertSame('Kedaluwarsa 1 minggu lalu', $this->label('2026-08-20'));
-        $this->assertSame('Kedaluwarsa 2 bulan pas lalu', $this->label('2026-07-01'));
+        $this->assertSame('Kedaluwarsa 2 bln 0 minggu lalu', $this->label('2026-07-01'));
         $this->assertSame('expired', $this->urgency('2026-08-20'));
     }
 
