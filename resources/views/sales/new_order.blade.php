@@ -84,7 +84,11 @@
                             <select name="warehouse_id" id="warehouseSelect" class="form-select" required>
                                 <option value="">— Pilih gudang —</option>
                                 @foreach($warehouses as $w)
-                                    <option value="{{ $w->id }}" @selected($vWarehouse == $w->id)>{{ $w->code }} — {{ $w->name }}</option>
+                                    {{-- Nama kotanya, bukan kode. "Karawang"
+                                         langsung dikenali Sales; "WH-01"
+                                         menuntut hafalan yang tidak ada
+                                         gunanya di layar ini. --}}
+                                    <option value="{{ $w->id }}" @selected($vWarehouse == $w->id)>{{ $w->name }}</option>
                                 @endforeach
                             </select>
                             <small class="text-muted">Indikator ketersediaan mengikuti gudang ini.</small>

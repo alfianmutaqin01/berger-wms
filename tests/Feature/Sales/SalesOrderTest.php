@@ -231,12 +231,15 @@ class SalesOrderTest extends TestCase
         $this->produk(['sku' => 'APKO-002', 'name' => 'Apko Emulsion 25Kg']);
         $this->produk(['sku' => 'BRG-999', 'name' => 'Cat Kayu Coklat']);
 
-        $hasil = $this->getJson('/sales/lookup/products?q=APKO&warehouse_id='.$this->warehouse->id)
+        $sku = collect($this->getJson('/sales/lookup/products?q=APKO&warehouse_id='.$this->warehouse->id)
             ->assertOk()
-            ->json();
+            ->json())->pluck('sku');
 
-        $this->assertCount(2, $hasil);
-        $this->assertSame(['APKO-001', 'APKO-002'], collect($hasil)->pluck('sku')->sort()->values()->all());
+        // Diperiksa dari isinya, bukan jumlahnya — produk lain di basis data
+        // dibuat factory dengan nama acak yang bisa saja ikut cocok.
+        $this->assertContains('APKO-001', $sku->all());
+        $this->assertContains('APKO-002', $sku->all());
+        $this->assertNotContains('BRG-999', $sku->all());
     }
 
     public function test_pencarian_customer_hanya_mengembalikan_yang_cocok(): void
@@ -245,10 +248,15 @@ class SalesOrderTest extends TestCase
         Customer::factory()->create(['name' => 'Toko Jaya Makmur', 'is_active' => true]);
         Customer::factory()->create(['name' => 'Toko Sinar Abadi', 'is_active' => true]);
 
-        $hasil = $this->getJson('/sales/lookup/customers?q=Jaya')->assertOk()->json();
+        $nama = collect($this->getJson('/sales/lookup/customers?q=Jaya')->assertOk()->json())
+            ->pluck('name');
 
-        $this->assertCount(1, $hasil);
-        $this->assertSame('Toko Jaya Makmur', $hasil[0]['name']);
+        // Diperiksa dari ISI hasilnya, bukan jumlahnya: setUp dan factory lain
+        // membuat customer bernama acak dari faker, yang sewaktu-waktu bisa
+        // mengandung kata kunci ini juga dan menggagalkan test tanpa ada yang
+        // rusak. Yang diuji adalah aturannya — yang tidak cocok tidak muncul.
+        $this->assertContains('Toko Jaya Makmur', $nama->all());
+        $this->assertNotContains('Toko Sinar Abadi', $nama->all());
     }
 
     /**
@@ -602,10 +610,78 @@ class SalesOrderTest extends TestCase
             ->assertSee('42');
 
         // Stepper memuat SELURUH tahap, termasuk yang belum terjadi, supaya
-        // Sales melihat pesanannya masih akan melewati apa.
-        foreach (['Draft', 'Dikirim', 'Diterima', 'Dikemas', 'Selesai'] as $tahap) {
+        // Sales bisa menjawab "sudah sampai mana" tanpa menebak.
+        foreach (['Dibuat', 'Diterima', 'Dikemas', 'Dikirim', 'Tiba', 'Selesai'] as $tahap) {
             $halaman->assertSee($tahap);
         }
+    }
+
+    /**
+     * "Draft" bukan tahap perjalanan pesanan (keputusan pemilik produk).
+     *
+     * Draft belum jadi pesanan; memasukkannya berarti satu tahap yang tidak
+     * pernah berarti apa pun bagi pelanggan memakan seperenam lebar layar HP.
+     */
+    public function test_stepper_tidak_memuat_tahap_draft(): void
+    {
+        $sales = $this->loginAs();
+        $order = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
+
+        $tahap = collect($this->get('/sales/orders/'.$order->id)->viewData('timeline'))
+            ->pluck('judul');
+
+        $this->assertNotContains('Draft', $tahap->all());
+        $this->assertSame('Dibuat', $tahap->first());
+    }
+
+    /**
+     * Hanya SATU tahap yang boleh bertanda "menunggu", dan hanya pada pesanan
+     * yang memang sedang berjalan.
+     */
+    public function test_tahap_menunggu_hanya_pada_pesanan_berjalan(): void
+    {
+        $sales = $this->loginAs();
+
+        $berjalan = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
+        $ditunggu = collect($this->get('/sales/orders/'.$berjalan->id)->viewData('timeline'))
+            ->filter(fn ($t) => $t['menunggu']);
+
+        $this->assertCount(1, $ditunggu);
+        $this->assertSame('Diterima', $ditunggu->first()['judul']);
+
+        // Draft belum masuk antrean siapa pun.
+        $draft = SalesOrder::factory()->create(['user_id' => $sales->id]);
+        $this->assertCount(0, collect($this->get('/sales/orders/'.$draft->id)->viewData('timeline'))
+            ->filter(fn ($t) => $t['menunggu']));
+
+        // Pesanan yang ditolak berhenti di situ — tidak ada tahap berikutnya.
+        $ditolak = SalesOrder::factory()->submitted()->create([
+            'user_id' => $sales->id,
+            'status' => SalesOrder::STATUS_REJECTED,
+            'rejected_at' => now(),
+            'rejection_reason' => 'Stok kosong total.',
+        ]);
+        $this->assertCount(0, collect($this->get('/sales/orders/'.$ditolak->id)->viewData('timeline'))
+            ->filter(fn ($t) => $t['menunggu']));
+    }
+
+    /**
+     * Gudang ditampilkan sebagai NAMA KOTA, bukan kode.
+     *
+     * "Karawang" langsung dikenali Sales; "WH-01" menuntut hafalan yang tidak
+     * ada gunanya di layar ini.
+     */
+    public function test_gudang_ditampilkan_dengan_namanya(): void
+    {
+        $sales = $this->loginAs();
+        $this->warehouse->update(['code' => 'WH-09', 'name' => 'Karawang']);
+        $order = SalesOrder::factory()->submitted()->create([
+            'user_id' => $sales->id, 'warehouse_id' => $this->warehouse->id,
+        ]);
+
+        $this->get('/sales/orders/'.$order->id)->assertOk()->assertSee('Karawang');
+        $this->get('/sales/my-orders')->assertOk()->assertSee('Karawang');
+        $this->get('/sales/new-order')->assertOk()->assertSee('Karawang');
     }
 
     /**

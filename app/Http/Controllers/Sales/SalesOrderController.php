@@ -189,7 +189,7 @@ class SalesOrderController extends Controller
 
         $orders = SalesOrder::query()
             ->ownedBy($request->user()->id)
-            ->with(['customer:id,code,name', 'warehouse:id,code', 'paymentTerm:id,code,name'])
+            ->with(['customer:id,code,name', 'warehouse:id,code,name', 'paymentTerm:id,code,name'])
             ->withCount('details')
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
@@ -509,38 +509,38 @@ class SalesOrderController extends Controller
      * Tahapan pesanan untuk stepper di halaman detail (docs/4 §3.3.3).
      *
      * BENTUKNYA STEPPER MENDATAR, bukan daftar menurun. Portal Sales dipakai
-     * dari HP (docs/4 §3 "Mobile-First"): lima tahap yang ditumpuk ke bawah
+     * dari HP (docs/4 §3 "Mobile-First"): tahap yang ditumpuk ke bawah
      * mendorong item pesanan keluar layar, sehingga Sales harus menggulir
-     * hanya untuk tahu pesanannya sampai mana. Lima bulatan berjajar muat
-     * dalam satu pandangan.
+     * hanya untuk tahu pesanannya sampai mana. Bulatan berjajar muat dalam
+     * satu pandangan.
      *
      * Judul sengaja SATU KATA — di lebar 360px, label dua kata membuat
      * kolomnya pecah dan bulatannya tidak lagi sejajar.
      *
-     * Tahap milik Fase 6 ke atas tetap ditampilkan sebagai "belum", supaya
-     * Sales melihat pesanannya masih akan melewati apa.
+     * TAHAP "DRAFT" TIDAK IKUT (keputusan pemilik produk). Draft belum jadi
+     * pesanan; memasukkannya berarti satu tahap yang tidak pernah berarti
+     * apa pun bagi pelanggan memakan seperenam lebar layar. Perjalanan
+     * dimulai sejak pesanannya benar-benar dibuat.
      *
-     * @return array<int, array{judul:string, ikon:string, waktu:?Carbon, oleh:?string, selesai:bool, gagal:bool}>
+     * Tahap milik Fase 6 ke atas tetap ditampilkan sebagai "belum", supaya
+     * Sales bisa menjawab "sudah sampai mana" tanpa menebak.
+     *
+     * @return array<int, array{judul:string, ikon:string, waktu:?Carbon, oleh:?string, selesai:bool, gagal:bool, menunggu:bool}>
      */
     private function timeline(SalesOrder $order): array
     {
         $ditolak = $order->rejected_at !== null;
 
-        return [
+        $tahap = [
             [
-                'judul' => 'Draft',
-                'ikon' => 'bi-pencil',
-                'waktu' => $order->created_at,
+                'judul' => 'Dibuat',
+                'ikon' => 'bi-file-earmark-text',
+                // Draft belum punya submitted_at; created_at yang dipakai
+                // supaya tahap pertama tetap menunjukkan kapan pesanan ini
+                // mulai ada, bukan tampil kosong.
+                'waktu' => $order->submitted_at ?? $order->created_at,
                 'oleh' => $order->user?->full_name,
                 'selesai' => true,
-                'gagal' => false,
-            ],
-            [
-                'judul' => 'Dikirim',
-                'ikon' => 'bi-send',
-                'waktu' => $order->submitted_at,
-                'oleh' => $order->user?->full_name,
-                'selesai' => $order->submitted_at !== null,
                 'gagal' => false,
             ],
             [
@@ -560,13 +560,64 @@ class SalesOrderController extends Controller
                 'gagal' => false,
             ],
             [
+                'judul' => 'Dikirim',
+                'ikon' => 'bi-truck',
+                'waktu' => $order->shipped_at,
+                'oleh' => null,
+                'selesai' => $order->shipped_at !== null,
+                'gagal' => false,
+            ],
+            [
+                'judul' => 'Tiba',
+                'ikon' => 'bi-geo-alt',
+                'waktu' => $order->delivered_at,
+                'oleh' => null,
+                'selesai' => $order->delivered_at !== null,
+                'gagal' => false,
+            ],
+            [
                 'judul' => 'Selesai',
-                'ikon' => 'bi-house-check',
+                'ikon' => 'bi-patch-check',
                 'waktu' => $order->completed_at,
                 'oleh' => null,
                 'selesai' => $order->completed_at !== null,
                 'gagal' => false,
             ],
         ];
+
+        return $this->tandaiYangDitunggu($tahap, $order);
+    }
+
+    /**
+     * Menandai satu tahap yang sedang ditunggu — tahap belum selesai yang
+     * pertama. Dibedakan dari tahap yang belum tersentuh supaya Sales tahu
+     * bola sedang ada di siapa.
+     *
+     * Dihitung DI SINI, bukan di view, karena aturannya butuh tahu keadaan
+     * pesanannya: draft belum masuk antrean siapa pun, dan pesanan yang
+     * ditolak berhenti di situ — pada keduanya TIDAK ADA yang sedang
+     * ditunggu, dan menandainya "Menunggu" adalah janji palsu.
+     */
+    private function tandaiYangDitunggu(array $tahap, SalesOrder $order): array
+    {
+        $berhenti = $order->status === SalesOrder::STATUS_DRAFT
+            || $order->rejected_at !== null;
+
+        $indeksDitunggu = null;
+
+        if (! $berhenti) {
+            foreach ($tahap as $i => $isi) {
+                if (! $isi['selesai']) {
+                    $indeksDitunggu = $i;
+                    break;
+                }
+            }
+        }
+
+        foreach ($tahap as $i => $isi) {
+            $tahap[$i]['menunggu'] = $i === $indeksDitunggu;
+        }
+
+        return $tahap;
     }
 }
