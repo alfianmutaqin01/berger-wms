@@ -23,7 +23,7 @@ class ShelfLife
     /**
      * Sisa umur simpan sebagai teks siap tampil.
      *
-     * Contoh keluaran: "5 bln 3 minggu", "6 bulan pas", "10 bln 1 minggu",
+     * Contoh keluaran: "5 bln 3 minggu", "6 bln 0 minggu", "10 bln 1 minggu",
      * "3 minggu", "5 hari", "Hari ini", "Kedaluwarsa 12 hari lalu".
      */
     public static function remainingLabel(?CarbonInterface $expiryDate, ?CarbonInterface $now = null): string
@@ -67,11 +67,10 @@ class ShelfLife
         $weeks = intdiv((int) $afterMonths->diffInDays($to), 7);
 
         if ($months > 0) {
-            // "6 bulan pas" dibaca lebih tegas daripada "6 bln 0 minggu",
-            // dan menegaskan bahwa tidak ada sisa yang dibulatkan diam-diam.
-            return $weeks > 0
-                ? "{$months} bln {$weeks} minggu"
-                : "{$months} bulan pas";
+            // Sisa minggu nol tetap ditulis "0 minggu", bukan "pas". Bentuk
+            // labelnya jadi seragam di seluruh kolom sehingga angka bulan dan
+            // minggu selalu berada di posisi yang sama saat dibaca sekilas.
+            return "{$months} bln {$weeks} minggu";
         }
 
         if ($weeks > 0) {
