@@ -4,13 +4,18 @@
 @section('page_title', 'Detail Pesanan')
 
 @php
-    // Kemajuan garis stepper: sampai tahap terakhir yang sudah terjadi.
-    // Dihitung di sini, bukan di JavaScript, supaya garisnya sudah benar
-    // pada cat pertama — di jaringan lambat, garis yang "melompat" setelah
-    // skrip jalan terbaca sebagai halaman yang belum selesai dimuat.
+    // Kemajuan garis stepper: berhenti tepat di TENGAH bulatan terakhir yang
+    // sudah selesai. Tiap bulatan berada di tengah kolomnya sendiri, jadi
+    // pusatnya ada di (indeks + 0,5) / jumlah tahap — memakai indeks saja
+    // membuat garisnya berhenti di tepi kolom, bukan di bulatannya.
+    //
+    // Dihitung di sini, bukan di JavaScript, supaya garisnya sudah benar pada
+    // cat pertama: di jaringan lambat, garis yang melompat setelah skrip
+    // jalan terbaca sebagai halaman yang belum selesai dimuat.
+    $jumlahTahap = count($timeline);
     $tahapSelesai = collect($timeline)->filter(fn ($t) => $t['selesai'])->count();
-    $persen = count($timeline) > 1
-        ? (max(0, $tahapSelesai - 1) / (count($timeline) - 1)) * 100
+    $persen = $tahapSelesai > 0
+        ? ((($tahapSelesai - 1) + 0.5) / $jumlahTahap) * 100
         : 0;
     $adaYangGagal = collect($timeline)->contains(fn ($t) => $t['gagal']);
 @endphp
@@ -35,45 +40,54 @@
                     <span class="badge bg-{{ $order->status_color }} flex-shrink-0">{{ $order->status_label }}</span>
                 </div>
 
+                @if($order->isEditable())
+                    {{-- Seluruh stepper masih abu-abu pada draft — perjalanan
+                         pesanan baru dimulai saat dikirim. Tanpa keterangan
+                         ini, layar penuh bulatan kosong terbaca sebagai
+                         halaman yang gagal memuat data. --}}
+                    <div class="alert alert-secondary border-0 small py-2 mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Draft belum dikirim. Perjalanan pesanan dimulai setelah dikirim ke Logistik.
+                    </div>
+                @endif
+
                 <!-- ============ Stepper status ============ -->
                 {{-- Mendatar dan muat satu layar. Garis digambar sebagai dua
                      batang bertumpuk: abu-abu penuh sebagai latar, lalu batang
                      berwarna selebar kemajuannya. --}}
                 <div class="position-relative px-1 pt-2">
                     <div class="position-absolute w-100 rounded-pill"
-                         style="height: 4px; background-color: #e9ecef; top: 26px; left: 0; z-index: 1;"></div>
+                         style="height: 4px; background-color: #e9ecef; top: 22px; left: 0; z-index: 1;"></div>
                     <div class="position-absolute rounded-pill"
                          style="height: 4px; background-color: {{ $adaYangGagal ? '#dc3545' : '#198754' }};
-                                top: 26px; left: 0; width: {{ $persen }}%; z-index: 2;
+                                top: 22px; left: 0; width: {{ $persen }}%; z-index: 2;
                                 transition: width .3s ease;"></div>
 
                     <div class="d-flex justify-content-between position-relative" style="z-index: 3;">
                         @foreach($timeline as $tahap)
                             @php
-                                // Tahap berikutnya sesudah yang terakhir selesai =
-                                // yang sedang ditunggu. Dibedakan dari yang belum
-                                // tersentuh supaya Sales tahu bola ada di siapa.
-                                $sedangDitunggu = ! $tahap['selesai'] && $loop->index === $tahapSelesai && ! $adaYangGagal;
-
                                 [$warnaBulat, $warnaTeks, $ikon] = match (true) {
                                     $tahap['gagal'] => ['bg-danger text-white', 'text-danger', 'bi-x-lg'],
                                     $tahap['selesai'] => ['bg-success text-white', 'text-success', 'bi-check-lg'],
-                                    $sedangDitunggu => ['bg-warning text-dark', 'text-warning-emphasis', 'bi-hourglass-split'],
+                                    $tahap['menunggu'] => ['bg-warning text-dark', 'text-warning-emphasis', 'bi-hourglass-split'],
                                     default => ['bg-light text-muted border', 'text-muted', $tahap['ikon']],
                                 };
                             @endphp
-                            <div class="text-center" style="width: 20%;">
+                            {{-- Lebar dibagi rata dari jumlah tahap, bukan angka
+                                 tetap: menambah tahap di controller langsung
+                                 terpasang benar tanpa menyentuh berkas ini. --}}
+                            <div class="text-center" style="width: {{ 100 / count($timeline) }}%;">
                                 <div class="{{ $warnaBulat }} rounded-circle d-inline-flex align-items-center justify-content-center mb-1 shadow-sm"
-                                     style="width: 34px; height: 34px; border: 4px solid #fff !important;">
-                                    <i class="bi {{ $ikon }}"></i>
+                                     style="width: 32px; height: 32px; border: 4px solid #fff !important;">
+                                    <i class="bi {{ $ikon }}" style="font-size: 0.8rem;"></i>
                                 </div>
-                                <div class="fw-semibold {{ $warnaTeks }}" style="font-size: 0.7rem; line-height: 1.1;">
+                                <div class="fw-semibold {{ $warnaTeks }}" style="font-size: 0.68rem; line-height: 1.1;">
                                     {{ $tahap['judul'] }}
                                 </div>
-                                <div class="text-muted" style="font-size: 0.62rem; line-height: 1.2;">
+                                <div class="text-muted" style="font-size: 0.6rem; line-height: 1.2;">
                                     @if($tahap['waktu'])
                                         {{ $tahap['waktu']->translatedFormat('d M') }}<br>{{ $tahap['waktu']->format('H:i') }}
-                                    @elseif($sedangDitunggu)
+                                    @elseif($tahap['menunggu'])
                                         <span class="text-warning-emphasis fw-semibold">Menunggu</span>
                                     @else
                                         —
@@ -165,7 +179,7 @@
                      tiap baris tetap terbaca tanpa gulir mendatar. --}}
                 <div class="d-flex justify-content-between border-bottom py-2 small">
                     <span class="text-muted">Gudang Tujuan</span>
-                    <span class="fw-semibold text-end">{{ $order->warehouse?->code }}</span>
+                    <span class="fw-semibold text-end">{{ $order->warehouse?->name }}</span>
                 </div>
                 <div class="d-flex justify-content-between border-bottom py-2 small">
                     <span class="text-muted">Pembayaran</span>

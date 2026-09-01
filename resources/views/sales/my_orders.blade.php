@@ -69,7 +69,7 @@
             </div>
 
             <div class="d-flex flex-wrap gap-3 small text-muted mb-3">
-                <span><i class="bi bi-building me-1"></i>{{ $order->warehouse?->code }}</span>
+                <span><i class="bi bi-building me-1"></i>{{ $order->warehouse?->name }}</span>
                 <span><i class="bi bi-credit-card me-1"></i>{{ $order->paymentTerm?->name }}</span>
                 <span>
                     <i class="bi bi-box-seam me-1"></i>

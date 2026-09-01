@@ -73,7 +73,8 @@ class SalesOrder extends Model
         'document_path', 'document_name', 'document_size', 'document_mime',
         'submitted_at', 'approved_at', 'approved_by',
         'rejected_at', 'rejected_by', 'rejection_reason',
-        'picking_completed_at', 'completed_at', 'sla_hours', 'notes',
+        'picking_completed_at', 'shipped_at', 'delivered_at',
+        'completed_at', 'sla_hours', 'notes',
     ];
 
     protected function casts(): array
@@ -83,6 +84,8 @@ class SalesOrder extends Model
             'approved_at' => 'datetime',
             'rejected_at' => 'datetime',
             'picking_completed_at' => 'datetime',
+            'shipped_at' => 'datetime',
+            'delivered_at' => 'datetime',
             'completed_at' => 'datetime',
             'document_size' => 'integer',
             'sla_hours' => 'decimal:2',

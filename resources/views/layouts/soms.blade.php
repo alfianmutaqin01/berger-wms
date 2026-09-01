@@ -17,9 +17,44 @@
             #sidebarOverlay {
                 display: none !important;
             }
-            /* Ruang untuk bottom nav agar konten terakhir tidak tertutup. */
+
+            /*
+              Tombol hamburger DIMATIKAN di sini. Ia hanya membuka #sidebar,
+              dan sidebar itu display:none di lebar ini — jadi menekannya
+              tidak melakukan apa pun. Tombol mati yang tetap memakan ruang
+              paling berharga di layar HP. Partial navbar-top dipakai bersama
+              Portal WMS (yang sidebarnya memang bisa dibuka), karena itu
+              dimatikan lewat CSS di sini, bukan dihapus dari partial-nya.
+            */
+            #sidebarToggle {
+                display: none !important;
+            }
+
+            /* Navbar atas dirampingkan: di layar 360px, tinggi 65px dan
+               tombol 40-42px menyisakan sedikit sekali ruang untuk isi. */
+            .main-content > .navbar {
+                height: 52px;
+                padding: 0 0.75rem !important;
+            }
+            .main-content > .navbar .container-fluid {
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+            }
+            .main-content > .navbar .btn {
+                width: 34px !important;
+                height: 34px !important;
+                font-size: 0.85rem;
+            }
+            .main-content > .navbar .ms-auto {
+                gap: 0.5rem !important;
+            }
+
+            /* Ruang untuk bottom nav agar konten terakhir tidak tertutup.
+               Angkanya mengikuti tinggi bottom nav yang sudah dirampingkan
+               di bawah; kalau salah satu diubah, ubah keduanya. */
             .main-content > .container-fluid {
-                padding-bottom: 6rem !important;
+                padding-top: 1rem !important;
+                padding-bottom: 4.5rem !important;
             }
         }
         @media (min-width: 992px) {
@@ -29,13 +64,20 @@
         }
         .bottom-nav {
             z-index: 1030;
+            /* Bootstrap memberi .navbar padding tegak bawaan; di bar bawah
+               itu menambah tinggi tanpa menambah apa pun yang bisa disentuh. */
+            padding-top: 0;
+            padding-bottom: 0;
         }
         .bottom-nav .nav-link {
             color: #64748b;
-            font-size: 0.7rem;
-            padding: 0.5rem 0.75rem;
-            /* Target sentuh minimal 44px sesuai docs/4 §3.1. */
-            min-width: 64px;
+            font-size: 0.65rem;
+            line-height: 1.15;
+            padding: 0.35rem 0.5rem;
+            /* Target sentuh minimal 44px sesuai docs/4 §3.1 — INI BATAS
+               BAWAH, jangan dikecilkan lagi demi menghemat ruang. Jari
+               yang meleset lebih mahal daripada beberapa piksel. */
+            min-width: 60px;
             min-height: 44px;
         }
         .bottom-nav .nav-link.active {
@@ -43,7 +85,14 @@
             font-weight: 600;
         }
         .bottom-nav .nav-link i {
-            font-size: 1.25rem;
+            font-size: 1.1rem;
+        }
+        /* Tombol tengah "Pesanan Baru" sengaja tetap menonjol — itu aksi
+           utama Sales — tapi lingkarannya dikecilkan dan tidak lagi
+           menambah tinggi bar. */
+        .bottom-nav .nav-aksi {
+            width: 38px;
+            height: 38px;
         }
     </style>
 </head>
@@ -120,10 +169,10 @@
             <span class="d-block">Home</span>
         </a>
         <a href="/sales/new-order" class="nav-link text-center text-decoration-none {{ request()->is('sales/new-order') ? 'active' : '' }}">
-            <span class="d-inline-flex align-items-center justify-content-center rounded-circle shadow-sm" style="width: 46px; height: 46px; background-color: #1B4F8A;">
+            <span class="nav-aksi d-inline-flex align-items-center justify-content-center rounded-circle shadow-sm" style="background-color: #1B4F8A;">
                 <i class="bi bi-plus-lg text-white"></i>
             </span>
-            <span class="d-block mt-1">Pesanan Baru</span>
+            <span class="d-block">Pesanan Baru</span>
         </a>
         <a href="/sales/my-orders" class="nav-link text-center text-decoration-none {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'active' : '' }}">
             <i class="bi {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'bi-clipboard-data-fill' : 'bi-clipboard-data' }}"></i>
