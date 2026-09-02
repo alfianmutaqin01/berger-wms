@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Support\Import\CustomerImporter;
 use App\Support\Import\Importer;
+use App\Support\Import\OpeningStockImporter;
 use App\Support\Import\ProductImporter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -72,6 +73,12 @@ class ImportController extends Controller
             'type' => $type,
             'title' => $config['title'],
             'indexRoute' => $config['index_route'],
+            // Nama rute DIKIRIM, bukan disusun view dari slug tipe.
+            // Sebelumnya view menebak "wms.{type}.import.cancel", yang
+            // kebetulan cocok untuk products/customers tetapi meledak
+            // seketika untuk tipe yang slug dan segmen rutenya berbeda.
+            'importRoute' => route($config['import_route']),
+            'cancelRoute' => route($config['cancel_route']),
             'token' => $token,
             'extension' => $request->file('file')->getClientOriginalExtension(),
             'originalName' => $request->file('file')->getClientOriginalName(),
@@ -153,15 +160,32 @@ class ImportController extends Controller
         return match ($type) {
             'products' => new ProductImporter($actorId),
             'customers' => new CustomerImporter($actorId),
+            'opening-stock' => new OpeningStockImporter($actorId),
         };
     }
 
-    /** @return array{title: string, index_route: string} */
+    /** @return array{title:string, index_route:string, import_route:string, cancel_route:string} */
     private function configFor(string $type): array
     {
         return match ($type) {
-            'products' => ['title' => 'Master Produk', 'index_route' => 'wms.products.index'],
-            'customers' => ['title' => 'Master Pelanggan', 'index_route' => 'wms.customers.index'],
+            'products' => [
+                'title' => 'Master Produk',
+                'index_route' => 'wms.products.index',
+                'import_route' => 'wms.products.import',
+                'cancel_route' => 'wms.products.import.cancel',
+            ],
+            'customers' => [
+                'title' => 'Master Pelanggan',
+                'index_route' => 'wms.customers.index',
+                'import_route' => 'wms.customers.import',
+                'cancel_route' => 'wms.customers.import.cancel',
+            ],
+            'opening-stock' => [
+                'title' => 'Stok Awal',
+                'index_route' => 'wms.inventory.index',
+                'import_route' => 'wms.inventory.import',
+                'cancel_route' => 'wms.inventory.import.cancel',
+            ],
             default => abort(404),
         };
     }

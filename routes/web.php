@@ -198,11 +198,30 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     // Produksi & Operator boleh MELIHAT stok, tapi tidak mengubahnya —
     // karena itu adjust/transfer dipagari gate yang berbeda dari index.
     Route::get('/inventory', [InventoryController::class, 'index'])
-        ->middleware('can:'.Permission::INVENTORY_VIEW);
+        ->middleware('can:'.Permission::INVENTORY_VIEW)
+        ->name('wms.inventory.index');
     Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])
         ->middleware('can:'.Permission::INVENTORY_ADJUST);
+    // Menambah baris stok yang belum pernah tercatat — gate yang SAMA dengan
+    // adjust (Manager & Super Admin), karena keduanya sama-sama menciptakan
+    // angka stok tanpa dokumen inbound di belakangnya.
+    Route::post('/inventory/stocks', [InventoryController::class, 'store'])
+        ->middleware('can:'.Permission::INVENTORY_ADJUST)
+        ->name('wms.inventory.store');
     Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])
         ->middleware('can:'.Permission::INVENTORY_TRANSFER);
+
+    // Impor Stok Awal — mengisi gudang yang sudah berjalan ke sistem baru.
+    // Memakai kerangka impor yang sama dengan Master Produk/Pelanggan.
+    Route::post('/inventory/import/preview', [ImportController::class, 'preview'])
+        ->defaults('type', 'opening-stock')->middleware('can:'.Permission::INVENTORY_ADJUST)
+        ->name('wms.inventory.import.preview');
+    Route::post('/inventory/import', [ImportController::class, 'store'])
+        ->defaults('type', 'opening-stock')->middleware('can:'.Permission::INVENTORY_ADJUST)
+        ->name('wms.inventory.import');
+    Route::post('/inventory/import/cancel', [ImportController::class, 'cancel'])
+        ->defaults('type', 'opening-stock')->middleware('can:'.Permission::INVENTORY_ADJUST)
+        ->name('wms.inventory.import.cancel');
 
     Route::get('/reports', [ReportController::class, 'index'])
         ->middleware('can:'.Permission::REPORTS_VIEW);
