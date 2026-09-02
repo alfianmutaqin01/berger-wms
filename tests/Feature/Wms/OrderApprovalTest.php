@@ -17,6 +17,7 @@ use App\Models\UserSession;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -163,6 +164,82 @@ class OrderApprovalTest extends TestCase
                     && $baris[0]['stok'] === 10
                     && $baris[0]['usul'] === 10;
             });
+    }
+
+    /**
+     * Lebar kisi harus konsisten antara <thead> dan <tfoot>.
+     *
+     * Kolom tombol hapus hanya dipakai metode dokumen. Versi pertama tetap
+     * menggambar <th> kosongnya pada metode rincian, sehingga muncul satu sel
+     * menggantung di ujung kanan — terlihat seperti kolom Excel yang lupa
+     * dihapus. Diuji dengan menghitung, bukan dengan mencocokkan potongan
+     * markup, supaya test ini tidak ikut pecah saat gaya kolomnya diubah.
+     */
+    #[DataProvider('metodePesanan')]
+    public function test_lebar_kisi_konsisten(string $sumber, int $kolom): void
+    {
+        $this->loginAs();
+
+        $order = $this->pesanan(array_merge(
+            ['order_source' => $sumber],
+            $sumber === SalesOrder::SOURCE_DOCUMENT
+                ? ['document_path' => 'sales-orders/x.pdf', 'document_name' => 'x.pdf']
+                : []
+        ));
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $this->produk->id,
+            'qty_ordered' => 5,
+        ]);
+
+        $html = $this->get("/wms/outbound/approval/{$order->id}")->assertOk()->getContent();
+
+        preg_match('~<thead>(.*?)</thead>~s', $html, $kepala);
+        preg_match('~<tfoot>(.*?)</tfoot>~s', $html, $kaki);
+
+        preg_match_all('~<th[ >]~', $kepala[1] ?? '', $th);
+        preg_match_all('~<td~', $kaki[1] ?? '', $td);
+        preg_match_all('~colspan="(\d+)"~', $kaki[1] ?? '', $span);
+
+        $lebarKaki = count($td[0]) - count($span[1]) + array_sum($span[1]);
+
+        $this->assertCount($kolom, $th[0], "Jumlah kolom kepala kisi untuk metode {$sumber}.");
+        $this->assertSame($kolom, $lebarKaki, "Lebar baris total tidak sama dengan kepala kisi ({$sumber}).");
+    }
+
+    public static function metodePesanan(): array
+    {
+        return [
+            // #, SKU, Deskripsi, UOM, Pesan, Stok, Setuju, Status
+            'metode rincian tanpa kolom aksi' => [SalesOrder::SOURCE_MANUAL, 8],
+            // ...ditambah kolom tombol hapus
+            'metode dokumen dengan kolom aksi' => [SalesOrder::SOURCE_DOCUMENT, 9],
+        ];
+    }
+
+    /** Kotak tempel dua kolom hanya muncul pada pesanan bermetode dokumen. */
+    public function test_kotak_tempel_hanya_pada_metode_dokumen(): void
+    {
+        $this->loginAs();
+
+        $rincian = $this->pesanan();
+        $this->get("/wms/outbound/approval/{$rincian->id}")
+            ->assertOk()
+            ->assertDontSee('id="tempelSku"', false)
+            ->assertDontSee('id="tempelQty"', false);
+
+        $dokumen = $this->pesanan([
+            'order_source' => SalesOrder::SOURCE_DOCUMENT,
+            'document_path' => 'sales-orders/x.pdf',
+            'document_name' => 'x.pdf',
+        ]);
+        $this->get("/wms/outbound/approval/{$dokumen->id}")
+            ->assertOk()
+            ->assertSee('id="tempelSku"', false)
+            ->assertSee('id="tempelQty"', false)
+            // Penjaga baris tidak sejajar: tanpa ini qty bisa menempel diam-diam
+            // ke SKU yang salah.
+            ->assertSee('id="selisihBaris"', false);
     }
 
     /* --------------------------------------------------------- Alokasi FIFO */

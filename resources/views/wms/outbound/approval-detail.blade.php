@@ -121,19 +121,52 @@
 
                 <div class="card border-0 shadow-sm rounded-4 mb-3">
                     <div class="card-body">
-                        <label for="areaTempel" class="fw-bold mb-2 d-block">
+                        <div class="fw-bold mb-1">
                             <i class="bi bi-clipboard-plus text-primary me-1"></i> Tempel dari sistem BC
-                        </label>
-                        <textarea id="areaTempel" rows="4" class="form-control zona-tempel font-monospace small"
-                                  placeholder="ID1-F00113202225&#9;100&#10;ID1-F0011B128320&#9;50"></textarea>
-                        <div class="d-flex justify-content-between align-items-center mt-2">
-                            <small class="text-muted">
-                                Dua kolom: SKU lalu Qty. Salin langsung dari Excel — pemisah Tab, koma, atau titik koma sama-sama terbaca.
-                            </small>
+                        </div>
+                        <p class="small text-muted mb-3">
+                            Salin kolom <strong>SKU</strong> dari Excel lalu tempel di kiri, kemudian
+                            salin kolom <strong>Qty</strong> dan tempel di kanan. Urutan barisnya harus
+                            sama. Kalau Anda menyalin dua kolom sekaligus, tempel saja di kotak SKU —
+                            sistem memisahkannya sendiri.
+                        </p>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-md-7">
+                                <label for="tempelSku" class="form-label small fw-semibold mb-1">Kolom SKU</label>
+                                <textarea id="tempelSku" rows="6" spellcheck="false"
+                                          class="form-control zona-tempel font-monospace small"
+                                          placeholder="ID1-F00113202225&#10;ID1-F0011B128320"></textarea>
+                                <small class="text-muted" id="hitungSku">0 baris</small>
+                            </div>
+                            <div class="col-12 col-md-5">
+                                <label for="tempelQty" class="form-label small fw-semibold mb-1">Kolom Qty</label>
+                                <textarea id="tempelQty" rows="6" spellcheck="false"
+                                          class="form-control zona-tempel font-monospace small text-end"
+                                          placeholder="100&#10;50"></textarea>
+                                <small class="text-muted" id="hitungQty">0 baris</small>
+                            </div>
+                        </div>
+
+                        {{-- Peringatan jumlah baris adalah penjaga terpenting di sini.
+                             Menempel dua kolom terpisah bisa meleset satu baris (mis.
+                             kolom SKU ikut terbawa judulnya), dan akibatnya BUKAN galat
+                             melainkan qty yang menempel diam-diam ke SKU yang salah. --}}
+                        <div id="selisihBaris" class="alert alert-danger py-2 mt-3 mb-0 small d-none">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                            Jumlah barisnya tidak sama — <span id="rincianSelisih"></span>.
+                            Kalau diproses, qty bisa menempel ke SKU yang salah. Periksa dulu, mis. baris judul yang ikut tersalin.
+                        </div>
+
+                        <div class="d-flex justify-content-end align-items-center mt-3 gap-2">
+                            <button type="button" id="btnKosongkan" class="btn btn-sm btn-link text-muted text-decoration-none">
+                                Kosongkan
+                            </button>
                             <button type="button" id="btnProsesTempel" class="btn btn-sm btn-outline-primary rounded-3">
                                 <i class="bi bi-arrow-down-circle me-1"></i> Proses Tempelan
                             </button>
                         </div>
+
                         <div id="hasilTempel" class="mt-2"></div>
                     </div>
                 </div>
@@ -163,7 +196,13 @@
                                     <th class="angka" style="width:5.5rem">Stok</th>
                                     <th class="angka" style="width:6rem">Setuju</th>
                                     <th style="width:9rem">Status</th>
-                                    <th style="width:2.5rem"></th>
+                                    {{-- Kolom tombol hapus HANYA untuk metode dokumen. Pada metode
+                                         rincian barisnya berasal dari Sales dan tidak boleh dibuang,
+                                         jadi kolomnya tidak digambar sama sekali - bukan digambar
+                                         kosong yang menyisakan sel menggantung di ujung kanan. --}}
+                                    @if($order->isDocumentBased())
+                                        <th style="width:2.5rem"></th>
+                                    @endif
                                 </tr>
                             </thead>
                             <tbody id="isiKisi"></tbody>
@@ -173,7 +212,7 @@
                                     <td class="angka" id="totalPesan">0</td>
                                     <td class="angka">—</td>
                                     <td class="angka" id="totalSetuju">0</td>
-                                    <td colspan="2"></td>
+                                    <td colspan="{{ $order->isDocumentBased() ? 2 : 1 }}"></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -310,23 +349,24 @@
                 <td>${lolos(b.uom ?? '')}</td>
                 <td class="angka">${b.qty_ordered}</td>
                 <td class="angka ${angka(b.stok) === 0 ? 'text-danger fw-semibold' : ''}">${angka(b.stok)}</td>
-                <td class="angka"><input type="number" min="0" max="${b.qty_ordered}" step="1"
+                <td class="angka">
+                    <input type="number" min="0" max="${b.qty_ordered}" step="1"
                         value="${setuju}" data-i="${i}" class="setuju"
-                        name="item[${i}][qty_approved]" aria-label="Qty disetujui baris ${i + 1}"></td>
-                <td>${badge(setuju, kurang, b)}</td>
-                <td class="text-center">
-                    ${BERBASIS_DOKUMEN ? `<button type="button" class="btn btn-sm btn-link text-danger p-0 hapus" data-i="${i}" aria-label="Hapus baris ${i + 1}"><i class="bi bi-trash"></i></button>` : ''}
+                        name="item[${i}][qty_approved]" aria-label="Qty disetujui baris ${i + 1}">
                     <input type="hidden" name="item[${i}][product_id]" value="${b.product_id}">
                     <input type="hidden" name="item[${i}][qty_ordered]" value="${b.qty_ordered}">
                 </td>
+                <td>${badge(setuju, kurang, b)}</td>
+                ${BERBASIS_DOKUMEN ? `<td class="text-center"><button type="button" class="btn btn-sm btn-link text-danger p-0 hapus" data-i="${i}" aria-label="Hapus baris ${i + 1}"><i class="bi bi-trash"></i></button></td>` : ''}
             `;
 
-            // Input tersembunyi sengaja diletakkan DI DALAM <td>, bukan
-            // langsung di bawah <tr>. HTML tidak mengizinkan elemen selain
-            // sel sebagai anak baris tabel: parser browser akan memindahkan
-            // input semacam itu ke LUAR tabel (foster parenting), dan di
-            // markup ini artinya keluar dari <form> — product_id-nya diam-diam
-            // tidak pernah ikut terkirim.
+            // Input tersembunyi menumpang di sel "Setuju" — sel yang SELALU
+            // ada — bukan di sel tombol hapus yang hanya digambar untuk metode
+            // dokumen, dan bukan langsung di bawah <tr>. HTML tidak
+            // mengizinkan elemen selain sel sebagai anak baris tabel: parser
+            // browser memindahkan input semacam itu ke LUAR tabel (foster
+            // parenting), dan di markup ini artinya keluar dari <form> —
+            // product_id-nya diam-diam tidak pernah ikut terkirim.
             isiKisi.appendChild(tr);
         });
 
@@ -420,30 +460,112 @@
 
     /* ------------------------------------- Tempelan dari sistem BC */
     const btnProses = document.getElementById('btnProsesTempel');
+    const kotakSku = document.getElementById('tempelSku');
+    const kotakQty = document.getElementById('tempelQty');
+
+    /* Memecah isi kotak menjadi daftar baris, mengabaikan baris kosong. */
+    function barisDari(teks) {
+        return (teks || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    }
+
+    function perbaruiHitungan() {
+        if (!kotakSku) return;
+
+        const sku = barisDari(kotakSku.value);
+        const qty = barisDari(kotakQty.value);
+
+        document.getElementById('hitungSku').textContent = `${sku.length} baris`;
+        document.getElementById('hitungQty').textContent = `${qty.length} baris`;
+
+        const beda = sku.length !== qty.length && sku.length > 0 && qty.length > 0;
+        document.getElementById('selisihBaris').classList.toggle('d-none', !beda);
+
+        if (beda) {
+            document.getElementById('rincianSelisih').textContent =
+                `SKU ${sku.length} baris, Qty ${qty.length} baris`;
+        }
+    }
+
+    if (kotakSku) {
+        /*
+            Menempel DUA kolom sekaligus ke kotak SKU tetap dilayani: Logistik
+            yang menyeleksi dua kolom di Excel akan mendapat teks berpemisah
+            Tab, dan menolaknya hanya akan terasa seperti kerusakan. Isinya
+            dipecah sendiri ke dua kotak.
+        */
+        kotakSku.addEventListener('paste', (e) => {
+            const teks = (e.clipboardData || window.clipboardData).getData('text');
+
+            if (!teks || !/\t/.test(teks)) return;
+
+            e.preventDefault();
+
+            const pasangan = barisDari(teks)
+                .map((l) => l.split('\t').map((s) => s.trim()).filter(Boolean))
+                .filter((k) => k.length >= 2);
+
+            if (pasangan.length === 0) return;
+
+            kotakSku.value = pasangan.map((k) => k[0]).join('\n');
+            kotakQty.value = pasangan.map((k) => k[k.length - 1]).join('\n');
+            perbaruiHitungan();
+        });
+
+        kotakSku.addEventListener('input', perbaruiHitungan);
+        kotakQty.addEventListener('input', perbaruiHitungan);
+        kotakQty.addEventListener('paste', () => setTimeout(perbaruiHitungan, 0));
+
+        document.getElementById('btnKosongkan').addEventListener('click', () => {
+            kotakSku.value = '';
+            kotakQty.value = '';
+            document.getElementById('hasilTempel').innerHTML = '';
+            perbaruiHitungan();
+        });
+
+        perbaruiHitungan();
+    }
 
     if (btnProses) {
         btnProses.addEventListener('click', async () => {
-            const teks = document.getElementById('areaTempel').value.trim();
             const kotak = document.getElementById('hasilTempel');
+            const daftarSku = barisDari(kotakSku.value);
+            const daftarQty = barisDari(kotakQty.value);
 
-            if (!teks) {
-                kotak.innerHTML = '<div class="alert alert-warning py-2 mb-0 small">Belum ada yang ditempel.</div>';
+            if (daftarSku.length === 0 || daftarQty.length === 0) {
+                kotak.innerHTML = '<div class="alert alert-warning py-2 mb-0 small">Kedua kolom harus diisi.</div>';
                 return;
             }
 
-            // Tab, koma, titik koma, atau beberapa spasi sama-sama diterima:
-            // hasil salinan Excel memakai Tab, tapi salinan dari layar BC
-            // sering datang dengan spasi.
-            const pasangan = teks.split(/\r?\n/)
-                .map((l) => l.trim())
-                .filter(Boolean)
-                .map((l) => l.split(/\t|[;,]|\s{2,}| +(?=\d+$)/).map((s) => s.trim()).filter(Boolean))
-                .filter((k) => k.length >= 2)
-                .map((k) => ({ sku: k[0].toUpperCase(), qty: parseInt(k[k.length - 1].replace(/[^\d]/g, ''), 10) }))
-                .filter((k) => k.sku && Number.isFinite(k.qty) && k.qty > 0);
+            /*
+                Jumlah baris yang tidak sama DITOLAK, bukan dipotong sepanjang
+                yang terpendek. Memotong diam-diam berarti qty menempel ke SKU
+                yang salah — kesalahan yang tidak menimbulkan galat apa pun dan
+                baru ketahuan saat barang salah sampai ke customer.
+            */
+            if (daftarSku.length !== daftarQty.length) {
+                kotak.innerHTML = `<div class="alert alert-danger py-2 mb-0 small"><i class="bi bi-exclamation-triangle me-1"></i> Tidak diproses: SKU ${daftarSku.length} baris tetapi Qty ${daftarQty.length} baris. Samakan dulu jumlahnya.</div>`;
+                return;
+            }
 
-            if (pasangan.length === 0) {
-                kotak.innerHTML = '<div class="alert alert-danger py-2 mb-0 small">Tidak ada baris yang terbaca. Pastikan tiap baris berisi SKU lalu Qty.</div>';
+            const pasangan = [];
+            const qtyTidakTerbaca = [];
+
+            daftarSku.forEach((sku, i) => {
+                const mentah = daftarQty[i];
+                // Ribuan bergaya Excel ("1.200" / "1,200") dan satuan yang ikut
+                // tersalin dibuang; yang tersisa harus angka murni.
+                const angkaQty = parseInt(String(mentah).replace(/[^\d]/g, ''), 10);
+
+                if (!Number.isFinite(angkaQty) || angkaQty < 1) {
+                    qtyTidakTerbaca.push(`baris ${i + 1} ("${mentah}")`);
+                    return;
+                }
+
+                pasangan.push({ sku: sku.toUpperCase(), qty: angkaQty });
+            });
+
+            if (qtyTidakTerbaca.length > 0) {
+                kotak.innerHTML = `<div class="alert alert-danger py-2 mb-0 small"><i class="bi bi-exclamation-triangle me-1"></i> Qty tidak terbaca sebagai angka pada ${lolos(qtyTidakTerbaca.join(', '))}. Kemungkinan baris judul ikut tersalin.</div>`;
                 return;
             }
 
@@ -491,8 +613,8 @@
                         uom: info.uom,
                         stok: info.stok,
                         qty_ordered: p.qty,
-                        // Qty dari BC yang dipakai apa adanya (keputusan
-                        // pemilik produk), bukan dipotong sesuai stok.
+                        // Qty dari BC dipakai apa adanya (keputusan pemilik
+                        // produk), bukan dipotong sesuai stok.
                         setuju: p.qty,
                     });
                 });
