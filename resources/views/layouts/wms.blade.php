@@ -81,7 +81,18 @@
                 \App\Support\Permission::INBOUND_VERIFY,
                 \App\Support\Permission::INVENTORY_VIEW,
             ])
-                @php $inboundOpen = request()->is('wms/inbound*') || request()->is('wms/inventory*'); @endphp
+                @php
+                    $inboundOpen = request()->is('wms/inbound*') || request()->is('wms/inventory*');
+
+                    // Produksi hanya ada di Karawang. Bagi staff Pekanbaru dan
+                    // Surabaya, dua menu produksi di bawah ini tidak pernah
+                    // bisa dipakai — barang sampai ke sana lewat transfer,
+                    // bukan lini produksi. Put-away dan verifikasi TETAP ada:
+                    // barang kiriman pun harus dinaikkan ke rak.
+                    //
+                    // Akun tanpa gudang (Super Admin) melihat semuanya.
+                    $punyaProduksi = auth()->user()?->warehouse?->has_production ?? true;
+                @endphp
                 <li class="nav-section mt-2">Inventory Management</li>
                 <li class="nav-item">
                     <a class="nav-link {{ $inboundOpen ? '' : 'collapsed' }}" href="#inboundMenu" data-bs-toggle="collapse" aria-expanded="{{ $inboundOpen ? 'true' : 'false' }}">
@@ -91,14 +102,18 @@
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $inboundOpen ? 'show' : '' }}" id="inboundMenu" data-bs-parent=".sidebar-nav">
                         @can(\App\Support\Permission::INBOUND_CREATE)
-                            <li class="nav-item {{ request()->is('wms/inbound/create') ? 'active' : '' }}">
-                                <a href="/wms/inbound/create" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Input Produksi</span></a>
-                            </li>
+                            @if($punyaProduksi)
+                                <li class="nav-item {{ request()->is('wms/inbound/create') ? 'active' : '' }}">
+                                    <a href="/wms/inbound/create" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Input Produksi</span></a>
+                                </li>
+                            @endif
                         @endcan
                         @can(\App\Support\Permission::INBOUND_HISTORY)
-                            <li class="nav-item {{ request()->is('wms/inbound/history*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Produksi</span></a>
-                            </li>
+                            @if($punyaProduksi)
+                                <li class="nav-item {{ request()->is('wms/inbound/history*') ? 'active' : '' }}">
+                                    <a href="/wms/inbound/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Produksi</span></a>
+                                </li>
+                            @endif
                         @endcan
                         @can(\App\Support\Permission::INBOUND_PUTAWAY)
                             <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">

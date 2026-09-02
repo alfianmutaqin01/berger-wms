@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             DepartmentSeeder::class,
             WarehouseSeeder::class,
+            WarehouseTerritorySeeder::class,
             UserSeeder::class,
             ProductCategorySeeder::class,
             ProductSeeder::class,

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Master pelanggan.
@@ -74,6 +75,41 @@ class Customer extends Model
                 ->orWhere('ship_to_code', 'ILIKE', $like)
                 ->orWhere('email', 'ILIKE', $like)
                 ->orWhere('phone', 'ILIKE', $like);
+        });
+    }
+
+    /**
+     * Hanya pelanggan yang boleh dilayani $warehouse (cakupan wilayah).
+     *
+     * $warehouse NULL berarti tidak dibatasi — dipakai Super Admin dan layar
+     * master data yang memang lintas gudang.
+     *
+     * Pelanggan tanpa territory_code SELALU ikut lolos, sejalan dengan
+     * Warehouse::servesTerritory(): master data yang belum lengkap tidak boleh
+     * menghilang diam-diam dari pencarian.
+     */
+    public function scopeServedBy(Builder $query, ?Warehouse $warehouse): Builder
+    {
+        if ($warehouse === null || $warehouse->territory_mode === Warehouse::MODE_ALL) {
+            return $query;
+        }
+
+        $kode = $warehouse->territoryCodes();
+
+        if ($kode === []) {
+            // Mode `only` tanpa satu pun wilayah = tidak melayani siapa pun;
+            // mode `except` tanpa pengecualian = melayani semua orang.
+            return $warehouse->territory_mode === Warehouse::MODE_ONLY
+                ? $query->whereRaw('1 = 0')
+                : $query;
+        }
+
+        return $query->where(function (Builder $q) use ($warehouse, $kode) {
+            $q->whereNull('territory_code')->orWhere('territory_code', '');
+
+            $warehouse->territory_mode === Warehouse::MODE_ONLY
+                ? $q->orWhereIn(DB::raw('UPPER(territory_code)'), $kode)
+                : $q->orWhereNotIn(DB::raw('UPPER(territory_code)'), $kode);
         });
     }
 

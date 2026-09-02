@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Sales;
 
+use App\Models\Customer;
 use App\Models\SalesOrder;
 use App\Support\OrderCutoff;
 use Illuminate\Foundation\Http\FormRequest;
@@ -34,8 +35,12 @@ class SalesOrderRequest extends FormRequest
 
         return [
             'action' => ['required', 'in:draft,submit'],
+            // TIDAK ADA `warehouse_id` di sini. Gudang tidak lagi dipilih di
+            // formulir — Sales terkunci ke gudang akunnya, dan controller
+            // mengisinya lewat WarehouseScope::require(). Menerimanya dari
+            // isian berarti menyediakan lagi kolom yang bisa dipalsukan untuk
+            // memesan atas nama gudang lain.
             'customer_id' => ['required', 'integer', 'exists:customers,id'],
-            'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
             'payment_term_id' => ['required', 'integer', 'exists:payment_terms,id'],
             'order_source' => ['required', 'in:'.SalesOrder::SOURCE_MANUAL.','.SalesOrder::SOURCE_DOCUMENT],
             'notes' => ['nullable', 'string', 'max:1000'],
@@ -62,7 +67,6 @@ class SalesOrderRequest extends FormRequest
     {
         return [
             'customer_id' => 'customer',
-            'warehouse_id' => 'gudang tujuan',
             'payment_term_id' => 'syarat pembayaran',
             'customer_po_number' => 'nomor PO customer',
             'document' => 'dokumen pesanan',
@@ -84,7 +88,35 @@ class SalesOrderRequest extends FormRequest
             $this->pastikanIsiSesuaiMetode($validator);
             $this->pastikanTidakAdaSkuGanda($validator);
             $this->pastikanBelumLewatCutoff($validator);
+            $this->pastikanCustomerTercakup($validator);
         });
+    }
+
+    /**
+     * Pelanggan harus berada dalam cakupan wilayah gudang Sales ini.
+     *
+     * Diperiksa DI SINI, bukan hanya dengan menyembunyikannya dari hasil
+     * pencarian. Kolom customer mengirim id, dan id bisa diketik langsung ke
+     * permintaan — daftar yang disaring adalah kenyamanan, bukan pengamanan.
+     *
+     * Pembatasannya KERAS (keputusan pemilik produk): pesanannya ditolak,
+     * bukan diteruskan dengan peringatan.
+     */
+    private function pastikanCustomerTercakup(Validator $validator): void
+    {
+        $gudang = $this->user()?->warehouse;
+        $customer = Customer::find($this->input('customer_id'), ['id', 'name', 'territory_code']);
+
+        if ($gudang === null || $customer === null || $gudang->servesTerritory($customer->territory_code)) {
+            return;
+        }
+
+        $validator->errors()->add('customer_id', sprintf(
+            'Pelanggan %s berada di wilayah %s, yang tidak dilayani gudang %s. Pesanan ini harus dibuat dari gudang lain.',
+            $customer->name,
+            $customer->territory_code,
+            $gudang->name
+        ));
     }
 
     /**

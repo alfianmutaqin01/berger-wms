@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreLocationRequest;
 use App\Http\Requests\Wms\UpdateLocationRequest;
 use App\Models\Location;
-use App\Models\Warehouse;
+use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -33,8 +33,10 @@ class LocationController extends Controller
 {
     public function index(Request $request): View
     {
+        $user = $request->user();
+
         $filters = [
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $user),
             'search' => $request->query('search'),
             'rack' => $request->query('rack'),
             'level' => $request->query('level'),
@@ -42,7 +44,7 @@ class LocationController extends Controller
             'status' => $request->query('status'),
         ];
 
-        $base = Location::query()
+        $base = WarehouseScope::apply(Location::query(), $user)
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
         $locations = (clone $base)
@@ -59,7 +61,7 @@ class LocationController extends Controller
 
         return view('wms.master.locations', [
             'locations' => $locations,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($user),
             'racks' => (clone $base)->distinct()->orderBy('rack')->pluck('rack'),
             'zones' => Location::ZONES,
             'stats' => [
@@ -94,15 +96,22 @@ class LocationController extends Controller
      */
     public function map(Request $request): View
     {
+        $user = $request->user();
+
         $filters = [
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $user),
             'zone' => $request->query('zone'),
             'highlight' => trim((string) $request->query('highlight')),
         ];
 
+        $pilihan = WarehouseScope::options($user);
+
+        // Gudang default adalah yang PERTAMA DALAM KEWENANGANNYA, bukan
+        // WH-01. Kalau tidak, Operator Surabaya membuka denah dan melihat rak
+        // Karawang — lalu menaruh barang di kode bin yang tidak ada di sana.
         $warehouse = $filters['warehouse_id']
-            ? Warehouse::find($filters['warehouse_id'])
-            : Warehouse::orderBy('code')->first();
+            ? $pilihan->firstWhere('id', (int) $filters['warehouse_id'])
+            : $pilihan->first();
 
         $base = Location::query()->where('warehouse_id', $warehouse?->id);
 
@@ -127,7 +136,7 @@ class LocationController extends Controller
         return view('wms.master.locations-map', [
             'racks' => $racks,
             'rackMeta' => $rackMeta,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => $pilihan,
             'warehouse' => $warehouse,
             'zones' => Location::ZONES,
             'stats' => [
@@ -143,6 +152,10 @@ class LocationController extends Controller
 
     public function store(StoreLocationRequest $request): RedirectResponse
     {
+        // Manager gudang lain tidak boleh membuat rak di gudang yang bukan
+        // kewenangannya; `warehouse_id` di sini datang dari isian formulir.
+        WarehouseScope::assert((int) $request->input('warehouse_id'), $request->user());
+
         $location = Location::create($request->locationData());
 
         return redirect()->route('wms.locations.index')
@@ -151,6 +164,11 @@ class LocationController extends Controller
 
     public function update(UpdateLocationRequest $request, Location $location): RedirectResponse
     {
+        // Dua-duanya diperiksa: rak asal (jangan menyentuh milik gudang lain)
+        // DAN gudang tujuan (jangan memindahkannya ke luar kewenangan).
+        WarehouseScope::assert($location->warehouse_id, $request->user());
+        WarehouseScope::assert((int) $request->input('warehouse_id'), $request->user());
+
         $location->update($request->locationData());
 
         return redirect()->route('wms.locations.index')
@@ -164,8 +182,10 @@ class LocationController extends Controller
      * masih direferensikan riwayat stok dan pergerakan barang. Bin non-aktif
      * tidak akan dipilih lagi oleh proses put-away.
      */
-    public function toggleStatus(Location $location): RedirectResponse
+    public function toggleStatus(Request $request, Location $location): RedirectResponse
     {
+        WarehouseScope::assert($location->warehouse_id, $request->user());
+
         $location->update(['is_active' => ! $location->is_active]);
 
         return back()->with('success', sprintf(

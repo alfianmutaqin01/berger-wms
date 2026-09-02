@@ -8,10 +8,10 @@ use App\Models\Customer;
 use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\SalesOrder;
-use App\Models\Warehouse;
 use App\Support\DocumentNumber;
 use App\Support\OrderCutoff;
 use App\Support\StockIndicator;
+use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -59,6 +59,7 @@ class SalesOrderController extends Controller
     public function store(SalesOrderRequest $request): RedirectResponse
     {
         $data = $request->validated();
+        $data['warehouse_id'] = WarehouseScope::require($request->user());
 
         if ($galat = $this->galatDokumen($request, null)) {
             return back()->withInput()->withErrors(['document' => $galat]);
@@ -110,6 +111,9 @@ class SalesOrderController extends Controller
         abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
 
         $data = $request->validated();
+        // Diambil ulang dari akun, bukan dipertahankan dari draft: kalau Sales
+        // dipindahkan ke gudang lain, draft lamanya ikut pindah bersamanya.
+        $data['warehouse_id'] = WarehouseScope::require($request->user());
 
         if ($galat = $this->galatDokumen($request, $order)) {
             return back()->withInput()->withErrors(['document' => $galat]);
@@ -261,6 +265,10 @@ class SalesOrderController extends Controller
         }
 
         $hasil = Customer::active()
+            // Sales hanya menemukan pelanggan yang gudangnya memang melayani
+            // wilayah itu. Penyaringan yang sama diulang saat menyimpan di
+            // SalesOrderRequest — daftar ini kenyamanan, bukan pengamanan.
+            ->servedBy($request->user()?->warehouse)
             ->search($q)
             ->orderBy('name')
             ->limit(self::MAKS_SARAN)
@@ -287,7 +295,12 @@ class SalesOrderController extends Controller
     public function lookupProducts(Request $request): JsonResponse
     {
         $q = trim((string) $request->query('q'));
-        $warehouseId = (int) $request->query('warehouse_id');
+
+        // Gudang TIDAK lagi dibaca dari URL. Indikator ketersediaan adalah
+        // angka stok yang disamarkan; membiarkan gudangnya dipilih dari
+        // permintaan berarti Sales bisa mengintip keadaan gudang lain satu
+        // SKU demi satu SKU hanya dengan mengganti parameter.
+        $warehouseId = (int) WarehouseScope::boundary($request->user());
 
         if (mb_strlen($q) < self::MIN_CARI) {
             return response()->json([]);
@@ -349,7 +362,12 @@ class SalesOrderController extends Controller
     {
         return [
             'order' => $order,
-            'warehouses' => Warehouse::orderBy('code')->get(['id', 'code', 'name']),
+            // Bukan daftar pilihan lagi, melainkan keterangan: gudang Sales
+            // sudah ditentukan akunnya. Tetap dikirim supaya formulir bisa
+            // menampilkan gudang mana yang akan memproses pesanannya —
+            // menyembunyikannya sama sekali membuat Sales tidak tahu ke mana
+            // pesanannya pergi.
+            'gudangSales' => $request->user()?->warehouse,
             'paymentTerms' => PaymentTerm::where('is_active', true)->orderBy('sort_order')->get(['id', 'code', 'name', 'days']),
             'customerTerpilih' => $this->customerTerpilih($order),
             'produkTerpilih' => $this->produkTerpilih($order),

@@ -7,6 +7,7 @@ use App\Support\Import\CustomerImporter;
 use App\Support\Import\Importer;
 use App\Support\Import\OpeningStockImporter;
 use App\Support\Import\ProductImporter;
+use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -160,7 +161,14 @@ class ImportController extends Controller
         return match ($type) {
             'products' => new ProductImporter($actorId),
             'customers' => new CustomerImporter($actorId),
-            'opening-stock' => new OpeningStockImporter($actorId),
+            // Produk dan pelanggan LINTAS GUDANG (keputusan pemilik produk
+            // untuk Master Produk; pelanggan tidak dimiliki gudang sama
+            // sekali). Stok awal tidak: ia menulis ke rak, dan rak selalu
+            // milik satu gudang.
+            'opening-stock' => new OpeningStockImporter(
+                $actorId,
+                warehouseId: WarehouseScope::boundary($request->user()),
+            ),
         };
     }
 

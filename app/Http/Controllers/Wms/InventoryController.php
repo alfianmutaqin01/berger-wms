@@ -8,9 +8,9 @@ use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\ProductCategory;
 use App\Models\StockMovement;
-use App\Models\Warehouse;
 use App\Support\Outbound\PendingAllocationFiller;
 use App\Support\ShelfLife;
+use App\Support\WarehouseScope;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -60,9 +60,12 @@ class InventoryController extends Controller
      */
     public function index(Request $request): View
     {
+        $user = $request->user();
+
         $filters = [
             'search' => $request->query('search'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            // Dijepit ke gudang user; bagi yang terikat, isian URL diabaikan.
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $user),
             'category_id' => $request->query('category_id'),
             'location_id' => $request->query('location_id'),
             'batch' => $request->query('batch'),
@@ -72,7 +75,10 @@ class InventoryController extends Controller
             'expiring' => $request->query('expiring'),
         ];
 
-        $base = InventoryStock::query()
+        // apply() DAN filter gudang keduanya dipasang. Yang pertama adalah
+        // batas kewenangan (tidak bisa dikosongkan), yang kedua pilihan
+        // tampilan milik Super Admin yang memang lintas gudang.
+        $base = WarehouseScope::apply(InventoryStock::query(), $user)
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id))
             ->when($filters['category_id'], fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('category_id', $id)));
 
@@ -134,7 +140,7 @@ class InventoryController extends Controller
         return view('wms.inventory.index', [
             'halaman' => $halaman,
             'barisSku' => $barisSku,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($user),
             'categories' => ProductCategory::orderBy('name')->get(),
             'statuses' => InventoryStock::STATUS_LABELS,
             'stats' => [
@@ -175,6 +181,12 @@ class InventoryController extends Controller
         ]);
 
         $stock = InventoryStock::with('product:id,sku')->findOrFail($validated['stock_id']);
+
+        // `stock_id` datang dari formulir dan bisa diganti nomor apa pun.
+        // exists: hanya memastikan barisnya ADA, bukan bahwa barisnya boleh
+        // disentuh user ini.
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
         $qtyBaru = (int) $validated['qty_new'];
 
         if ($qtyBaru < $stock->qty_allocated) {
@@ -260,6 +272,11 @@ class InventoryController extends Controller
     {
         $produk = $request->produk;
         $lokasi = $request->lokasi;
+
+        // Gudangnya ditentukan RAK yang dipilih, bukan isian tersendiri —
+        // karena itu penjagaannya dipasang pada rak itu.
+        WarehouseScope::assert($lokasi->warehouse_id, $request->user());
+
         $qty = (int) $request->validated('qty');
         $tanggal = Carbon::parse($request->validated('production_date'));
 
@@ -366,6 +383,9 @@ class InventoryController extends Controller
         ]);
 
         $stock = InventoryStock::with('product:id,sku')->findOrFail($validated['stock_id']);
+
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
         $qty = (int) $validated['qty'];
 
         if ($qty > $stock->qty_available) {

@@ -6,7 +6,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const PRODUK_TERPILIH = @json($produkTerpilih);
     const MIN_CARI = 2;
 
-    const gudang = document.getElementById('warehouseSelect');
+    // Tidak ada lagi pemilih gudang di halaman ini: gudang Sales ditentukan
+    // akunnya dan dibaca server dari sesi, bukan dikirim formulir.
     const daftar = document.getElementById('daftarItem');
     const cetakan = document.getElementById('templateItem');
     const pakaiDokumen = document.getElementById('pakaiDokumen');
@@ -149,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (!produk || !produk.indicator) {
             badge.className = 'badge bg-secondary badge-indikator flex-grow-1 text-center';
-            badge.textContent = gudang.value ? '—' : 'Pilih gudang';
+            badge.textContent = '—';
             return;
         }
 
@@ -174,8 +175,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         pasangPencarian(baris.querySelector('.cari-produk'), {
             url: function (q) {
-                return '/sales/lookup/products?q=' + encodeURIComponent(q)
-                    + '&warehouse_id=' + encodeURIComponent(gudang.value || '');
+                // Tanpa warehouse_id: server memakai gudang akun Sales.
+                // Mengirimnya dari sini berarti menyediakan lagi parameter
+                // yang bisa diganti untuk mengintip stok gudang lain.
+                return '/sales/lookup/products?q=' + encodeURIComponent(q);
             },
             tampilan: function (p) {
                 const badge = p.label
@@ -214,13 +217,8 @@ document.addEventListener('DOMContentLoaded', function () {
         tambahBaris();
     });
 
-    // Ganti gudang = indikator lama tidak berlaku lagi. Badge dikosongkan,
-    // bukan dibiarkan menampilkan keadaan gudang sebelumnya yang menyesatkan.
-    gudang.addEventListener('change', function () {
-        daftar.querySelectorAll('.baris-item').forEach(function (baris) {
-            pasangBadge(baris, null);
-        });
-    });
+    // Dahulu di sini ada pengosongan badge setiap kali gudang diganti.
+    // Gudang tidak bisa diganti lagi, jadi indikatornya tidak pernah basi.
 
     /* --------------------------------------------------- Keadaan awal */
 

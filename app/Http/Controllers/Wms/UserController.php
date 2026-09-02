@@ -8,8 +8,8 @@ use App\Http\Requests\Wms\UpdateUserRequest;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
-use App\Models\Warehouse;
 use App\Support\CurrentActor;
+use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -47,11 +47,16 @@ class UserController extends Controller
         $filters = [
             'search' => $request->query('search'),
             'role_id' => $request->query('role_id'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $actor),
             'status' => $request->query('status'),
         ];
 
-        $users = User::query()
+        // Manager hanya melihat akun gudangnya. Akun lintas gudang (Super
+        // Admin, warehouse_id NULL) ikut tersaring keluar — itu memang benar:
+        // ia bukan akun yang boleh disentuh Manager mana pun.
+        $terlihat = fn () => WarehouseScope::apply(User::query(), $actor);
+
+        $users = $terlihat()
             // Eager loading mencegah N+1: tanpa ini, tabel 15 baris memicu
             // 60+ query tambahan untuk role, departemen, gudang, dan atasan.
             ->with(['role', 'department', 'warehouse', 'manager'])
@@ -68,13 +73,13 @@ class UserController extends Controller
             'users' => $users,
             'roles' => Role::query()->assignableBy($actor)->get(),
             'departments' => Department::active()->orderBy('name')->get(),
-            'warehouses' => Warehouse::active()->orderBy('code')->get(),
-            'managers' => User::active()->orderBy('full_name')->get(['id', 'full_name', 'employee_id']),
+            'warehouses' => WarehouseScope::options($actor)->where('is_active', true)->values(),
+            'managers' => $terlihat()->active()->orderBy('full_name')->get(['id', 'full_name', 'employee_id']),
             'actor' => $actor,
             'stats' => [
-                'total' => User::count(),
-                'active' => User::where('is_active', true)->count(),
-                'inactive' => User::where('is_active', false)->count(),
+                'total' => $terlihat()->count(),
+                'active' => $terlihat()->where('is_active', true)->count(),
+                'inactive' => $terlihat()->where('is_active', false)->count(),
             ],
             'filters' => $filters,
         ]);
@@ -82,8 +87,14 @@ class UserController extends Controller
 
     public function store(StoreUserRequest $request): RedirectResponse
     {
+        $actor = CurrentActor::get();
+
+        // Akun baru harus lahir di dalam kewenangan pembuatnya. Tanpa ini,
+        // Manager Karawang bisa membuat akun Manager Surabaya lalu memakainya.
+        WarehouseScope::assert($request->validated('warehouse_id'), $actor);
+
         $data = $request->validated();
-        $data['created_by'] = CurrentActor::get()?->id;
+        $data['created_by'] = $actor?->id;
 
         if ($request->hasFile('avatar')) {
             $data['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
@@ -99,6 +110,11 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
+        // Gudang TUJUAN diperiksa terpisah dari akun yang disunting: tanpa
+        // ini, Manager bisa memindahkan akun keluar dari gudangnya sendiri
+        // dan kehilangan kendali atasnya (atau menanam akun di gudang lain).
+        WarehouseScope::assert($request->validated('warehouse_id'), CurrentActor::get());
+
         $data = $request->validated();
 
         // Password kosong berarti pengelola tidak bermaksud menggantinya.
