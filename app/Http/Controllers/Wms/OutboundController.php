@@ -7,15 +7,11 @@ use Illuminate\Http\Request;
 
 class OutboundController extends Controller
 {
-    public function approval()
-    {
-        return view('wms.outbound.approval');
-    }
-
-    public function approveOrder(Request $request, $id)
-    {
-        return redirect()->back()->with('success', "PO-$id berhasil di-approve (Auto-Adjustment diterapkan jika stok kurang).");
-    }
+    // Penerimaan pesanan PINDAH ke OrderApprovalController (Fase 6 tahap 1).
+    // Stub approval()/approveOrder() yang dulu di sini sengaja DIHAPUS, bukan
+    // dibiarkan: keduanya hanya mengembalikan pesan sukses tanpa menyentuh
+    // basis data, dan stub semacam itu yang masih bisa dipanggil adalah cara
+    // paling halus untuk membuat orang percaya pesanan sudah diproses.
 
     public function pickingBatching()
     {

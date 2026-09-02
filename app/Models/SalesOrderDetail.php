@@ -58,4 +58,32 @@ class SalesOrderDetail extends Model
     {
         return max(0, $this->qty_ordered - $this->qty_approved);
     }
+
+    /**
+     * Qty yang BENAR-BENAR sudah dicadangkan dari stok.
+     *
+     * Dihitung dari `sales_order_allocations`, tidak disimpan sebagai kolom:
+     * alokasi bisa bertambah belakangan ketika stok yang kurang akhirnya
+     * masuk, dan kolom turunan yang lupa diperbarui adalah angka yang
+     * berbohong tanpa ada yang tahu.
+     */
+    public function getQtyAllocatedAttribute(): int
+    {
+        return (int) ($this->relationLoaded('allocations')
+            ? $this->allocations->sum('qty_allocated')
+            : $this->allocations()->sum('qty_allocated'));
+    }
+
+    /**
+     * Qty yang sudah dijanjikan ke customer tetapi belum ada stoknya.
+     *
+     * Muncul ketika Logistik menyetujui lebih banyak daripada yang tercatat
+     * sistem — kasus nyata di Berger: barang sudah sampai gudang tetapi
+     * belum di-putaway. Porsi ini BELUM bisa dipicking karena tidak punya
+     * batch maupun lokasi rak.
+     */
+    public function getQtyPendingStockAttribute(): int
+    {
+        return max(0, $this->qty_approved - $this->qty_allocated);
+    }
 }

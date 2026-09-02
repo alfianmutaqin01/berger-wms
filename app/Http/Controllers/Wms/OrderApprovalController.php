@@ -1,0 +1,351 @@
+<?php
+
+namespace App\Http\Controllers\Wms;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Wms\AcceptSalesOrderRequest;
+use App\Http\Requests\Wms\RejectSalesOrderRequest;
+use App\Models\Product;
+use App\Models\SalesOrder;
+use App\Models\SalesOrderDetail;
+use App\Models\Warehouse;
+use App\Support\Outbound\FifoAllocator;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\View\View;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
+/**
+ * Penerimaan pesanan oleh Logistik — Fase 6 tahap 1, PRD §6.5 F-OUT-02,
+ * docs/4 §4.3.3.
+ *
+ * DUA BENTUK PESANAN, SATU LAYAR
+ * ------------------------------
+ * 1. Metode RINCIAN — Sales sudah mengisi item. Nomor PO dari sistem,
+ *    rinciannya langsung tampil di kisi mirip Excel.
+ * 2. Metode DOKUMEN — Sales melampirkan PO customer dan mengisi nomor PO
+ *    miliknya sendiri. Kisinya KOSONG: Logistik mengunduh berkasnya,
+ *    memasukkannya ke sistem BC, lalu menempelkan hasilnya (SKU dan qty) ke
+ *    kisi itu. Deskripsi produk diisi sistem dari SKU, bukan dari tempelan,
+ *    supaya nama versi BC yang berbeda tidak diam-diam masuk basis data.
+ *
+ * JANJI vs CADANGAN — perbedaan yang paling mudah tertukar
+ * --------------------------------------------------------
+ * `qty_approved` = yang DIJANJIKAN ke customer.
+ * `sales_order_allocations` = yang BENAR-BENAR dicadangkan dari stok.
+ * Keduanya boleh berbeda: Logistik berwenang menyetujui melebihi stok
+ * tercatat karena barang bisa sudah ada di gudang tetapi belum di-putaway.
+ * Selisihnya tidak disembunyikan — ditampilkan sebagai "menunggu stok" dan
+ * belum bisa dipicking.
+ *
+ * DATA CONTRACT
+ * -------------
+ * index()   : $orders LengthAwarePaginator<SalesOrder>, $warehouses,
+ *             $filters{search,warehouse}, $stats{menunggu,dokumen}
+ * show()    : $order SalesOrder, $baris list<array>
+ * history() : $orders LengthAwarePaginator<SalesOrder>, $filters{search,hasil}
+ */
+class OrderApprovalController extends Controller
+{
+    public function __construct(private readonly FifoAllocator $allocator) {}
+
+    /** Antrean pesanan yang menunggu diterima (F-OUT-02 langkah 1). */
+    public function index(Request $request): View
+    {
+        $filters = [
+            'search' => $request->query('search'),
+            'warehouse' => $request->query('warehouse'),
+        ];
+
+        $orders = SalesOrder::query()
+            ->where('status', SalesOrder::STATUS_PENDING)
+            ->search($filters['search'])
+            ->when($filters['warehouse'], fn ($q, $w) => $q->where('warehouse_id', $w))
+            ->with(['customer:id,code,name', 'user:id,full_name', 'warehouse:id,code,name'])
+            ->withCount('details')
+            // Terlama di atas: ini antrean, bukan kabar terbaru. Pesanan yang
+            // sudah menunggu paling lama justru yang paling mendesak.
+            ->orderBy('submitted_at')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('wms.outbound.approval', [
+            'orders' => $orders,
+            'warehouses' => Warehouse::query()->orderBy('name')->get(['id', 'code', 'name']),
+            'filters' => $filters,
+            'stats' => [
+                'menunggu' => SalesOrder::where('status', SalesOrder::STATUS_PENDING)->count(),
+                'dokumen' => SalesOrder::where('status', SalesOrder::STATUS_PENDING)
+                    ->where('order_source', SalesOrder::SOURCE_DOCUMENT)->count(),
+            ],
+        ]);
+    }
+
+    /** Layar penerimaan satu pesanan. */
+    public function show(SalesOrder $order): View|RedirectResponse
+    {
+        if ($order->status !== SalesOrder::STATUS_PENDING) {
+            return redirect()->route('wms.approval.index')->with(
+                'error',
+                "Pesanan {$order->order_number} sudah {$order->status_label} dan tidak bisa dinilai lagi."
+            );
+        }
+
+        $order->load([
+            'customer', 'user:id,full_name', 'warehouse', 'paymentTerm',
+            'details.product:id,sku,name,uom',
+        ]);
+
+        $tersedia = $this->allocator->availableFor(
+            $order->details->pluck('product_id')->all(),
+            $order->warehouse_id
+        );
+
+        $baris = $order->details->map(function (SalesOrderDetail $detail) use ($tersedia) {
+            $stok = $tersedia[$detail->product_id] ?? 0;
+
+            return [
+                'product_id' => $detail->product_id,
+                'sku' => $detail->product?->sku,
+                'nama' => $detail->product?->name,
+                'uom' => $detail->product?->uom,
+                'qty_ordered' => $detail->qty_ordered,
+                'stok' => $stok,
+                // Usulan = min(pesan, stok), sesuai F-OUT-02 langkah 3.
+                // Hanya USULAN: Logistik boleh menaikkannya sampai qty pesan.
+                'usul' => min($detail->qty_ordered, $stok),
+            ];
+        })->values()->all();
+
+        return view('wms.outbound.approval-detail', [
+            'order' => $order,
+            'baris' => $baris,
+        ]);
+    }
+
+    /**
+     * Menerjemahkan SKU yang ditempel Logistik menjadi baris kisi.
+     *
+     * Dipanggil dari layar penerimaan lewat fetch(), bukan saat submit: SKU
+     * yang tidak dikenal harus ketahuan SEBELUM Logistik menekan Terima,
+     * bukan sesudahnya lewat pesan validasi yang mengosongkan isian.
+     */
+    public function resolve(Request $request, SalesOrder $order): JsonResponse
+    {
+        $data = $request->validate([
+            'sku' => ['required', 'array', 'max:500'],
+            'sku.*' => ['required', 'string', 'max:50'],
+        ]);
+
+        $diminta = array_values(array_unique(array_map(
+            fn (string $sku) => strtoupper(trim($sku)),
+            $data['sku']
+        )));
+
+        $produk = Product::query()
+            ->whereIn(DB::raw('UPPER(sku)'), $diminta)
+            ->where('is_active', true)
+            ->get(['id', 'sku', 'name', 'uom'])
+            ->keyBy(fn (Product $p) => strtoupper($p->sku));
+
+        $tersedia = $this->allocator->availableFor(
+            $produk->pluck('id')->all(),
+            $order->warehouse_id
+        );
+
+        $hasil = [];
+
+        foreach ($diminta as $sku) {
+            $p = $produk->get($sku);
+
+            $hasil[$sku] = $p === null
+                ? ['ditemukan' => false]
+                : [
+                    'ditemukan' => true,
+                    'product_id' => $p->id,
+                    'sku' => $p->sku,
+                    'nama' => $p->name,
+                    'uom' => $p->uom,
+                    'stok' => $tersedia[$p->id] ?? 0,
+                ];
+        }
+
+        return response()->json(['produk' => $hasil]);
+    }
+
+    /** Mengunduh lampiran PO customer (pesanan bermetode dokumen). */
+    public function document(SalesOrder $order): StreamedResponse
+    {
+        abort_if($order->document_path === null, 404, 'Pesanan ini tidak punya lampiran.');
+        abort_unless(Storage::disk('local')->exists($order->document_path), 404, 'Berkas lampiran tidak ditemukan.');
+
+        return Storage::disk('local')->download(
+            $order->document_path,
+            $order->document_name ?? basename($order->document_path)
+        );
+    }
+
+    /**
+     * Menerima pesanan: menyimpan qty final, mencadangkan stok FIFO, dan
+     * mencatat nomor SO dari sistem BC.
+     *
+     * SELURUHNYA dalam satu transaksi dengan baris pesanan yang dikunci.
+     * Angka stok yang dilihat Logistik di layar BISA SUDAH BASI saat tombol
+     * ditekan — pesanan lain mungkin mengambil batch yang sama di sela itu —
+     * jadi alokasinya dihitung ulang di sini, bukan dipercaya dari form.
+     */
+    public function accept(AcceptSalesOrderRequest $request, SalesOrder $order): RedirectResponse
+    {
+        $userId = $request->user()?->id;
+
+        try {
+            $ringkasan = DB::transaction(function () use ($request, $order, $userId) {
+                $terkunci = SalesOrder::query()->lockForUpdate()->findOrFail($order->id);
+
+                // Diperiksa ULANG di dalam kunci. Dua Logistik yang membuka
+                // layar yang sama sama-sama lolos pemeriksaan di show().
+                $this->pastikanMasihMenunggu($terkunci);
+
+                $this->tulisRincian($terkunci, $request->itemData());
+                $terkunci->load('details');
+
+                $dialokasikan = 0;
+                $menunggu = 0;
+
+                foreach ($terkunci->details as $detail) {
+                    $dapat = $this->allocator->allocate($detail, $detail->qty_approved, $userId);
+                    $dialokasikan += $dapat;
+                    $menunggu += $detail->qty_approved - $dapat;
+                }
+
+                $terkunci->fill([
+                    'status' => SalesOrder::STATUS_APPROVED,
+                    'bc_so_number' => $request->validated('bc_so_number'),
+                    'approval_note' => $request->validated('approval_note'),
+                    'approved_at' => now(),
+                    'approved_by' => $userId,
+                ])->save();
+
+                return ['dialokasikan' => $dialokasikan, 'menunggu' => $menunggu];
+            });
+        } catch (RuntimeException $e) {
+            return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
+        }
+
+        $pesan = "Pesanan {$order->order_number} diterima. {$ringkasan['dialokasikan']} unit dicadangkan dari stok.";
+
+        if ($ringkasan['menunggu'] > 0) {
+            return redirect()->route('wms.approval.index')->with('warning', $pesan.sprintf(
+                ' %d unit MENUNGGU STOK dan belum bisa dipicking — stoknya perlu ditambahkan lebih dulu.',
+                $ringkasan['menunggu']
+            ));
+        }
+
+        return redirect()->route('wms.approval.index')->with('success', $pesan);
+    }
+
+    /** Menolak pesanan. Nomor SO tidak diminta — pesanan ini tidak masuk BC. */
+    public function reject(RejectSalesOrderRequest $request, SalesOrder $order): RedirectResponse
+    {
+        try {
+            DB::transaction(function () use ($request, $order) {
+                $terkunci = SalesOrder::query()->lockForUpdate()->findOrFail($order->id);
+
+                $this->pastikanMasihMenunggu($terkunci);
+
+                $terkunci->fill([
+                    'status' => SalesOrder::STATUS_REJECTED,
+                    'rejection_reason' => $request->validated('rejection_reason'),
+                    'rejected_at' => now(),
+                    'rejected_by' => $request->user()?->id,
+                ])->save();
+            });
+        } catch (RuntimeException $e) {
+            return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('wms.approval.index')
+            ->with('success', "Pesanan {$order->order_number} ditolak.");
+    }
+
+    /** Riwayat penerimaan dan penolakan (permintaan pemilik produk). */
+    public function history(Request $request): View
+    {
+        $filters = [
+            'search' => $request->query('search'),
+            'hasil' => $request->query('hasil'),
+        ];
+
+        $orders = SalesOrder::query()
+            // Dibungkus where() sendiri: tanpa itu orWhere di dalamnya akan
+            // membatalkan filter pencarian dan filter hasil di sebelahnya,
+            // sehingga riwayat memunculkan pesanan yang tidak dicari.
+            ->where(fn ($q) => $q->whereNotNull('approved_at')->orWhereNotNull('rejected_at'))
+            ->search($filters['search'])
+            ->when($filters['hasil'] === 'diterima', fn ($q) => $q->whereNotNull('approved_at'))
+            ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereNotNull('rejected_at'))
+            ->with(['customer:id,code,name', 'warehouse:id,code,name',
+                'approvedBy:id,full_name', 'rejectedBy:id,full_name'])
+            ->withCount('details')
+            ->orderByDesc(DB::raw("GREATEST(COALESCE(approved_at, 'epoch'), COALESCE(rejected_at, 'epoch'))"))
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('wms.outbound.approval-history', [
+            'orders' => $orders,
+            'filters' => $filters,
+        ]);
+    }
+
+    /**
+     * Menyimpan rincian item hasil keputusan Logistik.
+     *
+     * Untuk pesanan bermetode DOKUMEN baris-barisnya belum ada — inilah yang
+     * membuatnya ada, dengan qty_ordered = qty yang ditempel dari BC.
+     * Untuk metode RINCIAN, qty_ordered milik Sales TIDAK diubah; yang
+     * disimpan hanya keputusan Logistik pada qty_approved.
+     *
+     * @param  list<array{product_id:int, qty_approved:int, qty_ordered:int}>  $item
+     */
+    private function tulisRincian(SalesOrder $order, array $item): void
+    {
+        foreach ($item as $baris) {
+            $detail = SalesOrderDetail::firstOrNew([
+                'sales_order_id' => $order->id,
+                'product_id' => $baris['product_id'],
+            ]);
+
+            if (! $detail->exists) {
+                $detail->qty_ordered = $baris['qty_ordered'];
+            }
+
+            $detail->qty_approved = $baris['qty_approved'];
+            // Lost Sales (PRD §7.3) = diminta dikurangi disetujui. DISIMPAN,
+            // bukan dihitung ulang saat query: angka ini harus tetap
+            // mencerminkan keputusan saat penerimaan sekalipun qty_ordered
+            // kelak dikoreksi.
+            $detail->lost_qty = max(0, $detail->qty_ordered - $detail->qty_approved);
+            $detail->save();
+        }
+
+        // Baris yang dibuang Logistik dari kisi ikut hilang. Dipakai saat
+        // item yang tidak jadi dikirim dihapus seluruhnya, bukan di-nol-kan.
+        $dipakai = array_column($item, 'product_id');
+        $order->details()->whereNotIn('product_id', $dipakai !== [] ? $dipakai : [0])->delete();
+    }
+
+    /** @throws RuntimeException bila pesanan sudah dinilai orang lain */
+    private function pastikanMasihMenunggu(SalesOrder $order): void
+    {
+        if ($order->status !== SalesOrder::STATUS_PENDING) {
+            throw new RuntimeException(
+                "Pesanan {$order->order_number} sudah {$order->status_label} — ".
+                'kemungkinan baru saja dinilai orang lain.'
+            );
+        }
+    }
+}

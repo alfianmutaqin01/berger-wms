@@ -12,6 +12,7 @@ use App\Http\Controllers\Wms\InboundController;
 use App\Http\Controllers\Wms\InventoryController;
 use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\NotificationController;
+use App\Http\Controllers\Wms\OrderApprovalController;
 use App\Http\Controllers\Wms\OutboundController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
@@ -275,9 +276,24 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     // OUTBOUND — proses picking di tangan Operator; sisanya alur Logistik.
     Route::prefix('outbound')->group(function () {
+        // PENERIMAAN PESANAN (Fase 6 tahap 1). URUTAN PENTING: '/approval/history'
+        // harus didaftarkan SEBELUM '/approval/{order}', kalau tidak kata
+        // "history" akan tertangkap sebagai id pesanan dan halamannya 404.
         Route::middleware('can:'.Permission::OUTBOUND_APPROVAL)->group(function () {
-            Route::get('/approval', [OutboundController::class, 'approval']);
-            Route::post('/approve/{id}', [OutboundController::class, 'approveOrder']);
+            Route::get('/approval', [OrderApprovalController::class, 'index'])
+                ->name('wms.approval.index');
+            Route::get('/approval/history', [OrderApprovalController::class, 'history'])
+                ->name('wms.approval.history');
+            Route::get('/approval/{order}', [OrderApprovalController::class, 'show'])
+                ->name('wms.approval.show');
+            Route::get('/approval/{order}/document', [OrderApprovalController::class, 'document'])
+                ->name('wms.approval.document');
+            Route::post('/approval/{order}/resolve', [OrderApprovalController::class, 'resolve'])
+                ->name('wms.approval.resolve');
+            Route::post('/approval/{order}/accept', [OrderApprovalController::class, 'accept'])
+                ->name('wms.approval.accept');
+            Route::post('/approval/{order}/reject', [OrderApprovalController::class, 'reject'])
+                ->name('wms.approval.reject');
         });
 
         Route::get('/picking/batching', [OutboundController::class, 'pickingBatching'])
