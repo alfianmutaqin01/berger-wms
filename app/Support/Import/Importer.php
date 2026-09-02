@@ -124,9 +124,11 @@ abstract class Importer
      * berhenti di baris 1.731. Kini galat basis data dicatat sebagai kegagalan
      * BARIS ITU saja lalu dilaporkan.
      *
-     * Hanya QueryException yang ditangkap — kesalahan basis data memang milik
-     * datanya. Galat jenis lain tetap dibiarkan naik karena itu cacat program,
-     * bukan cacat berkas, dan menyembunyikannya justru mempersulit.
+     * Yang ditangkap hanya DUA: RowRejected (penolakan yang disengaja
+     * importer, pesannya sudah ditulis untuk pengguna) dan QueryException
+     * (kesalahan basis data memang milik datanya). Galat jenis lain tetap
+     * dibiarkan naik karena itu cacat program, bukan cacat berkas, dan
+     * menyembunyikannya justru mempersulit.
      *
      * @return array{baru:int, perbarui:int, gagal:int, galat: list<string>}
      */
@@ -153,6 +155,11 @@ abstract class Importer
                 $this->persist($mapped['key'], $mapped['data'])
                     ? $summary['baru']++
                     : $summary['perbarui']++;
+            } catch (RowRejected $e) {
+                // Penolakan yang DISENGAJA importer, dengan alasan yang sudah
+                // ditulis untuk dibaca pengguna.
+                $summary['gagal']++;
+                $summary['galat'][] = "Baris {$lineNumber} ({$mapped['key']}): {$e->getMessage()}.";
             } catch (QueryException $e) {
                 $summary['gagal']++;
                 $summary['galat'][] = "Baris {$lineNumber} ({$mapped['key']}): ditolak basis data.";

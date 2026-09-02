@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Wms\StoreInventoryStockRequest;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\ProductCategory;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Support\Outbound\PendingAllocationFiller;
 use App\Support\ShelfLife;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +26,8 @@ use Illuminate\View\View;
  */
 class InventoryController extends Controller
 {
+    public function __construct(private readonly PendingAllocationFiller $pengisi) {}
+
     /**
      * F-INV-01: Tampilan Stok — accordion per SKU (docs/4 §4.3.9).
      *
@@ -185,7 +190,7 @@ class InventoryController extends Controller
             return back()->with('error', 'Tidak ada perubahan untuk disimpan.');
         }
 
-        DB::transaction(function () use ($stock, $qtyBaru, $qtyLama, $validated, $request) {
+        $susulan = DB::transaction(function () use ($stock, $qtyBaru, $qtyLama, $validated, $request) {
             $stock->qty_available = $qtyBaru;
 
             // Menandai DDP adalah perubahan STATUS, bukan perubahan qty —
@@ -211,15 +216,129 @@ class InventoryController extends Controller
                 'notes' => $validated['reason'],
                 'user_id' => $request->user()?->id,
             ]);
+
+            // Stok BERTAMBAH berarti pesanan yang tertahan mungkin sudah bisa
+            // dipenuhi. Hanya saat bertambah — koreksi yang mengurangi tidak
+            // punya apa pun untuk dibagikan. Stok yang baru saja ditandai DDP
+            // juga dilewati: barangnya ada, tapi tidak boleh dijual.
+            $bertambah = $qtyBaru > $qtyLama && $stock->status === InventoryStock::STATUS_ACTIVE;
+
+            return $bertambah
+                ? $this->pengisi->fill($stock->product_id, $stock->warehouse_id, $request->user()?->id)
+                : ['terisi' => 0, 'pesanan' => []];
         });
 
-        return back()->with('success', sprintf(
+        $pesan = sprintf(
             'Koreksi tersimpan: %s batch %s dari %d menjadi %d.',
             $stock->product?->sku ?? '—',
             $stock->batch_no,
             $qtyLama,
             $qtyBaru
-        ));
+        );
+
+        if ($ringkas = $this->pengisi->ringkasan($susulan)) {
+            return back()->with('warning', $pesan.' '.$ringkas);
+        }
+
+        return back()->with('success', $pesan);
+    }
+
+    /**
+     * F-INV-02 diperluas: menambahkan baris stok yang BELUM PERNAH tercatat.
+     *
+     * adjust() hanya bisa mengoreksi baris yang sudah ada. Sistem ini dipasang
+     * di gudang yang sudah berjalan, jadi banyak barang fisiknya di rak tetapi
+     * belum punya baris untuk dikoreksi. Tanpa pintu ini satu-satunya jalan
+     * adalah memalsukan dokumen inbound.
+     *
+     * Batch yang sama, di rak yang sama, dari tanggal produksi yang sama
+     * DIGABUNG ke baris yang ada — aturan yang sama dengan StockActivator,
+     * supaya tidak muncul dua baris kembar yang harus dijumlahkan manual
+     * setiap kali dilihat.
+     */
+    public function store(StoreInventoryStockRequest $request): RedirectResponse
+    {
+        $produk = $request->produk;
+        $lokasi = $request->lokasi;
+        $qty = (int) $request->validated('qty');
+        $tanggal = Carbon::parse($request->validated('production_date'));
+
+        $hasil = DB::transaction(function () use ($request, $produk, $lokasi, $qty, $tanggal) {
+            $stock = InventoryStock::query()
+                ->where('product_id', $produk->id)
+                ->where('location_id', $lokasi->id)
+                ->where('batch_no', $request->validated('batch_no'))
+                ->whereDate('production_date', $tanggal->toDateString())
+                ->lockForUpdate()
+                ->first();
+
+            $sebelum = $stock?->qty_available ?? 0;
+
+            if ($stock === null) {
+                $stock = new InventoryStock([
+                    'product_id' => $produk->id,
+                    'location_id' => $lokasi->id,
+                    'warehouse_id' => $lokasi->warehouse_id,
+                    'batch_no' => $request->validated('batch_no'),
+                    'qty_allocated' => 0,
+                    'production_date' => $tanggal->toDateString(),
+                    // Aturan kedaluwarsa yang SAMA dengan jalur inbound
+                    // (§7.2.1). Kalau dihitung berbeda di sini, dua batch
+                    // identik bisa punya tanggal kedaluwarsa berbeda
+                    // tergantung lewat pintu mana ia masuk.
+                    'expiry_date' => InventoryStock::calculateExpiry(
+                        $tanggal,
+                        $produk->shelf_life_months
+                    )->toDateString(),
+                    'status' => InventoryStock::STATUS_ACTIVE,
+                ]);
+            }
+
+            $stock->qty_available = $sebelum + $qty;
+            $stock->verified_by = $request->user()?->id;
+            $stock->verified_at = now();
+            $stock->save();
+
+            StockMovement::create([
+                'product_id' => $stock->product_id,
+                'location_id' => $stock->location_id,
+                'warehouse_id' => $stock->warehouse_id,
+                'movement_type' => StockMovement::TYPE_ADJUSTMENT,
+                'qty_change' => $qty,
+                'qty_before' => $sebelum,
+                'qty_after' => $stock->qty_available,
+                'reference_type' => StockMovement::REF_ADJUSTMENT,
+                'reference_id' => $stock->id,
+                'batch_no' => $stock->batch_no,
+                'notes' => $request->validated('reason'),
+                'user_id' => $request->user()?->id,
+            ]);
+
+            return [
+                'baru' => $sebelum === 0,
+                'total' => $stock->qty_available,
+                'susulan' => $this->pengisi->fill($stock->product_id, $stock->warehouse_id, $request->user()?->id),
+            ];
+        });
+
+        $pesan = sprintf(
+            '%s batch %s di %s: %s %d unit (total sekarang %d).',
+            $produk->sku,
+            $request->validated('batch_no'),
+            $lokasi->code,
+            $hasil['baru'] ? 'ditambahkan' : 'ditambah',
+            $qty,
+            $hasil['total']
+        );
+
+        // Alokasi otomatis WAJIB dilaporkan. Tanpa kalimat ini Manager
+        // mengira menambah 50, yang bebas ternyata 35, dan tidak ada apa pun
+        // di layar yang menjelaskan ke mana 15 sisanya pergi.
+        if ($ringkas = $this->pengisi->ringkasan($hasil['susulan'])) {
+            return back()->with('warning', $pesan.' '.$ringkas);
+        }
+
+        return back()->with('success', $pesan);
     }
 
     /**

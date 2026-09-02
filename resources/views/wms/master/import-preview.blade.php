@@ -97,7 +97,7 @@
             </div>
 
             <div class="card-footer bg-light border-top-0 rounded-bottom-4 d-flex justify-content-between align-items-center py-3 px-4">
-                <form action="{{ route('wms.' . $type . '.import.cancel') }}" method="POST">
+                <form action="{{ $cancelRoute }}" method="POST">
                     @csrf
                     <input type="hidden" name="token" value="{{ $token }}">
                     <input type="hidden" name="extension" value="{{ $extension }}">
@@ -106,7 +106,7 @@
                     </button>
                 </form>
 
-                <form action="{{ route('wms.' . $type . '.import') }}" method="POST">
+                <form action="{{ $importRoute }}" method="POST">
                     @csrf
                     <input type="hidden" name="token" value="{{ $token }}">
                     <input type="hidden" name="extension" value="{{ $extension }}">
