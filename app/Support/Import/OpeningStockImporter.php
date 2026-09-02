@@ -35,8 +35,16 @@ use Illuminate\Support\Facades\DB;
  */
 class OpeningStockImporter extends Importer
 {
-    public function __construct(?int $actorId = null, private ?PendingAllocationFiller $pengisi = null)
-    {
+    /**
+     * @param  ?int  $warehouseId  Gudang yang menjadi batas kewenangan
+     *                             pengimpor; NULL berarti lintas gudang
+     *                             (Super Admin).
+     */
+    public function __construct(
+        ?int $actorId = null,
+        private ?PendingAllocationFiller $pengisi = null,
+        private readonly ?int $warehouseId = null,
+    ) {
         parent::__construct($actorId);
 
         $this->pengisi = $pengisi ?? app(PendingAllocationFiller::class);
@@ -173,6 +181,16 @@ class OpeningStockImporter extends Importer
             return null;
         }
 
+        // Gudangnya ditentukan RAK, bukan kolom tersendiri di berkas. Satu
+        // berkas yang tanpa sengaja memuat kode rak gudang lain akan menulis
+        // stok ke gudang itu tanpa ada yang menyadarinya — pesannya dibuat
+        // menyebut nama gudang supaya salahnya langsung kelihatan.
+        if ($this->warehouseId !== null && $rak->warehouse_id !== $this->warehouseId) {
+            $this->fail("Lokasi {$lokasi} milik gudang {$rak->warehouse?->name}, di luar kewenangan akun Anda.");
+
+            return null;
+        }
+
         // Diperiksa SEBELUM menyimpan, supaya ketahuan di pratinjau — itulah
         // gunanya pratinjau. Menurunkan qty di bawah yang sudah dijanjikan ke
         // pesanan membuat pesanan yang sudah diterima kehilangan barangnya,
@@ -297,6 +315,7 @@ class OpeningStockImporter extends Importer
     private function lokasi(string $code): ?Location
     {
         return $this->lokasiCache[$code] ??= Location::active()
+            ->with('warehouse:id,name')
             ->whereRaw('UPPER(code) = ?', [$code])
             ->first();
     }

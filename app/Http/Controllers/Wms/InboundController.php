@@ -11,6 +11,7 @@ use App\Support\DocumentNumber;
 use App\Support\Inbound\BinAllocator;
 use App\Support\Inbound\ProductionSheet;
 use App\Support\Inventory\StockActivator;
+use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -46,12 +47,12 @@ class InboundController extends Controller
         $filters = [
             'search' => $request->query('search'),
             'status' => $request->query('status'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $request->user()),
             'from' => $request->query('from'),
             'to' => $request->query('to'),
         ];
 
-        $base = InboundHeader::query()
+        $base = WarehouseScope::apply(InboundHeader::query(), $request->user())
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
         $documents = (clone $base)
@@ -71,7 +72,7 @@ class InboundController extends Controller
 
         return view('wms.inbound.history', [
             'documents' => $documents,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($request->user()),
             'statuses' => InboundHeader::STATUS_LABELS,
             'stats' => [
                 'total' => (clone $base)->count(),
@@ -99,11 +100,15 @@ class InboundController extends Controller
      * Dicari berdasarkan `document_number`, bukan id, agar URL-nya terbaca
      * manusia dan cocok dengan nomor yang tercetak di dokumen fisik.
      */
-    public function historyDetail(string $doc_no): View
+    public function historyDetail(Request $request, string $doc_no): View
     {
         $header = InboundHeader::with(['warehouse', 'creator'])
             ->where('document_number', $doc_no)
             ->firstOrFail();
+
+        // Nomor dokumen terbaca manusia — dan karena itu mudah ditebak.
+        // Menyaring daftarnya saja tidak menutup apa-apa.
+        WarehouseScope::assert($header->warehouse_id, $request->user());
 
         $details = $header->details()
             ->with(['product:id,sku,name,uom,max_qty_per_pallet', 'location:id,code'])
@@ -139,13 +144,42 @@ class InboundController extends Controller
      * Nomor di layar ini baru pratinjau; nomor final dikunci saat menyimpan,
      * karena bisa saja ada dokumen lain tersimpan lebih dulu di sela-selanya.
      */
-    public function create(): View
+    public function create(Request $request): View
     {
+        // Hanya gudang yang punya lini produksi. Bagi Pekanbaru dan Surabaya
+        // daftarnya kosong — dan layarnya mengatakan itu apa adanya, bukan
+        // menyodorkan dropdown yang tidak bisa dipilih apa pun.
+        $gudang = WarehouseScope::options($request->user())->where('has_production', true)->values();
+
         return view('wms.inbound.create', [
             'documentNumber' => DocumentNumber::peek(DocumentNumber::PREFIX_INBOUND, 'inbound_headers'),
             'productionDate' => now(),
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => $gudang,
         ]);
+    }
+
+    /**
+     * Gudang tujuan dokumen produksi harus sah DAN benar-benar berproduksi.
+     *
+     * Dua pemeriksaan berbeda yang mudah dikira satu: `warehouse_id` boleh
+     * jadi memang gudang milik user ini (lolos WarehouseScope), tetapi kalau
+     * gudang itu hanya menyimpan stok, dokumen produksi di sana adalah barang
+     * yang tidak pernah dibuat siapa pun.
+     */
+    private function pastikanGudangProduksi(Request $request): ?RedirectResponse
+    {
+        WarehouseScope::assert($request->integer('warehouse_id'), $request->user());
+
+        $gudang = Warehouse::find($request->integer('warehouse_id'));
+
+        if ($gudang === null || ! $gudang->has_production) {
+            return redirect()->route('wms.inbound.create')->with('error', sprintf(
+                'Gudang %s tidak memiliki lini produksi. Stok masuk ke sana lewat transfer dari Karawang, bukan input produksi.',
+                $gudang?->name ?? 'yang dipilih'
+            ));
+        }
+
+        return null;
     }
 
     /**
@@ -161,6 +195,10 @@ class InboundController extends Controller
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240'],
             'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
         ], [], ['file' => 'berkas Excel']);
+
+        if ($tolak = $this->pastikanGudangProduksi($request)) {
+            return $tolak;
+        }
 
         // Nama berkas dibangkitkan sendiri, bukan memakai nama asli dari
         // pengguna, agar tidak ada jalur yang bisa diarahkan ke tempat lain.
@@ -220,6 +258,13 @@ class InboundController extends Controller
             'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
+
+        // Diperiksa LAGI di sini, bukan hanya di previewExcel(): layar
+        // pratinjau mengirim ulang warehouse_id sebagai input tersembunyi,
+        // dan input tersembunyi tetap saja input.
+        if ($tolak = $this->pastikanGudangProduksi($request)) {
+            return $tolak;
+        }
 
         $stored = self::TEMP_DIR.'/'.$validated['token'].'.'.$validated['extension'];
 
@@ -323,10 +368,10 @@ class InboundController extends Controller
     {
         $filters = [
             'search' => $request->query('search'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $request->user()),
         ];
 
-        $base = InboundHeader::query()
+        $base = WarehouseScope::apply(InboundHeader::query(), $request->user())
             ->awaitingPutaway()
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
@@ -345,7 +390,7 @@ class InboundController extends Controller
 
         return view('wms.inbound.putaway-list', [
             'documents' => $documents,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($request->user()),
             'stats' => [
                 'dokumen' => (clone $base)->count(),
                 'palet' => (clone $paletBase)->count(),
@@ -373,12 +418,14 @@ class InboundController extends Controller
      * bin milik gudang lain — kode rak seperti "B-01-01" berulang antar gudang,
      * jadi kesalahannya tidak akan terlihat sampai barangnya dicari.
      */
-    public function putawayProcess(string $doc_no): View
+    public function putawayProcess(Request $request, string $doc_no): View
     {
         $header = InboundHeader::with('warehouse')
             ->awaitingPutaway()
             ->where('document_number', $doc_no)
             ->firstOrFail();
+
+        WarehouseScope::assert($header->warehouse_id, $request->user());
 
         $details = $header->details()
             ->with(['product:id,sku,name,uom,max_qty_per_pallet', 'location:id,code'])
@@ -428,6 +475,8 @@ class InboundController extends Controller
         $header = InboundHeader::awaitingPutaway()
             ->where('document_number', $doc_no)
             ->firstOrFail();
+
+        WarehouseScope::assert($header->warehouse_id, $request->user());
 
         $validated = $request->validate([
             'pallets' => ['required', 'array'],
@@ -562,10 +611,10 @@ class InboundController extends Controller
     {
         $filters = [
             'search' => $request->query('search'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $request->user()),
         ];
 
-        $base = InboundHeader::query()
+        $base = WarehouseScope::apply(InboundHeader::query(), $request->user())
             ->awaitingVerification()
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
@@ -587,7 +636,7 @@ class InboundController extends Controller
 
         return view('wms.inbound.verify-list', [
             'documents' => $documents,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($request->user()),
             'stats' => [
                 'dokumen' => (clone $base)->count(),
                 'palet' => (clone $paletBase)->count(),
@@ -618,12 +667,14 @@ class InboundController extends Controller
      * Logistik boleh mengoreksi Qty dan Lokasi (PRD §6.3 F-INB-03 langkah 8),
      * TAPI TIDAK batch/SKU — lihat catatan panjang di verifyStore().
      */
-    public function verifyProcess(string $doc_no): View
+    public function verifyProcess(Request $request, string $doc_no): View
     {
         $header = InboundHeader::with('warehouse')
             ->awaitingVerification()
             ->where('document_number', $doc_no)
             ->firstOrFail();
+
+        WarehouseScope::assert($header->warehouse_id, $request->user());
 
         $details = $header->details()
             ->with([
@@ -690,6 +741,8 @@ class InboundController extends Controller
             ->awaitingVerification()
             ->where('document_number', $doc_no)
             ->firstOrFail();
+
+        WarehouseScope::assert($header->warehouse_id, $request->user());
 
         $validated = $request->validate([
             'pallets' => ['required', 'array'],

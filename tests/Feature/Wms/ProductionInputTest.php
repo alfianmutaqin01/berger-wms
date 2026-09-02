@@ -42,7 +42,7 @@ class ProductionInputTest extends TestCase
         // permintaan HTTP sungguhan jadi gagal menulis ke folder yang sama.
         Storage::fake('local');
 
-        $this->warehouse = Warehouse::factory()->create(['code' => 'WH-01']);
+        $this->warehouse = Warehouse::factory()->withProduction()->create(['code' => 'WH-01']);
     }
 
     private function loginAs(string $roleSlug = Role::PRODUCTION): User

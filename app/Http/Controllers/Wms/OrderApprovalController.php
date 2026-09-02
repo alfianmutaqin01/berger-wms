@@ -8,8 +8,8 @@ use App\Http\Requests\Wms\RejectSalesOrderRequest;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
-use App\Models\Warehouse;
 use App\Support\Outbound\FifoAllocator;
+use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -56,9 +56,14 @@ class OrderApprovalController extends Controller
     /** Antrean pesanan yang menunggu diterima (F-OUT-02 langkah 1). */
     public function index(Request $request): View
     {
+        $user = $request->user();
+
         $filters = [
             'search' => $request->query('search'),
-            'warehouse' => $request->query('warehouse'),
+            // Bukan lagi isian bebas dari URL. Bagi Logistik yang terikat satu
+            // gudang, nilainya SELALU gudangnya sendiri berapa pun yang
+            // diketik di alamat — lihat App\Support\WarehouseScope.
+            'warehouse' => WarehouseScope::resolveFilter($request, $user, 'warehouse'),
         ];
 
         $orders = SalesOrder::query()
@@ -73,21 +78,32 @@ class OrderApprovalController extends Controller
             ->paginate(15)
             ->withQueryString();
 
+        // Angka ringkas ikut dibatasi. Kalau tidak, Logistik Pekanbaru melihat
+        // "12 menunggu" padahal antreannya hanya berisi 3 — sisanya milik
+        // gudang lain dan tidak akan pernah muncul untuknya.
+        $antrean = fn () => WarehouseScope::apply(
+            SalesOrder::where('status', SalesOrder::STATUS_PENDING),
+            $user
+        );
+
         return view('wms.outbound.approval', [
             'orders' => $orders,
-            'warehouses' => Warehouse::query()->orderBy('name')->get(['id', 'code', 'name']),
+            'warehouses' => WarehouseScope::options($user),
             'filters' => $filters,
             'stats' => [
-                'menunggu' => SalesOrder::where('status', SalesOrder::STATUS_PENDING)->count(),
-                'dokumen' => SalesOrder::where('status', SalesOrder::STATUS_PENDING)
-                    ->where('order_source', SalesOrder::SOURCE_DOCUMENT)->count(),
+                'menunggu' => $antrean()->count(),
+                'dokumen' => $antrean()->where('order_source', SalesOrder::SOURCE_DOCUMENT)->count(),
             ],
         ]);
     }
 
     /** Layar penerimaan satu pesanan. */
-    public function show(SalesOrder $order): View|RedirectResponse
+    public function show(Request $request, SalesOrder $order): View|RedirectResponse
     {
+        // Dipanggil SEBELUM apa pun yang lain. Menyaring daftar tidak menutup
+        // apa-apa selama URL detailnya masih bisa dibuka langsung.
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
         if ($order->status !== SalesOrder::STATUS_PENDING) {
             return redirect()->route('wms.approval.index')->with(
                 'error',
@@ -136,6 +152,10 @@ class OrderApprovalController extends Controller
      */
     public function resolve(Request $request, SalesOrder $order): JsonResponse
     {
+        // Titik ini mengembalikan angka stok gudang pesanan. Tanpa penjagaan
+        // di sini, pesanan gudang lain jadi celah untuk membaca stoknya.
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
         $data = $request->validate([
             'sku' => ['required', 'array', 'max:500'],
             'sku.*' => ['required', 'string', 'max:50'],
@@ -178,8 +198,10 @@ class OrderApprovalController extends Controller
     }
 
     /** Mengunduh lampiran PO customer (pesanan bermetode dokumen). */
-    public function document(SalesOrder $order): StreamedResponse
+    public function document(Request $request, SalesOrder $order): StreamedResponse
     {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
         abort_if($order->document_path === null, 404, 'Pesanan ini tidak punya lampiran.');
         abort_unless(Storage::disk('local')->exists($order->document_path), 404, 'Berkas lampiran tidak ditemukan.');
 
@@ -200,6 +222,8 @@ class OrderApprovalController extends Controller
      */
     public function accept(AcceptSalesOrderRequest $request, SalesOrder $order): RedirectResponse
     {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
         $userId = $request->user()?->id;
 
         try {
@@ -251,6 +275,8 @@ class OrderApprovalController extends Controller
     /** Menolak pesanan. Nomor SO tidak diminta — pesanan ini tidak masuk BC. */
     public function reject(RejectSalesOrderRequest $request, SalesOrder $order): RedirectResponse
     {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
         try {
             DB::transaction(function () use ($request, $order) {
                 $terkunci = SalesOrder::query()->lockForUpdate()->findOrFail($order->id);
@@ -280,7 +306,7 @@ class OrderApprovalController extends Controller
             'hasil' => $request->query('hasil'),
         ];
 
-        $orders = SalesOrder::query()
+        $orders = WarehouseScope::apply(SalesOrder::query(), $request->user())
             // Dibungkus where() sendiri: tanpa itu orWhere di dalamnya akan
             // membatalkan filter pencarian dan filter hasil di sebelahnya,
             // sehingga riwayat memunculkan pesanan yang tidak dicari.

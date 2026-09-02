@@ -8,7 +8,6 @@
     // sedang diubah, baru nilai kosong. Urutan ini yang membuat isian Sales
     // tidak hilang saat ada satu kolom yang salah.
     $vSource = old('order_source', $order?->order_source ?? \App\Models\SalesOrder::SOURCE_MANUAL);
-    $vWarehouse = old('warehouse_id', $order?->warehouse_id);
     $itemLama = old('items', $order
         ? $order->details->map(fn ($d) => ['product_id' => $d->product_id, 'qty' => $d->qty_ordered])->values()->all()
         : []);
@@ -80,18 +79,25 @@
                         </div>
 
                         <div class="col-12 col-md-6">
-                            <label class="form-label small fw-semibold">Gudang Tujuan <span class="text-danger">*</span></label>
-                            <select name="warehouse_id" id="warehouseSelect" class="form-select" required>
-                                <option value="">— Pilih gudang —</option>
-                                @foreach($warehouses as $w)
-                                    {{-- Nama kotanya, bukan kode. "Karawang"
-                                         langsung dikenali Sales; "WH-01"
-                                         menuntut hafalan yang tidak ada
-                                         gunanya di layar ini. --}}
-                                    <option value="{{ $w->id }}" @selected($vWarehouse == $w->id)>{{ $w->name }}</option>
-                                @endforeach
-                            </select>
-                            <small class="text-muted">Indikator ketersediaan mengikuti gudang ini.</small>
+                            {{-- BUKAN PILIHAN LAGI. Sales terkunci ke gudang
+                                 akunnya, jadi gudang diisi server dan tidak
+                                 dikirim dari formulir sama sekali. Tetap
+                                 ditampilkan sebagai keterangan: Sales harus
+                                 tahu gudang mana yang akan memprosesnya, dan
+                                 mengapa pelanggan di luar wilayah itu tidak
+                                 muncul saat dicari. --}}
+                            <label class="form-label small fw-semibold">Gudang Pemroses</label>
+                            <div class="form-control bg-light d-flex align-items-center gap-2" style="cursor: default;">
+                                <i class="bi bi-building text-muted"></i>
+                                <span class="fw-semibold">{{ $gudangSales?->name ?? 'Belum ditentukan' }}</span>
+                            </div>
+                            <small class="text-muted">
+                                @if($gudangSales)
+                                    Mengikuti gudang akun Anda. Indikator ketersediaan dan daftar pelanggan mengikuti gudang ini.
+                                @else
+                                    Akun Anda belum ditempatkan di satu gudang. Hubungi Super Admin sebelum membuat pesanan.
+                                @endif
+                            </small>
                         </div>
 
                         <div class="col-12 col-md-6">

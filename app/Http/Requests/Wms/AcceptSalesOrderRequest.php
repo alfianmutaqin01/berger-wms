@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Wms;
 
 use App\Models\SalesOrder;
+use App\Support\WarehouseScope;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -29,8 +30,13 @@ class AcceptSalesOrderRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Otorisasi ditegakkan middleware can:outbound.approval pada route.
-        return true;
+        // Hak fiturnya ditegakkan middleware can:outbound.approval pada route.
+        // Yang diperiksa di sini hak atas OBJEKNYA: pesanan gudang lain harus
+        // dijawab 403, dan jawaban itu tidak boleh menunggu isian formulir
+        // dinyatakan sah lebih dulu — validasi berjalan sesudah authorize().
+        $order = $this->route('order');
+
+        return WarehouseScope::allows($order?->warehouse_id, $this->user());
     }
 
     public function rules(): array

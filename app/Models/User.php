@@ -127,6 +127,14 @@ class User extends Authenticatable
      * Manager boleh mengelola semua role KECUALI Super Admin. Aturan ini menutup
      * celah eskalasi hak akses: tanpa pemeriksaan ini, seorang Manager dapat
      * menyunting akun Super Admin mana pun dan mengambil alih sistem.
+     *
+     * SEJAK MULTI-GUDANG ada batas kedua: Manager hanya mengelola akun di
+     * gudang yang ia kendalikan. Manager Karawang yang bisa menyunting akun
+     * Logistik Surabaya sama saja dengan bisa mengambil alih gudang itu —
+     * cukup dengan mengganti kata sandinya.
+     *
+     * Akun tanpa gudang (warehouse_id NULL, lintas gudang) TIDAK bisa dikelola
+     * Manager mana pun: tidak ada satu gudang yang bisa mengklaimnya.
      */
     public function canManage(User $target): bool
     {
@@ -138,7 +146,12 @@ class User extends Authenticatable
             return true;
         }
 
-        return ! $target->isSuperAdmin();
+        if ($target->isSuperAdmin()) {
+            return false;
+        }
+
+        return $this->warehouse_id === null
+            || $this->warehouse_id === $target->warehouse_id;
     }
 
     /*
