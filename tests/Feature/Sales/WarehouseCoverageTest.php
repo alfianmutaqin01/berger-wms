@@ -10,7 +10,9 @@ use App\Models\SalesOrder;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\OrderCutoff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -51,6 +53,12 @@ class WarehouseCoverageTest extends TestCase
     {
         parent::setUp();
 
+        // Pukul 09:00 WIB — sebelum cutoff. Tanpa ini, test yang menekan
+        // Submit gagal setiap kali dijalankan sore hari, dan kegagalannya
+        // berbunyi "batas waktu pemesanan sudah lewat" seolah-olah cakupan
+        // wilayahnya yang bermasalah. Pola yang sama dipakai SalesOrderTest.
+        Carbon::setTestNow(Carbon::parse('2026-09-01 09:00:00', OrderCutoff::timezone()));
+
         $this->karawang = Warehouse::factory()->withProduction()
             ->create(['code' => 'WH-01', 'name' => 'Karawang']);
 
@@ -67,6 +75,13 @@ class WarehouseCoverageTest extends TestCase
             ['code' => 'cash'],
             ['name' => 'Cash / Tunai', 'days' => 0, 'is_active' => true, 'sort_order' => 1]
         );
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
     }
 
     private function salesDi(Warehouse $gudang): User
