@@ -155,10 +155,10 @@
                                     <span class="text-muted">
                                         Disetujui <strong class="text-dark">{{ number_format($d->qty_approved) }}</strong>
                                     </span>
-                                    @if($d->lost_qty > 0)
+                                    @if($d->outstanding_qty > 0)
                                         <span class="text-danger">
                                             <i class="bi bi-exclamation-triangle-fill me-1"></i>
-                                            Tidak terpenuhi {{ number_format($d->lost_qty) }}
+                                            Tidak terpenuhi {{ number_format($d->outstanding_qty) }}
                                         </span>
                                     @endif
                                 </div>

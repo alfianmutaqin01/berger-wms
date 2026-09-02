@@ -324,11 +324,11 @@ class OrderApprovalController extends Controller
             }
 
             $detail->qty_approved = $baris['qty_approved'];
-            // Lost Sales (PRD §7.3) = diminta dikurangi disetujui. DISIMPAN,
+            // Outstanding (PRD §7.3) = diminta dikurangi disetujui. DISIMPAN,
             // bukan dihitung ulang saat query: angka ini harus tetap
             // mencerminkan keputusan saat penerimaan sekalipun qty_ordered
             // kelak dikoreksi.
-            $detail->lost_qty = max(0, $detail->qty_ordered - $detail->qty_approved);
+            $detail->outstanding_qty = max(0, $detail->qty_ordered - $detail->qty_approved);
             $detail->save();
         }
 

@@ -741,7 +741,7 @@ class SalesOrderTest extends TestCase
             ->assertDontSee('Tidak terpenuhi');
     }
 
-    /** Sesudah approval, qty disetujui dan Lost Sales barulah muncul. */
+    /** Sesudah approval, qty disetujui dan Outstanding barulah muncul. */
     public function test_qty_disetujui_muncul_setelah_approval(): void
     {
         $sales = $this->loginAs();
@@ -752,7 +752,7 @@ class SalesOrderTest extends TestCase
         ]);
         SalesOrderDetail::factory()->create([
             'sales_order_id' => $order->id,
-            'qty_ordered' => 100, 'qty_approved' => 80, 'lost_qty' => 20,
+            'qty_ordered' => 100, 'qty_approved' => 80, 'outstanding_qty' => 20,
         ]);
 
         $this->get('/sales/orders/'.$order->id)
