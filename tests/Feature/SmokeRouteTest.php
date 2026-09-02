@@ -12,6 +12,8 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
+use App\Models\StockTransfer;
+use App\Models\StockTransferDetail;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
@@ -228,10 +230,27 @@ class SmokeRouteTest extends TestCase
             'product_id' => $produk->id,
         ]);
 
+        // --- Transfer antar gudang, masih di perjalanan ---
+        // Gudang tujuan dibuat terpisah: CHECK constraint menolak transfer
+        // yang asal dan tujuannya sama, dan smoke test harus memakai data
+        // yang memang bisa hidup di database.
+        $tujuan = Warehouse::factory()->create(['code' => 'WH-02', 'name' => 'Pekanbaru']);
+
+        $transfer = StockTransfer::factory()->create([
+            'from_warehouse_id' => $this->warehouse->id,
+            'to_warehouse_id' => $tujuan->id,
+            'transfer_number' => 'TF260901001',
+        ]);
+        StockTransferDetail::factory()->create([
+            'stock_transfer_id' => $transfer->id,
+            'product_id' => $produk->id,
+        ]);
+
         $this->parameter = [
             'order' => $order->id,
             'doc_no' => $header->document_number,
             'po_number' => $order->order_number,
+            'transfer' => $transfer->id,
         ];
     }
 

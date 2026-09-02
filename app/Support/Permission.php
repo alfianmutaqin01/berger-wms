@@ -49,7 +49,21 @@ class Permission
 
     public const INVENTORY_ADJUST = 'inventory.adjust';
 
+    /** Pemindahan antar RAK di dalam satu gudang (F-INV-02). */
     public const INVENTORY_TRANSFER = 'inventory.transfer';
+
+    /*
+     | Transfer antar GUDANG (F-INV-05) — sengaja dipisah dari yang di atas.
+     | Memindahkan palet ke rak sebelah dan mengirim satu truk ke Pekanbaru
+     | bukan wewenang yang sama besarnya, dan menyatukannya berarti siapa pun
+     | yang boleh merapikan rak juga boleh mengosongkan gudang.
+     */
+
+    public const TRANSFER_SEND = 'transfer.send';
+
+    public const TRANSFER_RECEIVE = 'transfer.receive';
+
+    public const TRANSFER_HISTORY = 'transfer.history';
 
     /* ------------------------------------------------------------- Outbound */
 
@@ -113,6 +127,15 @@ class Permission
         ],
         self::INVENTORY_ADJUST => [Role::SUPER_ADMIN, Role::MANAGER],
         self::INVENTORY_TRANSFER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+
+        // Penerimaan transfer memutuskan angka stok final di gudang tujuan —
+        // wewenang yang sama dengan Verifikasi Logistik pada jalur inbound,
+        // jadi daftar role-nya pun disamakan.
+        self::TRANSFER_SEND => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::TRANSFER_RECEIVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::TRANSFER_HISTORY => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
 
         // Outbound: proses picking di tangan Operator; sisanya Logistik.
         self::OUTBOUND_APPROVAL => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
