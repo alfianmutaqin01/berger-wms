@@ -17,7 +17,7 @@ class WarehouseSeeder extends Seeder
         $warehouses = [
             ['code' => 'WH-01', 'name' => 'Karawang', 'address' => 'Kawasan Industri Karawang, Jawa Barat'],
             ['code' => 'WH-02', 'name' => 'Pekanbaru', 'address' => 'Pekanbaru, Riau'],
-            ['code' => 'WH-03', 'name' => 'Cikarang', 'address' => 'Cikarang, Bekasi, Jawa Barat'],
+            ['code' => 'WH-03', 'name' => 'Surabaya', 'address' => 'Surabaya, Jawa Timur'],
         ];
 
         foreach ($warehouses as $warehouse) {

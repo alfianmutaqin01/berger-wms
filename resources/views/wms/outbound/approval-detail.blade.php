@@ -382,7 +382,7 @@
             return `<span class="badge bg-warning-subtle text-warning-emphasis">${kurang} menunggu stok</span>`;
         }
         if (setuju < b.qty_ordered) {
-            return `<span class="badge bg-info-subtle text-info-emphasis">${b.qty_ordered - setuju} lost sales</span>`;
+            return `<span class="badge bg-info-subtle text-info-emphasis">${b.qty_ordered - setuju} outstanding</span>`;
         }
         return '<span class="badge bg-success-subtle text-success-emphasis">siap</span>';
     }

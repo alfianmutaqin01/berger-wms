@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Satu baris item pesanan — docs/2 §3.5.
  *
- * qty_approved dan lost_qty baru terisi di Fase 6 (approval). Di Fase 5
+ * qty_approved dan outstanding_qty baru terisi di Fase 6 (approval). Di Fase 5
  * keduanya nol, dan itu BUKAN berarti "tidak ada yang disetujui" melainkan
  * "belum dinilai" — pembedanya adalah status header, bukan angka di sini.
  */
@@ -20,7 +20,7 @@ class SalesOrderDetail extends Model
 
     protected $fillable = [
         'sales_order_id', 'product_id',
-        'qty_ordered', 'qty_approved', 'qty_shipped', 'lost_qty',
+        'qty_ordered', 'qty_approved', 'qty_shipped', 'outstanding_qty',
     ];
 
     protected function casts(): array
@@ -29,7 +29,7 @@ class SalesOrderDetail extends Model
             'qty_ordered' => 'integer',
             'qty_approved' => 'integer',
             'qty_shipped' => 'integer',
-            'lost_qty' => 'integer',
+            'outstanding_qty' => 'integer',
         ];
     }
 
@@ -52,9 +52,9 @@ class SalesOrderDetail extends Model
      * Selisih yang tidak terpenuhi — PRD §7.3.
      *
      * Dihitung dari kolom yang tersimpan, bukan dari stok saat ini: angka
-     * Lost Sales harus tetap mencerminkan keadaan pada saat approval.
+     * Outstanding harus tetap mencerminkan keadaan pada saat approval.
      */
-    public function getLostQtyCalculatedAttribute(): int
+    public function getOutstandingQtyCalculatedAttribute(): int
     {
         return max(0, $this->qty_ordered - $this->qty_approved);
     }

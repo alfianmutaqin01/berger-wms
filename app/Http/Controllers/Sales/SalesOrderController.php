@@ -25,7 +25,7 @@ use Illuminate\View\View;
  * Portal Sales — pembuatan dan riwayat pesanan (PRD §6.5 F-OUT-01).
  *
  * BATAS FASE 5: controller ini hanya memegang sisi Sales — draft, submit,
- * riwayat, dan detail. Approval, alokasi FIFO, serta pencatatan Lost Sales
+ * riwayat, dan detail. Approval, alokasi FIFO, serta pencatatan Outstanding
  * (§7.3) ada di Fase 6 bersama layar Logistik yang memicunya.
  *
  * Dua aturan yang membentuk hampir seluruh isi berkas ini:

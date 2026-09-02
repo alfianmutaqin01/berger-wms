@@ -369,9 +369,9 @@ class OrderApprovalTest extends TestCase
         $this->assertSame(0, SalesOrderAllocation::count());
     }
 
-    /* ------------------------------------------------------- Lost sales */
+    /* ------------------------------------------------------- Outstanding */
 
-    public function test_qty_yang_dikurangi_tercatat_sebagai_lost_sales(): void
+    public function test_qty_yang_dikurangi_tercatat_sebagai_outstanding(): void
     {
         $this->loginAs();
         $this->stok(100, now()->subMonth()->toDateString());
@@ -386,7 +386,7 @@ class OrderApprovalTest extends TestCase
         $this->terima($order, 12)->assertSessionHas('success');
 
         $this->assertSame(12, $detail->fresh()->qty_approved);
-        $this->assertSame(18, $detail->fresh()->lost_qty);
+        $this->assertSame(18, $detail->fresh()->outstanding_qty);
     }
 
     public function test_qty_disetujui_tidak_boleh_melebihi_qty_pesanan(): void
@@ -495,7 +495,7 @@ class OrderApprovalTest extends TestCase
         $this->assertSame(35, $detail->qty_ordered);
         $this->assertSame(35, $detail->qty_approved);
         $this->assertSame(35, $detail->qty_allocated);
-        $this->assertSame(0, $detail->lost_qty);
+        $this->assertSame(0, $detail->outstanding_qty);
     }
 
     /**

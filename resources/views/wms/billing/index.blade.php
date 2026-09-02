@@ -125,7 +125,7 @@
                         </td>
                         <td class="text-start">
                             <span class="fw-semibold text-dark d-block mb-1">Toko Merah</span>
-                            <small class="text-muted">Cikarang, Jawa Barat</small>
+                            <small class="text-muted">Surabaya, Jawa Timur</small>
                         </td>
                         <td>15 Jun 2026</td>
                         <td>
