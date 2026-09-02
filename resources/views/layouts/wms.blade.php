@@ -141,8 +141,14 @@
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $outboundOpen ? 'show' : '' }}" id="outboundMenu" data-bs-parent=".sidebar-nav">
                         @can(\App\Support\Permission::OUTBOUND_APPROVAL)
-                            <li class="nav-item {{ request()->is('wms/outbound/approval') ? 'active' : '' }}">
+                            {{-- is() dengan pola eksplisit, BUKAN 'wms/outbound/approval*':
+                                 pola berbintang membuat kedua menu ini menyala
+                                 bersamaan saat halaman riwayat dibuka. --}}
+                            <li class="nav-item {{ request()->is('wms/outbound/approval') || request()->is('wms/outbound/approval/*') && ! request()->is('wms/outbound/approval/history') ? 'active' : '' }}">
                                 <a href="/wms/outbound/approval" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Terima Pesanan</span></a>
+                            </li>
+                            <li class="nav-item {{ request()->is('wms/outbound/approval/history') ? 'active' : '' }}">
+                                <a href="/wms/outbound/approval/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Penerimaan</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_PICKING_LIST)
