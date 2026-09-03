@@ -38,6 +38,34 @@ class DocumentNumber
 
     public const TYPE_DELIVERY_NOTE = 'delivery_note';
 
+    public const TYPE_STOCK_TRANSFER = 'stock_transfer';
+
+    /**
+     * Nomor transfer antar gudang: TF{YYMMDD}{urut 3 digit}.
+     *
+     * Penomorannya LINTAS GUDANG, bukan per gudang. Satu dokumen transfer
+     * menyangkut dua gudang sekaligus dan dibaca keduanya; nomor yang diulang
+     * di tiap gudang akan membuat "TF260913001" berarti dua kiriman berbeda
+     * tergantung siapa yang menyebutnya.
+     *
+     * Bentuknya sengaja menyamai nomor PO (reset tiap bulan, tanggal di
+     * tengah) supaya keduanya terbaca dengan kebiasaan yang sama.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forStockTransfer(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_STOCK_TRANSFER,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'TF'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
     /**
      * Nomor PO: PO{YYMMDD}{urut 3 digit}.
      *

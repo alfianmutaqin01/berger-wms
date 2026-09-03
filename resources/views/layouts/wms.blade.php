@@ -80,9 +80,12 @@
                 \App\Support\Permission::INBOUND_RETURNS,
                 \App\Support\Permission::INBOUND_VERIFY,
                 \App\Support\Permission::INVENTORY_VIEW,
+                \App\Support\Permission::TRANSFER_HISTORY,
             ])
                 @php
-                    $inboundOpen = request()->is('wms/inbound*') || request()->is('wms/inventory*');
+                    $inboundOpen = request()->is('wms/inbound*')
+                        || request()->is('wms/inventory*')
+                        || request()->is('wms/transfers*');
 
                     // Produksi hanya ada di Karawang. Bagi staff Pekanbaru dan
                     // Surabaya, dua menu produksi di bawah ini tidak pernah
@@ -133,6 +136,15 @@
                         @can(\App\Support\Permission::INVENTORY_VIEW)
                             <li class="nav-item {{ request()->is('wms/inventory*') ? 'active' : '' }}">
                                 <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok (Inventory)</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::TRANSFER_HISTORY)
+                            {{-- Tampil di SEMUA gudang, tidak seperti menu
+                                 produksi. Pekanbaru dan Surabaya justru yang
+                                 paling sering memakainya — ke sanalah barang
+                                 dikirim dari Karawang. --}}
+                            <li class="nav-item {{ request()->is('wms/transfers*') ? 'active' : '' }}">
+                                <a href="/wms/transfers" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Transfer Antar Gudang</span></a>
                             </li>
                         @endcan
                     </ul>

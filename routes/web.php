@@ -17,6 +17,7 @@ use App\Http\Controllers\Wms\OutboundController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ReportController;
+use App\Http\Controllers\Wms\StockTransferController;
 use App\Http\Controllers\Wms\UserController;
 use App\Support\Permission;
 use Illuminate\Support\Facades\DB;
@@ -222,6 +223,36 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::post('/inventory/import/cancel', [ImportController::class, 'cancel'])
         ->defaults('type', 'opening-stock')->middleware('can:'.Permission::INVENTORY_ADJUST)
         ->name('wms.inventory.import.cancel');
+
+    // Transfer antar gudang (F-INV-05). Rutenya ditaruh SEBELUM
+    // /transfers/{transfer} tidak diperlukan di sini karena "create" bukan
+    // angka dan binding-nya memakai id — tetapi urutannya tetap dijaga agar
+    // tidak jadi jebakan saat kelak nomor transfer dipakai sebagai kunci URL.
+    Route::prefix('transfers')->group(function () {
+        Route::get('/', [StockTransferController::class, 'index'])
+            ->middleware('can:'.Permission::TRANSFER_HISTORY)
+            ->name('wms.transfers.index');
+        Route::get('/create', [StockTransferController::class, 'create'])
+            ->middleware('can:'.Permission::TRANSFER_SEND)
+            ->name('wms.transfers.create');
+        Route::post('/', [StockTransferController::class, 'store'])
+            ->middleware('can:'.Permission::TRANSFER_SEND)
+            ->name('wms.transfers.store');
+        Route::get('/{transfer}', [StockTransferController::class, 'show'])
+            ->middleware('can:'.Permission::TRANSFER_HISTORY)
+            ->name('wms.transfers.show');
+        // Menerima dipagari gate TERSENDIRI: ia yang memutuskan angka stok
+        // final di gudang tujuan, setara Verifikasi Logistik pada inbound.
+        Route::get('/{transfer}/receive', [StockTransferController::class, 'receiveForm'])
+            ->middleware('can:'.Permission::TRANSFER_RECEIVE)
+            ->name('wms.transfers.receive.form');
+        Route::post('/{transfer}/receive', [StockTransferController::class, 'receive'])
+            ->middleware('can:'.Permission::TRANSFER_RECEIVE)
+            ->name('wms.transfers.receive');
+        Route::post('/{transfer}/cancel', [StockTransferController::class, 'cancel'])
+            ->middleware('can:'.Permission::TRANSFER_SEND)
+            ->name('wms.transfers.cancel');
+    });
 
     Route::get('/reports', [ReportController::class, 'index'])
         ->middleware('can:'.Permission::REPORTS_VIEW);
