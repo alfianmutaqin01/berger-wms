@@ -15,6 +15,71 @@
     <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar Surat Jalan
 </a>
 
+{{-- PENANDA "SUDAH DIKIRIM" — pertanyaan pemilik produk: di bagian mana
+     halaman ini menyatakan pesanan sudah berangkat?
+
+     Jawabannya harus terbaca dalam sekali lihat, bukan disimpulkan dari
+     badge kecil di sudut. Tiga langkah dengan waktunya masing-masing:
+     disalin dari BC -> berangkat -> sampai. Yang sudah lewat berwarna, yang
+     belum abu-abu, sehingga posisi pengiriman terbaca tanpa membaca satu
+     kalimat pun. --}}
+@php($sudahBerangkat = $note->shipped_at !== null)
+@php($sudahSampai = $note->delivered_at !== null)
+
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body p-4">
+        <div class="row g-3 text-center">
+            <div class="col-4">
+                <div class="rounded-circle mx-auto mb-2 d-flex align-items-center justify-content-center
+                            bg-success text-white" style="width:44px;height:44px">
+                    <i class="bi bi-download fs-5"></i>
+                </div>
+                <div class="small fw-semibold">Disalin dari BC</div>
+                <div class="small text-muted">{{ $note->imported_at?->format('d M Y H:i') ?? '—' }}</div>
+            </div>
+
+            <div class="col-4">
+                <div class="rounded-circle mx-auto mb-2 d-flex align-items-center justify-content-center
+                            {{ $sudahBerangkat ? 'bg-primary text-white' : 'bg-light text-muted border' }}"
+                     style="width:44px;height:44px">
+                    <i class="bi bi-truck fs-5"></i>
+                </div>
+                <div class="small fw-semibold {{ $sudahBerangkat ? '' : 'text-muted' }}">
+                    {{ $sudahBerangkat ? 'Barang sudah dikirim' : 'Belum dikirim' }}
+                </div>
+                <div class="small text-muted">
+                    {{ $note->shipped_at?->format('d M Y H:i') ?? 'menunggu dinyatakan berangkat' }}
+                </div>
+                @if($sudahBerangkat && $note->shippedBy)
+                    <div class="small text-muted">oleh {{ $note->shippedBy->full_name }}</div>
+                @endif
+            </div>
+
+            <div class="col-4">
+                <div class="rounded-circle mx-auto mb-2 d-flex align-items-center justify-content-center
+                            {{ $sudahSampai ? 'bg-success text-white' : 'bg-light text-muted border' }}"
+                     style="width:44px;height:44px">
+                    <i class="bi bi-check-lg fs-5"></i>
+                </div>
+                <div class="small fw-semibold {{ $sudahSampai ? '' : 'text-muted' }}">
+                    {{ $sudahSampai ? 'Sampai tujuan' : 'Belum dikonfirmasi supir' }}
+                </div>
+                <div class="small text-muted">{{ $note->delivered_at?->format('d M Y H:i') ?? '—' }}</div>
+            </div>
+        </div>
+
+        @if($note->salesOrder)
+        <div class="text-center small text-muted mt-3 pt-3 border-top">
+            Status pesanan
+            <span class="font-monospace">{{ $note->salesOrder->order_number }}</span>:
+            <span class="badge bg-{{ $note->salesOrder->status_color }}-subtle text-{{ $note->salesOrder->status_color }}-emphasis">
+                {{ $note->salesOrder->status_label }}
+            </span>
+        </div>
+        @endif
+    </div>
+</div>
+
 @foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
     @if(session($jenis))
     <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
@@ -121,13 +186,16 @@
                 @php($adaKekurangan = collect($perbandingan)->contains(fn ($b) => $b['selisih'] < 0))
 
                 @if($adaKekurangan)
-                <div class="alert alert-danger border-0 rounded-3 small mt-3 mb-0">
-                    <i class="bi bi-x-octagon-fill me-2"></i>
-                    Dokumen menyebut <strong>lebih banyak</strong> daripada yang benar-benar diambil dari rak.
-                    Barang yang tidak ada di kendaraan tidak bisa dinyatakan berangkat — perbaiki dokumennya di BC,
-                    atau picking dulu kekurangannya.
+                <div class="alert alert-warning border-0 rounded-3 small mt-3 mb-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Dokumen menyebut <strong>lebih banyak</strong> daripada yang tercatat dipicking.
+                    Dokumen BC yang berlaku, jadi selisihnya tetap dinyatakan berangkat dan
+                    <strong>dikeluarkan dari stok</strong> — artinya isi rak sebenarnya lebih sedikit daripada
+                    angka di sistem. Selisih ini akan tercatat di Riwayat Mutasi untuk ditelusuri saat opname.
                 </div>
-                @elseif($adaKelebihan)
+                @endif
+
+                @if($adaKelebihan)
                 <div class="alert alert-warning border-0 rounded-3 small mt-3 mb-0">
                     <i class="bi bi-exclamation-circle-fill me-2"></i>
                     Ada barang yang sudah turun dari rak tetapi <strong>tidak tercantum</strong> di Surat Jalan.

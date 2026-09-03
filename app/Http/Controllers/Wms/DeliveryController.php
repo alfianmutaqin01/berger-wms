@@ -126,18 +126,45 @@ class DeliveryController extends Controller
             $hasil['dikirim'],
         );
 
+        // Dua keadaan yang TIDAK boleh lewat sebagai pesan sukses hijau,
+        // karena keduanya menuntut tindakan orang di lapangan.
+        $peringatan = [];
+
         if ($hasil['dikembalikan'] > 0) {
-            // Pengembalian ke rak TIDAK boleh lewat sebagai pesan sukses
-            // biasa: barang fisik baru saja berpindah kembali, dan yang
-            // menaruhnya di dock perlu tahu bahwa ia harus dinaikkan lagi.
-            return redirect()->route('wms.delivery.show', $note)->with('warning', $pesan.sprintf(
-                ' %d unit yang sudah turun dari rak TIDAK ikut berangkat karena tidak tercantum di Surat Jalan, '.
-                'dan sudah dikembalikan ke raknya masing-masing — pastikan barangnya benar-benar dinaikkan kembali.',
+            // Barang fisik baru saja berpindah kembali ke rak, dan yang
+            // menaruhnya di dock perlu tahu bahwa ia TIDAK boleh naik.
+            $peringatan[] = sprintf(
+                '%d unit yang sudah turun dari rak TIDAK ikut berangkat karena tidak tercantum di Surat Jalan, '.
+                'dan sudah dikembalikan ke raknya masing-masing — pastikan barangnya benar-benar tidak naik ke kendaraan.',
                 $hasil['dikembalikan'],
-            ));
+            );
         }
 
-        return redirect()->route('wms.delivery.show', $note)->with('success', $pesan);
+        if ($hasil['kurang_di_rak'] > 0) {
+            // Temuan stok kurang. Ini justru yang paling berharga dari
+            // seluruh pencocokan ini, dan menyembunyikannya di balik kata
+            // "berhasil" membuat opname berikutnya menemukan selisih yang
+            // sudah tidak bisa dilacak asalnya.
+            $peringatan[] = sprintf(
+                'Surat Jalan menyebut %d unit LEBIH BANYAK daripada yang tercatat dipicking. '.
+                'Selisihnya sudah dikeluarkan dari stok mengikuti dokumen — artinya isi rak sebenarnya lebih sedikit '.
+                'daripada angka di sistem. Perlu ditelusuri saat opname.',
+                $hasil['kurang_di_rak'],
+            );
+        }
+
+        if ($hasil['tidak_tertutup'] !== []) {
+            $peringatan[] = sprintf(
+                'Stok tercatat pun tidak cukup menutupi kekurangan pada: %s. '.
+                'Angka stoknya tidak diturunkan di bawah nol; selisih ini WAJIB dibereskan lewat Penyesuaian Stok.',
+                implode(', ', $hasil['tidak_tertutup']),
+            );
+        }
+
+        return redirect()->route('wms.delivery.show', $note)->with(
+            $peringatan === [] ? 'success' : 'warning',
+            $peringatan === [] ? $pesan : $pesan.' '.implode(' ', $peringatan),
+        );
     }
 
     /** Mencoba mengirim ulang pesan yang gagal. */

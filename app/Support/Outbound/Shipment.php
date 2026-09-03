@@ -3,10 +3,13 @@
 namespace App\Support\Outbound;
 
 use App\Models\DeliveryNote;
+use App\Models\InventoryStock;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
 use App\Models\SalesOrder;
+use App\Models\StockMovement;
 use App\Support\PhoneNumber;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -25,11 +28,17 @@ use RuntimeException;
  * tercatat berkurang 10 sementara yang benar-benar pergi hanya 8 — dan
  * selisihnya tidak akan ketahuan sampai opname berikutnya.
  *
- * SJ TIDAK BOLEH LEBIH BANYAK DARIPADA YANG DIPICKING. Kasus ini tidak
- * disebut pemilik produk dan diputuskan di sini: mengirim 12 padahal hanya 10
- * yang diambil dari rak mustahil secara fisik. Mengikuti dokumen dalam kasus
- * ini bukan "menghormati BC", melainkan membuat catatan stok berbohong —
- * jadi ia ditolak dengan pesan yang menyebut angkanya.
+ * SJ LEBIH BANYAK DARIPADA YANG DIPICKING TIDAK DITOLAK — ia adalah TEMUAN
+ * STOK KURANG (keputusan pemilik produk, mengoreksi rancangan awal saya yang
+ * menolaknya). Alasannya lebih kuat daripada alasan saya: dokumen BC adalah
+ * kebenaran yang disetujui, jadi kalau SJ menyebut 12 keluar sementara yang
+ * tercatat dipicking hanya 10, artinya BUKAN dokumennya yang salah melainkan
+ * stok gudang yang kurang dari angka di sistem.
+ *
+ * Menolaknya menyembunyikan temuan itu. Yang benar: qty SJ tetap dipakai
+ * sebagai yang terkirim, dan kekurangannya dikeluarkan dari stok — sehingga
+ * angka di sistem turun menyusul kenyataan di rak, dan selisihnya punya baris
+ * ledger yang bisa ditelusuri saat opname.
  *
  * STATUS PESAN TERPISAH DARI STATUS BARANG. Kalau WhatsApp gagal, truk tetap
  * berangkat (keputusan pemilik produk); kegagalannya ditandai untuk
@@ -100,7 +109,7 @@ class Shipment
 
     /**
      * @param  array{driver_name:string, driver_phone:string, vehicle_plate:string}  $supir
-     * @return array{dikirim:int, dikembalikan:int}
+     * @return array{dikirim:int, dikembalikan:int, kurang_di_rak:int, tidak_tertutup:list<string>}
      *
      * @throws RuntimeException
      */
@@ -125,28 +134,48 @@ class Shipment
 
             $dikirim = 0;
             $dikembalikan = 0;
+            $kurangDiRak = 0;
+            $tidakTertutup = [];
             $terpicking = $this->qtyTerpicking($order);
             $qtySj = [];
 
             foreach ($terkunci->lines as $line) {
-                $qtyPicking = $line->product_id === null ? 0 : ($terpicking[$line->product_id] ?? 0);
-
-                if ($line->qty > $qtyPicking) {
+                if ($line->product_id === null) {
                     throw new RuntimeException(sprintf(
-                        'Surat Jalan menyebut %d %s, tetapi yang benar-benar diambil dari rak hanya %d. '.
-                        'Barang yang tidak ada di kendaraan tidak bisa dinyatakan berangkat — '.
-                        'perbaiki dokumennya di BC, atau picking dulu kekurangannya.',
-                        $line->qty,
+                        'SKU %s pada Surat Jalan ini tidak dikenal Master Produk, jadi stoknya tidak bisa dihitung. '.
+                        'Perbaiki datanya lebih dulu.',
                         $line->sku,
-                        $qtyPicking,
                     ));
                 }
 
-                if ($line->product_id !== null) {
-                    $qtySj[$line->product_id] = ($qtySj[$line->product_id] ?? 0) + (int) $line->qty;
+                $qtySj[$line->product_id] = ($qtySj[$line->product_id] ?? 0) + (int) $line->qty;
+                $dikirim += (int) $line->qty;
+            }
+
+            // KEKURANGAN DIKELUARKAN DARI STOK, BUKAN DITOLAK. Dokumen BC
+            // adalah kebenaran yang disetujui: kalau ia menyebut 12 keluar
+            // sementara yang tercatat dipicking hanya 10, yang keliru adalah
+            // angka stok kami, bukan dokumennya.
+            foreach ($qtySj as $productId => $qtyDokumen) {
+                $kurang = $qtyDokumen - ($terpicking[$productId] ?? 0);
+
+                if ($kurang < 1) {
+                    continue;
                 }
 
-                $dikirim += (int) $line->qty;
+                $keluar = $this->keluarkanKekurangan($order, $productId, $kurang, $terkunci->document_no, $userId);
+
+                $kurangDiRak += $keluar;
+
+                if ($keluar < $kurang) {
+                    // Stok tercatat pun tidak cukup menutupinya. TIDAK
+                    // dipaksakan: inventory_stocks punya CHECK
+                    // (qty_available >= 0), jadi memaksanya bukan
+                    // menghasilkan angka minus melainkan membatalkan seluruh
+                    // transaksi dengan galat constraint mentah — pelajaran
+                    // yang sama dengan FifoAllocator. Sisanya dilaporkan.
+                    $tidakTertutup[] = sprintf('%s (%d)', $this->skuDari($terkunci, $productId), $kurang - $keluar);
+                }
             }
 
             // Selisihnya dikembalikan SESUDAH seluruh baris lolos pemeriksaan.
@@ -200,7 +229,12 @@ class Shipment
                 'notify_error' => null,
             ])->save();
 
-            return ['dikirim' => $dikirim, 'dikembalikan' => $dikembalikan];
+            return [
+                'dikirim' => $dikirim,
+                'dikembalikan' => $dikembalikan,
+                'kurang_di_rak' => $kurangDiRak,
+                'tidak_tertutup' => $tidakTertutup,
+            ];
         });
     }
 
@@ -246,6 +280,121 @@ class Shipment
     }
 
     /* ------------------------------------------------------------- Dalam */
+
+    /**
+     * Mengeluarkan qty yang tertulis di SJ tetapi tidak tercatat dipicking.
+     *
+     * Barangnya BENAR-BENAR pergi — dokumen resmi menyatakan demikian, dan
+     * dokumen itulah yang menjadi dasar tagihan ke customer. Karena itu
+     * mutasinya OUT, bukan ADJUSTMENT: kalau dicatat sebagai koreksi, laporan
+     * pengiriman akan menyebut 10 sementara invoice menyebut 12, dan selisih
+     * dua angka itu justru yang paling mahal ditelusuri belakangan.
+     *
+     * Yang membuatnya berbeda dari OUT biasa adalah CATATANNYA: baris ini
+     * menyebut dengan jelas bahwa qty-nya tidak pernah tercatat saat picking.
+     * Di situlah temuan "stok gudang kurang" terbaca — bukan hilang tanpa
+     * jejak, dan bukan pula menyamar sebagai pengambilan yang normal.
+     *
+     * URUTAN PENGAMBILAN: batch yang memang dipakai pesanan ini lebih dulu
+     * (itu batch yang benar-benar naik ke kendaraan), baru batch lain menurut
+     * FIFO. Mengambil dari batch sembarang akan membuat umur stok yang
+     * tersisa di rak berbeda dari kenyataan.
+     *
+     * @return int qty yang benar-benar bisa dikeluarkan — bisa kurang dari
+     *             yang diminta bila stok tercatat pun tidak mencukupi
+     */
+    private function keluarkanKekurangan(
+        SalesOrder $order,
+        int $productId,
+        int $qty,
+        string $documentNo,
+        ?int $userId,
+    ): int {
+        $sisa = $qty;
+        $keluar = 0;
+
+        foreach ($this->stokUntukMenutupi($order, $productId) as $stok) {
+            if ($sisa < 1) {
+                break;
+            }
+
+            $ambil = min($sisa, (int) $stok->qty_available);
+
+            if ($ambil < 1) {
+                continue;
+            }
+
+            $sebelum = (int) $stok->qty_available;
+            $stok->qty_available = $sebelum - $ambil;
+            $stok->save();
+
+            StockMovement::create([
+                'product_id' => $productId,
+                'location_id' => $stok->location_id,
+                'warehouse_id' => $stok->warehouse_id,
+                'movement_type' => StockMovement::TYPE_OUT,
+                'qty_change' => -$ambil,
+                'qty_before' => $sebelum,
+                'qty_after' => $stok->qty_available,
+                'reference_type' => StockMovement::REF_SALES_ORDER,
+                'reference_id' => $order->id,
+                'batch_no' => $stok->batch_no,
+                'notes' => sprintf(
+                    'Surat Jalan %s menyebut %d lebih banyak daripada yang tercatat dipicking; '.
+                    'selisih %d dikeluarkan dari rak %s (batch %s). Stok tercatat ternyata lebih besar '.
+                    'daripada isi rak sebenarnya — perlu ditelusuri saat opname.',
+                    $documentNo,
+                    $qty,
+                    $ambil,
+                    $stok->location?->code ?? '—',
+                    $stok->batch_no ?? '—',
+                ),
+                'user_id' => $userId,
+            ]);
+
+            $sisa -= $ambil;
+            $keluar += $ambil;
+        }
+
+        return $keluar;
+    }
+
+    /**
+     * Baris stok yang boleh dipakai menutupi kekurangan, sudah terurut.
+     *
+     * @return Collection<int, InventoryStock>
+     */
+    private function stokUntukMenutupi(SalesOrder $order, int $productId)
+    {
+        // Batch yang dipakai pesanan ini lebih dulu — itu yang benar-benar
+        // naik ke kendaraan bersama barang yang tercatat.
+        $dipakai = PickingListItem::query()
+            ->where('sales_order_id', $order->id)
+            ->where('product_id', $productId)
+            ->whereNotNull('inventory_stock_id')
+            ->pluck('inventory_stock_id')
+            ->unique()
+            ->all();
+
+        return InventoryStock::query()
+            ->where('product_id', $productId)
+            ->where('warehouse_id', $order->warehouse_id)
+            ->where('status', InventoryStock::STATUS_ACTIVE)
+            ->where('qty_available', '>', 0)
+            ->lockForUpdate()
+            ->get()
+            ->sortBy([
+                fn (InventoryStock $s) => in_array($s->id, $dipakai, true) ? 0 : 1,
+                fn (InventoryStock $s) => $s->production_date?->timestamp ?? 0,
+                fn (InventoryStock $s) => $s->id,
+            ])
+            ->values();
+    }
+
+    private function skuDari(DeliveryNote $note, int $productId): string
+    {
+        return (string) ($note->lines->firstWhere('product_id', $productId)?->sku ?? $productId);
+    }
 
     /**
      * Qty yang benar-benar diambil dari rak, per produk.

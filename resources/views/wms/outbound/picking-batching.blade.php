@@ -79,7 +79,11 @@
                                     <th style="width:44px" class="text-center">
                                         <input class="form-check-input" type="checkbox" id="pilihSemua">
                                     </th>
-                                    <th>No. PO</th>
+                                    {{-- NOMOR SO YANG JADI ACUAN UTAMA, bukan nomor PO
+                                         (keputusan pemilik produk). Nomor SO inilah yang
+                                         nanti dicocokkan dengan Surat Jalan dari BC; nomor
+                                         PO hanya berarti di dalam sistem ini. --}}
+                                    <th>No. SO (BC)</th>
                                     <th>Customer</th>
                                     <th>Gudang</th>
                                     <th class="text-center">Item</th>
@@ -95,10 +99,8 @@
                                                data-gudang="{{ $order->warehouse_id }}">
                                     </td>
                                     <td>
-                                        <span class="fw-semibold font-monospace">{{ $order->order_number }}</span>
-                                        @if($order->bc_so_number)
-                                            <div class="small text-muted font-monospace">SO {{ $order->bc_so_number }}</div>
-                                        @endif
+                                        <span class="fw-bold font-monospace">{{ $order->bc_so_number ?? '—' }}</span>
+                                        <div class="small text-muted font-monospace">PO {{ $order->order_number }}</div>
                                     </td>
                                     <td>
                                         <div class="fw-semibold">{{ $order->customer?->name ?? '—' }}</div>

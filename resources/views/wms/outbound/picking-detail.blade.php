@@ -82,8 +82,10 @@
              ini untuk siapa saat memisahkannya di loading dock. --}}
         <div class="d-flex flex-wrap gap-2 mt-3">
             @foreach($list->orders as $order)
+                {{-- Nomor SO yang ditonjolkan: itu yang dicocokkan dengan
+                     Surat Jalan dari BC. Nomor PO hanya berarti di sini. --}}
                 <span class="badge bg-light text-dark border">
-                    <span class="font-monospace">{{ $order->order_number }}</span>
+                    <span class="font-monospace fw-bold">{{ $order->bc_so_number ?? $order->order_number }}</span>
                     · {{ $order->customer?->name ?? '—' }}
                 </span>
             @endforeach
@@ -165,7 +167,9 @@
                         </td>
                         <td>
                             <div class="small">{{ $item->salesOrder?->customer?->name ?? '—' }}</div>
-                            <small class="text-muted font-monospace">{{ $item->salesOrder?->order_number }}</small>
+                            <small class="text-muted font-monospace">
+                                {{ $item->salesOrder?->bc_so_number ?? $item->salesOrder?->order_number }}
+                            </small>
                         </td>
                         <td class="text-end">
                             <span class="fw-bold fs-5">{{ $item->qty_to_pick }}</span>

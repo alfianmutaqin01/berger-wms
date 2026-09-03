@@ -276,16 +276,94 @@ class ShipmentTest extends TestCase
         $this->kirim($note)->assertSessionHas('warning');
     }
 
-    public function test_surat_jalan_lebih_banyak_dari_picking_ditolak(): void
+    public function test_surat_jalan_lebih_banyak_dari_picking_adalah_temuan_stok_kurang(): void
+    {
+        // Keputusan pemilik produk, mengoreksi rancangan awal yang menolak
+        // kasus ini: dokumen BC adalah kebenaran yang disetujui. Kalau SJ
+        // menyebut 12 keluar sementara yang tercatat dipicking 10, yang
+        // keliru bukan dokumennya melainkan angka stok kami.
+        $stok = InventoryStock::factory()->create([
+            'product_id' => $this->produk->id,
+            'warehouse_id' => $this->karawang->id,
+            'location_id' => $this->rak->id,
+            'batch_no' => 'BT-2601',
+            'production_date' => '2026-01-15',
+            'expiry_date' => '2028-01-15',
+            'qty_available' => 100,
+            'qty_allocated' => 0,
+            'status' => InventoryStock::STATUS_ACTIVE,
+        ]);
+
+        $order = $this->pesananSudahDipicking(15, 10, $stok);
+        $note = $this->suratJalan($order, 12);
+
+        // Sesudah picking: 10 turun dari rak, tersisa 90.
+        $this->assertSame(90, $stok->fresh()->qty_available);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note)->assertRedirect();
+
+        $note->refresh();
+        $order->refresh();
+
+        $this->assertSame(DeliveryNote::STATUS_SHIPPED, $note->status);
+        $this->assertSame(SalesOrder::STATUS_SHIPPING, $order->status);
+
+        // Selisih 2 ikut keluar: isi rak sebenarnya memang lebih sedikit
+        // daripada angka di sistem.
+        $this->assertSame(88, $stok->fresh()->qty_available);
+        $this->assertSame(12, $order->details()->first()->qty_shipped);
+        $this->assertSame(3, $order->details()->first()->outstanding_qty);
+    }
+
+    public function test_temuan_stok_kurang_diberi_peringatan_dan_jejak_ledger(): void
     {
         $order = $this->pesananSudahDipicking(15, 10);
         $note = $this->suratJalan($order, 12);
 
         $this->loginAt($this->karawang);
-        $this->kirim($note)->assertSessionHas('error');
 
-        $this->assertSame(DeliveryNote::STATUS_IMPORTED, $note->fresh()->status);
-        $this->assertSame(SalesOrder::STATUS_READY_TO_SHIP, $order->fresh()->status);
+        // Ini justru temuan paling berharga dari seluruh pencocokan;
+        // menyembunyikannya di balik kata "berhasil" membuat opname
+        // berikutnya menemukan selisih yang tidak bisa dilacak asalnya.
+        $this->kirim($note)->assertSessionHas('warning');
+
+        $mutasi = StockMovement::where('movement_type', StockMovement::TYPE_OUT)
+            ->latest('id')->first();
+
+        $this->assertSame(-2, $mutasi->qty_change);
+        $this->assertStringContainsString('lebih banyak daripada yang tercatat dipicking', $mutasi->notes);
+        $this->assertStringContainsString('opname', $mutasi->notes);
+    }
+
+    public function test_kekurangan_yang_stoknya_tidak_cukup_dilaporkan_bukan_dipaksakan(): void
+    {
+        // Stok tercatat pun tidak menutupi kekurangannya. TIDAK dipaksakan:
+        // inventory_stocks punya CHECK (qty_available >= 0), jadi memaksanya
+        // bukan menghasilkan angka minus melainkan membatalkan seluruh
+        // transaksi dengan galat constraint mentah.
+        $stok = InventoryStock::factory()->create([
+            'product_id' => $this->produk->id,
+            'warehouse_id' => $this->karawang->id,
+            'location_id' => $this->rak->id,
+            'batch_no' => 'BT-2601',
+            'production_date' => '2026-01-15',
+            'expiry_date' => '2028-01-15',
+            'qty_available' => 11,
+            'qty_allocated' => 0,
+            'status' => InventoryStock::STATUS_ACTIVE,
+        ]);
+
+        $order = $this->pesananSudahDipicking(20, 10, $stok);
+        $note = $this->suratJalan($order, 15);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note)->assertSessionHas('warning');
+
+        // Sisa 1 setelah picking 10; kekurangan 5 hanya bisa ditutup 1.
+        $this->assertSame(0, $stok->fresh()->qty_available);
+        $this->assertSame(DeliveryNote::STATUS_SHIPPED, $note->fresh()->status);
+        $this->assertSame(15, $order->details()->first()->qty_shipped, 'Dokumen BC tetap yang berlaku.');
     }
 
     public function test_qty_sama_persis_tidak_mengembalikan_apa_pun(): void
