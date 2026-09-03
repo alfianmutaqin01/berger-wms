@@ -40,6 +40,32 @@ class DocumentNumber
 
     public const TYPE_STOCK_TRANSFER = 'stock_transfer';
 
+    public const TYPE_PICKING_LIST = 'picking_list';
+
+    /**
+     * Nomor daftar picking: PL{YYMMDD}{urut 3 digit}.
+     *
+     * LINTAS GUDANG, bukan per gudang — sama alasannya dengan nomor transfer.
+     * Daftar picking memang hanya dikerjakan di satu gudang, tetapi yang
+     * membacanya tidak: Logistik dan Super Admin melihat ketiga gudang di
+     * satu layar, dan nomor yang berulang di tiap gudang membuat "PL260916001"
+     * berarti tiga tugas berbeda tergantung siapa yang menyebutnya.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forPickingList(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_PICKING_LIST,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'PL'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
     /**
      * Nomor transfer antar gudang: TF{YYMMDD}{urut 3 digit}.
      *

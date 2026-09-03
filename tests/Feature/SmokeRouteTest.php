@@ -8,6 +8,8 @@ use App\Models\InboundHeader;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\PaymentTerm;
+use App\Models\PickingList;
+use App\Models\PickingListItem;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
@@ -246,11 +248,25 @@ class SmokeRouteTest extends TestCase
             'product_id' => $produk->id,
         ]);
 
+        // --- Daftar picking dengan satu baris pengambilan ---
+        $daftarPicking = PickingList::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'list_number' => 'PL260901001',
+        ]);
+        PickingListItem::factory()->create([
+            'picking_list_id' => $daftarPicking->id,
+            'sales_order_id' => $order->id,
+            'sales_order_detail_id' => $order->details()->first()->id,
+            'product_id' => $produk->id,
+            'location_id' => $lokasi->id,
+        ]);
+
         $this->parameter = [
             'order' => $order->id,
             'doc_no' => $header->document_number,
             'po_number' => $order->order_number,
             'transfer' => $transfer->id,
+            'list' => $daftarPicking->id,
         ];
     }
 

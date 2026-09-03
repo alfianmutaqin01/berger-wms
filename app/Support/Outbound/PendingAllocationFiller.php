@@ -82,7 +82,13 @@ class PendingAllocationFiller
             ->where('sales_order_details.product_id', $productId)
             ->whereHas('salesOrder', fn ($q) => $q
                 ->where('warehouse_id', $warehouseId)
-                ->whereIn('status', [SalesOrder::STATUS_APPROVED, SalesOrder::STATUS_PICKING]))
+                ->whereIn('status', [SalesOrder::STATUS_APPROVED, SalesOrder::STATUS_PICKING])
+                // Pesanan yang sudah masuk daftar picking TIDAK ditambahi
+                // alokasi lagi. Isi daftar dibekukan saat disusun dan sudah
+                // dicetak; alokasi susulan tidak akan pernah muncul di kertas
+                // yang dibawa operator, jadi barangnya tidak akan ikut
+                // terambil — tetapi angkanya sudah terlanjur dicadangkan.
+                ->whereNull('picking_list_id'))
             ->join('sales_orders', 'sales_orders.id', '=', 'sales_order_details.sales_order_id')
             // Yang teralokasi belum menutup yang disetujui = masih menunggu.
             // Dihitung di SQL supaya baris yang sudah penuh tidak ikut ditarik

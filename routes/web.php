@@ -14,6 +14,7 @@ use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OrderApprovalController;
 use App\Http\Controllers\Wms\OutboundController;
+use App\Http\Controllers\Wms\PickingController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ReportController;
@@ -355,13 +356,41 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.approval.cancel');
         });
 
-        Route::get('/picking/batching', [OutboundController::class, 'pickingBatching'])
-            ->middleware('can:'.Permission::OUTBOUND_PICKING_LIST);
+        // PICKING (Fase 6 tahap 3). Dua kelompok untuk dua orang: Logistik
+        // MENYUSUN daftar, Operator MENGERJAKANNYA. URUTAN PENTING:
+        // '/picking/batching' dan '/picking/queue' harus didaftarkan SEBELUM
+        // '/picking/{list}', kalau tidak keduanya tertangkap sebagai id.
+        Route::middleware('can:'.Permission::OUTBOUND_PICKING_LIST)->group(function () {
+            Route::get('/picking/batching', [PickingController::class, 'batching'])
+                ->name('wms.picking.batching');
+            Route::post('/picking/list', [PickingController::class, 'store'])
+                ->name('wms.picking.store');
+            Route::post('/picking/list/{list}/cancel', [PickingController::class, 'cancel'])
+                ->name('wms.picking.cancel');
+        });
 
         Route::middleware('can:'.Permission::OUTBOUND_PICKING_PROCESS)->group(function () {
-            Route::get('/picking', [OutboundController::class, 'picking']);
-            Route::post('/complete-picking/{id}', [OutboundController::class, 'completePicking']);
+            Route::get('/picking', [PickingController::class, 'queue'])
+                ->name('wms.picking.queue');
+            Route::post('/picking/list/{list}/claim', [PickingController::class, 'claim'])
+                ->name('wms.picking.claim');
+            Route::post('/picking/list/{list}/item/{item}/pick', [PickingController::class, 'pick'])
+                ->name('wms.picking.item.pick');
+            Route::post('/picking/list/{list}/item/{item}/short', [PickingController::class, 'short'])
+                ->name('wms.picking.item.short');
+            Route::post('/picking/list/{list}/item/{item}/reset', [PickingController::class, 'reset'])
+                ->name('wms.picking.item.reset');
+            Route::post('/picking/list/{list}/complete', [PickingController::class, 'complete'])
+                ->name('wms.picking.complete');
         });
+
+        // Rincian daftar dibaca KEDUA peran: Logistik memeriksa hasil
+        // susunannya, Operator mengerjakannya. Gate-nya "salah satu boleh",
+        // bukan salah satunya saja — karena itu fiturnya sendiri, bukan
+        // menumpang salah satu dari keduanya.
+        Route::get('/picking/list/{list}', [PickingController::class, 'show'])
+            ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
+            ->name('wms.picking.show');
 
         Route::middleware('can:'.Permission::OUTBOUND_DELIVERY)->group(function () {
             Route::get('/delivery', [OutboundController::class, 'delivery']);

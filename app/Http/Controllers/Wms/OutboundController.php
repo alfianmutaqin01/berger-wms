@@ -13,20 +13,12 @@ class OutboundController extends Controller
     // basis data, dan stub semacam itu yang masih bisa dipanggil adalah cara
     // paling halus untuk membuat orang percaya pesanan sudah diproses.
 
-    public function pickingBatching()
-    {
-        return view('wms.outbound.picking-batching');
-    }
-
-    public function picking()
-    {
-        return view('wms.outbound.picking');
-    }
-
-    public function completePicking(Request $request, $id)
-    {
-        return redirect()->back()->with('success', "Proses picking untuk PO-$id selesai. Barang siap loading.");
-    }
+    // Picking PINDAH ke PickingController (Fase 6 tahap 3). Stub
+    // pickingBatching()/picking()/completePicking() yang dulu di sini
+    // DIHAPUS dengan alasan yang sama: completePicking() hanya mengembalikan
+    // "barang siap loading" tanpa menyentuh satu baris stok pun, dan pesan
+    // sukses yang tidak berbuat apa-apa adalah cara paling halus membuat
+    // operator percaya barangnya sudah keluar dari rak.
 
     public function delivery()
     {

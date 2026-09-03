@@ -73,6 +73,16 @@ class Permission
 
     public const OUTBOUND_PICKING_PROCESS = 'outbound.picking.process';
 
+    /**
+     * MEMBACA rincian satu daftar picking.
+     *
+     * Fitur tersendiri karena dibaca dua peran dengan pekerjaan berbeda:
+     * Logistik memeriksa hasil susunannya, Operator mengerjakannya. Menumpang
+     * salah satu dari dua fitur di atas berarti salah satu peran itu ditolak
+     * membuka halaman yang justru jadi bagian pekerjaannya.
+     */
+    public const OUTBOUND_PICKING_VIEW = 'outbound.picking.view';
+
     public const OUTBOUND_DELIVERY = 'outbound.delivery';
 
     public const OUTBOUND_VERIFICATION = 'outbound.verification';
@@ -141,6 +151,9 @@ class Permission
         self::OUTBOUND_APPROVAL => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_PICKING_LIST => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_PICKING_PROCESS => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
+        self::OUTBOUND_PICKING_VIEW => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
         self::OUTBOUND_DELIVERY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_VERIFICATION => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
