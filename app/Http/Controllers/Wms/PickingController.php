@@ -11,6 +11,7 @@ use App\Models\SalesOrder;
 use App\Support\Outbound\PickingListBuilder;
 use App\Support\Outbound\PickingRun;
 use App\Support\WarehouseScope;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -205,17 +206,17 @@ class PickingController extends Controller
     }
 
     /** Jalur cepat: satu ketuk, barangnya lengkap sesuai daftar. */
-    public function pick(Request $request, PickingList $list, PickingListItem $item): RedirectResponse
+    public function pick(Request $request, PickingList $list, PickingListItem $item)
     {
         $this->pastikanBarisMilikDaftar($request, $list, $item);
 
         try {
             $this->picking->pick($item, $request->user());
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->gagal($request, $item, $e->getMessage());
         }
 
-        return back()->with('success', sprintf(
+        return $this->berhasil($request, $list, $item, 'success', sprintf(
             '%s di rak %s ditandai terambil.',
             $item->product?->sku ?? 'Baris',
             $item->location?->code ?? '—'
@@ -223,7 +224,7 @@ class PickingController extends Controller
     }
 
     /** Pintu terpisah untuk keadaan khusus: barang di rak kurang. */
-    public function short(ReportPickingShortageRequest $request, PickingList $list, PickingListItem $item): RedirectResponse
+    public function short(ReportPickingShortageRequest $request, PickingList $list, PickingListItem $item)
     {
         $this->pastikanBarisMilikDaftar($request, $list, $item);
 
@@ -235,10 +236,10 @@ class PickingController extends Controller
                 $request->validated('discrepancy_reason'),
             );
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->gagal($request, $item, $e->getMessage());
         }
 
-        return back()->with('warning', sprintf(
+        return $this->berhasil($request, $list, $item, 'warning', sprintf(
             'Selisih dicatat: %s di rak %s tertulis %d, ditemukan %d. Selisihnya akan menjadi koreksi stok saat Siap Loading.',
             $item->product?->sku ?? 'Baris',
             $item->location?->code ?? '—',
@@ -248,17 +249,17 @@ class PickingController extends Controller
     }
 
     /** Membatalkan penandaan satu baris — operator salah ketuk. */
-    public function reset(Request $request, PickingList $list, PickingListItem $item): RedirectResponse
+    public function reset(Request $request, PickingList $list, PickingListItem $item)
     {
         $this->pastikanBarisMilikDaftar($request, $list, $item);
 
         try {
             $this->picking->resetItem($item, $request->user());
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->gagal($request, $item, $e->getMessage());
         }
 
-        return back()->with('success', 'Tanda pada baris itu dibatalkan.');
+        return $this->berhasil($request, $list, $item, 'success', 'Tanda pada baris itu dibatalkan.');
     }
 
     /** "Siap Loading" — stok berkurang, pesanan berpindah ke Siap Kirim. */
@@ -293,6 +294,78 @@ class PickingController extends Controller
     }
 
     /* --------------------------------------------------------------- Dalam */
+
+    /*
+     | MENANDAI BARIS TIDAK BOLEH MEMUAT ULANG HALAMAN.
+     |
+     | Temuan lapangan pemilik produk: satu daftar bisa berisi 100 baris.
+     | Kalau tiap ketukan memuat ulang halaman, operator yang sedang di baris
+     | ke-80 dilempar kembali ke atas dan harus menggulir turun lagi — seratus
+     | kali dalam satu tugas. Itu bukan gangguan kecil; itu membuat orang
+     | berhenti menandai baris satu per satu dan mulai menandainya sekaligus
+     | di akhir dari ingatan, yang persis menghapus gunanya penandaan ini.
+     |
+     | Karena itu kedua jawaban disediakan:
+     |   - JSON  untuk layar, yang memperbarui satu baris saja tanpa berpindah
+     |   - redirect BER-ANCHOR sebagai jalan mundur bila JavaScript mati,
+     |     supaya halaman setidaknya kembali ke baris yang barusan ditekan
+     |
+     | Jalan mundurnya bukan basa-basi: HP gudang sering tua, dan layar yang
+     | hanya bekerja dengan JavaScript berarti tugas yang tidak bisa
+     | diselesaikan sama sekali.
+     */
+
+    /** @return JsonResponse|RedirectResponse */
+    private function berhasil(Request $request, PickingList $list, PickingListItem $item, string $jenis, string $pesan)
+    {
+        $item->refresh();
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'jenis' => $jenis,
+                'pesan' => $pesan,
+                'item' => [
+                    'id' => $item->id,
+                    'status' => $item->status,
+                    'qty_picked' => $item->qty_picked,
+                    'qty_kurang' => $item->qty_kurang,
+                    'alasan' => $item->discrepancy_reason,
+                ],
+                'ringkas' => $this->ringkasan($list),
+            ]);
+        }
+
+        return back()->withFragment('baris-'.$item->id)->with($jenis, $pesan);
+    }
+
+    /** @return JsonResponse|RedirectResponse */
+    private function gagal(Request $request, PickingListItem $item, string $pesan)
+    {
+        if ($request->expectsJson()) {
+            // 422, bukan 200 berisi ok:false — layar memakai response.ok
+            // untuk memutuskan, dan galat yang dikirim sebagai sukses akan
+            // menandai baris di layar padahal servernya menolak.
+            return response()->json(['ok' => false, 'pesan' => $pesan], 422);
+        }
+
+        return back()->withFragment('baris-'.$item->id)->with('error', $pesan);
+    }
+
+    /** @return array{total:int, selesai:int, kurang:int} */
+    private function ringkasan(PickingList $list): array
+    {
+        $perStatus = $list->items()
+            ->selectRaw('status, COUNT(*) AS jumlah')
+            ->groupBy('status')
+            ->pluck('jumlah', 'status');
+
+        return [
+            'total' => (int) $perStatus->sum(),
+            'selesai' => (int) $perStatus->sum() - (int) $perStatus->get(PickingListItem::STATUS_PENDING, 0),
+            'kurang' => (int) $perStatus->get(PickingListItem::STATUS_SHORT, 0),
+        ];
+    }
 
     /**
      * Baris HARUS milik daftar di URL-nya.

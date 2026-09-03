@@ -440,6 +440,62 @@ class PickingTest extends TestCase
         $this->post(route('wms.picking.item.pick', [$daftar, $barisLain]))->assertNotFound();
     }
 
+    /* -------------------------------------------- Menandai tanpa muat ulang */
+
+    /*
+     | Satu daftar bisa berisi 100 baris. Kalau tiap ketukan memuat ulang
+     | halaman, operator yang sedang di baris ke-80 dilempar kembali ke atas —
+     | seratus kali dalam satu tugas. Yang terjadi berikutnya bukan operator
+     | yang sabar menggulir, melainkan operator yang menandai semuanya di
+     | akhir dari ingatan.
+     */
+
+    public function test_menandai_baris_menjawab_json_tanpa_memuat_ulang(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+        $baris = $daftar->items()->first();
+
+        $this->postJson(route('wms.picking.item.pick', [$daftar, $baris]))
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('item.id', $baris->id)
+            ->assertJsonPath('item.status', PickingListItem::STATUS_PICKED)
+            // Ringkasan ikut dikirim supaya layar tidak perlu menghitung
+            // sendiri — dua penghitung untuk satu angka pasti berbeda.
+            ->assertJsonPath('ringkas.selesai', 1)
+            ->assertJsonPath('ringkas.total', 1);
+    }
+
+    public function test_penolakan_dijawab_422_bukan_sukses_kosong(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+        $baris = $daftar->items()->first();
+
+        // Operator lain: ditolak. Layar memakai status HTTP untuk memutuskan,
+        // jadi penolakan yang dikirim sebagai 200 akan menandai baris di
+        // layar padahal servernya tidak menyimpan apa pun.
+        $this->loginAt($this->karawang, Role::WAREHOUSE_OPERATOR);
+
+        $this->postJson(route('wms.picking.item.pick', [$daftar, $baris]))
+            ->assertStatus(422)
+            ->assertJsonPath('ok', false);
+
+        $this->assertSame(PickingListItem::STATUS_PENDING, $baris->fresh()->status);
+    }
+
+    public function test_tanpa_javascript_halaman_kembali_ke_baris_yang_ditekan(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+        $baris = $daftar->items()->first();
+
+        // Jalan mundurnya bukan basa-basi: HP gudang sering tua, dan layar
+        // yang hanya bekerja dengan JavaScript berarti tugas yang tidak bisa
+        // diselesaikan sama sekali.
+        $this->post(route('wms.picking.item.pick', [$daftar, $baris]))
+            ->assertRedirect()
+            ->assertRedirectContains('#baris-'.$baris->id);
+    }
+
     /* ------------------------------------------------------------- Selisih */
 
     public function test_selisih_wajib_beralasan(): void
