@@ -294,6 +294,28 @@ class OpeningStockImporter extends Importer
         return $this->terisiKePesanan;
     }
 
+    /**
+     * Stok yang langsung terpakai WAJIB dilaporkan.
+     *
+     * Angka ini dihitung sejak tahap 2 tetapi tidak pernah sampai ke layar —
+     * sehingga Manager yang mengimpor 500 unit bisa melihat stok bertambah
+     * jauh lebih sedikit tanpa satu pun keterangan ke mana sisanya pergi.
+     * Persis bahaya yang sudah ditulis di catatan tahap 2, hanya jalur
+     * imporlah yang terlewat memasangnya.
+     */
+    public function catatanTambahan(): ?string
+    {
+        if ($this->terisiKePesanan < 1) {
+            return null;
+        }
+
+        return sprintf(
+            '%d unit di antaranya langsung dialokasikan ke pesanan yang sudah menunggu stok, '.
+            'jadi tidak seluruhnya menambah stok bebas.',
+            $this->terisiKePesanan,
+        );
+    }
+
     /** Qty baris stok ini yang sudah dijanjikan ke pesanan. */
     private function qtyTeralokasi(int $productId, int $locationId, string $batch, string $tanggal): int
     {
@@ -343,10 +365,20 @@ class OpeningStockImporter extends Importer
         }
 
         foreach (['Y-m-d', 'd/m/Y', 'd-m-Y', 'Y/m/d', 'd.m.Y'] as $format) {
-            $tanggal = Carbon::createFromFormat($format, $mentah);
+            // try/catch DI DALAM perulangan, bukan pemeriksaan `!== false`.
+            // Carbon 3 MELEMPAR InvalidFormatException ketika untainya tidak
+            // cocok — ia tidak lagi mengembalikan false seperti Carbon 2.
+            // Tanpa ini, "31/08/2026" meledak pada percobaan format PERTAMA
+            // (Y-m-d) dan tidak pernah sampai ke format yang benar — padahal
+            // pesan galat impor ini sendiri menganjurkan DD/MM/YYYY.
+            try {
+                $tanggal = Carbon::createFromFormat($format, $mentah);
 
-            if ($tanggal !== false && $tanggal->format($format) === $mentah) {
-                return $tanggal->startOfDay();
+                if ($tanggal->format($format) === $mentah) {
+                    return $tanggal->startOfDay();
+                }
+            } catch (\Throwable) {
+                // Format berikutnya.
             }
         }
 

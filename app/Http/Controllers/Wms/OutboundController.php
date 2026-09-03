@@ -20,19 +20,12 @@ class OutboundController extends Controller
     // sukses yang tidak berbuat apa-apa adalah cara paling halus membuat
     // operator percaya barangnya sudah keluar dari rak.
 
-    public function delivery()
-    {
-        return view('wms.outbound.delivery');
-    }
-
-    public function generateSuratJalan(Request $request, $id)
-    {
-        $noWa = $request->input('wa_supir', '08123456789');
-        $dummyLink = url("/epod/$id");
-
-        return redirect()->back()->with('success', "Surat Jalan berhasil dicetak. Tautan Konfirmasi E-POD telah dikirim ke WA Supir ($noWa).")
-            ->with('epod_link', $dummyLink);
-    }
+    // Surat Jalan PINDAH ke DeliveryController (Fase 6 tahap 4). Stub
+    // generateSuratJalan() DIHAPUS, dan kali ini bukan hanya karena ia tidak
+    // menyentuh basis data: ia mengaku "Surat Jalan berhasil dicetak" dan
+    // "tautan E-POD telah dikirim ke WA supir" — dua kebohongan sekaligus,
+    // dan yang kedua terpapar ke luar organisasi. Sistem ini TIDAK
+    // menerbitkan Surat Jalan sama sekali; dokumen resminya keluar dari BC.
 
     public function verification()
     {

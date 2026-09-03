@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Support\Import\CustomerImporter;
+use App\Support\Import\DeliveryNoteImporter;
 use App\Support\Import\Importer;
 use App\Support\Import\OpeningStockImporter;
 use App\Support\Import\ProductImporter;
@@ -104,8 +105,13 @@ class ImportController extends Controller
                 ->with('error', 'Berkas sementara sudah tidak tersedia. Silakan unggah ulang.');
         }
 
+        // Importernya dipegang, bukan dipanggil berantai: sebagian importer
+        // MENGUBAH hal lain di luar barisnya sendiri, dan keterangannya baru
+        // bisa diambil setelah impor berjalan (lihat catatanTambahan()).
+        $importer = $this->importerFor($type, $request);
+
         try {
-            $summary = $this->importerFor($type, $request)->import(Storage::disk('local')->path($stored));
+            $summary = $importer->import(Storage::disk('local')->path($stored));
         } catch (RuntimeException $e) {
             return redirect()->route($config['index_route'])->with('error', $e->getMessage());
         } finally {
@@ -118,8 +124,21 @@ class ImportController extends Controller
             $summary['perbarui']
         );
 
+        $catatan = $importer->catatanTambahan();
+
+        if ($catatan !== null) {
+            $message .= ' '.$catatan;
+        }
+
         if ($summary['gagal'] === 0) {
-            return redirect()->route($config['index_route'])->with('success', $message);
+            // Catatan tambahan selalu turun jadi PERINGATAN, bukan sukses
+            // hijau. Isinya menurut definisi adalah sesuatu yang berubah di
+            // luar hitungan baris — stok yang ternyata tidak jadi menambah
+            // stok bebas, atau Surat Jalan yang tidak menemukan pesanannya.
+            // Kalimat semacam itu di dalam kotak hijau bertuliskan "selesai"
+            // adalah kalimat yang tidak dibaca siapa pun.
+            return redirect()->route($config['index_route'])
+                ->with($catatan === null ? 'success' : 'warning', $message);
         }
 
         // Baris yang gagal dilaporkan berikut ALASANNYA. Sebelumnya hanya
@@ -169,6 +188,13 @@ class ImportController extends Controller
                 $actorId,
                 warehouseId: WarehouseScope::boundary($request->user()),
             ),
+            // Surat Jalan terikat gudang lewat PESANANNYA, bukan lewat rak.
+            // Ekspor harian BC memuat SJ seluruh perusahaan, jadi batas
+            // gudang di sini yang menyaring mana yang boleh masuk.
+            'delivery-notes' => new DeliveryNoteImporter(
+                $actorId,
+                warehouseId: WarehouseScope::boundary($request->user()),
+            ),
         };
     }
 
@@ -193,6 +219,12 @@ class ImportController extends Controller
                 'index_route' => 'wms.inventory.index',
                 'import_route' => 'wms.inventory.import',
                 'cancel_route' => 'wms.inventory.import.cancel',
+            ],
+            'delivery-notes' => [
+                'title' => 'Surat Jalan (BC)',
+                'index_route' => 'wms.delivery.index',
+                'import_route' => 'wms.delivery.import',
+                'cancel_route' => 'wms.delivery.import.cancel',
             ],
             default => abort(404),
         };

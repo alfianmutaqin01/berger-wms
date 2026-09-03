@@ -7,6 +7,7 @@ use App\Http\Controllers\Wms\AdminController;
 use App\Http\Controllers\Wms\BillingController;
 use App\Http\Controllers\Wms\CustomerController;
 use App\Http\Controllers\Wms\DashboardController;
+use App\Http\Controllers\Wms\DeliveryController;
 use App\Http\Controllers\Wms\ImportController;
 use App\Http\Controllers\Wms\InboundController;
 use App\Http\Controllers\Wms\InventoryController;
@@ -392,9 +393,22 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.show');
 
+        // SURAT JALAN (Fase 6 tahap 4). TIDAK ada rute "cetak": dokumen
+        // resminya terbit di sistem BC, dan yang dikerjakan di sini adalah
+        // menyalin lalu mencocokkannya.
         Route::middleware('can:'.Permission::OUTBOUND_DELIVERY)->group(function () {
-            Route::get('/delivery', [OutboundController::class, 'delivery']);
-            Route::post('/generate-sj/{id}', [OutboundController::class, 'generateSuratJalan']);
+            Route::get('/delivery', [DeliveryController::class, 'index'])
+                ->name('wms.delivery.index');
+
+            Route::post('/delivery/import/preview', [ImportController::class, 'preview'])
+                ->defaults('type', 'delivery-notes')
+                ->name('wms.delivery.import.preview');
+            Route::post('/delivery/import', [ImportController::class, 'store'])
+                ->defaults('type', 'delivery-notes')
+                ->name('wms.delivery.import');
+            Route::post('/delivery/import/cancel', [ImportController::class, 'cancel'])
+                ->defaults('type', 'delivery-notes')
+                ->name('wms.delivery.import.cancel');
         });
 
         Route::middleware('can:'.Permission::OUTBOUND_VERIFICATION)->group(function () {

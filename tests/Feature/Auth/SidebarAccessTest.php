@@ -59,7 +59,7 @@ class SidebarAccessTest extends TestCase
         Permission::OUTBOUND_APPROVAL => 'Terima Pesanan',
         Permission::OUTBOUND_PICKING_LIST => 'Daftar Picking',
         Permission::OUTBOUND_PICKING_PROCESS => 'Proses Picking',
-        Permission::OUTBOUND_DELIVERY => 'Cetak Surat Jalan',
+        Permission::OUTBOUND_DELIVERY => 'Surat Jalan (BC)',
         Permission::OUTBOUND_VERIFICATION => 'Verifikasi Bukti SJ',
         Permission::BILLING_VIEW => 'Billing & Piutang',
         Permission::MASTER_CUSTOMERS => 'Master Customers',

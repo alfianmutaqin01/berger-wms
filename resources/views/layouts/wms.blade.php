@@ -190,7 +190,7 @@
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_DELIVERY)
                             <li class="nav-item {{ request()->is('wms/outbound/delivery') ? 'active' : '' }}">
-                                <a href="/wms/outbound/delivery" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Cetak Surat Jalan</span></a>
+                                <a href="/wms/outbound/delivery" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Surat Jalan (BC)</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_VERIFICATION)

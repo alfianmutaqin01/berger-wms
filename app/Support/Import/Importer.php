@@ -52,6 +52,21 @@ abstract class Importer
         return [];
     }
 
+    /**
+     * Keterangan tambahan setelah impor selesai, di luar hitungan baris.
+     *
+     * Sebagian impor MENGUBAH hal lain selain barisnya sendiri — stok awal
+     * menyedot barang ke pesanan yang menunggu, impor Surat Jalan menemukan
+     * dokumen yang tidak berpasangan. Perubahan semacam itu tidak muncul di
+     * angka "sekian ditambahkan, sekian diperbarui", dan impor yang diam-diam
+     * mengubah sesuatu di tempat lain adalah persis yang paling sulit
+     * ditelusuri belakangan.
+     */
+    public function catatanTambahan(): ?string
+    {
+        return null;
+    }
+
     /** @return array{key: string, label: string, data: array}|null */
     abstract protected function mapRow(array $row): ?array;
 
