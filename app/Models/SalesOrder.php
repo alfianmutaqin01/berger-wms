@@ -71,8 +71,10 @@ class SalesOrder extends Model
         'customer_id', 'user_id', 'warehouse_id', 'payment_term_id',
         'status', 'order_source',
         'document_path', 'document_name', 'document_size', 'document_mime',
-        'submitted_at', 'approved_at', 'approved_by',
+        'submitted_at', 'approved_at', 'approved_by', 'approval_note',
         'rejected_at', 'rejected_by', 'rejection_reason',
+        'cancelled_at', 'cancelled_by', 'cancellation_source', 'cancellation_reason',
+        'so_merged_into_id',
         'picking_completed_at', 'shipped_at', 'delivered_at',
         'completed_at', 'sla_hours', 'notes',
     ];
@@ -83,6 +85,7 @@ class SalesOrder extends Model
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
             'rejected_at' => 'datetime',
+            'cancelled_at' => 'datetime',
             'picking_completed_at' => 'datetime',
             'shipped_at' => 'datetime',
             'delivered_at' => 'datetime',
@@ -128,6 +131,33 @@ class SalesOrder extends Model
     public function rejectedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    /** Seluruh pembatalan yang pernah terjadi pada pesanan ini. */
+    public function cancellations(): HasMany
+    {
+        return $this->hasMany(SalesOrderCancellation::class);
+    }
+
+    /**
+     * Pesanan INDUK yang nomor SO-nya ditumpangi pesanan ini.
+     *
+     * Terisi hanya pada pesanan tambahan yang digabung ke satu invoice.
+     */
+    public function mergedInto(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'so_merged_into_id');
+    }
+
+    /** Pesanan tambahan yang menumpang nomor SO pesanan ini. */
+    public function mergedOrders(): HasMany
+    {
+        return $this->hasMany(self::class, 'so_merged_into_id');
     }
 
     /* ------------------------------------------------------------ Scope */

@@ -7,8 +7,10 @@ use App\Http\Requests\Wms\AcceptSalesOrderRequest;
 use App\Http\Requests\Wms\RejectSalesOrderRequest;
 use App\Models\Product;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
 use App\Support\Outbound\FifoAllocator;
+use App\Support\Outbound\OrderCanceller;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -51,7 +53,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class OrderApprovalController extends Controller
 {
-    public function __construct(private readonly FifoAllocator $allocator) {}
+    public function __construct(
+        private readonly FifoAllocator $allocator,
+        private readonly OrderCanceller $canceller,
+    ) {}
 
     /** Antrean pesanan yang menunggu diterima (F-OUT-02 langkah 1). */
     public function index(Request $request): View
@@ -249,9 +254,24 @@ class OrderApprovalController extends Controller
                 $terkunci->fill([
                     'status' => SalesOrder::STATUS_APPROVED,
                     'bc_so_number' => $request->validated('bc_so_number'),
+                    // Terisi hanya pada pesanan tambahan yang sengaja berbagi
+                    // nomor SO dengan pesanan lain (satu invoice). Indeks unik
+                    // mengecualikan baris yang kolom ini terisi, sehingga
+                    // hanya induknya yang memegang nomor secara eksklusif.
+                    'so_merged_into_id' => $request->boolean('gabung_invoice')
+                        ? (int) $request->validated('merge_with_order_id')
+                        : null,
                     'approval_note' => $request->validated('approval_note'),
                     'approved_at' => now(),
                     'approved_by' => $userId,
+                    // Pesanan yang pernah dibatalkan lalu diterima lagi:
+                    // penanda pembatalannya dibersihkan supaya keadaan
+                    // SEKARANG-nya jujur. Riwayatnya tetap utuh di tabel
+                    // sales_order_cancellations.
+                    'cancelled_at' => null,
+                    'cancelled_by' => null,
+                    'cancellation_source' => null,
+                    'cancellation_reason' => null,
                 ])->save();
 
                 return ['dialokasikan' => $dialokasikan, 'menunggu' => $menunggu];
@@ -298,7 +318,93 @@ class OrderApprovalController extends Controller
             ->with('success', "Pesanan {$order->order_number} ditolak.");
     }
 
-    /** Riwayat penerimaan dan penolakan (permintaan pemilik produk). */
+    /**
+     * Memeriksa nomor SO sambil diketik, sebelum tombol Terima ditekan.
+     *
+     * Tanpa ini, satu-satunya cara Logistik tahu nomornya bentrok adalah
+     * menekan Terima lalu ditolak — dan pada pesanan bermetode dokumen itu
+     * berarti seluruh tempelan dari BC harus diulang. Jawabannya membedakan
+     * tiga keadaan, karena tindak lanjutnya berbeda:
+     *
+     *   bebas          -> lanjut seperti biasa
+     *   dapat_digabung -> pelanggan sama, tawarkan penggabungan invoice
+     *   terpakai       -> pelanggan lain, tidak ada jalan selain memeriksa BC
+     *
+     * Sumber kebenarannya SATU dengan validasi (AcceptSalesOrderRequest::
+     * pemegangNomorSo), supaya layar dan server tidak pernah berbeda jawaban.
+     */
+    public function checkSoNumber(Request $request, SalesOrder $order): JsonResponse
+    {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        $data = $request->validate(['bc_so_number' => ['required', 'string', 'max:50']]);
+
+        $pemegang = AcceptSalesOrderRequest::pemegangNomorSo(
+            $data['bc_so_number'],
+            $request->user(),
+            $order->id,
+        );
+
+        if ($pemegang === null) {
+            return response()->json(['status' => 'bebas']);
+        }
+
+        $sama = $pemegang->customer_id === $order->customer_id;
+
+        return response()->json([
+            'status' => $sama ? 'dapat_digabung' : 'terpakai',
+            'pesanan' => [
+                'id' => $pemegang->id,
+                'nomor' => $pemegang->order_number,
+                'customer' => $pemegang->customer?->name,
+                'diterima' => $pemegang->approved_at?->format('d M Y H:i'),
+            ],
+        ]);
+    }
+
+    /**
+     * Membatalkan pesanan yang SUDAH diterima — temuan lapangan.
+     *
+     * Customer bisa membatalkan setelah pesanan diterima, atau BC ternyata
+     * tidak menyetujuinya. Di BC nomor SO yang gagal dipakai ulang untuk
+     * pesanan berikutnya; tanpa jalan ini, nomor itu terkunci selamanya di
+     * WMS dan pesanan berikutnya ditolak dengan alasan yang keliru.
+     *
+     * Seluruh aturannya ada di App\Support\Outbound\OrderCanceller.
+     */
+    public function cancel(Request $request, SalesOrder $order): RedirectResponse
+    {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'cancellation_source' => ['required', 'in:'.implode(',', array_keys(SalesOrderCancellation::SOURCE_LABELS))],
+            'cancellation_reason' => ['required', 'string', 'min:10', 'max:1000'],
+        ], [], [
+            'cancellation_source' => 'sumber pembatalan',
+            'cancellation_reason' => 'alasan pembatalan',
+        ]);
+
+        try {
+            $hasil = $this->canceller->cancel(
+                $order,
+                $data['cancellation_source'],
+                $data['cancellation_reason'],
+                $request->user()?->id,
+            );
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('wms.approval.history')->with('warning', sprintf(
+            'Pesanan %s dibatalkan. %d unit dikembalikan ke stok%s, dan pesanannya kembali ke antrean — '.
+            'terima lagi bila sudah diperbaiki, atau tolak bila memang final.',
+            $order->order_number,
+            $hasil['qty_dilepas'],
+            $hasil['nomor_so'] ? ", nomor SO {$hasil['nomor_so']} kembali bisa dipakai" : '',
+        ));
+    }
+
+    /** Riwayat penerimaan, penolakan, dan pembatalan (permintaan pemilik produk). */
     public function history(Request $request): View
     {
         $filters = [
@@ -310,14 +416,21 @@ class OrderApprovalController extends Controller
             // Dibungkus where() sendiri: tanpa itu orWhere di dalamnya akan
             // membatalkan filter pencarian dan filter hasil di sebelahnya,
             // sehingga riwayat memunculkan pesanan yang tidak dicari.
-            ->where(fn ($q) => $q->whereNotNull('approved_at')->orWhereNotNull('rejected_at'))
+            ->where(fn ($q) => $q->whereNotNull('approved_at')
+                ->orWhereNotNull('rejected_at')
+                ->orWhereNotNull('cancelled_at'))
             ->search($filters['search'])
-            ->when($filters['hasil'] === 'diterima', fn ($q) => $q->whereNotNull('approved_at'))
+            // "diterima" TIDAK mencakup yang sudah dibatalkan: pesanan yang
+            // dibatalkan memang pernah diterima, tetapi hasil akhirnya bukan
+            // itu lagi, dan menghitungnya sebagai diterima membuat rekap
+            // penerimaan lebih besar daripada yang benar-benar berjalan.
+            ->when($filters['hasil'] === 'diterima', fn ($q) => $q->whereNotNull('approved_at')->whereNull('cancelled_at'))
             ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereNotNull('rejected_at'))
+            ->when($filters['hasil'] === 'dibatalkan', fn ($q) => $q->whereNotNull('cancelled_at'))
             ->with(['customer:id,code,name', 'warehouse:id,code,name',
-                'approvedBy:id,full_name', 'rejectedBy:id,full_name'])
+                'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name'])
             ->withCount('details')
-            ->orderByDesc(DB::raw("GREATEST(COALESCE(approved_at, 'epoch'), COALESCE(rejected_at, 'epoch'))"))
+            ->orderByDesc(DB::raw("GREATEST(COALESCE(approved_at, 'epoch'), COALESCE(rejected_at, 'epoch'), COALESCE(cancelled_at, 'epoch'))"))
             ->paginate(15)
             ->withQueryString();
 
