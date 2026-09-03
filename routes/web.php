@@ -344,6 +344,15 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.approval.accept');
             Route::post('/approval/{order}/reject', [OrderApprovalController::class, 'reject'])
                 ->name('wms.approval.reject');
+            // Memeriksa nomor SO sambil diketik, sebelum Terima ditekan —
+            // pada pesanan bermetode dokumen, ditolak setelah menekan Terima
+            // berarti seluruh tempelan dari BC harus diulang.
+            Route::post('/approval/{order}/check-so', [OrderApprovalController::class, 'checkSoNumber'])
+                ->name('wms.approval.check-so');
+            // Pembatalan pesanan yang SUDAH diterima: customer batal, atau BC
+            // tidak menyetujui. Nomor SO-nya kembali bisa dipakai.
+            Route::post('/approval/{order}/cancel', [OrderApprovalController::class, 'cancel'])
+                ->name('wms.approval.cancel');
         });
 
         Route::get('/picking/batching', [OutboundController::class, 'pickingBatching'])

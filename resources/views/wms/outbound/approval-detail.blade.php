@@ -247,7 +247,22 @@
                             @error('bc_so_number')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
-                            <small class="text-muted">Harus unik. Nomor yang terulang berarti pesanan ini belum masuk BC.</small>
+                            <small class="text-muted" id="petunjukSo">
+                                Nomor yang terulang biasanya berarti pesanan ini belum masuk BC.
+                            </small>
+
+                            {{-- Diisi oleh pemeriksaan nomor SO sambil diketik.
+                                 Tanpa ini, satu-satunya cara tahu nomornya
+                                 bentrok adalah menekan Terima lalu ditolak —
+                                 dan pada pesanan bermetode dokumen itu berarti
+                                 seluruh tempelan dari BC harus diulang. --}}
+                            <div id="kotakSo" class="mt-2 d-none"></div>
+
+                            {{-- Terkirim HANYA bila Logistik mencentang
+                                 penggabungan. Keduanya diisi JavaScript dari
+                                 hasil pemeriksaan, bukan diketik manusia. --}}
+                            <input type="hidden" name="gabung_invoice" id="gabungInvoice" value="0">
+                            <input type="hidden" name="merge_with_order_id" id="mergeWithOrderId" value="">
                         </div>
                         <div class="col-12 col-md-7">
                             <label for="catatan" class="form-label fw-semibold">Catatan penerimaan</label>
@@ -316,6 +331,7 @@
 
     const BERBASIS_DOKUMEN = @json($order->isDocumentBased());
     const URL_RESOLVE = @json(route('wms.approval.resolve', $order));
+    const URL_CEK_SO = @json(route('wms.approval.check-so', $order));
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 
     /*
@@ -632,6 +648,99 @@
             }
         });
     }
+
+    /* ==================================================================
+       | Pemeriksaan nomor SO — tiga jawaban, tiga tindak lanjut berbeda.
+       |
+       |   bebas          : lanjut seperti biasa
+       |   dapat_digabung : pelanggan SAMA, tawarkan penggabungan invoice
+       |   terpakai       : pelanggan LAIN, tidak ada jalan selain periksa BC
+       |
+       | Ini KENYAMANAN, bukan pengamanan. Aturan yang sama ditegakkan ulang
+       | di AcceptSalesOrderRequest saat menyimpan, karena apa pun yang
+       | diputuskan di layar bisa diubah sebelum dikirim.
+       ================================================================== */
+    const kotakSo = document.getElementById('kotakSo');
+    const inputSo = document.getElementById('bcSo');
+    const gabungInvoice = document.getElementById('gabungInvoice');
+    const mergeWithOrderId = document.getElementById('mergeWithOrderId');
+
+    function resetGabung() {
+        gabungInvoice.value = '0';
+        mergeWithOrderId.value = '';
+        kotakSo.classList.add('d-none');
+        kotakSo.innerHTML = '';
+    }
+
+    async function periksaNomorSo() {
+        const nomor = inputSo.value.trim();
+
+        resetGabung();
+
+        if (nomor === '') return;
+
+        let hasil;
+
+        try {
+            const jawab = await fetch(URL_CEK_SO, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': CSRF,
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ bc_so_number: nomor }),
+            });
+
+            if (!jawab.ok) return;
+
+            hasil = await jawab.json();
+        } catch (e) {
+            // Jaringan bermasalah: diamkan. Validasi saat menyimpan tetap
+            // menangkapnya, jadi tidak ada yang lolos karena kotak ini gagal.
+            return;
+        }
+
+        if (hasil.status === 'bebas') return;
+
+        kotakSo.classList.remove('d-none');
+
+        if (hasil.status === 'terpakai') {
+            kotakSo.innerHTML =
+                '<div class="alert alert-danger py-2 px-3 small mb-0 rounded-3">'
+                + '<i class="bi bi-exclamation-triangle-fill me-1"></i>'
+                + 'Nomor ini sedang dipakai pesanan <strong>' + hasil.pesanan.nomor + '</strong> '
+                + 'milik pelanggan <strong>lain</strong> (' + (hasil.pesanan.customer || '—') + ').<br>'
+                + 'Penggabungan invoice hanya untuk pelanggan yang sama. Periksa lagi di sistem BC.'
+                + '</div>';
+            return;
+        }
+
+        // Pelanggan sama: tawarkan penggabungan, tapi JANGAN dicentang
+        // otomatis. Mencentangkannya sendiri berarti sistem yang memutuskan
+        // dua pesanan itu satu invoice, padahal hanya Logistik yang tahu.
+        kotakSo.innerHTML =
+            '<div class="alert alert-info py-2 px-3 small mb-0 rounded-3">'
+            + '<i class="bi bi-info-circle-fill me-1"></i>'
+            + 'Nomor ini sedang dipakai pesanan <strong>' + hasil.pesanan.nomor + '</strong>, '
+            + 'pelanggan yang <strong>sama</strong>'
+            + (hasil.pesanan.diterima ? ' (diterima ' + hasil.pesanan.diterima + ')' : '') + '.'
+            + '<div class="form-check mt-2">'
+            + '<input class="form-check-input" type="checkbox" id="centangGabung">'
+            + '<label class="form-check-label" for="centangGabung">'
+            + 'Ini <strong>pesanan tambahan</strong>, gabung ke invoice pesanan tersebut'
+            + '</label>'
+            + '</div>'
+            + '</div>';
+
+        document.getElementById('centangGabung').addEventListener('change', (e) => {
+            gabungInvoice.value = e.target.checked ? '1' : '0';
+            mergeWithOrderId.value = e.target.checked ? hasil.pesanan.id : '';
+        });
+    }
+
+    inputSo.addEventListener('blur', periksaNomorSo);
+    if (inputSo.value.trim() !== '') periksaNomorSo();
 
     /* Cegah kirim ganda: klik dua kali pada Terima berarti dua transaksi. */
     document.getElementById('formTerima').addEventListener('submit', (e) => {

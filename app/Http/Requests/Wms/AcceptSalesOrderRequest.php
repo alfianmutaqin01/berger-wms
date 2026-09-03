@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Wms;
 
 use App\Models\SalesOrder;
+use App\Models\User;
 use App\Support\WarehouseScope;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -42,13 +43,20 @@ class AcceptSalesOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'bc_so_number' => [
-                'required', 'string', 'max:50',
-                Rule::unique('sales_orders', 'bc_so_number')
-                    ->ignore($this->route('order'))
-                    ->whereNull('deleted_at'),
-            ],
+            // Keunikannya TIDAK ditulis sebagai rule bawaan lagi: sejak ada
+            // penggabungan invoice, "sudah dipakai" bukan lagi jawaban
+            // tunggal. Pemeriksaannya ada di tolakNomorSoBermasalah(), yang
+            // bisa membedakan pemakaian ulang yang sah dari yang keliru.
+            'bc_so_number' => ['required', 'string', 'max:50'],
             'approval_note' => ['nullable', 'string', 'max:1000'],
+
+            // Pesanan tambahan yang sengaja berbagi nomor SO dengan pesanan
+            // yang sudah ada — satu invoice, dua pengiriman.
+            'gabung_invoice' => ['nullable', 'boolean'],
+            'merge_with_order_id' => [
+                'required_if_accepted:gabung_invoice',
+                'nullable', 'integer', 'exists:sales_orders,id',
+            ],
 
             'item' => ['required', 'array', 'min:1', 'max:500'],
             'item.*.product_id' => ['required', 'integer', Rule::exists('products', 'id')->where('is_active', true)],
@@ -64,7 +72,7 @@ class AcceptSalesOrderRequest extends FormRequest
     {
         return [
             'bc_so_number.required' => 'Nomor SO dari sistem BC wajib diisi sebelum pesanan bisa diterima.',
-            'bc_so_number.unique' => 'Nomor SO ini sudah dipakai pesanan lain. Pastikan pesanan ini benar-benar sudah dimasukkan ke sistem BC.',
+            'merge_with_order_id.required_if_accepted' => 'Pesanan yang akan digabung belum dipilih.',
             'item.required' => 'Rincian item belum diisi. Tempelkan daftar dari sistem BC lebih dulu.',
             'item.min' => 'Rincian item belum diisi. Tempelkan daftar dari sistem BC lebih dulu.',
         ];
@@ -92,7 +100,113 @@ class AcceptSalesOrderRequest extends FormRequest
             $this->tolakProdukGanda($v, $item);
             $this->tolakMelebihiPesanan($v, $order, $item);
             $this->tolakSeluruhnyaNol($v, $item);
+            $this->tolakNomorSoBermasalah($v, $order);
         });
+    }
+
+    /**
+     * Aturan nomor SO — inti perubahan setelah temuan lapangan.
+     *
+     * Nomor SO unik SELAMA PESANANNYA MASIH HIDUP, bukan selamanya. Ada dua
+     * cara nomor yang sama sah dipakai lagi:
+     *
+     *   1. Pemegang lamanya sudah DIBATALKAN — nomornya sudah dikosongkan
+     *      OrderCanceller, jadi pencarian di bawah tidak akan menemukannya
+     *      sama sekali dan tidak ada yang perlu dilakukan di sini.
+     *   2. Ini PESANAN TAMBAHAN untuk pelanggan yang sama, digabung ke satu
+     *      invoice — harus dinyatakan eksplisit lewat `gabung_invoice`.
+     *
+     * PELANGGAN YANG SAMA adalah pembeda yang menentukan. Nomor SO yang sama
+     * muncul di pelanggan BERBEDA hampir selalu berarti Logistik belum
+     * benar-benar memasukkan pesanan ini ke BC dan sedang memakai ulang nomor
+     * pesanan orang lain — itulah yang aturan ini ada untuk menangkap, dan
+     * itu tetap ditolak keras.
+     *
+     * Pencariannya DIBATASI GUDANG PENGGUNA. Selain sejalan dengan
+     * pembatasan gudang, ini mencegah pesan galat membocorkan nama pelanggan
+     * gudang lain kepada orang yang tidak berhak melihatnya.
+     */
+    private function tolakNomorSoBermasalah(Validator $v, SalesOrder $order): void
+    {
+        $nomor = trim((string) $this->input('bc_so_number'));
+
+        if ($nomor === '') {
+            return;
+        }
+
+        $pemegang = self::pemegangNomorSo($nomor, $this->user(), $order->id);
+
+        // Nomor bebas: entah belum pernah dipakai, atau pemegang lamanya
+        // sudah dibatalkan sehingga nomornya kembali ke kolam.
+        if ($pemegang === null) {
+            if ($this->boolean('gabung_invoice')) {
+                $v->errors()->add(
+                    'bc_so_number',
+                    'Nomor SO ini tidak sedang dipakai pesanan mana pun, jadi tidak ada yang bisa digabung. '.
+                    'Hapus centang "gabung invoice" lalu terima seperti biasa.'
+                );
+            }
+
+            return;
+        }
+
+        if (! $this->boolean('gabung_invoice')) {
+            $v->errors()->add('bc_so_number', $this->pesanNomorTerpakai($order, $pemegang));
+
+            return;
+        }
+
+        if ((int) $this->input('merge_with_order_id') !== $pemegang->id) {
+            $v->errors()->add(
+                'merge_with_order_id',
+                "Pesanan yang dipilih untuk digabung bukan pemegang nomor SO {$nomor}. Muat ulang halaman lalu coba lagi."
+            );
+
+            return;
+        }
+
+        if ($pemegang->customer_id !== $order->customer_id) {
+            $v->errors()->add('bc_so_number', $this->pesanNomorTerpakai($order, $pemegang));
+        }
+    }
+
+    /** Pesan tolak yang membedakan dua sebab, karena tindak lanjutnya berbeda. */
+    private function pesanNomorTerpakai(SalesOrder $order, SalesOrder $pemegang): string
+    {
+        if ($pemegang->customer_id !== $order->customer_id) {
+            return sprintf(
+                'Nomor SO ini sedang dipakai pesanan %s milik pelanggan LAIN (%s). '.
+                'Penggabungan invoice hanya berlaku untuk pelanggan yang sama — pastikan pesanan ini benar-benar sudah dimasukkan ke sistem BC.',
+                $pemegang->order_number,
+                $pemegang->customer?->name ?? 'tidak diketahui'
+            );
+        }
+
+        return sprintf(
+            'Nomor SO ini sedang dipakai pesanan %s milik pelanggan yang sama. '.
+            'Kalau ini pesanan tambahan yang digabung ke satu invoice, centang "Gabung ke invoice pesanan ini" lebih dulu.',
+            $pemegang->order_number
+        );
+    }
+
+    /**
+     * Pesanan yang SEDANG memegang nomor SO ini, bila ada.
+     *
+     * Hanya pesanan INDUK yang dianggap pemegang: pesanan tambahan memang
+     * sengaja menumpang nomor yang sama, dan mengembalikannya di sini akan
+     * membuat penggabungan berantai yang tidak pernah dimaksudkan.
+     *
+     * Dipakai bersama oleh validasi dan endpoint pemeriksaan di layar
+     * penerimaan, supaya keduanya tidak pernah menjawab berbeda.
+     */
+    public static function pemegangNomorSo(string $nomor, ?User $user, ?int $kecualiOrderId = null): ?SalesOrder
+    {
+        return WarehouseScope::apply(SalesOrder::query(), $user)
+            ->with('customer:id,code,name')
+            ->whereRaw('UPPER(bc_so_number) = ?', [strtoupper(trim($nomor))])
+            ->whereNull('so_merged_into_id')
+            ->when($kecualiOrderId, fn ($q, $id) => $q->whereKeyNot($id))
+            ->first();
     }
 
     /**

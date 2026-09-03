@@ -245,16 +245,26 @@ class SalesOrderTest extends TestCase
     public function test_pencarian_customer_hanya_mengembalikan_yang_cocok(): void
     {
         $this->loginAs();
-        Customer::factory()->create(['name' => 'Toko Jaya Makmur', 'is_active' => true]);
-        Customer::factory()->create(['name' => 'Toko Sinar Abadi', 'is_active' => true]);
+
+        // EMAIL DIISI EKSPLISIT, dan itu bukan kerapian belaka.
+        // Customer::scopeSearch ikut mencari kolom email, sedangkan faker
+        // proyek ini berlocale id_ID (config/app.php) sehingga emailnya lazim
+        // memuat nama seperti "wijaya" atau "harjaya" — keduanya cocok dengan
+        // "%Jaya%". Test ini dahulu gagal sekitar satu dari tiga kali karena
+        // itu, dan kegagalannya terbaca seolah pencariannya yang rusak.
+        Customer::factory()->create([
+            'name' => 'Toko Jaya Makmur', 'email' => 'makmur@contoh.test', 'is_active' => true,
+        ]);
+        Customer::factory()->create([
+            'name' => 'Toko Sinar Abadi', 'email' => 'sinar@contoh.test', 'is_active' => true,
+        ]);
 
         $nama = collect($this->getJson('/sales/lookup/customers?q=Jaya')->assertOk()->json())
             ->pluck('name');
 
         // Diperiksa dari ISI hasilnya, bukan jumlahnya: setUp dan factory lain
-        // membuat customer bernama acak dari faker, yang sewaktu-waktu bisa
-        // mengandung kata kunci ini juga dan menggagalkan test tanpa ada yang
-        // rusak. Yang diuji adalah aturannya — yang tidak cocok tidak muncul.
+        // tetap membuat customer bernama acak yang sewaktu-waktu bisa ikut
+        // cocok. Yang diuji adalah aturannya — yang tidak cocok tidak muncul.
         $this->assertContains('Toko Jaya Makmur', $nama->all());
         $this->assertNotContains('Toko Sinar Abadi', $nama->all());
     }
