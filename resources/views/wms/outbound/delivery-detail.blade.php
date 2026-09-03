@@ -1,0 +1,338 @@
+@extends('layouts.wms')
+
+@section('title', 'Surat Jalan '.$note->document_no)
+@section('page_title', 'Surat Jalan '.$note->document_no)
+
+@section('content')
+{{-- Layar keputusan Logistik sebelum barang berangkat.
+
+     YANG DIBANDINGKAN: qty di dokumen resmi BC vs qty yang benar-benar
+     diturunkan operator dari rak. Dokumen BC yang menang (keputusan pemilik
+     produk), tetapi selisihnya harus TERLIHAT sebelum tombol ditekan — bukan
+     dilaporkan sesudahnya, karena yang berpindah adalah barang fisik. --}}
+
+<a href="{{ route('wms.delivery.index') }}" class="btn btn-sm btn-light rounded-3 mb-3">
+    <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar Surat Jalan
+</a>
+
+@foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
+    @if(session($jenis))
+    <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+        <i class="bi bi-{{ $ikon }} me-2"></i>{{ session($jenis) }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
+    </div>
+    @endif
+@endforeach
+
+@if($errors->any())
+<div class="alert alert-danger border-0 shadow-sm rounded-3">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    @foreach($errors->all() as $pesan)<div>{{ $pesan }}</div>@endforeach
+</div>
+@endif
+
+<div class="row g-4">
+    <div class="col-12 col-xl-7">
+        {{-- ---------------------------------------------- Perbandingan qty --}}
+        <div class="card shadow-sm border-0 rounded-4">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <h5 class="fw-bold text-dark mb-0">
+                            <i class="bi bi-clipboard-check text-primary me-2"></i> Dokumen BC vs Hasil Picking
+                        </h5>
+                        <small class="text-muted">
+                            Qty yang berlaku adalah <strong>qty dokumen BC</strong>.
+                        </small>
+                    </div>
+                    <span class="badge bg-{{ $note->status_color }}-subtle text-{{ $note->status_color }}-emphasis">
+                        {{ $note->status_label }}
+                    </span>
+                </div>
+            </div>
+
+            <div class="card-body px-4 pt-3">
+                <dl class="row small mb-3">
+                    <dt class="col-5 col-sm-4 text-muted fw-normal">No. SO (BC)</dt>
+                    <dd class="col-7 col-sm-8 font-monospace">{{ $note->bc_so_number }}</dd>
+
+                    <dt class="col-5 col-sm-4 text-muted fw-normal">Pesanan</dt>
+                    <dd class="col-7 col-sm-8">
+                        @if($note->salesOrder)
+                            <span class="font-monospace">{{ $note->salesOrder->order_number }}</span>
+                        @else
+                            <span class="badge bg-warning-subtle text-warning-emphasis">Belum berpasangan</span>
+                        @endif
+                    </dd>
+
+                    <dt class="col-5 col-sm-4 text-muted fw-normal">Customer</dt>
+                    <dd class="col-7 col-sm-8">{{ $note->customer?->name ?? $note->customer_code ?? '—' }}</dd>
+
+                    <dt class="col-5 col-sm-4 text-muted fw-normal">Tanggal kirim</dt>
+                    <dd class="col-7 col-sm-8">{{ $note->shipment_date?->format('d M Y') ?? '—' }}</dd>
+                </dl>
+
+                @if($note->sales_order_id === null)
+                <div class="alert alert-warning border-0 rounded-3 small mb-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Surat Jalan ini belum menemukan pesanannya di sistem ini, jadi belum bisa dinyatakan berangkat.
+                    Periksa nomor SO-nya — kalau seharusnya ada, berarti nomor yang diketik saat menerima pesanan
+                    berbeda dari yang tercatat di BC.
+                </div>
+                @else
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>SKU</th>
+                                <th class="text-end">Dokumen BC</th>
+                                <th class="text-end">Diambil dari rak</th>
+                                <th class="text-end">Selisih</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @forelse($perbandingan as $baris)
+                            @php($mustahil = $baris['selisih'] < 0)
+                            <tr class="{{ $mustahil ? 'table-danger' : ($baris['selisih'] > 0 ? 'table-warning' : '') }}">
+                                <td>
+                                    <div class="fw-semibold font-monospace small">{{ $baris['sku'] }}</div>
+                                    <small class="text-muted">{{ $baris['nama'] }}</small>
+                                </td>
+                                <td class="text-end fw-bold">{{ $baris['qty_sj'] }}</td>
+                                <td class="text-end">{{ $baris['qty_picking'] }}</td>
+                                <td class="text-end">
+                                    @if($baris['selisih'] === 0)
+                                        <i class="bi bi-check-circle-fill text-success"></i>
+                                    @elseif($mustahil)
+                                        <span class="fw-semibold text-danger">kurang {{ abs($baris['selisih']) }}</span>
+                                    @else
+                                        <span class="fw-semibold text-warning-emphasis">lebih {{ $baris['selisih'] }}</span>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="4" class="text-center py-4 text-muted">Dokumen ini tidak memuat baris barang.</td></tr>
+                        @endforelse
+                        </tbody>
+                    </table>
+                </div>
+
+                @php($adaKelebihan = collect($perbandingan)->contains(fn ($b) => $b['selisih'] > 0))
+                @php($adaKekurangan = collect($perbandingan)->contains(fn ($b) => $b['selisih'] < 0))
+
+                @if($adaKekurangan)
+                <div class="alert alert-danger border-0 rounded-3 small mt-3 mb-0">
+                    <i class="bi bi-x-octagon-fill me-2"></i>
+                    Dokumen menyebut <strong>lebih banyak</strong> daripada yang benar-benar diambil dari rak.
+                    Barang yang tidak ada di kendaraan tidak bisa dinyatakan berangkat — perbaiki dokumennya di BC,
+                    atau picking dulu kekurangannya.
+                </div>
+                @elseif($adaKelebihan)
+                <div class="alert alert-warning border-0 rounded-3 small mt-3 mb-0">
+                    <i class="bi bi-exclamation-circle-fill me-2"></i>
+                    Ada barang yang sudah turun dari rak tetapi <strong>tidak tercantum</strong> di Surat Jalan.
+                    Saat dinyatakan berangkat, kelebihannya <strong>dikembalikan ke raknya masing-masing</strong> —
+                    pastikan barangnya benar-benar tidak ikut naik ke kendaraan.
+                </div>
+                @endif
+                @endif
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-5">
+        {{-- ------------------------------------------------------ Pengiriman --}}
+        @if($note->status === \App\Models\DeliveryNote::STATUS_IMPORTED && $note->sales_order_id !== null)
+        <div class="card shadow-sm border-0 rounded-4">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
+                <h5 class="fw-bold text-dark mb-0"><i class="bi bi-truck text-primary me-2"></i> Data Pengiriman</h5>
+                <small class="text-muted">Tautan konfirmasi dikirim ke nomor ini.</small>
+            </div>
+
+            <form method="POST" action="{{ route('wms.delivery.ship', $note) }}" class="card-body px-4 pt-3"
+                  onsubmit="return confirm('Nyatakan barang berangkat? Stok dan status pesanan akan berubah.');">
+                @csrf
+
+                <label class="form-label small fw-semibold">Nama supir <span class="text-danger">*</span></label>
+                <input type="text" name="driver_name" value="{{ old('driver_name') }}"
+                       class="form-control mb-3" maxlength="100" required list="daftarSupir">
+
+                <label class="form-label small fw-semibold">Nomor WhatsApp supir <span class="text-danger">*</span></label>
+                <div class="input-group mb-1">
+                    <span class="input-group-text bg-white"><i class="bi bi-whatsapp text-success"></i></span>
+                    <input type="text" name="driver_phone" id="nomorSupir" value="{{ old('driver_phone') }}"
+                           class="form-control" maxlength="30" required placeholder="081234567890"
+                           list="daftarNomor" autocomplete="off">
+                </div>
+                {{-- Nomor ditampilkan kembali dalam bentuk yang akan
+                     BENAR-BENAR dipakai mengirim. Salah ketik pada nomor
+                     gagalnya diam: pesan "terkirim" ke nomor orang lain, dan
+                     yang menemukan masalahnya adalah Logistik keesokan
+                     harinya saat menanyakan kenapa belum dikonfirmasi. --}}
+                <div class="form-text mb-3">
+                    Akan dikirim ke: <strong id="nomorTerbaca" class="font-monospace">—</strong>
+                </div>
+
+                <label class="form-label small fw-semibold">Plat nomor kendaraan <span class="text-danger">*</span></label>
+                <input type="text" name="vehicle_plate" value="{{ old('vehicle_plate') }}"
+                       class="form-control mb-3 text-uppercase" maxlength="20" required placeholder="B 1234 XYZ">
+
+                {{-- Bukan master data supir: supir berganti tiap hari dan
+                     sebagian besar dari perusahaan jasa lain. Daftar ini
+                     tumbuh sendiri dari pengiriman yang sudah terjadi. --}}
+                <datalist id="daftarNomor">
+                    @foreach($nomorTerakhir as $supir)
+                        <option value="{{ $supir['nomor'] }}">{{ $supir['nama'] }} · {{ $supir['plat'] }}</option>
+                    @endforeach
+                </datalist>
+                <datalist id="daftarSupir">
+                    @foreach($nomorTerakhir as $supir)
+                        <option value="{{ $supir['nama'] }}"></option>
+                    @endforeach
+                </datalist>
+
+                <div class="d-grid">
+                    <button class="btn btn-success btn-lg rounded-3">
+                        <i class="bi bi-send me-1"></i> Nyatakan Berangkat
+                    </button>
+                </div>
+            </form>
+        </div>
+        @else
+        <div class="card shadow-sm border-0 rounded-4">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
+                <h5 class="fw-bold text-dark mb-0"><i class="bi bi-truck text-primary me-2"></i> Pengiriman</h5>
+            </div>
+            <div class="card-body px-4 pt-3">
+                <dl class="row small mb-3">
+                    <dt class="col-5 text-muted fw-normal">Supir</dt>
+                    <dd class="col-7">{{ $note->driver_name ?? '—' }}</dd>
+                    <dt class="col-5 text-muted fw-normal">Nomor WhatsApp</dt>
+                    <dd class="col-7 font-monospace">{{ $note->driver_phone ?? '—' }}</dd>
+                    <dt class="col-5 text-muted fw-normal">Kendaraan</dt>
+                    <dd class="col-7">{{ $note->vehicle_plate ?? '—' }}</dd>
+                    <dt class="col-5 text-muted fw-normal">Berangkat</dt>
+                    <dd class="col-7">{{ $note->shipped_at?->format('d M Y H:i') ?? '—' }}</dd>
+                    @if($note->delivered_at)
+                    <dt class="col-5 text-muted fw-normal">Sampai</dt>
+                    <dd class="col-7">
+                        {{ $note->delivered_at->format('d M Y H:i') }}
+                        @if($note->received_by_name)
+                            <div class="text-muted">Diterima {{ $note->received_by_name }}</div>
+                        @endif
+                    </dd>
+                    @endif
+                </dl>
+
+                @if($note->epod_token)
+                {{-- STATUS PESAN TERPISAH DARI STATUS BARANG. Truk tidak
+                     menunggu WhatsApp; tetapi kegagalannya harus terlihat,
+                     karena supir yang tidak menerima tautan tidak akan pernah
+                     mengonfirmasi apa pun. --}}
+                @php($gagal = $note->notify_status === \App\Models\DeliveryNote::NOTIFY_FAILED)
+                @php($manual = $note->notify_status === \App\Models\DeliveryNote::NOTIFY_MANUAL)
+
+                <div class="alert alert-{{ $gagal ? 'danger' : ($manual ? 'warning' : 'success') }} border-0 rounded-3 small">
+                    <div class="fw-semibold mb-1">
+                        <i class="bi bi-whatsapp me-1"></i> {{ $note->notify_label }}
+                    </div>
+                    @if($note->notify_error)
+                        <div class="mb-2">{{ $note->notify_error }}</div>
+                    @endif
+                    @if($manual)
+                        <div class="mb-2">
+                            Sistem belum tersambung ke penyedia WhatsApp, jadi pesannya dikirim dari WhatsApp Anda sendiri.
+                        </div>
+                    @endif
+
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        @if($note->driver_phone)
+                        <a class="btn btn-sm btn-success rounded-3"
+                           href="https://wa.me/{{ $note->driver_phone }}?text={{ rawurlencode($note->pesanUntukSupir()) }}"
+                           target="_blank" rel="noopener">
+                            <i class="bi bi-whatsapp me-1"></i> Buka WhatsApp
+                        </a>
+                        @endif
+
+                        <button type="button" class="btn btn-sm btn-outline-secondary rounded-3" id="salinTautan"
+                                data-tautan="{{ $note->epodUrl() }}">
+                            <i class="bi bi-clipboard me-1"></i> Salin tautan
+                        </button>
+
+                        @if($gagal)
+                        <form method="POST" action="{{ route('wms.delivery.resend', $note) }}" class="d-inline">
+                            @csrf
+                            <button class="btn btn-sm btn-outline-danger rounded-3">
+                                <i class="bi bi-arrow-clockwise me-1"></i> Kirim ulang
+                            </button>
+                        </form>
+                        @endif
+                    </div>
+                </div>
+                @endif
+            </div>
+        </div>
+        @endif
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const nomor = document.getElementById('nomorSupir');
+    const terbaca = document.getElementById('nomorTerbaca');
+
+    // Cerminan aturan PhoneNumber::forWhatsApp() di sisi layar. Sengaja
+    // hanya untuk DILIHAT — yang menentukan tetap server, dan bentuk yang
+    // tampil di sini harus sama supaya tidak ada kejutan setelah menekan.
+    function bentukKirim(mentah) {
+        const angka = (mentah || '').replace(/\D/g, '');
+        if (angka === '') { return '—'; }
+        if (angka.startsWith('0')) { return '62' + angka.replace(/^0+/, ''); }
+        if (angka.startsWith('62')) { return angka; }
+        return '62' + angka;
+    }
+
+    if (nomor && terbaca) {
+        const perbarui = () => { terbaca.textContent = bentukKirim(nomor.value); };
+        nomor.addEventListener('input', perbarui);
+        perbarui();
+    }
+
+    const salin = document.getElementById('salinTautan');
+
+    if (salin) {
+        salin.addEventListener('click', function () {
+            const tautan = salin.dataset.tautan;
+
+            // Jalan mundur ke execCommand: API clipboard hanya bekerja di
+            // HTTPS/localhost dan gagal DIAM-DIAM di jaringan kantor lewat
+            // http:// — persis masalah yang sudah ditemui di layar
+            // penerimaan pesanan.
+            const selesai = () => {
+                salin.innerHTML = '<i class="bi bi-check-lg me-1"></i> Tersalin';
+                setTimeout(() => {
+                    salin.innerHTML = '<i class="bi bi-clipboard me-1"></i> Salin tautan';
+                }, 2000);
+            };
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(tautan).then(selesai).catch(() => cadangan(tautan, selesai));
+            } else {
+                cadangan(tautan, selesai);
+            }
+        });
+    }
+
+    function cadangan(teks, selesai) {
+        const kotak = document.createElement('textarea');
+        kotak.value = teks;
+        kotak.style.position = 'fixed';
+        kotak.style.opacity = '0';
+        document.body.appendChild(kotak);
+        kotak.select();
+        try { document.execCommand('copy'); selesai(); } catch (e) { window.prompt('Salin tautan ini:', teks); }
+        document.body.removeChild(kotak);
+    }
+});
+</script>
+@endsection

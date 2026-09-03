@@ -409,6 +409,16 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             Route::post('/delivery/import/cancel', [ImportController::class, 'cancel'])
                 ->defaults('type', 'delivery-notes')
                 ->name('wms.delivery.import.cancel');
+
+            // URUTAN PENTING: '/delivery/import*' di atas harus didaftarkan
+            // SEBELUM '/delivery/{note}', kalau tidak "import" tertangkap
+            // sebagai id dokumen.
+            Route::get('/delivery/{note}', [DeliveryController::class, 'show'])
+                ->name('wms.delivery.show');
+            Route::post('/delivery/{note}/ship', [DeliveryController::class, 'ship'])
+                ->name('wms.delivery.ship');
+            Route::post('/delivery/{note}/resend', [DeliveryController::class, 'resend'])
+                ->name('wms.delivery.resend');
         });
 
         Route::middleware('can:'.Permission::OUTBOUND_VERIFICATION)->group(function () {
@@ -424,6 +434,20 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     });
 });
 
-// E-POD
-Route::get('/epod/{po_number}', [EpodController::class, 'show']);
-Route::post('/epod/{po_number}/confirm', [EpodController::class, 'confirm']);
+/*
+| E-POD — konfirmasi penerimaan oleh supir (F-OUT-04 #10).
+|
+| PUBLIK, DI LUAR SELURUH MIDDLEWARE. Supir tidak punya akun dan tidak akan
+| pernah punya: ia berganti setiap hari dan sebagian besar dari perusahaan
+| jasa lain. Yang menjadi kunci adalah TOKEN di dalam alamatnya — acak, 48
+| karakter, disimpan sebagai kolom. Parameternya dulu bernama {po_number},
+| yang berarti siapa pun yang tahu (atau menebak) nomor PO bisa menyatakan
+| kiriman orang lain sudah sampai.
+|
+| Dibatasi kecepatan aksesnya: halaman ini terbuka ke internet, dan token
+| tidak boleh bisa dicari dengan mencoba satu per satu.
+*/
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get('/epod/{token}', [EpodController::class, 'show'])->name('epod.show');
+    Route::post('/epod/{token}/confirm', [EpodController::class, 'confirm'])->name('epod.confirm');
+});

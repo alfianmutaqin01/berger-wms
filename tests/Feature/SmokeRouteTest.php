@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\DeliveryNote;
+use App\Models\DeliveryNoteLine;
 use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\InventoryStock;
@@ -261,12 +263,37 @@ class SmokeRouteTest extends TestCase
             'location_id' => $lokasi->id,
         ]);
 
+        // --- Surat Jalan dari BC, sudah berangkat ---
+        // Statusnya SHIPPED, bukan imported: halaman e-POD sengaja menjawab
+        // 404 untuk dokumen yang belum berangkat, dan smoke test harus
+        // memakai data yang memang bisa dibuka.
+        $suratJalan = DeliveryNote::factory()->create([
+            'document_no' => '206215',
+            'bc_so_number' => 'SO260901',
+            'sales_order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'status' => DeliveryNote::STATUS_SHIPPED,
+            'driver_name' => 'Budi',
+            'driver_phone' => '6281234567890',
+            'vehicle_plate' => 'B 1234 XYZ',
+            'shipped_at' => now(),
+            'epod_token' => Str::random(48),
+        ]);
+        DeliveryNoteLine::factory()->create([
+            'delivery_note_id' => $suratJalan->id,
+            'sku' => $produk->sku,
+            'product_id' => $produk->id,
+        ]);
+
         $this->parameter = [
             'order' => $order->id,
             'doc_no' => $header->document_number,
             'po_number' => $order->order_number,
             'transfer' => $transfer->id,
             'list' => $daftarPicking->id,
+            'note' => $suratJalan->id,
+            'token' => $suratJalan->epod_token,
         ];
     }
 

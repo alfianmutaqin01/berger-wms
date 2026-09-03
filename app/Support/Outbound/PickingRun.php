@@ -215,33 +215,110 @@ class PickingRun
                 continue;
             }
 
-            $stok = $this->stokUntukDikembalikan($item, $order);
-            $sebelum = $stok->qty_available;
-
-            $stok->qty_available = $sebelum + $qty;
-            $stok->save();
-
-            StockMovement::create([
-                'product_id' => $item->product_id,
-                'location_id' => $stok->location_id,
-                'warehouse_id' => $stok->warehouse_id,
-                'movement_type' => StockMovement::TYPE_IN,
-                'qty_change' => $qty,
-                'qty_before' => $sebelum,
-                'qty_after' => $stok->qty_available,
-                'reference_type' => StockMovement::REF_SALES_ORDER,
-                'reference_id' => $order->id,
-                'batch_no' => $item->batch_no,
-                'notes' => sprintf(
-                    'Pembatalan %s: barang yang sudah dipicking dikembalikan ke rak %s (batch %s).',
-                    $order->order_number,
-                    $stok->location?->code ?? '—',
-                    $item->batch_no ?? '—'
-                ),
-                'user_id' => $userId,
-            ]);
+            $this->masukkanKembali(
+                $item,
+                $order,
+                $qty,
+                sprintf('Pembatalan %s: barang yang sudah dipicking dikembalikan ke rak', $order->order_number),
+                $userId,
+            );
 
             $total += $qty;
+        }
+
+        return $total;
+    }
+
+    /**
+     * Menambahkan kembali qty ke baris stok asal satu baris picking.
+     *
+     * Satu-satunya tempat yang menulis mutasi pengembalian, dipakai baik oleh
+     * pembatalan pesanan maupun penyesuaian ke Surat Jalan BC. Dua penulis
+     * mutasi untuk kejadian yang sama cepat atau lambat berbeda aturannya.
+     */
+    private function masukkanKembali(
+        PickingListItem $item,
+        SalesOrder $order,
+        int $qty,
+        string $catatan,
+        ?int $userId,
+    ): void {
+        $stok = $this->stokUntukDikembalikan($item, $order);
+        $sebelum = $stok->qty_available;
+
+        $stok->qty_available = $sebelum + $qty;
+        $stok->save();
+
+        StockMovement::create([
+            'product_id' => $item->product_id,
+            'location_id' => $stok->location_id,
+            'warehouse_id' => $stok->warehouse_id,
+            'movement_type' => StockMovement::TYPE_IN,
+            'qty_change' => $qty,
+            'qty_before' => $sebelum,
+            'qty_after' => $stok->qty_available,
+            'reference_type' => StockMovement::REF_SALES_ORDER,
+            'reference_id' => $order->id,
+            'batch_no' => $item->batch_no,
+            'notes' => sprintf(
+                '%s %s (batch %s).',
+                $catatan,
+                $stok->location?->code ?? '—',
+                $item->batch_no ?? '—'
+            ),
+            'user_id' => $userId,
+        ]);
+    }
+
+    /**
+     * Mengembalikan SEBAGIAN hasil picking satu produk ke raknya semula.
+     *
+     * Dipakai saat Surat Jalan BC menyebut qty LEBIH KECIL daripada yang
+     * sudah diturunkan operator dari rak. Selisihnya nyata: barangnya ada di
+     * loading dock, tetapi dokumen resmi tidak menyertakannya, jadi ia tidak
+     * ikut berangkat. Tanpa langkah ini, barang itu hilang dari catatan stok
+     * padahal wujudnya masih di gudang.
+     *
+     * Diambil dari baris picking produk ini, satu per satu, sampai jumlahnya
+     * terpenuhi — sehingga tiap unit kembali ke rak dan batch tempat ia
+     * benar-benar diambil, bukan ditumpuk ke satu rak yang paling mudah.
+     *
+     * WAJIB dipanggil di dalam DB::transaction milik pemanggilnya.
+     *
+     * @return int qty yang benar-benar dikembalikan
+     */
+    public function kembalikanSebagian(SalesOrder $order, int $productId, int $qty, string $catatan, ?int $userId): int
+    {
+        if ($qty < 1) {
+            return 0;
+        }
+
+        $baris = PickingListItem::query()
+            ->where('sales_order_id', $order->id)
+            ->where('product_id', $productId)
+            ->where('status', '<>', PickingListItem::STATUS_PENDING)
+            ->whereHas('pickingList', fn ($q) => $q->where('status', PickingList::STATUS_COMPLETED))
+            ->orderBy('id')
+            ->get();
+
+        $sisa = $qty;
+        $total = 0;
+
+        foreach ($baris as $item) {
+            if ($sisa < 1) {
+                break;
+            }
+
+            $ambil = min($sisa, (int) $item->qty_picked);
+
+            if ($ambil < 1) {
+                continue;
+            }
+
+            $this->masukkanKembali($item, $order, $ambil, $catatan, $userId);
+
+            $sisa -= $ambil;
+            $total += $ambil;
         }
 
         return $total;

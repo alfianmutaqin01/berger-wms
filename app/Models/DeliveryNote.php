@@ -34,11 +34,34 @@ class DeliveryNote extends Model
         self::STATUS_DELIVERED => 'Sampai Tujuan',
     ];
 
+    /* -------------------------------------------------- Status pengiriman pesan */
+
+    /** Belum dicoba dikirim. */
+    public const NOTIFY_PENDING = 'pending';
+
+    /** Disiapkan untuk dikirim Logistik sendiri lewat WhatsApp-nya. */
+    public const NOTIFY_MANUAL = 'manual';
+
+    public const NOTIFY_SENT = 'sent';
+
+    public const NOTIFY_FAILED = 'failed';
+
+    public const NOTIFY_LABELS = [
+        self::NOTIFY_PENDING => 'Belum dikirim',
+        self::NOTIFY_MANUAL => 'Perlu dikirim manual',
+        self::NOTIFY_SENT => 'Terkirim',
+        self::NOTIFY_FAILED => 'Gagal terkirim',
+    ];
+
     protected $fillable = [
         'document_no', 'bc_so_number', 'sales_order_id',
         'customer_code', 'customer_id', 'warehouse_id',
         'bc_location_code', 'shipment_date', 'status',
         'imported_at', 'imported_by',
+        'driver_name', 'driver_phone', 'vehicle_plate',
+        'shipped_at', 'shipped_by', 'epod_token',
+        'delivered_at', 'received_by_name',
+        'notify_status', 'notify_attempts', 'notified_at', 'notify_error',
     ];
 
     protected function casts(): array
@@ -46,6 +69,10 @@ class DeliveryNote extends Model
         return [
             'shipment_date' => 'date',
             'imported_at' => 'datetime',
+            'shipped_at' => 'datetime',
+            'delivered_at' => 'datetime',
+            'notified_at' => 'datetime',
+            'notify_attempts' => 'integer',
         ];
     }
 
@@ -74,6 +101,11 @@ class DeliveryNote extends Model
     public function importedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'imported_by');
+    }
+
+    public function shippedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'shipped_by');
     }
 
     /* ------------------------------------------------------------- Scope */
@@ -130,5 +162,41 @@ class DeliveryNote extends Model
         return (int) ($this->relationLoaded('lines')
             ? $this->lines->sum('qty')
             : $this->lines()->sum('qty'));
+    }
+
+    public function getNotifyLabelAttribute(): string
+    {
+        return self::NOTIFY_LABELS[$this->notify_status] ?? $this->notify_status;
+    }
+
+    /** Alamat penuh tautan konfirmasi untuk supir. */
+    public function epodUrl(): ?string
+    {
+        return $this->epod_token === null ? null : url('/epod/'.$this->epod_token);
+    }
+
+    /**
+     * Pesan WhatsApp untuk supir.
+     *
+     * Dibangun di SATU tempat supaya isi pesan sama persis, entah dikirim
+     * otomatis lewat penyedia atau dikirim Logistik sendiri lewat tautan
+     * wa.me. Dua penyusun pesan untuk satu pesan cepat atau lambat berbeda,
+     * dan yang menerima perbedaannya adalah orang di luar organisasi.
+     */
+    public function pesanUntukSupir(): string
+    {
+        return implode("\n", array_filter([
+            'Halo'.($this->driver_name ? ' '.$this->driver_name : '').',',
+            '',
+            'Pengiriman Berger Paints:',
+            'Surat Jalan: '.$this->document_no,
+            'Tujuan: '.($this->customer?->name ?? '—'),
+            $this->vehicle_plate ? 'Kendaraan: '.$this->vehicle_plate : null,
+            '',
+            'Setelah barang sampai, mohon tekan tautan ini lalu tekan tombol konfirmasi:',
+            $this->epodUrl(),
+            '',
+            'Terima kasih.',
+        ], fn ($baris) => $baris !== null));
     }
 }

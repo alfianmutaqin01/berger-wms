@@ -3,72 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>E-POD Konfirmasi Kedatangan</title>
-    <!-- Bootstrap 5.3 CSS -->
+    <title>Konfirmasi Pengiriman — Berger Paints</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        body { background-color: #f8f9fa; font-family: 'Segoe UI', system-ui, sans-serif; }
-        .epod-card { max-width: 400px; margin: 0 auto; }
+        body { background: #f4f6fa; }
+        .kartu { max-width: 520px; }
     </style>
 </head>
 <body class="py-4 px-3">
+{{-- HALAMAN SUPIR — TANPA LOGIN.
 
-<div class="epod-card card shadow-lg border-0 rounded-4 overflow-hidden">
-    <!-- Header -->
-    <div class="bg-primary text-white text-center py-4" style="background-color: #123962 !important;">
-        <i class="bi bi-truck fs-1 d-block mb-2"></i>
-        <h5 class="fw-bold mb-0">Konfirmasi Kedatangan</h5>
-        <p class="small text-white-50 mb-0">Berger Paints E-POD System</p>
+     Dibuka di HP, sering di halaman customer, kadang dengan sinyal seadanya
+     dan tangan yang baru selesai menurunkan barang. Karena itu:
+
+       - berdiri sendiri, tidak memakai layout WMS (tidak ada sidebar, tidak
+         ada menu, tidak ada yang bisa salah tekan)
+       - satu tombol besar, satu tugas
+       - hanya menampilkan yang perlu supir pastikan bahwa ia membuka
+         kiriman yang benar — bukan seluruh isi pesanan berikut harganya.
+         Halaman ini terbuka ke internet. --}}
+
+<div class="kartu mx-auto">
+    <div class="text-center mb-4">
+        <h5 class="fw-bold mb-0">Berger Paints Indonesia</h5>
+        <small class="text-muted">Konfirmasi Pengiriman</small>
     </div>
 
-    <div class="card-body p-4">
-        
-        @if(session('success'))
-            <div class="text-center py-5">
-                <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
-                <h5 class="fw-bold text-dark mt-3 mb-2">Berhasil Terkirim</h5>
-                <p class="text-muted small">Konfirmasi barang sampai telah direkam ke sistem. Harap pastikan toko menandatangani Surat Jalan fisik.</p>
-                <button class="btn btn-primary w-100 rounded-pill mt-3" onclick="window.close()">Tutup Jendela</button>
-            </div>
-        @else
-            <!-- Rincian Tugas -->
-            <div class="mb-4 text-center">
-                <h2 class="fw-bold text-primary mb-1">{{ $po_number }}</h2>
-                <span class="badge bg-light text-dark border px-3 py-2 rounded-pill">Status: Dalam Perjalanan</span>
-            </div>
-
-            <div class="border rounded-3 p-3 bg-light mb-4 text-start">
-                <small class="text-muted d-block fw-semibold mb-1">Tujuan Pengiriman:</small>
-                <h6 class="fw-bold text-dark mb-1"><i class="bi bi-shop text-primary me-1"></i> CV Bangun Jaya</h6>
-                <small class="text-muted d-block"><i class="bi bi-geo-alt me-1"></i> Jl. Raya Kosambi No 12, Karawang</small>
-            </div>
-
-            <form action="/epod/{{ $po_number }}/confirm" method="POST">
-                @csrf
-                <div class="alert alert-warning small p-3 rounded-3 mb-4">
-                    <i class="bi bi-exclamation-triangle-fill me-1"></i> Tekan tombol di bawah <b>HANYA</b> jika Anda telah tiba di lokasi toko dan barang mulai diturunkan.
-                </div>
-                
-                <button type="submit" class="btn btn-success btn-lg w-100 rounded-pill py-3 shadow fs-5 fw-bold" id="btnArrived">
-                    <i class="bi bi-geo-fill me-2"></i> BARANG SAMPAI
-                </button>
-            </form>
+    @foreach(['success' => 'check-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
+        @if(session($jenis))
+        <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} border-0 rounded-4 shadow-sm">
+            <i class="bi bi-{{ $ikon }} me-2"></i>{{ session($jenis) }}
+        </div>
         @endif
+    @endforeach
 
+    <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-body p-4">
+            <dl class="row mb-3">
+                <dt class="col-5 text-muted fw-normal small">Surat Jalan</dt>
+                <dd class="col-7 fw-bold font-monospace">{{ $note->document_no }}</dd>
+
+                <dt class="col-5 text-muted fw-normal small">Tujuan</dt>
+                <dd class="col-7 fw-semibold">{{ $note->customer?->name ?? '—' }}</dd>
+
+                @if($note->vehicle_plate)
+                <dt class="col-5 text-muted fw-normal small">Kendaraan</dt>
+                <dd class="col-7">{{ $note->vehicle_plate }}</dd>
+                @endif
+            </dl>
+
+            <h6 class="fw-bold small text-muted text-uppercase">Barang</h6>
+            <ul class="list-group list-group-flush mb-3">
+                @foreach($note->lines as $line)
+                <li class="list-group-item px-0 d-flex justify-content-between align-items-start">
+                    <div class="me-2">
+                        <div class="small fw-semibold">{{ $line->product?->name ?? $line->description ?? $line->sku }}</div>
+                        <small class="text-muted font-monospace">{{ $line->sku }}</small>
+                    </div>
+                    <span class="fw-bold text-nowrap">{{ $line->qty }} {{ $line->product?->uom ?? $line->uom_code }}</span>
+                </li>
+                @endforeach
+            </ul>
+
+            @if($note->status === \App\Models\DeliveryNote::STATUS_DELIVERED)
+                {{-- Sudah dikonfirmasi. Tombolnya HILANG, bukan sekadar
+                     dinonaktifkan: supir yang membuka tautannya lagi untuk
+                     memastikan tidak boleh menemukan tombol yang menggoda
+                     ditekan sekali lagi. --}}
+                <div class="alert alert-success border-0 rounded-4 mb-0 text-center">
+                    <i class="bi bi-check-circle-fill fs-1 d-block mb-2"></i>
+                    <div class="fw-bold">Sudah dikonfirmasi sampai</div>
+                    <div class="small">{{ $note->delivered_at?->format('d M Y, H:i') }}</div>
+                    @if($note->received_by_name)
+                        <div class="small">Diterima: {{ $note->received_by_name }}</div>
+                    @endif
+                </div>
+            @else
+                <form method="POST" action="{{ route('epod.confirm', $note->epod_token) }}">
+                    @csrf
+                    <label class="form-label small fw-semibold">Nama penerima <span class="text-muted">(boleh dikosongkan)</span></label>
+                    <input type="text" name="received_by_name" class="form-control form-control-lg mb-3"
+                           maxlength="100" placeholder="Nama orang yang menerima barang">
+
+                    <div class="d-grid">
+                        <button class="btn btn-success btn-lg rounded-4 py-3 fw-bold"
+                                onclick="return confirm('Konfirmasi bahwa barang sudah sampai di tujuan?');">
+                            <i class="bi bi-check-lg me-2"></i>Barang Sudah Sampai
+                        </button>
+                    </div>
+                </form>
+            @endif
+        </div>
     </div>
-</div>
 
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const btn = document.getElementById('btnArrived');
-        if(btn) {
-            btn.addEventListener('click', function() {
-                this.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Memproses...';
-                this.classList.add('disabled');
-            });
-        }
-    });
-</script>
+    <p class="text-center text-muted small mt-4 mb-0">
+        Tautan ini khusus untuk pengiriman di atas. Jangan dibagikan.
+    </p>
+</div>
 </body>
 </html>
