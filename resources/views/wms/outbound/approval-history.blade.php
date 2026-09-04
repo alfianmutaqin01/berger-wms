@@ -141,6 +141,20 @@
                             <small class="text-muted">{{ $waktu?->format('H:i') }}</small>
                         </td>
                         <td class="text-end">
+                            {{-- PINTU KECIL untuk salah ketik nomor SO. Hanya
+                                 selama pesanan belum berangkat: sesudah itu
+                                 koreksinya lewat tombol Pasangkan di Surat
+                                 Jalan, supaya nomornya disalin dari dokumen BC
+                                 dan bukan diketik ulang. --}}
+                            @if($bolehDibatalkan && ! $dibatalkan && ! $ditolak && $order->so_merged_into_id === null)
+                                <button type="button" class="btn btn-sm btn-outline-secondary rounded-3 mb-1 tombol-koreksi-so"
+                                        data-bs-toggle="modal" data-bs-target="#modalKoreksiSo"
+                                        data-aksi="{{ route('wms.approval.so-number', $order) }}"
+                                        data-nomor="{{ $order->order_number }}"
+                                        data-so="{{ $order->bc_so_number }}">
+                                    <i class="bi bi-pencil me-1"></i> No. SO
+                                </button>
+                            @endif
                             @if($bolehDibatalkan)
                                 <button type="button" class="btn btn-sm btn-outline-danger rounded-3 tombol-batal"
                                         data-bs-toggle="modal" data-bs-target="#modalBatal"
@@ -215,8 +229,58 @@
     </div>
 </div>
 
+{{-- Koreksi nomor SO yang salah ketik (Fase 6 tahap 5). --}}
+<div class="modal fade" id="modalKoreksiSo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" id="formKoreksiSo" class="modal-content rounded-4 border-0">
+            @csrf
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold">Koreksi Nomor SO</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-secondary border-0 rounded-3 small">
+                    <div class="fw-semibold" id="koreksiNomor"></div>
+                    <div id="koreksiSoLama"></div>
+                </div>
+
+                <p class="text-muted small">
+                    Dipakai bila nomor SO salah ketik dan <strong>Surat Jalan-nya belum terbit</strong>.
+                    Kalau Surat Jalan sudah masuk dari BC, jangan mengetik ulang di sini — buka Surat Jalan
+                    itu dan tekan <strong>Pasangkan</strong>, supaya nomornya disalin langsung dari dokumennya.
+                </p>
+
+                <label class="form-label small fw-semibold">Nomor SO yang benar <span class="text-danger">*</span></label>
+                <input type="text" name="bc_so_number" class="form-control font-monospace mb-3"
+                       maxlength="50" required placeholder="mis. SO260903">
+
+                <label class="form-label small fw-semibold">Alasan koreksi</label>
+                <textarea name="reason" class="form-control" rows="2" maxlength="1000"
+                          placeholder="Opsional, mis. salah ketik satu digit saat menerima pesanan"></textarea>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Tutup</button>
+                <button type="submit" class="btn btn-primary rounded-3">Simpan Nomor Baru</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const formKoreksi = document.getElementById('formKoreksiSo');
+
+    document.querySelectorAll('.tombol-koreksi-so').forEach(function (tombol) {
+        tombol.addEventListener('click', function () {
+            formKoreksi.action = tombol.dataset.aksi;
+            document.getElementById('koreksiNomor').textContent = 'Pesanan ' + tombol.dataset.nomor;
+            document.getElementById('koreksiSoLama').textContent = tombol.dataset.so
+                ? 'Nomor SO sekarang: ' + tombol.dataset.so
+                : 'Pesanan ini belum punya nomor SO.';
+            formKoreksi.querySelector('[name="bc_so_number"]').value = tombol.dataset.so || '';
+        });
+    });
+
     const form = document.getElementById('formBatal');
 
     document.querySelectorAll('.tombol-batal').forEach(function (tombol) {

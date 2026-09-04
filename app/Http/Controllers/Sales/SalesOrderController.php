@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Sales;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\SalesOrderRequest;
 use App\Models\Customer;
+use App\Models\DeliveryProof;
 use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\SalesOrder;
@@ -222,11 +223,26 @@ class SalesOrderController extends Controller
             'customer', 'warehouse:id,code,name', 'paymentTerm',
             'details.product:id,sku,name,uom',
             'user:id,full_name', 'approvedBy:id,full_name', 'rejectedBy:id,full_name',
+            'proofs.verifiedBy:id,full_name',
         ]);
+
+        $bukti = $order->proofs->sortByDesc('uploaded_at');
 
         return view('sales.order_detail', [
             'order' => $order,
             'timeline' => $this->timeline($order),
+            'bukti' => $bukti,
+            /*
+             * Sisa kuota dihitung dari foto yang MASIH BERLAKU saja. Kalau
+             * yang ditolak ikut dihitung, Sales yang tiga kali salah foto
+             * terkunci selamanya dan pesanannya tidak akan pernah selesai.
+             */
+            'sisaKuotaBukti' => DeliveryProof::MAKS_FOTO - $bukti
+                ->whereIn('status', [DeliveryProof::STATUS_PENDING, DeliveryProof::STATUS_VERIFIED])
+                ->count(),
+            'alasanDitolak' => $bukti->contains('status', DeliveryProof::STATUS_PENDING)
+                ? null
+                : $bukti->firstWhere('status', DeliveryProof::STATUS_REJECTED)?->rejection_reason,
         ]);
     }
 

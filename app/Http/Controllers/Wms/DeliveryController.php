@@ -8,6 +8,7 @@ use App\Jobs\SendDeliveryNotification;
 use App\Models\DeliveryNote;
 use App\Models\SalesOrder;
 use App\Support\Outbound\Shipment;
+use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -51,7 +52,20 @@ class DeliveryController extends Controller
             'tanpa_pasangan' => $request->boolean('tanpa_pasangan'),
         ];
 
-        $terlihat = fn () => WarehouseScope::apply(DeliveryNote::query(), $user);
+        /*
+         * SJ YATIM SELALU IKUT TERLIHAT. Dokumen yang belum menemukan
+         * pesanannya belum punya gudang (importir mengambil gudang dari
+         * pesanan yang saat itu tidak ketemu), sehingga penyaringan gudang
+         * biasa justru menyembunyikan persis baris yang paling perlu
+         * ditindak — dan saringan "tanpa pasangan" di bawah akan mengembalikan
+         * daftar kosong padahal kartu di atas menghitungnya.
+         */
+        $batas = WarehouseScope::boundary($user);
+
+        $terlihat = fn () => DeliveryNote::query()
+            ->when($batas, fn ($q) => $q->where(
+                fn ($w) => $w->where('warehouse_id', $batas)->orWhereNull('warehouse_id')
+            ));
 
         $notes = $terlihat()
             ->with(['salesOrder:id,order_number,status', 'customer:id,code,name', 'warehouse:id,code,name'])
@@ -87,11 +101,16 @@ class DeliveryController extends Controller
     }
 
     /** Rincian satu Surat Jalan: perbandingan qty, data supir, status pesan. */
-    public function show(Request $request, DeliveryNote $note): View
+    public function show(Request $request, DeliveryNote $note, SoNumberFixer $koreksi): View
     {
         WarehouseScope::assert($note->warehouse_id, $request->user());
 
         return view('wms.outbound.delivery-detail', [
+            // Hanya dihitung untuk SJ yatim: pada dokumen yang sudah
+            // berpasangan, daftar ini tidak akan pernah dipakai.
+            'kandidat' => $note->sales_order_id === null
+                ? $koreksi->kandidat($note)
+                : collect(),
             'note' => $note->load([
                 'lines.product:id,sku,name,uom', 'salesOrder.details.product:id,sku,name',
                 'customer:id,code,name', 'warehouse:id,code,name',
@@ -165,6 +184,43 @@ class DeliveryController extends Controller
             $peringatan === [] ? 'success' : 'warning',
             $peringatan === [] ? $pesan : $pesan.' '.implode(' ', $peringatan),
         );
+    }
+
+    /**
+     * Memasangkan Surat Jalan yatim ke pesanannya (Fase 6 tahap 5).
+     *
+     * Inilah pintu utama untuk salah ketik nomor SO. Nomornya TIDAK diketik
+     * ulang di sini — sistem menyalinnya dari dokumen BC. Lihat SoNumberFixer.
+     */
+    public function pair(Request $request, DeliveryNote $note, SoNumberFixer $koreksi): RedirectResponse
+    {
+        WarehouseScope::assert($note->warehouse_id, $request->user());
+
+        $data = $request->validate(
+            ['sales_order_id' => ['required', 'integer']],
+            ['sales_order_id.required' => 'Pilih dulu pesanan yang mau dipasangkan.'],
+        );
+
+        $order = SalesOrder::query()->find($data['sales_order_id']);
+
+        if ($order === null) {
+            return back()->with('error', 'Pesanan yang dipilih tidak ditemukan. Muat ulang halaman lalu coba lagi.');
+        }
+
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        try {
+            $koreksi->pair($note, $order, $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', sprintf(
+            'Surat Jalan %s dipasangkan ke pesanan %s. Nomor SO pesanan disamakan dengan dokumen BC (%s).',
+            $note->document_no,
+            $order->order_number,
+            $note->bc_so_number,
+        ));
     }
 
     /** Mencoba mengirim ulang pesan yang gagal. */

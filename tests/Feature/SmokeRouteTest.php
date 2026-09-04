@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Customer;
 use App\Models\DeliveryNote;
 use App\Models\DeliveryNoteLine;
+use App\Models\DeliveryProof;
 use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\InventoryStock;
@@ -286,7 +287,15 @@ class SmokeRouteTest extends TestCase
             'product_id' => $produk->id,
         ]);
 
+        // --- Bukti Surat Jalan bertanda tangan (Fase 6 tahap 5) ---
+        $bukti = DeliveryProof::factory()->create([
+            'sales_order_id' => $order->id,
+            'delivery_note_id' => $suratJalan->id,
+            'uploaded_by' => $order->user_id,
+        ]);
+
         $this->parameter = [
+            'proof' => $bukti->id,
             'order' => $order->id,
             'doc_no' => $header->document_number,
             'po_number' => $order->order_number,

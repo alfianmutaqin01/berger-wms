@@ -138,12 +138,56 @@
                 </dl>
 
                 @if($note->sales_order_id === null)
-                <div class="alert alert-warning border-0 rounded-3 small mb-0">
+                <div class="alert alert-warning border-0 rounded-3 small">
                     <i class="bi bi-exclamation-triangle-fill me-2"></i>
                     Surat Jalan ini belum menemukan pesanannya di sistem ini, jadi belum bisa dinyatakan berangkat.
                     Periksa nomor SO-nya — kalau seharusnya ada, berarti nomor yang diketik saat menerima pesanan
                     berbeda dari yang tercatat di BC.
                 </div>
+
+                {{-- PINTU UTAMA UNTUK SALAH KETIK NOMOR SO.
+
+                     Nomornya TIDAK diketik ulang di sini: yang benar sudah
+                     tertulis di dokumen BC, dan sistem yang menyalinnya ke
+                     pesanan. Meminta orang mengetik ulang berarti meminta jari
+                     yang tadi salah untuk tidak salah lagi. --}}
+                @if($note->status === \App\Models\DeliveryNote::STATUS_IMPORTED)
+                <form method="POST" action="{{ route('wms.delivery.pair', $note) }}" class="border rounded-3 p-3">
+                    @csrf
+                    <div class="fw-semibold mb-1">Pasangkan ke pesanan yang benar</div>
+                    <p class="small text-muted">
+                        Nomor SO pesanan yang dipilih akan <strong>disamakan dengan dokumen BC</strong>
+                        ({{ $note->bc_so_number }}), dan perubahannya dicatat.
+                    </p>
+
+                    @if($kandidat->isEmpty())
+                        <div class="small text-muted">
+                            Tidak ada pesanan yang cocok. Yang ditampilkan hanya pesanan
+                            <strong>pelanggan yang sama</strong> yang sudah dipicking dan belum punya Surat Jalan.
+                            Kalau pesanannya belum sampai tahap itu, selesaikan dulu picking-nya.
+                        </div>
+                    @else
+                    <div class="row g-2">
+                        <div class="col-12 col-md-8">
+                            <select name="sales_order_id" class="form-select rounded-3" required>
+                                <option value="">— pilih pesanan —</option>
+                                @foreach($kandidat as $calon)
+                                <option value="{{ $calon->id }}">
+                                    {{ $calon->order_number }} · SO {{ $calon->bc_so_number ?? '—' }} ·
+                                    {{ $calon->customer?->name }}
+                                </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-4 d-grid">
+                            <button class="btn btn-warning rounded-3">
+                                <i class="bi bi-link-45deg me-1"></i> Pasangkan
+                            </button>
+                        </div>
+                    </div>
+                    @endif
+                </form>
+                @endif
                 @else
                 <div class="table-responsive">
                     <table class="table table-sm align-middle mb-0">

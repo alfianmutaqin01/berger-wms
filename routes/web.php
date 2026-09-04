@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EpodController;
+use App\Http\Controllers\Sales\DeliveryProofController;
 use App\Http\Controllers\Sales\SalesOrderController;
 use App\Http\Controllers\Wms\AdminController;
 use App\Http\Controllers\Wms\BillingController;
@@ -14,10 +15,10 @@ use App\Http\Controllers\Wms\InventoryController;
 use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OrderApprovalController;
-use App\Http\Controllers\Wms\OutboundController;
 use App\Http\Controllers\Wms\PickingController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
+use App\Http\Controllers\Wms\ProofVerificationController;
 use App\Http\Controllers\Wms\ReportController;
 use App\Http\Controllers\Wms\StockTransferController;
 use App\Http\Controllers\Wms\UserController;
@@ -115,6 +116,16 @@ Route::prefix('sales')->middleware(['auth', 'session.track', 'portal:sales'])->g
     */
     Route::get('/orders/{order}', [SalesOrderController::class, 'show']);
     Route::get('/orders/{order}/document', [SalesOrderController::class, 'document']);
+
+    /*
+    | Bukti Surat Jalan bertanda tangan (F-OUT-05). Dikerjakan Sales dari HP
+    | di depan toko, jadi formulirnya menempel di halaman detail pesanan —
+    | tidak ada halaman unggah tersendiri.
+    */
+    Route::post('/orders/{order}/proofs', [DeliveryProofController::class, 'store'])
+        ->name('sales.proofs.store');
+    Route::get('/proofs/{proof}', [DeliveryProofController::class, 'preview'])
+        ->name('sales.proofs.preview');
     Route::get('/orders/{order}/edit', [SalesOrderController::class, 'edit']);
     Route::put('/orders/{order}', [SalesOrderController::class, 'update']);
     Route::delete('/orders/{order}', [SalesOrderController::class, 'destroy']);
@@ -355,6 +366,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // tidak menyetujui. Nomor SO-nya kembali bisa dipakai.
             Route::post('/approval/{order}/cancel', [OrderApprovalController::class, 'cancel'])
                 ->name('wms.approval.cancel');
+
+            // Koreksi nomor SO yang salah ketik (Fase 6 tahap 5). Pintu KECIL:
+            // hanya berlaku selama pesanan belum berangkat. Sesudah itu
+            // koreksinya lewat wms.delivery.pair, supaya nomornya disalin dari
+            // dokumen BC dan bukan diketik ulang.
+            Route::post('/approval/{order}/so-number', [OrderApprovalController::class, 'renameSoNumber'])
+                ->name('wms.approval.so-number');
         });
 
         // PICKING (Fase 6 tahap 3). Dua kelompok untuk dua orang: Logistik
@@ -419,11 +437,32 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.delivery.ship');
             Route::post('/delivery/{note}/resend', [DeliveryController::class, 'resend'])
                 ->name('wms.delivery.resend');
+
+            // Memasangkan SJ yatim ke pesanannya sekaligus membetulkan nomor
+            // SO yang salah ketik (Fase 6 tahap 5).
+            Route::post('/delivery/{note}/pair', [DeliveryController::class, 'pair'])
+                ->name('wms.delivery.pair');
         });
 
+        // VERIFIKASI BUKTI (Fase 6 tahap 5, PRD F-OUT-06).
         Route::middleware('can:'.Permission::OUTBOUND_VERIFICATION)->group(function () {
-            Route::get('/verification', [OutboundController::class, 'verification']);
-            Route::post('/verify-bukti/{id}', [OutboundController::class, 'verifyBukti']);
+            Route::get('/verification', [ProofVerificationController::class, 'index'])
+                ->name('wms.verification.index');
+
+            // URUTAN PENTING: '/verification/proof/*' harus lebih dulu
+            // daripada '/verification/{order}', kalau tidak "proof" tertangkap
+            // sebagai id pesanan.
+            Route::get('/verification/proof/{proof}', [ProofVerificationController::class, 'preview'])
+                ->name('wms.verification.preview');
+            Route::get('/verification/proof/{proof}/download', [ProofVerificationController::class, 'download'])
+                ->name('wms.verification.download');
+
+            Route::get('/verification/{order}', [ProofVerificationController::class, 'show'])
+                ->name('wms.verification.show');
+            Route::post('/verification/{order}/complete', [ProofVerificationController::class, 'complete'])
+                ->name('wms.verification.complete');
+            Route::post('/verification/{order}/reject', [ProofVerificationController::class, 'reject'])
+                ->name('wms.verification.reject');
         });
     });
 

@@ -11,6 +11,7 @@ use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
+use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -401,6 +402,46 @@ class OrderApprovalController extends Controller
             $order->order_number,
             $hasil['qty_dilepas'],
             $hasil['nomor_so'] ? ", nomor SO {$hasil['nomor_so']} kembali bisa dipakai" : '',
+        ));
+    }
+
+    /**
+     * Koreksi manual nomor SO yang salah ketik (Fase 6 tahap 5).
+     *
+     * PINTU KECIL, bukan alur utama. Dipakai untuk salah ketik yang ketahuan
+     * sendiri SEBELUM Surat Jalan-nya terbit — saat itu belum ada dokumen
+     * yang bisa disalin. Setelah SJ terbit, jalannya lewat tombol Pasangkan
+     * di Surat Jalan, supaya nomornya diambil dari dokumen BC dan bukan
+     * diketik ulang oleh jari yang tadi salah. Batasnya ditegakkan
+     * SoNumberFixer, bukan di sini.
+     */
+    public function renameSoNumber(Request $request, SalesOrder $order, SoNumberFixer $koreksi): RedirectResponse
+    {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'bc_so_number' => ['required', 'string', 'max:50'],
+            'reason' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'bc_so_number.required' => 'Nomor SO yang benar wajib diisi.',
+        ], [
+            'bc_so_number' => 'nomor SO',
+            'reason' => 'alasan koreksi',
+        ]);
+
+        $lama = $order->bc_so_number;
+
+        try {
+            $koreksi->rename($order, $data['bc_so_number'], $data['reason'] ?? null, $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', sprintf(
+            'Nomor SO pesanan %s diubah dari %s menjadi %s. Perubahannya tercatat.',
+            $order->order_number,
+            $lama ?: '(kosong)',
+            $order->fresh()->bc_so_number,
         ));
     }
 
