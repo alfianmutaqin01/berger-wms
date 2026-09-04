@@ -108,8 +108,77 @@ class Shipment
     }
 
     /**
+     * SKU yang ada di Surat Jalan tetapi TIDAK PERNAH dipicking untuk pesanan
+     * ini — dan sebaliknya.
+     *
+     * INI BUKAN SELISIH QTY, dan tidak boleh diperlakukan seperti selisih
+     * qty. Aturan "dokumen BC yang menang" berlaku untuk ANGKA: kalau SJ
+     * menyebut 12 sementara yang dipicking 10, yang keliru memang stok kami.
+     * Untuk SKU aturan itu runtuh — mesin tidak punya cara tahu sisi mana
+     * yang salah:
+     *
+     *   - BC salah ketik SKU     -> barang yang dipicking itulah yang naik,
+     *                               dan dokumennya yang harus dibetulkan.
+     *   - Operator salah ambil   -> barang di SJ yang seharusnya naik, dan
+     *                               yang di dermaga harus ditukar dulu.
+     *
+     * Keduanya menuntut tindakan fisik yang BERLAWANAN, dan keduanya harus
+     * diputuskan sebelum kendaraan berangkat. Karena itu keadaan ini
+     * menghentikan pengiriman alih-alih diselesaikan diam-diam.
+     *
+     * @return array{di_sj_saja: list<array{sku:string, nama:string, qty:int}>, di_picking_saja: list<array{sku:string, nama:string, qty:int}>}
+     */
+    public function skuTidakCocok(DeliveryNote $note): array
+    {
+        $order = $note->salesOrder;
+
+        if ($order === null) {
+            return ['di_sj_saja' => [], 'di_picking_saja' => []];
+        }
+
+        $terpicking = $this->qtyTerpicking($order);
+        $diSjSaja = [];
+        $adaDiSj = [];
+
+        foreach ($note->lines()->with('product:id,sku,name')->get() as $line) {
+            $adaDiSj[$line->product_id] = true;
+
+            // product_id kosong ditangani terpisah saat ship() — SKU yang
+            // tidak dikenal Master Produk masalahnya lain lagi.
+            if ($line->product_id !== null && ! array_key_exists($line->product_id, $terpicking)) {
+                $diSjSaja[] = [
+                    'sku' => $line->sku,
+                    'nama' => $line->product?->name ?? $line->description ?? '—',
+                    'qty' => (int) $line->qty,
+                ];
+            }
+        }
+
+        $diPickingSaja = [];
+
+        foreach ($terpicking as $productId => $qty) {
+            if (isset($adaDiSj[$productId])) {
+                continue;
+            }
+
+            $item = PickingListItem::with('product:id,sku,name')
+                ->where('sales_order_id', $order->id)
+                ->where('product_id', $productId)
+                ->first();
+
+            $diPickingSaja[] = [
+                'sku' => $item?->product?->sku ?? '—',
+                'nama' => $item?->product?->name ?? '—',
+                'qty' => $qty,
+            ];
+        }
+
+        return ['di_sj_saja' => $diSjSaja, 'di_picking_saja' => $diPickingSaja];
+    }
+
+    /**
      * @param  array{driver_name:string, driver_phone:string, vehicle_plate:string}  $supir
-     * @return array{dikirim:int, dikembalikan:int, kurang_di_rak:int, tidak_tertutup:list<string>}
+     * @return array{dikirim:int, dikembalikan:int, kurang_di_rak:int, tidak_tertutup:list<string>, substitusi:bool}
      *
      * @throws RuntimeException
      */
@@ -130,6 +199,16 @@ class Shipment
                     $order->order_number,
                     strtolower($order->status_label)
                 ));
+            }
+
+            // SKU BERBEDA MENGHENTIKAN PENGIRIMAN, bukan sekadar memberi
+            // peringatan. Lihat skuTidakCocok() untuk alasannya. Diperiksa
+            // SEBELUM satu baris stok pun disentuh.
+            $bedaSku = $this->skuTidakCocok($terkunci);
+            $substitusi = $terkunci->substitution_confirmed_at !== null;
+
+            if ($bedaSku['di_sj_saja'] !== [] && ! $substitusi) {
+                throw new RuntimeException($this->pesanBedaSku($terkunci, $bedaSku));
             }
 
             $dikirim = 0;
@@ -156,6 +235,21 @@ class Shipment
             // adalah kebenaran yang disetujui: kalau ia menyebut 12 keluar
             // sementara yang tercatat dipicking hanya 10, yang keliru adalah
             // angka stok kami, bukan dokumennya.
+            // Barang pengganti: ada di Surat Jalan, tidak pernah dipicking,
+            // dan sudah dinyatakan Logistik memang naik kendaraan. Ia keluar
+            // dari stok seperti kekurangan biasa, TETAPI tidak boleh dihitung
+            // sebagai "temuan stok kurang" — tidak ada yang kurang di rak,
+            // yang terjadi barangnya ditukar.
+            $productSubstitusi = [];
+
+            if ($substitusi) {
+                foreach ($terkunci->lines as $line) {
+                    if ($line->product_id !== null && ! array_key_exists($line->product_id, $terpicking)) {
+                        $productSubstitusi[$line->product_id] = true;
+                    }
+                }
+            }
+
             foreach ($qtySj as $productId => $qtyDokumen) {
                 $kurang = $qtyDokumen - ($terpicking[$productId] ?? 0);
 
@@ -163,9 +257,15 @@ class Shipment
                     continue;
                 }
 
-                $keluar = $this->keluarkanKekurangan($order, $productId, $kurang, $terkunci->document_no, $userId);
+                $pengganti = isset($productSubstitusi[$productId]);
 
-                $kurangDiRak += $keluar;
+                $keluar = $this->keluarkanKekurangan(
+                    $order, $productId, $kurang, $terkunci->document_no, $userId, $pengganti
+                );
+
+                if (! $pengganti) {
+                    $kurangDiRak += $keluar;
+                }
 
                 if ($keluar < $kurang) {
                     // Stok tercatat pun tidak cukup menutupinya. TIDAK
@@ -187,20 +287,28 @@ class Shipment
                 $kelebihan = $qtyPicking - ($qtySj[$productId] ?? 0);
 
                 if ($kelebihan > 0) {
+                    $digantikan = $substitusi && ! isset($qtySj[$productId]);
+
                     $dikembalikan += $this->picking->kembalikanSebagian(
                         $order,
                         $productId,
                         $kelebihan,
-                        sprintf(
-                            'Surat Jalan %s menyebut lebih sedikit; sisanya dikembalikan ke rak',
-                            $terkunci->document_no
-                        ),
+                        $digantikan
+                            ? sprintf(
+                                'Digantikan SKU lain menurut Surat Jalan %s; barangnya tetap di gudang '.
+                                'dan dikembalikan ke rak',
+                                $terkunci->document_no
+                            )
+                            : sprintf(
+                                'Surat Jalan %s menyebut lebih sedikit; sisanya dikembalikan ke rak',
+                                $terkunci->document_no
+                            ),
                         $userId,
                     );
                 }
             }
 
-            $this->catatQtyTerkirim($order, $qtySj);
+            $this->catatQtyTerkirim($order, $qtySj, $substitusi ? $terkunci : null);
 
             $order->forceFill([
                 'status' => SalesOrder::STATUS_SHIPPING,
@@ -234,6 +342,7 @@ class Shipment
                 'dikembalikan' => $dikembalikan,
                 'kurang_di_rak' => $kurangDiRak,
                 'tidak_tertutup' => $tidakTertutup,
+                'substitusi' => $substitusi && $bedaSku['di_sj_saja'] !== [],
             ];
         });
     }
@@ -309,6 +418,7 @@ class Shipment
         int $qty,
         string $documentNo,
         ?int $userId,
+        bool $pengganti = false,
     ): int {
         $sisa = $qty;
         $keluar = 0;
@@ -339,16 +449,31 @@ class Shipment
                 'reference_type' => StockMovement::REF_SALES_ORDER,
                 'reference_id' => $order->id,
                 'batch_no' => $stok->batch_no,
-                'notes' => sprintf(
-                    'Surat Jalan %s menyebut %d lebih banyak daripada yang tercatat dipicking; '.
-                    'selisih %d dikeluarkan dari rak %s (batch %s). Stok tercatat ternyata lebih besar '.
-                    'daripada isi rak sebenarnya — perlu ditelusuri saat opname.',
-                    $documentNo,
-                    $qty,
-                    $ambil,
-                    $stok->location?->code ?? '—',
-                    $stok->batch_no ?? '—',
-                ),
+                // Dua sebab yang catatannya HARUS berbeda. Keduanya menulis
+                // OUT dengan jumlah yang sama, tetapi yang satu berarti "rak
+                // lebih kosong daripada catatan" dan yang lain berarti
+                // "barangnya ditukar". Menyamakan kalimatnya membuat opname
+                // berikutnya mengejar selisih yang tidak pernah ada.
+                'notes' => $pengganti
+                    ? sprintf(
+                        'Barang PENGGANTI menurut Surat Jalan %s: SKU ini tidak ada dalam pesanan dan tidak '.
+                        'pernah dipicking, tetapi dinyatakan Logistik memang naik kendaraan. %d keluar dari '.
+                        'rak %s (batch %s). Bukan selisih stok — barang yang semula dipicking dikembalikan ke raknya.',
+                        $documentNo,
+                        $ambil,
+                        $stok->location?->code ?? '—',
+                        $stok->batch_no ?? '—',
+                    )
+                    : sprintf(
+                        'Surat Jalan %s menyebut %d lebih banyak daripada yang tercatat dipicking; '.
+                        'selisih %d dikeluarkan dari rak %s (batch %s). Stok tercatat ternyata lebih besar '.
+                        'daripada isi rak sebenarnya — perlu ditelusuri saat opname.',
+                        $documentNo,
+                        $qty,
+                        $ambil,
+                        $stok->location?->code ?? '—',
+                        $stok->batch_no ?? '—',
+                    ),
                 'user_id' => $userId,
             ]);
 
@@ -429,16 +554,105 @@ class Shipment
      *
      * @param  array<int, int>  $qtySj
      */
-    private function catatQtyTerkirim(SalesOrder $order, array $qtySj): void
+    private function catatQtyTerkirim(SalesOrder $order, array $qtySj, ?DeliveryNote $substitusi = null): void
     {
         foreach ($order->details as $detail) {
             $terkirim = $qtySj[$detail->product_id] ?? 0;
 
+            /*
+             * BARIS YANG DIGANTIKAN DITUTUP, bukan dibiarkan menggantung.
+             * Barangnya memang tidak berangkat (qty_shipped tetap 0 — itu
+             * kenyataannya), tetapi kewajiban ke pelanggan sudah dipenuhi
+             * oleh barang penggantinya. Membiarkannya outstanding berarti
+             * pesanan ini terlihat terutang selamanya, dan Sales akan
+             * menagih barang yang sudah diterima pelanggannya.
+             */
+            $digantikan = $substitusi !== null && $terkirim === 0;
+
             $detail->forceFill([
                 'qty_shipped' => $terkirim,
-                'outstanding_qty' => max(0, (int) $detail->qty_ordered - $terkirim),
+                'outstanding_qty' => $digantikan
+                    ? 0
+                    : max(0, (int) $detail->qty_ordered - $terkirim),
+                'substitution_note' => $digantikan
+                    ? sprintf(
+                        'Digantikan SKU lain sesuai Surat Jalan %s (%s).',
+                        $substitusi->document_no,
+                        $substitusi->substitution_reason,
+                    )
+                    : $detail->substitution_note,
             ])->save();
         }
+    }
+
+    /**
+     * Menyatakan barang di Surat Jalan memang yang naik kendaraan.
+     *
+     * SATU-SATUNYA jalan melewati blokir SKU berbeda. Sengaja terpisah dari
+     * tombol berangkat: kalau ia hanya sebuah centang di formulir yang sama,
+     * ia akan ikut tercentang bersama semua centang lain.
+     *
+     * @throws RuntimeException
+     */
+    public function confirmSubstitution(DeliveryNote $note, string $alasan, ?int $userId): void
+    {
+        $alasan = trim($alasan);
+
+        if ($alasan === '') {
+            throw new RuntimeException('Alasan wajib diisi.');
+        }
+
+        DB::transaction(function () use ($note, $alasan, $userId) {
+            $terkunci = DeliveryNote::query()->lockForUpdate()->findOrFail($note->id);
+
+            if ($terkunci->status !== DeliveryNote::STATUS_IMPORTED) {
+                throw new RuntimeException(sprintf(
+                    'Surat Jalan %s sudah berstatus "%s"; konfirmasinya sudah terlambat.',
+                    $terkunci->document_no,
+                    $terkunci->status_label,
+                ));
+            }
+
+            if ($this->skuTidakCocok($terkunci)['di_sj_saja'] === []) {
+                throw new RuntimeException(
+                    'Surat Jalan ini tidak memuat SKU di luar yang dipicking, jadi tidak ada yang perlu dikonfirmasi.'
+                );
+            }
+
+            $terkunci->forceFill([
+                'substitution_confirmed_at' => now(),
+                'substitution_confirmed_by' => $userId,
+                'substitution_reason' => $alasan,
+            ])->save();
+        });
+    }
+
+    /** @param array{di_sj_saja: list<array{sku:string, nama:string, qty:int}>, di_picking_saja: list<array{sku:string, nama:string, qty:int}>} $beda */
+    private function pesanBedaSku(DeliveryNote $note, array $beda): string
+    {
+        $daftar = fn (array $baris) => implode(', ', array_map(
+            fn ($b) => sprintf('%s (%d)', $b['sku'], $b['qty']),
+            $baris,
+        ));
+
+        $pesan = sprintf(
+            'Surat Jalan %s memuat SKU yang TIDAK PERNAH dipicking untuk pesanan ini: %s. ',
+            $note->document_no,
+            $daftar($beda['di_sj_saja']),
+        );
+
+        if ($beda['di_picking_saja'] !== []) {
+            $pesan .= sprintf(
+                'Sebaliknya, yang diambil dari rak justru %s dan itu tidak ada di dokumen. ',
+                $daftar($beda['di_picking_saja']),
+            );
+        }
+
+        return $pesan.
+            'Ini BUKAN selisih qty, jadi tidak bisa diselesaikan sendiri oleh sistem — bisa jadi SKU di BC '.
+            'salah, bisa jadi barang yang diambil dari rak yang keliru, dan keduanya menuntut tindakan yang '.
+            'berlawanan. Betulkan Surat Jalan di BC lalu impor ulang, ATAU kalau barang di Surat Jalan itu '.
+            'memang yang naik kendaraan, tekan "Konfirmasi Barang Beda SKU" lebih dulu.';
     }
 
     /**

@@ -442,6 +442,12 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // SO yang salah ketik (Fase 6 tahap 5).
             Route::post('/delivery/{note}/pair', [DeliveryController::class, 'pair'])
                 ->name('wms.delivery.pair');
+
+            // SKU di Surat Jalan berbeda dari yang dipicking. Pintu TERPISAH
+            // dari tombol berangkat: centang yang menempel pada formulir yang
+            // sama akan ikut tercentang bersama yang lain.
+            Route::post('/delivery/{note}/substitution', [DeliveryController::class, 'confirmSubstitution'])
+                ->name('wms.delivery.substitution');
         });
 
         // VERIFIKASI BUKTI (Fase 6 tahap 5, PRD F-OUT-06).

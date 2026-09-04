@@ -62,6 +62,7 @@ class DeliveryNote extends Model
         'shipped_at', 'shipped_by', 'epod_token',
         'delivered_at', 'received_by_name',
         'notify_status', 'notify_attempts', 'notified_at', 'notify_error',
+        'substitution_confirmed_at', 'substitution_confirmed_by', 'substitution_reason',
     ];
 
     protected function casts(): array
@@ -72,6 +73,7 @@ class DeliveryNote extends Model
             'shipped_at' => 'datetime',
             'delivered_at' => 'datetime',
             'notified_at' => 'datetime',
+            'substitution_confirmed_at' => 'datetime',
             'notify_attempts' => 'integer',
         ];
     }
@@ -106,6 +108,12 @@ class DeliveryNote extends Model
     public function shippedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'shipped_by');
+    }
+
+    /** Siapa yang menyatakan barang beda SKU memang naik kendaraan. */
+    public function substitutionConfirmedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'substitution_confirmed_by');
     }
 
     /* ------------------------------------------------------------- Scope */

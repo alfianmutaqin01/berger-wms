@@ -9,6 +9,7 @@ use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderDetail;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
@@ -381,5 +382,53 @@ class DeliveryNoteImportTest extends TestCase
         $this->loginAt($this->karawang, Role::WAREHOUSE_OPERATOR);
 
         $this->get(route('wms.delivery.index'))->assertForbidden();
+    }
+
+    /* --------------------------------------------------- Pencegahan di hulu */
+
+    /**
+     * SKU asing ketahuan SAAT IMPOR, bukan nanti di dermaga.
+     *
+     * Keadaan ini menghentikan pengiriman di layar Surat Jalan, tetapi kalau
+     * baru ketahuan di sana, orangnya sudah berdiri di depan kendaraan yang
+     * menunggu. Di sini ia ketahuan berjam-jam lebih awal.
+     */
+    public function test_sku_yang_tidak_ada_dalam_pesanan_dilaporkan_saat_impor(): void
+    {
+        $order = $this->pesanan('SO260903');
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $this->produk->id,
+            'qty_ordered' => 10,
+            'qty_approved' => 10,
+        ]);
+
+        $lain = Product::factory()->create(['sku' => 'ID1-F0017X002020', 'is_active' => true]);
+
+        $this->loginAt($this->karawang);
+
+        $this->impor([$this->baris('206215', 'SO260903', $lain->sku)])
+            ->assertSessionHas('warning');
+
+        $this->assertStringContainsString(
+            'TIDAK ADA dalam pesanannya',
+            (string) session('warning'),
+        );
+    }
+
+    public function test_sku_yang_memang_dipesan_tidak_memicu_peringatan(): void
+    {
+        $order = $this->pesanan('SO260903');
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $this->produk->id,
+            'qty_ordered' => 10,
+            'qty_approved' => 10,
+        ]);
+
+        $this->loginAt($this->karawang);
+
+        $this->impor([$this->baris('206215', 'SO260903', $this->produk->sku)])
+            ->assertSessionHas('success');
     }
 }

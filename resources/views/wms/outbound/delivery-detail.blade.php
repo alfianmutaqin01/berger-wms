@@ -226,8 +226,41 @@
                     </table>
                 </div>
 
-                @php($adaKelebihan = collect($perbandingan)->contains(fn ($b) => $b['selisih'] > 0))
-                @php($adaKekurangan = collect($perbandingan)->contains(fn ($b) => $b['selisih'] < 0))
+                @php($adaBedaSku = $bedaSku['di_sj_saja'] !== [])
+                {{-- SKU berbeda menyingkirkan diagnosis selisih qty: kedua
+                     barisnya memang muncul sebagai "kurang" dan "lebih", tapi
+                     menamainya begitu di sini akan mengarahkan orang mengejar
+                     selisih stok yang tidak pernah ada. --}}
+                @php($adaKelebihan = ! $adaBedaSku && collect($perbandingan)->contains(fn ($b) => $b['selisih'] > 0))
+                @php($adaKekurangan = ! $adaBedaSku && collect($perbandingan)->contains(fn ($b) => $b['selisih'] < 0))
+
+                @if($adaBedaSku)
+                <div class="alert alert-danger border-0 rounded-3 small mt-3 mb-0">
+                    <div class="fw-semibold mb-1">
+                        <i class="bi bi-exclamation-octagon-fill me-2"></i>Barang di Surat Jalan berbeda, bukan sekadar beda jumlah
+                    </div>
+                    <p class="mb-2">
+                        SKU berikut ada di Surat Jalan tetapi <strong>tidak pernah dipicking</strong> untuk pesanan ini:
+                        @foreach($bedaSku['di_sj_saja'] as $b)
+                            <span class="font-monospace">{{ $b['sku'] }}</span> ({{ $b['qty'] }}){{ ! $loop->last ? ',' : '' }}
+                        @endforeach
+                    </p>
+                    @if($bedaSku['di_picking_saja'] !== [])
+                    <p class="mb-2">
+                        Sebaliknya, yang diambil dari rak justru
+                        @foreach($bedaSku['di_picking_saja'] as $b)
+                            <span class="font-monospace">{{ $b['sku'] }}</span> ({{ $b['qty'] }}){{ ! $loop->last ? ',' : '' }}
+                        @endforeach
+                        — dan itu tidak ada di dokumen.
+                    </p>
+                    @endif
+                    <p class="mb-0">
+                        Sistem <strong>tidak bisa memutuskan sendiri</strong> siapa yang keliru: bisa SKU di BC yang salah,
+                        bisa barang yang diambil dari rak yang salah. Keduanya menuntut tindakan yang berlawanan, dan
+                        keduanya harus diputuskan <strong>sebelum kendaraan berangkat</strong>. Karena itu pengiriman ditahan.
+                    </p>
+                </div>
+                @endif
 
                 @if($adaKekurangan)
                 <div class="alert alert-warning border-0 rounded-3 small mt-3 mb-0">
@@ -254,12 +287,70 @@
 
     <div class="col-12 col-xl-5">
         {{-- ------------------------------------------------------ Pengiriman --}}
-        @if($note->status === \App\Models\DeliveryNote::STATUS_IMPORTED && $note->sales_order_id !== null)
+        @php($tertahanBedaSku = $bedaSku['di_sj_saja'] !== [] && $note->substitution_confirmed_at === null)
+
+        {{-- PINTU KONFIRMASI, menggantikan formulir supir selama SKU-nya
+             belum diputuskan. Sengaja MENGGANTIKAN, bukan menemani: selama
+             formulir berangkat masih terlihat, orang akan mengisinya dulu
+             lalu bertanya belakangan. --}}
+        @if($note->status === \App\Models\DeliveryNote::STATUS_IMPORTED && $note->sales_order_id !== null && $tertahanBedaSku)
+        <div class="card shadow-sm border-0 rounded-4 border-danger">
+            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
+                <h5 class="fw-bold text-danger mb-0">
+                    <i class="bi bi-sign-stop-fill me-2"></i> Pengiriman Ditahan
+                </h5>
+                <small class="text-muted">Barang di Surat Jalan berbeda dari yang dipicking.</small>
+            </div>
+            <div class="card-body px-4 pt-3">
+                <p class="small text-muted">
+                    Ada dua jalan keluar, dan keduanya butuh keputusan orang:
+                </p>
+                <ol class="small text-muted ps-3">
+                    <li class="mb-2">
+                        <strong>Surat Jalan yang salah SKU</strong> — betulkan di sistem BC, lalu impor ulang
+                        berkasnya. Tidak ada yang perlu ditekan di sini.
+                    </li>
+                    <li>
+                        <strong>Barang di Surat Jalan memang yang naik</strong> (mis. pelanggan setuju ganti ukuran)
+                        — nyatakan di bawah ini. Barang yang semula dipicking dikembalikan ke rak, barang di Surat
+                        Jalan yang dikeluarkan, dan baris pesanan yang digantikan ditutup.
+                    </li>
+                </ol>
+
+                <form method="POST" action="{{ route('wms.delivery.substitution', $note) }}"
+                      onsubmit="return confirm('Nyatakan barang di Surat Jalan memang yang naik kendaraan?');">
+                    @csrf
+                    <label class="form-label small fw-semibold">
+                        Alasan penggantian <span class="text-danger">*</span>
+                    </label>
+                    <textarea name="substitution_reason" rows="3" required minlength="10" maxlength="1000"
+                              class="form-control mb-3"
+                              placeholder="mis. pelanggan setuju diganti ukuran 20Kg karena 5Kg kosong; sudah dikonfirmasi Sales">{{ old('substitution_reason') }}</textarea>
+
+                    <button class="btn btn-danger rounded-3 w-100">
+                        <i class="bi bi-arrow-left-right me-1"></i> Konfirmasi Barang Beda SKU
+                    </button>
+                </form>
+            </div>
+        </div>
+        @endif
+
+        @if($note->status === \App\Models\DeliveryNote::STATUS_IMPORTED && $note->sales_order_id !== null && ! $tertahanBedaSku)
         <div class="card shadow-sm border-0 rounded-4">
             <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
                 <h5 class="fw-bold text-dark mb-0"><i class="bi bi-truck text-primary me-2"></i> Data Pengiriman</h5>
                 <small class="text-muted">Tautan konfirmasi dikirim ke nomor ini.</small>
             </div>
+
+            @if($note->substitution_confirmed_at)
+            <div class="alert alert-warning border-0 rounded-3 small mx-4 mt-3 mb-0">
+                <i class="bi bi-arrow-left-right me-2"></i>
+                <strong>Penggantian barang dikonfirmasi</strong>
+                {{ $note->substitution_confirmed_at->format('d M Y H:i') }}
+                @if($note->substitutionConfirmedBy) oleh {{ $note->substitutionConfirmedBy->full_name }} @endif —
+                {{ $note->substitution_reason }}
+            </div>
+            @endif
 
             <form method="POST" action="{{ route('wms.delivery.ship', $note) }}" class="card-body px-4 pt-3"
                   onsubmit="return confirm('Nyatakan barang berangkat? Stok dan status pesanan akan berubah.');">

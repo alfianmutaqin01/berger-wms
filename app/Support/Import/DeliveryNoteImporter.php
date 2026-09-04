@@ -59,6 +59,16 @@ class DeliveryNoteImporter extends Importer
     /** Dokumen yang tidak menemukan pesanannya, untuk dilaporkan di akhir. */
     private array $tanpaPasangan = [];
 
+    /**
+     * SKU yang ada di SJ tetapi tidak ada dalam pesanannya, per dokumen.
+     *
+     * @var array<string, array<string, true>>
+     */
+    private array $skuAsing = [];
+
+    /** @var array<int, array<int, true>> product_id milik tiap pesanan */
+    private array $produkPesananCache = [];
+
     protected function requiredHeaders(): array
     {
         return ['document_no'];
@@ -153,6 +163,8 @@ class DeliveryNoteImporter extends Importer
 
         if ($pesanan === null) {
             $this->tanpaPasangan[$dokumen] = $nomorSo;
+        } elseif (! $this->adaDalamPesanan($pesanan, $sku)) {
+            $this->skuAsing[$dokumen][$sku] = true;
         }
 
         $kodeCustomer = $this->upper($this->value($row, ['sell_to_customer_no', 'customer_no', 'kode_customer']));
@@ -245,6 +257,13 @@ class DeliveryNoteImporter extends Importer
      */
     public function catatanTambahan(): ?string
     {
+        $catatan = array_filter([$this->catatanTanpaPasangan(), $this->catatanSkuAsing()]);
+
+        return $catatan === [] ? null : implode(' ', $catatan);
+    }
+
+    private function catatanTanpaPasangan(): ?string
+    {
         if ($this->tanpaPasangan === []) {
             return null;
         }
@@ -262,6 +281,35 @@ class DeliveryNoteImporter extends Importer
             count($this->tanpaPasangan),
             $daftar,
             $sisa > 0 ? ", dan {$sisa} lainnya" : '',
+        );
+    }
+
+    /**
+     * SKU yang ada di Surat Jalan tetapi tidak ada dalam pesanannya.
+     *
+     * PENCEGAHAN DI HULU. Keadaan ini menghentikan pengiriman di layar Surat
+     * Jalan, tetapi kalau baru ketahuan di sana, orangnya sudah berdiri di
+     * dermaga dengan kendaraan menunggu. Diberitahukan di sini, ia ketahuan
+     * berjam-jam lebih awal — saat masih murah dibetulkan, entah di BC atau
+     * di gudang.
+     */
+    private function catatanSkuAsing(): ?string
+    {
+        if ($this->skuAsing === []) {
+            return null;
+        }
+
+        $daftar = collect($this->skuAsing)
+            ->map(fn (array $sku, string $dok) => $dok.' → '.implode(', ', array_keys($sku)))
+            ->take(10)
+            ->implode('; ');
+
+        return sprintf(
+            'PERHATIAN: %d Surat Jalan memuat SKU yang TIDAK ADA dalam pesanannya (%s). '.
+            'Ini bukan selisih jumlah melainkan barang yang berbeda, dan pengirimannya akan DITAHAN '.
+            'sampai diputuskan: SKU di BC yang keliru, atau barang yang diambil dari rak yang keliru.',
+            count($this->skuAsing),
+            $daftar,
         );
     }
 
@@ -317,6 +365,41 @@ class DeliveryNoteImporter extends Importer
         }
 
         return Customer::query()->whereRaw('UPPER(code) = ?', [$kode])->value('id');
+    }
+
+    /**
+     * Apakah SKU ini termasuk yang dipesan?
+     *
+     * Produk yang tidak dikenal Master Produk sengaja TIDAK dihitung asing di
+     * sini: masalahnya berbeda (data master belum lengkap) dan sudah punya
+     * pesan sendiri saat pengiriman. Menggabungkan keduanya membuat pesan
+     * impor menyalahkan hal yang salah.
+     */
+    private function adaDalamPesanan(SalesOrder $pesanan, string $sku): bool
+    {
+        $produkId = $this->produk($sku)?->id;
+
+        if ($produkId === null) {
+            return true;
+        }
+
+        $this->produkPesananCache[$pesanan->id] ??= $pesanan->details()
+            ->pluck('product_id')
+            ->flip()
+            ->map(fn () => true)
+            ->all();
+
+        $dipesan = $this->produkPesananCache[$pesanan->id];
+
+        // Pesanan tanpa rincian sama sekali tidak bisa dibandingkan. Menandai
+        // SELURUH SKU-nya asing akan menenggelamkan peringatan ini di antara
+        // baris yang tidak berarti apa-apa, dan peringatan yang selalu muncul
+        // adalah peringatan yang berhenti dibaca.
+        if ($dipesan === []) {
+            return true;
+        }
+
+        return isset($dipesan[$produkId]);
     }
 
     private function produk(string $sku): ?Product

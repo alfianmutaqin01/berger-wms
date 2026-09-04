@@ -215,6 +215,209 @@ class ShipmentTest extends TestCase
         ], $ubah));
     }
 
+    /* ------------------------------------------------------- SKU berbeda */
+
+    /**
+     * Barang lain yang juga ada stoknya di rak yang sama.
+     *
+     * Sengaja PUNYA STOK: kalau stoknya kosong, blokir yang diuji bisa lolos
+     * karena alasan lain (stok tidak cukup menutupi) dan test-nya hijau untuk
+     * sebab yang salah.
+     */
+    private function produkLain(): Product
+    {
+        $lain = Product::factory()->create([
+            'sku' => 'ID1-F0017X002020', 'name' => 'Bocor Guard 5Kg', 'uom' => 'PAIL', 'is_active' => true,
+        ]);
+
+        InventoryStock::factory()->create([
+            'product_id' => $lain->id,
+            'warehouse_id' => $this->karawang->id,
+            'location_id' => $this->rak->id,
+            'batch_no' => 'BT-2699',
+            'production_date' => '2026-02-01',
+            'expiry_date' => '2028-02-01',
+            'qty_available' => 50,
+            'qty_allocated' => 0,
+            'status' => InventoryStock::STATUS_ACTIVE,
+        ]);
+
+        return $lain;
+    }
+
+    /** SJ yang isinya SKU lain sama sekali — bukan selisih qty. */
+    private function suratJalanBedaSku(SalesOrder $order, Product $lain, int $qty): DeliveryNote
+    {
+        $note = $this->suratJalan($order, $qty);
+        $note->lines()->delete();
+
+        DeliveryNoteLine::factory()->create([
+            'delivery_note_id' => $note->id,
+            'sku' => $lain->sku,
+            'product_id' => $lain->id,
+            'qty' => $qty,
+        ]);
+
+        return $note->fresh();
+    }
+
+    /**
+     * Dilaporkan pemilik produk saat uji coba: pesanan 5Kg, dipicking 5Kg,
+     * tetapi SJ menyebut SKU lain dengan qty SAMA.
+     *
+     * Sebelum diperbaiki, sistem membiarkannya berangkat dan menulis tiga hal
+     * salah sekaligus — mengeluarkan barang yang tak pernah diambil,
+     * mengembalikan barang yang sudah naik kendaraan, dan meninggalkan
+     * pesanan yang outstanding-nya tidak akan pernah tertutup.
+     */
+    public function test_sku_berbeda_menghentikan_pengiriman(): void
+    {
+        $order = $this->pesananSudahDipicking(2, 2);
+        $note = $this->suratJalanBedaSku($order, $this->produkLain(), 2);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note)->assertSessionHas('error');
+
+        $this->assertSame(
+            SalesOrder::STATUS_READY_TO_SHIP,
+            $order->fresh()->status,
+            'Pesanan tidak boleh berangkat sebelum SKU-nya diputuskan.'
+        );
+
+        // Yang paling penting: TIDAK SATU BARIS STOK PUN bergerak. Blokir
+        // yang terjadi setelah stok tersentuh hanya memindahkan kerusakan.
+        $this->assertSame(0, StockMovement::query()->whereIn('movement_type', [
+            StockMovement::TYPE_OUT, StockMovement::TYPE_IN,
+        ])->count());
+    }
+
+    public function test_selisih_qty_pada_sku_yang_sama_tetap_boleh_jalan(): void
+    {
+        // Penjagaan supaya blokir SKU tidak ikut menahan kasus yang memang
+        // sudah diputuskan pemilik produk: qty berbeda = dokumen BC menang.
+        $order = $this->pesananSudahDipicking(15, 10);
+        $note = $this->suratJalan($order, 8);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note)->assertSessionHas('warning');
+
+        $this->assertSame(SalesOrder::STATUS_SHIPPING, $order->fresh()->status);
+    }
+
+    public function test_substitusi_yang_dikonfirmasi_boleh_berangkat(): void
+    {
+        $lain = $this->produkLain();
+        $order = $this->pesananSudahDipicking(2, 2);
+        $note = $this->suratJalanBedaSku($order, $lain, 2);
+
+        $this->loginAt($this->karawang);
+
+        $this->post(route('wms.delivery.substitution', $note), [
+            'substitution_reason' => 'Pelanggan setuju diganti ukuran 5Kg karena 20Kg kosong.',
+        ])->assertSessionHas('warning');
+
+        $this->kirim($note->fresh())->assertSessionHas('warning');
+
+        $this->assertSame(SalesOrder::STATUS_SHIPPING, $order->fresh()->status);
+
+        // Barang pengganti keluar, barang yang semula dipicking kembali ke rak.
+        $this->assertSame(-2, (int) StockMovement::query()
+            ->where('product_id', $lain->id)
+            ->where('movement_type', StockMovement::TYPE_OUT)
+            ->sum('qty_change'));
+
+        $this->assertSame(2, (int) StockMovement::query()
+            ->where('product_id', $this->produk->id)
+            ->where('movement_type', StockMovement::TYPE_IN)
+            ->sum('qty_change'));
+    }
+
+    public function test_baris_yang_digantikan_ditutup_bukan_dibiarkan_outstanding(): void
+    {
+        $order = $this->pesananSudahDipicking(2, 2);
+        $note = $this->suratJalanBedaSku($order, $this->produkLain(), 2);
+
+        $this->loginAt($this->karawang);
+        $this->post(route('wms.delivery.substitution', $note), [
+            'substitution_reason' => 'Pelanggan setuju diganti ukuran; sudah dikonfirmasi Sales.',
+        ]);
+        $this->kirim($note->fresh());
+
+        $detail = SalesOrderDetail::query()->where('sales_order_id', $order->id)->firstOrFail();
+
+        // Membiarkannya outstanding berarti pesanan terlihat terutang
+        // selamanya, dan Sales menagih barang yang sudah diterima pelanggan.
+        $this->assertSame(0, (int) $detail->outstanding_qty);
+        $this->assertStringContainsString('Digantikan SKU lain', (string) $detail->substitution_note);
+    }
+
+    public function test_substitusi_dicatat_sebagai_penggantian_bukan_temuan_stok(): void
+    {
+        $lain = $this->produkLain();
+        $order = $this->pesananSudahDipicking(2, 2);
+        $note = $this->suratJalanBedaSku($order, $lain, 2);
+
+        $this->loginAt($this->karawang);
+        $this->post(route('wms.delivery.substitution', $note), [
+            'substitution_reason' => 'Pelanggan setuju diganti ukuran; sudah dikonfirmasi Sales.',
+        ]);
+        $this->kirim($note->fresh());
+
+        $catatan = (string) StockMovement::query()
+            ->where('product_id', $lain->id)
+            ->where('movement_type', StockMovement::TYPE_OUT)
+            ->value('notes');
+
+        // Kalimatnya menentukan ke mana orang mencari nanti. Menyebutnya
+        // selisih stok akan mengirim opname berikutnya mengejar selisih yang
+        // tidak pernah ada.
+        $this->assertStringContainsString('PENGGANTI', $catatan);
+        $this->assertStringNotContainsString('opname', $catatan);
+    }
+
+    public function test_konfirmasi_tanpa_alasan_ditolak(): void
+    {
+        $order = $this->pesananSudahDipicking(2, 2);
+        $note = $this->suratJalanBedaSku($order, $this->produkLain(), 2);
+
+        $this->loginAt($this->karawang);
+        $this->post(route('wms.delivery.substitution', $note), ['substitution_reason' => 'salah'])
+            ->assertSessionHasErrors('substitution_reason');
+
+        $this->assertNull($note->fresh()->substitution_confirmed_at);
+    }
+
+    public function test_konfirmasi_ditolak_bila_sku_nya_sebenarnya_cocok(): void
+    {
+        // Pintu ini hanya untuk SKU berbeda. Membiarkannya dipakai pada
+        // dokumen biasa berarti ia jadi tombol "lewati pemeriksaan".
+        $order = $this->pesananSudahDipicking(10, 10);
+        $note = $this->suratJalan($order, 8);
+
+        $this->loginAt($this->karawang);
+        $this->post(route('wms.delivery.substitution', $note), [
+            'substitution_reason' => 'Mencoba melewati pemeriksaan tanpa sebab.',
+        ])->assertSessionHas('error');
+
+        $this->assertNull($note->fresh()->substitution_confirmed_at);
+    }
+
+    public function test_layar_surat_jalan_menyebut_sku_berbeda_bukan_selisih_stok(): void
+    {
+        $order = $this->pesananSudahDipicking(2, 2);
+        $note = $this->suratJalanBedaSku($order, $this->produkLain(), 2);
+
+        $this->loginAt($this->karawang);
+
+        $this->get(route('wms.delivery.show', $note))
+            ->assertOk()
+            ->assertSee('Pengiriman Ditahan')
+            ->assertSee('tidak pernah dipicking')
+            // Formulir supir TIDAK boleh ikut tergambar: selama ia terlihat,
+            // orang mengisinya dulu lalu bertanya belakangan.
+            ->assertDontSee('Nyatakan Berangkat');
+    }
+
     /* --------------------------------------------------------- Qty dari BC */
 
     public function test_qty_surat_jalan_yang_dipakai_bukan_qty_picking(): void

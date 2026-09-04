@@ -21,6 +21,7 @@ class SalesOrderDetail extends Model
     protected $fillable = [
         'sales_order_id', 'product_id',
         'qty_ordered', 'qty_approved', 'qty_shipped', 'outstanding_qty',
+        'substitution_note',
     ];
 
     protected function casts(): array

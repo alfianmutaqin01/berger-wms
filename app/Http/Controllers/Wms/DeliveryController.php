@@ -115,8 +115,12 @@ class DeliveryController extends Controller
                 'lines.product:id,sku,name,uom', 'salesOrder.details.product:id,sku,name',
                 'customer:id,code,name', 'warehouse:id,code,name',
                 'importedBy:id,full_name', 'shippedBy:id,full_name',
+                'substitutionConfirmedBy:id,full_name',
             ]),
             'perbandingan' => $this->pengiriman->bandingkan($note),
+            // SKU berbeda MENGHENTIKAN pengiriman; layar perlu tahu itu
+            // sebelum formulir supir digambar.
+            'bedaSku' => $this->pengiriman->skuTidakCocok($note),
             'nomorTerakhir' => $this->nomorSupirTerakhir($request),
         ]);
     }
@@ -145,9 +149,20 @@ class DeliveryController extends Controller
             $hasil['dikirim'],
         );
 
-        // Dua keadaan yang TIDAK boleh lewat sebagai pesan sukses hijau,
-        // karena keduanya menuntut tindakan orang di lapangan.
+        // Keadaan yang TIDAK boleh lewat sebagai pesan sukses hijau, karena
+        // semuanya menuntut tindakan orang di lapangan.
         $peringatan = [];
+
+        if ($hasil['substitusi']) {
+            // Disebut lebih dulu: inilah yang membuat dua peringatan di
+            // bawahnya (barang kembali ke rak, barang keluar dari rak) masuk
+            // akal. Tanpa kalimat ini keduanya terbaca sebagai dua masalah
+            // terpisah, persis kekeliruan yang membuat fitur ini ada.
+            $peringatan[] =
+                'Pengiriman ini memakai BARANG PENGGANTI: SKU di Surat Jalan berbeda dari yang dipicking, '.
+                'dan penggantiannya sudah dikonfirmasi. Baris pesanan yang digantikan ditutup, bukan '.
+                'dibiarkan outstanding. Ini BUKAN selisih stok.';
+        }
 
         if ($hasil['dikembalikan'] > 0) {
             // Barang fisik baru saja berpindah kembali ke rak, dan yang
@@ -184,6 +199,43 @@ class DeliveryController extends Controller
             $peringatan === [] ? 'success' : 'warning',
             $peringatan === [] ? $pesan : $pesan.' '.implode(' ', $peringatan),
         );
+    }
+
+    /**
+     * Menyatakan barang beda SKU memang yang naik kendaraan.
+     *
+     * Pintu terpisah, bukan centang di formulir berangkat: centang yang
+     * menempel pada formulir yang sama akan ikut tercentang bersama yang lain.
+     */
+    public function confirmSubstitution(Request $request, DeliveryNote $note): RedirectResponse
+    {
+        WarehouseScope::assert($note->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'substitution_reason' => ['required', 'string', 'min:10', 'max:1000'],
+        ], [
+            'substitution_reason.required' => 'Alasan wajib diisi.',
+            'substitution_reason.min' => 'Tulis alasannya minimal 10 karakter, mis. "pelanggan setuju diganti ukuran 20Kg karena 5Kg kosong".',
+        ], [
+            'substitution_reason' => 'alasan penggantian',
+        ]);
+
+        try {
+            $this->pengiriman->confirmSubstitution(
+                $note,
+                $data['substitution_reason'],
+                $request->user()?->id,
+            );
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('warning', sprintf(
+            'Penggantian barang pada Surat Jalan %s dikonfirmasi atas nama Anda. '.
+            'Barang yang semula dipicking akan dikembalikan ke rak, dan barang di Surat Jalan yang dikeluarkan. '.
+            'Pastikan yang naik kendaraan memang barang di Surat Jalan.',
+            $note->document_no,
+        ));
     }
 
     /**
