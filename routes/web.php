@@ -84,6 +84,31 @@ Route::get('/health', function () {
     ], $allHealthy ? 200 : 503);
 })->name('health');
 
+/*
+|--------------------------------------------------------------------------
+| Profil sendiri — MILIK SEMUA ROLE, lintas portal
+|--------------------------------------------------------------------------
+|
+| Sengaja DI LUAR prefix /wms. Sebelumnya profil hanya ada di Portal WMS,
+| sehingga Tim Sales — satu-satunya role yang dipagari keluar dari portal itu
+| oleh middleware `portal:wms` — tidak punya cara mengganti kata sandinya
+| sendiri maupun melihat perangkat mana saja yang sedang memakai akunnya.
+| Justru merekalah yang paling sering berpindah perangkat.
+|
+| Mengganti sandi dan mengusir perangkat asing bukan fitur gudang; itu milik
+| akun, dan setiap akun berhak atasnya. Karena itu di sini hanya ada `auth`
+| dan `session.track`, tanpa `portal:` maupun `can:`.
+*/
+Route::middleware(['auth', 'session.track'])->group(function () {
+    Route::get('/profile', [ProfileController::class, 'index'])->name('profile');
+    Route::post('/profile/password', [ProfileController::class, 'updatePassword'])
+        ->name('profile.password');
+    Route::post('/profile/sessions/revoke-others', [ProfileController::class, 'revokeOtherSessions'])
+        ->name('profile.sessions.revoke-others');
+    Route::delete('/profile/sessions/{session}', [ProfileController::class, 'revokeSession'])
+        ->name('profile.sessions.revoke');
+});
+
 // SALES PORTAL ROUTES
 Route::prefix('sales')->middleware(['auth', 'session.track', 'portal:sales'])->group(function () {
     Route::get('/dashboard', function () {
@@ -162,13 +187,10 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     // Notifikasi & profil: milik pribadi tiap user, tidak dibatasi role.
     Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::get('/profile', [ProfileController::class, 'index'])->name('wms.profile');
-    Route::post('/profile/password', [ProfileController::class, 'updatePassword'])
-        ->name('wms.profile.password');
-    Route::post('/profile/sessions/revoke-others', [ProfileController::class, 'revokeOtherSessions'])
-        ->name('wms.profile.sessions.revoke-others');
-    Route::delete('/profile/sessions/{session}', [ProfileController::class, 'revokeSession'])
-        ->name('wms.profile.sessions.revoke');
+    // Profil PINDAH ke /profile supaya Tim Sales ikut kebagian (lihat blok
+    // di atas grup ini). Alamat lama dipertahankan sebagai pengalihan: ia
+    // sudah tersebar di bookmark dan tautan lama.
+    Route::get('/profile', fn () => redirect()->route('profile'));
 
     Route::prefix('inbound')->group(function () {
         Route::middleware('can:'.Permission::INBOUND_HISTORY)->group(function () {

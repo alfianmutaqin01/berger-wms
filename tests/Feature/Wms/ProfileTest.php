@@ -8,6 +8,7 @@ use App\Models\UserSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -63,13 +64,89 @@ class ProfileTest extends TestCase
         ]);
     }
 
+    /* -------------------------------------------------------- Semua role */
+
+    /**
+     * @return array<string, array{0:string}>
+     */
+    public static function semuaRole(): array
+    {
+        return [
+            'super admin' => [Role::SUPER_ADMIN],
+            'manager' => [Role::MANAGER],
+            'logistik' => [Role::LOGISTICS],
+            'produksi' => [Role::PRODUCTION],
+            'operator gudang' => [Role::WAREHOUSE_OPERATOR],
+            'sales' => [Role::SALES],
+        ];
+    }
+
+    /**
+     * Profil MILIK SEMUA ROLE, bukan hanya penghuni Portal WMS.
+     *
+     * Sebelumnya rutenya berada di dalam prefix /wms, yang dipagari middleware
+     * `portal:wms`. Tim Sales adalah satu-satunya role yang ditolak pagar itu
+     * — sehingga justru role yang paling sering berpindah perangkat tidak
+     * punya cara mengganti sandinya sendiri maupun mengusir perangkat asing.
+     */
+    #[DataProvider('semuaRole')]
+    public function test_setiap_role_dapat_membuka_profilnya(string $slug): void
+    {
+        [$user] = $this->login($slug);
+
+        $this->get(route('profile'))
+            ->assertOk()
+            ->assertSee($user->full_name)
+            ->assertSee('Ubah Kata Sandi');
+    }
+
+    #[DataProvider('semuaRole')]
+    public function test_setiap_role_dapat_mengganti_sandinya(string $slug): void
+    {
+        [$user] = $this->login($slug);
+
+        $this->post(route('profile.password'), [
+            'current_password' => 'rahasia123',
+            'new_password' => 'sandibaru9',
+            'new_password_confirmation' => 'sandibaru9',
+        ])->assertSessionHas('success');
+
+        $this->assertTrue(Hash::check('sandibaru9', $user->fresh()->password));
+    }
+
+    public function test_sales_memakai_kerangka_portalnya_sendiri(): void
+    {
+        $this->login(Role::SALES);
+
+        // Layout SOMS, bukan WMS: sidebar WMS memuat menu gudang yang tidak
+        // boleh disentuh Sales, dan memunculkannya di layarnya adalah tawaran
+        // menuju halaman yang pasti menjawab 403.
+        $this->get(route('profile'))
+            ->assertOk()
+            ->assertSee('Pesanan Saya')
+            ->assertDontSee('Master Produk');
+    }
+
+    public function test_alamat_lama_dialihkan(): void
+    {
+        $this->login();
+
+        // /wms/profile sudah tersebar di bookmark dan tautan lama.
+        $this->get('/wms/profile')->assertRedirect(route('profile'));
+    }
+
+    public function test_tamu_tidak_bisa_membuka_profil(): void
+    {
+        $this->get(route('profile'))->assertRedirect(route('login'));
+    }
+
     /* --------------------------------------------------------- Ganti sandi */
 
     public function test_kata_sandi_benar_benar_berubah(): void
     {
         [$user] = $this->login();
 
-        $this->post(route('wms.profile.password'), [
+        $this->post(route('profile.password'), [
             'current_password' => 'rahasia123',
             'new_password' => 'sandibaru9',
             'new_password_confirmation' => 'sandibaru9',
@@ -85,7 +162,7 @@ class ProfileTest extends TestCase
     {
         [$user] = $this->login();
 
-        $this->post(route('wms.profile.password'), [
+        $this->post(route('profile.password'), [
             'current_password' => 'bukan-ini',
             'new_password' => 'sandibaru9',
             'new_password_confirmation' => 'sandibaru9',
@@ -98,7 +175,7 @@ class ProfileTest extends TestCase
     {
         [$user] = $this->login();
 
-        $this->post(route('wms.profile.password'), [
+        $this->post(route('profile.password'), [
             'current_password' => 'rahasia123',
             'new_password' => 'sandibaru9',
             'new_password_confirmation' => 'sandilain9',
@@ -114,7 +191,7 @@ class ProfileTest extends TestCase
         // Tanpa angka. Kalau jalur ini lebih longgar daripada StoreUserRequest,
         // kebijakan sandi organisasi bisa dilewati hanya dengan mengganti
         // sandi sendiri sesudah dibuatkan Admin.
-        $this->post(route('wms.profile.password'), [
+        $this->post(route('profile.password'), [
             'current_password' => 'rahasia123',
             'new_password' => 'hurufsaja',
             'new_password_confirmation' => 'hurufsaja',
@@ -127,7 +204,7 @@ class ProfileTest extends TestCase
     {
         $this->login();
 
-        $this->post(route('wms.profile.password'), [
+        $this->post(route('profile.password'), [
             'current_password' => 'rahasia123',
             'new_password' => 'rahasia123',
             'new_password_confirmation' => 'rahasia123',
@@ -139,7 +216,7 @@ class ProfileTest extends TestCase
         [$user, $token] = $this->login();
         $lain = $this->sesiLain($user);
 
-        $this->post(route('wms.profile.password'), [
+        $this->post(route('profile.password'), [
             'current_password' => 'rahasia123',
             'new_password' => 'sandibaru9',
             'new_password_confirmation' => 'sandibaru9',
@@ -162,7 +239,7 @@ class ProfileTest extends TestCase
             'locked_until' => now()->subMinute(),
         ]);
 
-        $this->post(route('wms.profile.password'), [
+        $this->post(route('profile.password'), [
             'current_password' => 'rahasia123',
             'new_password' => 'sandibaru9',
             'new_password_confirmation' => 'sandibaru9',
@@ -180,7 +257,7 @@ class ProfileTest extends TestCase
         [$user] = $this->login();
         $this->sesiLain($user, 'Mozilla/5.0 Android Chrome');
 
-        $this->get(route('wms.profile'))
+        $this->get(route('profile'))
             ->assertOk()
             ->assertSee('Android')
             ->assertSee('10.0.0.9')
@@ -194,7 +271,7 @@ class ProfileTest extends TestCase
         [$user] = $this->login();
         $lain = $this->sesiLain($user);
 
-        $this->delete(route('wms.profile.sessions.revoke', $lain))
+        $this->delete(route('profile.sessions.revoke', $lain))
             ->assertSessionHas('success');
 
         $this->assertNull(UserSession::find($lain->id));
@@ -205,7 +282,7 @@ class ProfileTest extends TestCase
         [, $token] = $this->login();
         $ini = UserSession::where('session_id', $token)->firstOrFail();
 
-        $this->delete(route('wms.profile.sessions.revoke', $ini))
+        $this->delete(route('profile.sessions.revoke', $ini))
             ->assertSessionHas('error');
 
         $this->assertNotNull(UserSession::find($ini->id));
@@ -219,7 +296,7 @@ class ProfileTest extends TestCase
         $sesiOrangLain = $this->sesiLain($orangLain);
 
         // 404, BUKAN 403: 403 mengakui bahwa barisnya ada.
-        $this->delete(route('wms.profile.sessions.revoke', $sesiOrangLain))->assertNotFound();
+        $this->delete(route('profile.sessions.revoke', $sesiOrangLain))->assertNotFound();
 
         $this->assertNotNull(UserSession::find($sesiOrangLain->id));
     }
@@ -230,7 +307,7 @@ class ProfileTest extends TestCase
         $this->sesiLain($user, 'Android');
         $this->sesiLain($user, 'iPad');
 
-        $this->post(route('wms.profile.sessions.revoke-others'))->assertSessionHas('success');
+        $this->post(route('profile.sessions.revoke-others'))->assertSessionHas('success');
 
         $this->assertSame(1, UserSession::where('user_id', $user->id)->count());
         $this->assertNotNull(UserSession::where('session_id', $token)->first());

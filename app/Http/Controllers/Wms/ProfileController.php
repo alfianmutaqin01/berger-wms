@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\UpdatePasswordRequest;
+use App\Models\Role;
 use App\Models\UserSession;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,6 +43,15 @@ class ProfileController extends Controller
         return view('wms.profile', [
             'sesi' => $request->user()->sessions()->latest('last_activity_at')->get(),
             'tokenSaatIni' => $request->cookie(self::DEVICE_COOKIE),
+            /*
+             * LAYOUT DIPILIH DI SINI, bukan di view. Halaman ini dipakai dua
+             * portal yang kerangkanya berbeda: Tim Sales memakai layout SOMS
+             * (sidebar ringkas + bottom nav untuk HP), role lain memakai
+             * layout WMS. Menaruh pilihannya di view berarti view harus tahu
+             * soal role — pengetahuan yang tidak ada urusannya dengan
+             * menampilkan profil.
+             */
+            'layout' => $request->user()->hasRole(Role::SALES) ? 'layouts.soms' : 'layouts.wms',
         ]);
     }
 

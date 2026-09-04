@@ -29,7 +29,6 @@
                       $uName = $actor?->full_name ?? ($userName ?? 'Pengguna');
                       $uLabel = $actor?->role?->name ?? ($userLabel ?? '');
                       $uInitials = $actor?->initials ?? ($userInitials ?? '?');
-                      $isSalesUser = $actor?->hasRole(\App\Models\Role::SALES) ?? false;
                   @endphp
                   <h5 class="mb-0 fw-bold text-dark d-none d-md-flex align-items-center" style="letter-spacing: -0.5px;">
                       <i class="bi {{ $icon }} me-2 fs-4"></i> {{ $greeting }}, {{ $uName }}
@@ -92,9 +91,13 @@
                                       <small class="text-muted">{{ $uLabel }}</small>
                                   </div>
                               </li>
-                              @unless ($isSalesUser)
-                              <li><a class="dropdown-item py-2 mt-2" href="/wms/profile"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
-                              @endunless
+                              {{-- MILIK SEMUA ROLE. Dulu disembunyikan dari Tim Sales
+                                   karena profil hanya ada di Portal WMS, dan Sales
+                                   dipagari keluar dari portal itu — sehingga satu-satunya
+                                   role yang paling sering berpindah perangkat justru tidak
+                                   bisa mengganti sandinya sendiri. Rutenya kini di /profile,
+                                   di luar kedua portal. --}}
+                              <li><a class="dropdown-item py-2 mt-2" href="{{ route('profile') }}"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
 
                               <li><hr class="dropdown-divider"></li>
                               <li>

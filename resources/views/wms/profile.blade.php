@@ -1,4 +1,4 @@
-@extends('layouts.wms')
+@extends($layout)
 @section('title', 'Pengaturan Akun')
 
 @section('content')
@@ -88,7 +88,7 @@
                     <!-- TAB 1: GANTI PASSWORD -->
                     <div class="tab-pane fade show active" id="security" role="tabpanel" tabindex="0">
                         <h6 class="fw-bold mb-3 text-dark">Ubah Kata Sandi</h6>
-                        <form action="{{ route('wms.profile.password') }}" method="POST">
+                        <form action="{{ route('profile.password') }}" method="POST">
                             @csrf
                             <div class="row mb-3">
                                 <label class="col-sm-4 col-form-label text-muted small fw-semibold">Kata Sandi Saat Ini</label>
@@ -135,7 +135,7 @@
                                 <small class="text-muted">Kelola sesi aktif di berbagai perangkat.</small>
                             </div>
                             @if($sesi->where('session_id', '!=', $tokenSaatIni)->isNotEmpty())
-                            <form method="POST" action="{{ route('wms.profile.sessions.revoke-others') }}"
+                            <form method="POST" action="{{ route('profile.sessions.revoke-others') }}"
                                   onsubmit="return confirm('Keluarkan seluruh perangkat lain?');">
                                 @csrf
                                 <button class="btn btn-sm btn-outline-danger rounded-pill px-3">
@@ -170,7 +170,7 @@
                                         @if($ini)
                                             <span class="badge bg-success rounded-pill px-3 py-2">Sesi Ini (Aktif)</span>
                                         @else
-                                            <form method="POST" action="{{ route('wms.profile.sessions.revoke', $s) }}">
+                                            <form method="POST" action="{{ route('profile.sessions.revoke', $s) }}">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button class="btn btn-sm btn-outline-secondary rounded-pill px-3">Cabut Akses</button>
