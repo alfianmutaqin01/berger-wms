@@ -397,6 +397,23 @@ class ShipmentTest extends TestCase
         $this->assertSame('6281234567890', $note->driver_phone, 'Nomor disimpan dalam bentuk kirim WhatsApp.');
     }
 
+    /**
+     * Ditemukan saat uji coba: halaman "Nyatakan Berangkat" ada, rutenya ada,
+     * tapi tidak ada satu pun tautan menuju ke sana dari daftar. Fiturnya
+     * secara efektif tidak ada bagi pengguna.
+     */
+    public function test_daftar_surat_jalan_menautkan_ke_halaman_pengiriman(): void
+    {
+        $order = $this->pesananSudahDipicking(10, 10);
+        $note = $this->suratJalan($order, 10);
+
+        $this->loginAt($this->karawang);
+
+        $this->get(route('wms.delivery.index'))
+            ->assertOk()
+            ->assertSee(route('wms.delivery.show', $note), false);
+    }
+
     public function test_dokumen_tanpa_pesanan_tidak_bisa_dikirim(): void
     {
         $note = DeliveryNote::factory()->create([

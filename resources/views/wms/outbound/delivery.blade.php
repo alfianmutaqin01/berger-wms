@@ -27,6 +27,10 @@
             <div class="card-body">
                 <div class="small text-muted">Menunggu berangkat</div>
                 <div class="h3 fw-bold mb-0">{{ $stats['menunggu'] }}</div>
+                @if($stats['menunggu'] > 0)
+                    <a href="{{ route('wms.delivery.index', ['status' => \App\Models\DeliveryNote::STATUS_IMPORTED]) }}"
+                       class="small text-decoration-none">Lihat daftarnya</a>
+                @endif
             </div>
         </div>
     </div>
@@ -116,12 +120,16 @@
                         <th class="text-center">Baris</th>
                         <th>Tgl Kirim</th>
                         <th>Status</th>
+                        <th class="text-end">Tindakan</th>
                     </tr>
                 </thead>
                 <tbody>
                 @forelse($notes as $note)
                     <tr class="{{ $note->sales_order_id === null ? 'table-warning' : '' }}">
-                        <td><span class="fw-semibold font-monospace">{{ $note->document_no }}</span></td>
+                        <td>
+                            <a href="{{ route('wms.delivery.show', $note) }}"
+                               class="fw-semibold font-monospace text-decoration-none">{{ $note->document_no }}</a>
+                        </td>
                         <td class="font-monospace">{{ $note->bc_so_number }}</td>
                         <td>
                             <div class="fw-semibold">{{ $note->customer?->name ?? '—' }}</div>
@@ -141,10 +149,28 @@
                                 {{ $note->status_label }}
                             </span>
                         </td>
+                        {{-- Pintu masuk ke rincian. Tanpa kolom ini, halaman
+                             "Nyatakan Berangkat" tidak bisa dicapai sama sekali
+                             dari daftar — cacat yang ditemukan saat uji coba. --}}
+                        <td class="text-end">
+                            @if($note->status === \App\Models\DeliveryNote::STATUS_IMPORTED && $note->sales_order_id !== null)
+                                <a href="{{ route('wms.delivery.show', $note) }}" class="btn btn-sm btn-primary rounded-3">
+                                    <i class="bi bi-send me-1"></i> Kirim
+                                </a>
+                            @elseif($note->sales_order_id === null)
+                                <a href="{{ route('wms.delivery.show', $note) }}" class="btn btn-sm btn-outline-warning rounded-3">
+                                    Periksa
+                                </a>
+                            @else
+                                <a href="{{ route('wms.delivery.show', $note) }}" class="btn btn-sm btn-outline-secondary rounded-3">
+                                    Lihat
+                                </a>
+                            @endif
+                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="text-center py-5 text-muted">
+                        <td colspan="8" class="text-center py-5 text-muted">
                             <i class="bi bi-file-earmark-text display-6 d-block mb-2 opacity-50"></i>
                             Belum ada Surat Jalan yang disalin dari BC.
                         </td>
