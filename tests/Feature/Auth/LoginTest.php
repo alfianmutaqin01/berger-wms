@@ -243,7 +243,15 @@ class LoginTest extends TestCase
         $this->assertGuest();
     }
 
-    /** PRD §6.1 F-AUTH-03: durasi lockout meningkat tiap terkunci lagi setelah unlock. */
+    /**
+     * PRD §6.1 F-AUTH-03: durasi lockout meningkat tiap terkunci LAGI setelah
+     * unlock — tetapi tiap putaran tetap menuntut 3 kali gagal.
+     *
+     * Versi awal test ini hanya mengirim SATU kali salah lalu berharap akun
+     * terkunci, sehingga ia mengunci cacat sebagai perilaku yang benar:
+     * penghitung tidak pernah dimulai ulang, jadi sisa hitungan 3 dari putaran
+     * sebelumnya membuat satu kesalahan ketik langsung mengunci akun lagi.
+     */
     public function test_lockout_meningkat_progresif_setelah_unlock(): void
     {
         $user = $this->makeUser(Role::SALES, [
@@ -252,11 +260,57 @@ class LoginTest extends TestCase
             'locked_until' => now()->subMinute(), // sudah lewat, akun sudah unlock
         ]);
 
+        // Dua kali salah BELUM boleh mengunci: putaran barunya dimulai dari nol.
+        $this->post('/login', $this->loginPayload($user->email, 'salah'));
+        $this->post('/login', $this->loginPayload($user->email, 'salah'));
+
+        $user->refresh();
+        $this->assertSame(1, $user->lockout_count, 'Dua kali gagal belum boleh mengunci akun.');
+        $this->assertTrue($user->locked_until === null || $user->locked_until->isPast());
+
+        // Yang ketiga barulah mengunci, dan durasinya naik jadi 10 menit.
         $this->post('/login', $this->loginPayload($user->email, 'salah'));
 
         $user->refresh();
         $this->assertSame(2, $user->lockout_count);
         $this->assertEqualsWithDelta(10, now()->diffInMinutes($user->locked_until), 1);
+    }
+
+    /**
+     * Cacat yang ditemukan saat audit: sesudah kunci berakhir, penghitung
+     * gagal tetap 3 — sehingga satu kali salah ketik langsung menyentuh ambang
+     * dan mengunci akun lagi, dengan durasi yang terus naik. Bagi pengguna,
+     * "3 kali salah" berubah jadi "sekali salah" selamanya.
+     */
+    public function test_penghitung_gagal_dimulai_ulang_setelah_kunci_berakhir(): void
+    {
+        $user = $this->makeUser(Role::SALES, [
+            'failed_login_attempts' => 3,
+            'lockout_count' => 1,
+            'locked_until' => now()->subMinute(),
+        ]);
+
+        $this->post('/login', $this->loginPayload($user->email, 'salah'));
+
+        $user->refresh();
+        $this->assertSame(1, $user->failed_login_attempts, 'Putaran baru harus dimulai dari satu, bukan empat.');
+        $this->assertSame(1, $user->lockout_count, 'Belum boleh terkunci lagi.');
+    }
+
+    public function test_satu_kali_salah_setelah_unlock_masih_bisa_login_dengan_sandi_benar(): void
+    {
+        $user = $this->makeUser(Role::SALES, [
+            'failed_login_attempts' => 3,
+            'lockout_count' => 1,
+            'locked_until' => now()->subMinute(),
+        ]);
+
+        $this->post('/login', $this->loginPayload($user->email, 'salah'));
+        $this->post('/login', $this->loginPayload($user->email, 'rahasia123'))
+            ->assertRedirect('/sales/dashboard');
+
+        $this->assertAuthenticatedAs($user->fresh());
+        $this->assertSame(0, $user->fresh()->failed_login_attempts);
     }
 
     /* ------------------------------------------------------- Session tracking */

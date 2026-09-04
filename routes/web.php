@@ -162,8 +162,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     // Notifikasi & profil: milik pribadi tiap user, tidak dibatasi role.
     Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::get('/profile', [ProfileController::class, 'index']);
-    Route::post('/profile/password', [ProfileController::class, 'updatePassword']);
+    Route::get('/profile', [ProfileController::class, 'index'])->name('wms.profile');
+    Route::post('/profile/password', [ProfileController::class, 'updatePassword'])
+        ->name('wms.profile.password');
+    Route::post('/profile/sessions/revoke-others', [ProfileController::class, 'revokeOtherSessions'])
+        ->name('wms.profile.sessions.revoke-others');
+    Route::delete('/profile/sessions/{session}', [ProfileController::class, 'revokeSession'])
+        ->name('wms.profile.sessions.revoke');
 
     Route::prefix('inbound')->group(function () {
         Route::middleware('can:'.Permission::INBOUND_HISTORY)->group(function () {

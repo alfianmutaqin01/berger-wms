@@ -177,6 +177,25 @@ class User extends Authenticatable
      */
     public function registerFailedLogin(): void
     {
+        /*
+         * PENGHITUNG DIMULAI ULANG SETIAP PUTARAN KUNCI.
+         *
+         * Tanpa ini, `failed_login_attempts` tetap 3 sesudah kuncinya habis —
+         * sehingga SATU kali salah ketik berikutnya langsung menyentuh ambang
+         * 3 dan mengunci lagi, dengan durasi yang naik terus (5 -> 10 -> 30 ->
+         * 60 -> 120 menit). PRD menulis "3 kali gagal", bukan "sekali gagal
+         * bagi siapa pun yang pernah terkunci".
+         *
+         * `lockout_count` TIDAK ikut direset: itu riwayat berapa kali akun ini
+         * pernah terkunci, dan justru itu yang membuat durasinya meningkat
+         * bagi akun yang berulang kali diserang. Hanya Super Admin yang boleh
+         * menuntaskannya lewat unlock manual.
+         */
+        if ($this->locked_until !== null && $this->locked_until->isPast()) {
+            $this->failed_login_attempts = 0;
+            $this->locked_until = null;
+        }
+
         $this->failed_login_attempts++;
 
         if ($this->failed_login_attempts >= 3) {

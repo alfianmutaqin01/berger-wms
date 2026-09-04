@@ -3,7 +3,6 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-use Illuminate\Support\Facades\Storage;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -30,25 +29,22 @@ Schedule::command('stock:sweep-expired')
 
 /*
 |--------------------------------------------------------------------------
-| Sapu berkas pratinjau impor yang telantar
+| Bersihkan sisa data: sesi mati, berkas impor telantar, riwayat login lama
 |--------------------------------------------------------------------------
 |
-| ImportController menyimpan berkas unggahan sementara, lalu menghapusnya
-| saat impor dikonfirmasi ATAU dibatalkan. Pengguna yang menutup tab di
-| halaman pratinjau tidak melakukan keduanya, sehingga berkasnya tertinggal
-| selamanya — sepuluh berkas ~2,7 MB sudah menumpuk di sana dalam dua hari
-| pemakaian, semuanya berisi data pelanggan.
+| TIAP JAM, bukan tengah malam. Versi sebelumnya adalah closure `daily()`
+| yang hanya menyapu berkas impor — dan karena `daily()` berarti pukul 00:00,
+| komputer pengembangan yang dimatikan malam hari tidak pernah menjalankannya.
+| Berkas tanggal 1 September masih tergeletak di sana pada 4 September, berisi
+| data pelanggan. Jadwal yang hanya berlaku bila mesin menyala pada satu menit
+| tertentu bukanlah jadwal.
 |
-| Ambang 1 hari jauh lebih lama daripada umur wajar satu sesi pratinjau,
-| jadi tidak mungkin menghapus berkas yang masih ditunggu konfirmasinya.
+| Isinya pindah ke App\Console\Commands\BersihkanData supaya bisa dijalankan
+| tangan saat dibutuhkan dan bisa diuji — closure di berkas rute tidak bisa
+| keduanya.
 */
-Schedule::call(function () {
-    $disk = Storage::disk('local');
-    $batas = now()->subDay()->getTimestamp();
-
-    foreach ($disk->files('imports') as $berkas) {
-        if ($disk->lastModified($berkas) < $batas) {
-            $disk->delete($berkas);
-        }
-    }
-})->daily()->name('sapu-berkas-impor')->withoutOverlapping();
+Schedule::command('wms:bersihkan')
+    ->hourly()
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping()
+    ->onOneServer();
