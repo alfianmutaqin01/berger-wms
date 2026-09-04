@@ -111,6 +111,12 @@ class DeliveryController extends Controller
             'kandidat' => $note->sales_order_id === null
                 ? $koreksi->kandidat($note)
                 : collect(),
+            // Kenapa daftarnya kosong. Tanpa ini, "tidak ada pesanan yang
+            // cocok" adalah jalan buntu: tiga sebab yang berbeda terlihat
+            // sama, padahal tindak lanjutnya berbeda.
+            'diagnosa' => $note->sales_order_id === null
+                ? $koreksi->diagnosaKandidat($note)
+                : null,
             'note' => $note->load([
                 'lines.product:id,sku,name,uom', 'salesOrder.details.product:id,sku,name',
                 'customer:id,code,name', 'warehouse:id,code,name',

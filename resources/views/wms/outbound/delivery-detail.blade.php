@@ -161,11 +161,45 @@
                     </p>
 
                     @if($kandidat->isEmpty())
-                        <div class="small text-muted">
-                            Tidak ada pesanan yang cocok. Yang ditampilkan hanya pesanan
-                            <strong>pelanggan yang sama</strong> yang sudah dipicking dan belum punya Surat Jalan.
-                            Kalau pesanannya belum sampai tahap itu, selesaikan dulu picking-nya.
+                        {{-- Kosongnya daftar punya tiga sebab yang berbeda, dan
+                             tindak lanjutnya berbeda pula. Menyebutnya "tidak ada
+                             yang cocok" saja meninggalkan orang tanpa langkah
+                             berikutnya. --}}
+                        @if(! $diagnosa['pelanggan_dikenal'])
+                        <div class="alert alert-warning border-0 rounded-3 small mb-0">
+                            <div class="fw-semibold mb-1">Kode pelanggan di Surat Jalan tidak dikenal sistem ini</div>
+                            Kode <span class="font-monospace">{{ $note->customer_code ?: '(kosong)' }}</span>
+                            tidak ada di Master Customer, jadi sistem tidak bisa menyodorkan calon pesanan.
+                            Tambahkan pelanggannya di Master Customer lebih dulu, atau periksa kode di BC.
                         </div>
+                        @elseif($diagnosa['punya_pesanan'] === 0)
+                        <div class="alert alert-warning border-0 rounded-3 small mb-0">
+                            <div class="fw-semibold mb-1">Pelanggan ini belum punya pesanan sama sekali di sistem</div>
+                            Surat Jalan-nya ada di BC, tetapi pesanannya tidak pernah masuk ke sistem ini —
+                            jadi ini <strong>bukan salah ketik nomor SO</strong>, dan tidak ada yang bisa dipasangkan.
+                            Biasanya berarti pesanan itu dibuat langsung di BC tanpa lewat Portal Sales.
+                            Kalau seharusnya ada, minta Sales memasukkannya lalu terima pesanannya dulu.
+                        </div>
+                        @else
+                        <div class="alert alert-warning border-0 rounded-3 small mb-0">
+                            <div class="fw-semibold mb-1">Pesanan pelanggan ini ada, tapi tidak ada yang bisa dipasangkan</div>
+                            <ul class="mb-0 ps-3">
+                                @if($diagnosa['sudah_punya_sj'] > 0)
+                                    <li>{{ $diagnosa['sudah_punya_sj'] }} pesanan <strong>sudah punya Surat Jalan</strong> sendiri.</li>
+                                @endif
+                                @if($diagnosa['di_luar_tahap'] > 0)
+                                    <li>
+                                        {{ $diagnosa['di_luar_tahap'] }} pesanan sudah lewat tahap ini
+                                        (sudah berangkat atau selesai) — Surat Jalan tidak bisa dipasangkan mundur.
+                                    </li>
+                                @endif
+                                <li>
+                                    Yang bisa dipasangkan hanya pesanan yang sudah diterima dan
+                                    <strong>belum berangkat</strong>.
+                                </li>
+                            </ul>
+                        </div>
+                        @endif
                     @else
                     <div class="row g-2">
                         <div class="col-12 col-md-8">

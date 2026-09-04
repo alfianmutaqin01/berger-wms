@@ -101,12 +101,12 @@ class SoNumberFixTest extends TestCase
     }
 
     /** Surat Jalan yang belum menemukan pesanannya — persis hasil impor BC. */
-    private function sjYatim(string $nomorSo, ?Customer $customer = null): DeliveryNote
+    private function sjYatim(string $nomorSo, ?Customer $customer = null, string $dokumen = '206215'): DeliveryNote
     {
         $customer ??= $this->toko;
 
         $note = DeliveryNote::factory()->create([
-            'document_no' => '206215',
+            'document_no' => $dokumen,
             'bc_so_number' => $nomorSo,
             'sales_order_id' => null,
             'warehouse_id' => null,
@@ -231,6 +231,76 @@ class SoNumberFixTest extends TestCase
             ->assertOk()
             ->assertSee($cocok->order_number)
             ->assertDontSee('PO-LAIN');
+    }
+
+    /**
+     * Salah ketik paling sering ketahuan SEBELUM picking dimulai: ekspor SJ
+     * harian BC masuk pagi, pesanannya baru diterima. Menyaring keluar
+     * pesanan yang baru diterima membuat daftar kandidat kosong persis pada
+     * kasus yang paling sering terjadi.
+     */
+    public function test_pesanan_yang_baru_diterima_ikut_jadi_kandidat(): void
+    {
+        $order = $this->pesanan('SO260930', [
+            'status' => SalesOrder::STATUS_APPROVED,
+            'picking_completed_at' => null,
+        ]);
+        $sj = $this->sjYatim('SO260903');
+
+        $this->login();
+
+        $this->get(route('wms.delivery.show', $sj))
+            ->assertOk()
+            ->assertSee($order->order_number);
+
+        $this->post(route('wms.delivery.pair', $sj), ['sales_order_id' => $order->id])
+            ->assertSessionHas('success');
+
+        $this->assertSame('SO260903', $order->fresh()->bc_so_number);
+    }
+
+    /* ------------------------------------------- Kenapa kandidatnya kosong */
+
+    public function test_pelanggan_tanpa_pesanan_dijelaskan_bukan_dibiarkan_buntu(): void
+    {
+        // Kejadian nyata di uji coba: SJ terbit di BC untuk pesanan yang
+        // tidak pernah masuk ke sistem ini. Layar lama hanya bilang "tidak
+        // ada pesanan yang cocok" dan berhenti di situ.
+        $sj = $this->sjYatim('SO260903');
+
+        $this->login();
+
+        $this->get(route('wms.delivery.show', $sj))
+            ->assertOk()
+            ->assertSee('belum punya pesanan sama sekali');
+    }
+
+    public function test_kode_pelanggan_tak_dikenal_dijelaskan_tersendiri(): void
+    {
+        $sj = $this->sjYatim('SO260903');
+        $sj->forceFill(['customer_id' => null, 'customer_code' => 'IDR00000'])->save();
+
+        $this->login();
+
+        // Sebabnya berbeda dari "pelanggan tidak punya pesanan", dan tindak
+        // lanjutnya juga berbeda — jadi kalimatnya tidak boleh sama.
+        $this->get(route('wms.delivery.show', $sj->fresh()))
+            ->assertOk()
+            ->assertSee('tidak dikenal sistem ini');
+    }
+
+    public function test_pesanan_yang_sudah_punya_sj_dijelaskan_sebagai_sebab(): void
+    {
+        $lain = $this->pesanan('SO888888');
+        $this->sjYatim('SO888888')->forceFill(['sales_order_id' => $lain->id])->save();
+
+        $sj = $this->sjYatim('SO260903', null, '206299');
+
+        $this->login();
+
+        $this->get(route('wms.delivery.show', $sj->fresh()))
+            ->assertOk()
+            ->assertSee('sudah punya Surat Jalan');
     }
 
     /* ------------------------------------------------------ Koreksi manual */

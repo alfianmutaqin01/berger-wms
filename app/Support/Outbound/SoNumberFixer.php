@@ -47,6 +47,25 @@ class SoNumberFixer
     ];
 
     /**
+     * Tahap pesanan yang masih bisa dipasangkan dengan Surat Jalan.
+     *
+     * APPROVED IKUT, dan itu bukan kelonggaran melainkan koreksi: semula
+     * daftar ini hanya PICKING dan READY_TO_SHIP, padahal salah ketik nomor
+     * SO paling sering ketahuan justru SEBELUM picking dimulai — ekspor SJ
+     * harian BC masuk pagi, pesanannya baru diterima dan belum dipicking.
+     * Menyaringnya keluar membuat daftar kandidat kosong persis pada kasus
+     * yang paling sering terjadi.
+     *
+     * DRAFT dan PENDING tetap di luar: keduanya belum punya nomor SO sama
+     * sekali karena belum pernah masuk BC, jadi mustahil punya Surat Jalan.
+     */
+    private const TAHAP_BISA_DIPASANGKAN = [
+        SalesOrder::STATUS_APPROVED,
+        SalesOrder::STATUS_PICKING,
+        SalesOrder::STATUS_READY_TO_SHIP,
+    ];
+
+    /**
      * Memasangkan Surat Jalan yatim ke pesanannya, sekaligus membetulkan
      * nomor SO pesanan itu agar sama dengan dokumen BC.
      *
@@ -175,10 +194,7 @@ class SoNumberFixer
     {
         return SalesOrder::query()
             ->with(['customer:id,code,name', 'warehouse:id,code,name'])
-            ->whereIn('status', [
-                SalesOrder::STATUS_PICKING,
-                SalesOrder::STATUS_READY_TO_SHIP,
-            ])
+            ->whereIn('status', self::TAHAP_BISA_DIPASANGKAN)
             ->whereNull('cancelled_at')
             ->whereNull('so_merged_into_id')
             // Pesanan yang SJ-nya sudah ada tidak butuh SJ kedua.
@@ -194,6 +210,47 @@ class SoNumberFixer
             ->orderByDesc('id')
             ->limit($batas)
             ->get();
+    }
+
+    /**
+     * KENAPA daftar kandidat kosong.
+     *
+     * "Tidak ada pesanan yang cocok" tanpa sebab adalah jalan buntu: orang
+     * yang membacanya tidak tahu apakah ia salah pilih menu, sistemnya rusak,
+     * atau memang tidak ada apa-apa untuk dipasangkan. Ketiganya menuntut
+     * tindakan berbeda, dan hanya angka di bawah ini yang bisa membedakannya.
+     *
+     * @return array{pelanggan_dikenal:bool, punya_pesanan:int, sudah_punya_sj:int, di_luar_tahap:int}
+     */
+    public function diagnosaKandidat(DeliveryNote $note): array
+    {
+        $customerId = $note->customer_id;
+
+        if ($customerId === null) {
+            return [
+                'pelanggan_dikenal' => false,
+                'punya_pesanan' => 0,
+                'sudah_punya_sj' => 0,
+                'di_luar_tahap' => 0,
+            ];
+        }
+
+        $milikPelanggan = fn () => SalesOrder::query()
+            ->where('customer_id', $customerId)
+            ->whereNull('cancelled_at')
+            ->whereNull('so_merged_into_id');
+
+        return [
+            'pelanggan_dikenal' => true,
+            'punya_pesanan' => $milikPelanggan()->count(),
+            'sudah_punya_sj' => $milikPelanggan()
+                ->whereIn('status', self::TAHAP_BISA_DIPASANGKAN)
+                ->whereHas('deliveryNotes')
+                ->count(),
+            'di_luar_tahap' => $milikPelanggan()
+                ->whereNotIn('status', self::TAHAP_BISA_DIPASANGKAN)
+                ->count(),
+        ];
     }
 
     /* ------------------------------------------------------------- Dalam */
@@ -229,10 +286,7 @@ class SoNumberFixer
             ));
         }
 
-        if (! in_array($pesanan->status, [
-            SalesOrder::STATUS_PICKING,
-            SalesOrder::STATUS_READY_TO_SHIP,
-        ], true)) {
+        if (! in_array($pesanan->status, self::TAHAP_BISA_DIPASANGKAN, true)) {
             throw new RuntimeException(sprintf(
                 'Pesanan %s berstatus "%s". Surat Jalan hanya bisa dipasangkan ke pesanan yang belum berangkat.',
                 $pesanan->order_number,
