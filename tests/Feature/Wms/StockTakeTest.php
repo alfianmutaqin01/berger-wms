@@ -273,6 +273,70 @@ class StockTakeTest extends TestCase
         $this->assertSame(10, StockTakeItem::firstOrFail()->qty_physical);
     }
 
+    /*
+    | Penyimpanan tanpa memuat ulang halaman.
+    |
+    | Satu sesi opname bisa berisi ribuan baris. Dengan submit biasa, orang
+    | yang sudah menghitung sampai baris terakhir dilempar kembali ke puncak
+    | halaman setiap kali satu centang ditekan. Layarnya mengirim lewat
+    | fetch(), dan endpoint yang sama harus menjawab dua bentuk.
+    */
+
+    public function test_hitungan_lewat_json_menjawab_selisih_dan_ringkasan(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->stok(40);
+        $this->bukaSesi();
+
+        $item = StockTakeItem::orderBy('id')->firstOrFail();
+
+        $this->postJson(route('wms.stocktake.count', $item), ['qty_physical' => 25])
+            ->assertOk()
+            ->assertJsonPath('qty_physical', 25)
+            ->assertJsonPath('selisih', -5)
+            // Kartu ringkas ikut dikirim supaya angkanya tidak diam-diam basi
+            // sementara halamannya tidak pernah dimuat ulang.
+            ->assertJsonPath('ringkasan.dihitung', 1)
+            ->assertJsonPath('ringkasan.belum', 1)
+            ->assertJsonPath('ringkasan.selisih', 1);
+    }
+
+    /** Penolakan aturan opname harus terbaca juga oleh layar yang memakai fetch. */
+    public function test_penolakan_hitungan_lewat_json_menjawab_422_beserta_alasannya(): void
+    {
+        $this->loginAs();
+        $this->stok(4, 6);
+        $this->bukaSesi();
+
+        $this->postJson(route('wms.stocktake.count', StockTakeItem::firstOrFail()), ['qty_physical' => 3])
+            ->assertStatus(422)
+            ->assertJsonPath('pesan', fn (?string $p) => $p !== null && str_contains($p, 'dicadangkan'));
+
+        $this->assertNull(StockTakeItem::firstOrFail()->qty_physical);
+    }
+
+    /**
+     * Formulirnya tetap formulir sungguhan.
+     *
+     * Kalau JavaScript-nya gagal dimuat, penghitungan harus tetap berjalan —
+     * hanya kembali ke perilaku muat ulang. Operator yang berdiri di depan rak
+     * dengan tombol yang tidak melakukan apa-apa adalah kegagalan yang paling
+     * mahal di fitur ini.
+     */
+    public function test_submit_formulir_biasa_tetap_menyimpan_hitungan(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->bukaSesi();
+
+        $this->hitung(StockTakeItem::firstOrFail(), 25)
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame(25, StockTakeItem::firstOrFail()->qty_physical);
+    }
+
     /* =========================================================== Pengesahan */
 
     public function test_pengesahan_menerapkan_selisih_dan_mencatat_ledger(): void

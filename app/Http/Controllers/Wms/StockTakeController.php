@@ -9,6 +9,7 @@ use App\Models\StockTakeItem;
 use App\Models\Warehouse;
 use App\Support\Inventory\StockTakeRun;
 use App\Support\WarehouseScope;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -138,8 +139,22 @@ class StockTakeController extends Controller
         ]);
     }
 
-    /** Menyimpan hasil hitungan satu baris. */
-    public function count(Request $request, StockTakeItem $item): RedirectResponse
+    /**
+     * Menyimpan hasil hitungan satu baris.
+     *
+     * MENJAWAB DUA PEMANGGIL, dan itu disengaja. Layar penghitungan
+     * mengirimnya lewat fetch() dan menerima JSON, sehingga halaman TIDAK
+     * dimuat ulang: sesi opname bisa berisi ribuan baris, dan memuat ulang
+     * setiap kali satu baris disimpan akan melempar orang yang sudah
+     * menghitung sampai baris terakhir kembali ke puncak halaman.
+     *
+     * Formulirnya tetap formulir sungguhan yang bisa disubmit biasa. Kalau
+     * JavaScript-nya gagal dimuat, penghitungan tetap berjalan — hanya
+     * kembali ke perilaku muat ulang. Yang tidak boleh terjadi adalah
+     * operator berdiri di depan rak dengan tombol yang tidak melakukan
+     * apa-apa.
+     */
+    public function count(Request $request, StockTakeItem $item): RedirectResponse|JsonResponse
     {
         WarehouseScope::assert($item->stockTake->warehouse_id, $request->user());
 
@@ -161,7 +176,24 @@ class StockTakeController extends Controller
                 $request->user()?->id,
             );
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return $request->wantsJson()
+                ? response()->json(['pesan' => $e->getMessage()], 422)
+                : back()->with('error', $e->getMessage());
+        }
+
+        $item->refresh()->load('countedBy:id,full_name');
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'qty_physical' => $item->qty_physical,
+                'selisih' => $item->selisih,
+                'oleh' => $item->countedBy?->full_name,
+                'waktu' => $item->counted_at?->format('d M H:i'),
+                // Kartu ringkas ikut dikirim supaya angkanya tidak diam-diam
+                // basi. Menghitungnya ulang di sisi layar berarti dua tempat
+                // yang harus sepakat, dan cepat atau lambat keduanya berbeda.
+                'ringkasan' => $this->ringkasan($item->stockTake),
+            ]);
         }
 
         return back()->with('success', sprintf(
