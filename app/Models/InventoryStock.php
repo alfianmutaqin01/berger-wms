@@ -30,8 +30,19 @@ class InventoryStock extends Model
     /** Lewat masa simpan, dipindahkan otomatis oleh sweep harian. */
     public const STATUS_EXPIRED = 'expired';
 
+    /**
+     * Ditahan sementara menunggu keputusan (biasanya QC), berbasis HARI —
+     * BUKAN penandaan permanen seperti DDP. Tidak ikut alokasi FIFO selama
+     * status ini berlaku (FifoAllocator menyaring `status = active` secara
+     * langsung), dan lepas SENDIRI begitu `quarantine_until` terlewati lewat
+     * sweep harian (App\Console\Commands\SweepQuarantine) — tidak menunggu
+     * tindakan manual seperti DDP.
+     */
+    public const STATUS_QUARANTINE = 'quarantine';
+
     public const STATUS_LABELS = [
         self::STATUS_ACTIVE => 'Good Stock',
+        self::STATUS_QUARANTINE => 'Karantina',
         self::STATUS_DDP => 'Stok DDP',
         self::STATUS_EXPIRED => 'Kedaluwarsa',
     ];
@@ -62,6 +73,13 @@ class InventoryStock extends Model
         'expiry_date',
         'status',
         'ddp_reason',
+        'is_old_formula',
+        'quarantine_days',
+        'quarantine_until',
+        'quarantined_at',
+        'quarantined_by',
+        'quarantine_note',
+        'quarantine_released_at',
         'inbound_detail_id',
         'sales_return_detail_id',
         'verified_by',
@@ -76,6 +94,11 @@ class InventoryStock extends Model
             'production_date' => 'date',
             'expiry_date' => 'date',
             'verified_at' => 'datetime',
+            'is_old_formula' => 'boolean',
+            'quarantine_days' => 'integer',
+            'quarantine_until' => 'date',
+            'quarantined_at' => 'datetime',
+            'quarantine_released_at' => 'datetime',
         ];
     }
 
@@ -110,6 +133,11 @@ class InventoryStock extends Model
         return $this->belongsTo(User::class, 'verified_by');
     }
 
+    public function quarantinedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'quarantined_by');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Scope
@@ -136,10 +164,23 @@ class InventoryStock extends Model
         return $query->orderBy('production_date')->orderBy('id');
     }
 
-    /** Stok yang tidak layak jual: DDP maupun kedaluwarsa. */
-    public function scopeQuarantined(Builder $query): Builder
+    /**
+     * Stok yang tidak layak jual sama sekali: DDP maupun kedaluwarsa.
+     *
+     * BUKAN "karantina" (lihat STATUS_QUARANTINE) — namanya sengaja diganti
+     * dari scopeQuarantined() supaya tidak bentrok istilah begitu status
+     * 'quarantine' yang sesungguhnya ditambahkan. Stok karantina biasanya
+     * MASIH layak jual, hanya ditahan sementara menunggu waktu; DDP tidak.
+     */
+    public function scopeDdpOrExpired(Builder $query): Builder
     {
         return $query->whereIn('status', [self::STATUS_DDP, self::STATUS_EXPIRED]);
+    }
+
+    /** Stok yang sedang ditahan sementara, menunggu jangka waktunya lewat. */
+    public function scopeInQuarantine(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_QUARANTINE);
     }
 
     public function scopeSearch(Builder $query, ?string $term): Builder
@@ -192,6 +233,16 @@ class InventoryStock extends Model
         return $this->ddp_reason === null
             ? null
             : (self::DDP_REASON_LABELS[$this->ddp_reason] ?? $this->ddp_reason);
+    }
+
+    /** Sisa hari karantina, siap tampil. Negatif berarti sudah lewat waktunya. */
+    public function getQuarantineDaysLeftAttribute(): ?int
+    {
+        if ($this->quarantine_until === null) {
+            return null;
+        }
+
+        return (int) now()->startOfDay()->diffInDays($this->quarantine_until, false);
     }
 
     /**

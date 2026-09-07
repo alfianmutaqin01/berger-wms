@@ -52,6 +52,17 @@ class Permission
     /** Pemindahan antar RAK di dalam satu gudang (F-INV-02). */
     public const INVENTORY_TRANSFER = 'inventory.transfer';
 
+    /**
+     * Menahan batch sementara (Karantina) & menandai Formula Lama —
+     * permintaan pemilik produk, bukan PRD.
+     *
+     * SENGAJA DIPISAH dari INVENTORY_ADJUST. Koreksi qty dan penandaan DDP
+     * permanen tetap wewenang Manager/Super Admin saja; tapi karantina adalah
+     * hasil pemeriksaan QC yang dilakukan begitu barang naik rak — pekerjaan
+     * sehari-hari Logistik, bukan keputusan yang perlu naik ke Manager.
+     */
+    public const INVENTORY_QUARANTINE = 'inventory.quarantine';
+
     /*
      | Transfer antar GUDANG (F-INV-05) — sengaja dipisah dari yang di atas.
      | Memindahkan palet ke rak sebelah dan mengirim satu truk ke Pekanbaru
@@ -137,6 +148,7 @@ class Permission
         ],
         self::INVENTORY_ADJUST => [Role::SUPER_ADMIN, Role::MANAGER],
         self::INVENTORY_TRANSFER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::INVENTORY_QUARANTINE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
         // Penerimaan transfer memutuskan angka stok final di gudang tujuan —
         // wewenang yang sama dengan Verifikasi Logistik pada jalur inbound,

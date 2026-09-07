@@ -95,7 +95,7 @@ class InventoryTest extends TestCase
     private function batchDiLayar(string $url = '/wms/inventory')
     {
         return collect($this->get($url)->viewData('barisSku'))
-            ->flatMap(fn (array $baris) => $baris['good']->merge($baris['ddp']));
+            ->flatMap(fn (array $baris) => $baris['good']->merge($baris['karantina'])->merge($baris['ddp']));
     }
 
     /* ---------------------------------------------------------------- Akses */

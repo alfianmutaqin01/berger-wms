@@ -29,6 +29,22 @@ Schedule::command('stock:sweep-expired')
 
 /*
 |--------------------------------------------------------------------------
+| Lepas batch yang jangka waktu karantinanya sudah lewat
+|--------------------------------------------------------------------------
+|
+| Permintaan pemilik produk: karantina berbasis hari, dan begitu lewat waktu
+| batch itu OTOMATIS masuk lagi rekomendasi picking — tidak menunggu tindakan
+| manual seperti DDP. Diselisihkan 5 menit dari sweep kedaluwarsa supaya
+| keduanya tidak berebut baris pada detik yang sama.
+*/
+Schedule::command('stock:sweep-quarantine')
+    ->dailyAt('00:10')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
 | Bersihkan sisa data: sesi mati, berkas impor telantar, riwayat login lama
 |--------------------------------------------------------------------------
 |

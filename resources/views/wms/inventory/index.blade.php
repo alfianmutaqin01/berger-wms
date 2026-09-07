@@ -51,7 +51,7 @@
 
 <!-- Ringkasan -->
 <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-success border-4">
             <div class="card-body">
                 <h6 class="text-muted fw-normal mb-2">Good Stock</h6>
@@ -59,7 +59,7 @@
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-primary border-4">
             <div class="card-body">
                 <h6 class="text-muted fw-normal mb-2">Teralokasi</h6>
@@ -67,7 +67,18 @@
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
+        {{-- Karantina BUKAN DDP: masih boleh dijual, cuma ditahan menunggu
+             jangka waktunya lewat. Diberi warna sendiri (kuning) supaya tidak
+             terbaca sebagai "rusak" seperti Stok DDP di sebelahnya. --}}
+        <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Karantina</h6>
+                <h3 class="mb-0 fw-bold text-warning-emphasis">{{ number_format($stats['karantina']) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-secondary border-4">
             <div class="card-body">
                 <h6 class="text-muted fw-normal mb-2">Stok DDP</h6>
@@ -75,7 +86,7 @@
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
         {{-- Batch yang umurnya tinggal <= 90 hari; ini yang harus dijual duluan. --}}
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-danger border-4">
             <div class="card-body">
@@ -170,6 +181,13 @@
                         <span class="text-muted">Good Stock:</span>
                         <strong class="text-success">{{ number_format($baris['total_good']) }}</strong>
                     </span>
+                    @if($baris['total_karantina'] > 0)
+                    <span class="text-muted">·</span>
+                    <span class="small text-nowrap">
+                        <span class="text-muted">Karantina:</span>
+                        <strong class="text-warning-emphasis">{{ number_format($baris['total_karantina']) }}</strong>
+                    </span>
+                    @endif
                     <span class="text-muted">·</span>
                     <span class="small text-nowrap">
                         <span class="text-muted">DDP Stock:</span>
@@ -197,7 +215,7 @@
                                         <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
                                         <th class="text-secondary small fw-semibold text-end">TERSEDIA</th>
                                         <th class="text-secondary small fw-semibold text-end">DI-BOOK</th>
-                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                         <th class="text-secondary small fw-semibold text-center">AKSI</th>
                                         @endcanany
                                     </tr>
@@ -213,7 +231,14 @@
                                             };
                                         @endphp
                                         <tr>
-                                            <td><small class="font-monospace">{{ $stock->batch_no }}</small></td>
+                                            <td>
+                                                <small class="font-monospace">{{ $stock->batch_no }}</small>
+                                                @if($stock->is_old_formula)
+                                                    <span class="badge bg-info-subtle text-info-emphasis border border-info d-block mt-1" style="font-size: 0.65rem;">
+                                                        Formula Lama
+                                                    </span>
+                                                @endif
+                                            </td>
                                             <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M y') }}</td>
                                             <td class="text-nowrap small {{ $warnaUmur }}">
@@ -237,7 +262,7 @@
                                                     <span class="text-muted">—</span>
                                                 @endif
                                             </td>
-                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                             <td class="text-center text-nowrap">
                                                 @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
                                             </td>
@@ -247,6 +272,84 @@
                                         <tr>
                                             <td colspan="8" class="text-center text-muted small py-3">
                                                 {{ $statusDisaring ? 'Disembunyikan oleh filter status.' : 'Tidak ada Good Stock untuk SKU ini.' }}
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ============ BLOK KARANTINA ============ -->
+                    {{-- Selalu dirender meski kosong, pola yang sama dengan blok
+                         DDP di bawahnya: ketiadaan batch yang sedang ditahan
+                         harus terbaca sebagai informasi, bukan data yang belum
+                         dimuat. BUKAN DDP — batch di sini biasanya masih layak
+                         jual, cuma menunggu jangka waktunya lewat. --}}
+                    <div class="bg-warning-subtle px-3 pt-3 pb-1 border-top">
+                        <h6 class="fw-bold text-warning-emphasis mb-2 small">
+                            <i class="bi bi-circle-fill me-1" style="font-size: 0.6rem;"></i>KARANTINA (Menunggu, Masih Layak Jual)
+                        </h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle bg-white rounded-3 mb-3">
+                                <thead>
+                                    <tr>
+                                        <th class="text-secondary small fw-semibold">BATCH</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">TGL PROD</th>
+                                        <th class="text-secondary small fw-semibold" style="min-width: 170px;">KARANTINA</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
+                                        <th class="text-secondary small fw-semibold text-end">QTY</th>
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
+                                        <th class="text-secondary small fw-semibold text-center">AKSI</th>
+                                        @endcanany
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse($baris['karantina'] as $stock)
+                                        @php($sisaHari = $stock->quarantine_days_left)
+                                        <tr>
+                                            <td>
+                                                <small class="font-monospace">{{ $stock->batch_no }}</small>
+                                                @if($stock->is_old_formula)
+                                                    <span class="badge bg-info-subtle text-info-emphasis border border-info d-block mt-1" style="font-size: 0.65rem;">
+                                                        Formula Lama
+                                                    </span>
+                                                @endif
+                                            </td>
+                                            <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
+                                            <td class="small text-nowrap">
+                                                @if($sisaHari !== null && $sisaHari <= 0)
+                                                    <span class="text-success fw-semibold">Jangka waktu terlewati</span>
+                                                    <small class="d-block text-muted">Akan dilepas sweep berikutnya.</small>
+                                                @else
+                                                    <span class="text-warning-emphasis fw-semibold">Sisa {{ $sisaHari }} hari</span>
+                                                    <small class="d-block text-muted">
+                                                        Habis {{ $stock->quarantine_until?->translatedFormat('d M Y') }}
+                                                        ({{ $stock->quarantine_days }} hari)
+                                                    </small>
+                                                @endif
+                                                @if($stock->quarantine_note)
+                                                    <small class="d-block text-muted fst-italic">{{ $stock->quarantine_note }}</small>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-primary-subtle text-primary-emphasis border border-primary font-monospace">{{ $stock->location?->code ?? '—' }}</span>
+                                                <small class="d-block text-muted" style="font-size: 0.7rem;">{{ $stock->warehouse?->code }}</small>
+                                            </td>
+                                            <td class="text-end fw-bold text-nowrap">
+                                                {{ number_format($stock->qty_available) }}
+                                                <small class="text-muted fw-normal">{{ $p->uom }}</small>
+                                            </td>
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
+                                            <td class="text-center text-nowrap">
+                                                @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
+                                            </td>
+                                            @endcanany
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted small py-3">
+                                                {{ $statusDisaring ? 'Disembunyikan oleh filter status.' : 'Tidak ada batch yang sedang dikarantina untuk SKU ini.' }}
                                             </td>
                                         </tr>
                                     @endforelse
@@ -272,7 +375,7 @@
                                         <th class="text-secondary small fw-semibold" style="min-width: 150px;">KETERANGAN</th>
                                         <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
                                         <th class="text-secondary small fw-semibold text-end">QTY</th>
-                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                         <th class="text-secondary small fw-semibold text-center">AKSI</th>
                                         @endcanany
                                     </tr>
@@ -280,7 +383,14 @@
                                 <tbody>
                                     @forelse($baris['ddp'] as $stock)
                                         <tr>
-                                            <td><small class="font-monospace">{{ $stock->batch_no }}</small></td>
+                                            <td>
+                                                <small class="font-monospace">{{ $stock->batch_no }}</small>
+                                                @if($stock->is_old_formula)
+                                                    <span class="badge bg-info-subtle text-info-emphasis border border-info d-block mt-1" style="font-size: 0.65rem;">
+                                                        Formula Lama
+                                                    </span>
+                                                @endif
+                                            </td>
                                             <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">
@@ -299,7 +409,7 @@
                                                 {{ number_format($stock->qty_available) }}
                                                 <small class="text-muted fw-normal">{{ $p->uom }}</small>
                                             </td>
-                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                             <td class="text-center text-nowrap">
                                                 @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
                                             </td>
@@ -560,6 +670,59 @@
     </div>
 </div>
 @endcan
+
+@can(\App\Support\Permission::INVENTORY_QUARANTINE)
+{{--
+    Karantina — permintaan pemilik produk (bukan PRD).
+
+    BUKAN penandaan DDP: batch ini biasanya MASIH LAYAK JUAL, cuma ditahan
+    menunggu hasil pemeriksaan QC selesai dinyatakan. Lama harinya bebas
+    diisi (mis. 30 atau 90 hari) supaya sistem tinggal menghitung tanggal
+    lepasnya sendiri — Logistik tidak perlu mengingat tanggal kalender.
+--}}
+<div class="modal fade" id="modalKarantina" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ route('wms.inventory.quarantine') }}" class="modal-content border-0 rounded-4">
+            @csrf
+            <input type="hidden" name="stock_id" id="krtStockId">
+            <div class="modal-header border-bottom-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-hourglass-split text-warning me-2"></i>Karantina Batch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="bg-light rounded-3 p-3 mb-3 small">
+                    <div><strong id="krtSku" class="font-monospace"></strong></div>
+                    <div class="text-muted">Batch <span id="krtBatch" class="font-monospace"></span></div>
+                </div>
+
+                <div class="alert alert-warning border-0 rounded-3 small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Berlaku untuk <strong>seluruh baris stok</strong> batch ini di gudang yang sama,
+                    bukan cuma baris yang dipilih — satu batch, satu keputusan karantina.
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Lama Karantina (hari) <span class="text-danger">*</span></label>
+                    <input type="number" name="days" id="krtDays" class="form-control" min="1" max="365" step="1" required
+                           placeholder="mis. 30">
+                    <small class="text-muted">
+                        Otomatis kembali jadi Good Stock setelah jangka waktu ini lewat — tidak perlu tindakan manual.
+                    </small>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold">Catatan (opsional)</label>
+                    <textarea name="note" class="form-control" rows="2" maxlength="500"
+                              placeholder="Contoh: menunggu hasil uji QC batch produksi 18 Sep 2026."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-warning fw-bold">Karantina</button>
+            </div>
+        </form>
+    </div>
+</div>
+@endcan
 @endsection
 
 @push('styles')
@@ -607,6 +770,17 @@
                 transfer.querySelector('#trfQty').max = b.dataset.qty;
                 transfer.querySelector('#trfQty').value = b.dataset.qty;
                 transfer.querySelector('#trfQtyHint').textContent = 'Maksimal ' + b.dataset.qty + ' (stok tersedia di rak ini).';
+            });
+        }
+
+        const karantina = document.getElementById('modalKarantina');
+        if (karantina) {
+            karantina.addEventListener('show.bs.modal', function (e) {
+                const b = e.relatedTarget;
+
+                karantina.querySelector('#krtStockId').value = b.dataset.stock;
+                karantina.querySelector('#krtSku').textContent = b.dataset.sku || '—';
+                karantina.querySelector('#krtBatch').textContent = b.dataset.batch || '—';
             });
         }
     });

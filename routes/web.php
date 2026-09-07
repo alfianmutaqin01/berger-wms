@@ -252,6 +252,18 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])
         ->middleware('can:'.Permission::INVENTORY_TRANSFER);
 
+    // Karantina & Formula Lama — permintaan pemilik produk. Gate TERPISAH
+    // dari INVENTORY_ADJUST: ini wewenang Logistik sehari-hari (hasil
+    // pemeriksaan QC), bukan koreksi qty yang perlu naik ke Manager.
+    Route::middleware('can:'.Permission::INVENTORY_QUARANTINE)->group(function () {
+        Route::post('/inventory/quarantine', [InventoryController::class, 'quarantine'])
+            ->name('wms.inventory.quarantine');
+        Route::post('/inventory/quarantine/{stock}/release', [InventoryController::class, 'releaseQuarantine'])
+            ->name('wms.inventory.quarantine.release');
+        Route::post('/inventory/{stock}/old-formula', [InventoryController::class, 'toggleOldFormula'])
+            ->name('wms.inventory.old-formula');
+    });
+
     // Impor Stok Awal — mengisi gudang yang sudah berjalan ke sistem baru.
     // Memakai kerangka impor yang sama dengan Master Produk/Pelanggan.
     Route::post('/inventory/import/preview', [ImportController::class, 'preview'])
