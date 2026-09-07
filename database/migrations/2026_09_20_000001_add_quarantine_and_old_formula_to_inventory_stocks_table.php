@@ -8,6 +8,11 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Dua penanda stok yang diminta pemilik produk: Formula Lama & Karantina.
  *
+ * CATATAN: kolom `is_old_formula` kemudian di-rename jadi `has_quality_issue`
+ * oleh 2026_09_25_000001. Migration ini SENGAJA dibiarkan apa adanya — ia
+ * sudah pernah dijalankan di data nyata, jadi mengubahnya di sini hanya akan
+ * membuat riwayat migrasi berbeda dari yang sungguh-sungguh terjadi.
+ *
  * KEDUANYA SENGAJA DIBEDAKAN, bukan disatukan jadi satu kolom "status" umum:
  *
  *   FORMULA LAMA — murni informasi. Stok tetap 'active', tetap ikut FIFO,

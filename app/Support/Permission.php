@@ -53,7 +53,7 @@ class Permission
     public const INVENTORY_TRANSFER = 'inventory.transfer';
 
     /**
-     * Menahan batch sementara (Karantina) & menandai Formula Lama —
+     * Menahan batch sementara (Karantina) & menandai Masalah Kualitas —
      * permintaan pemilik produk, bukan PRD.
      *
      * SENGAJA DIPISAH dari INVENTORY_ADJUST. Koreksi qty dan penandaan DDP

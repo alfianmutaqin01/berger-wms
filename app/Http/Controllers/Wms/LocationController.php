@@ -198,7 +198,7 @@ class LocationController extends Controller
                 'teralokasi' => (int) $s->qty_allocated,
                 'status' => $s->status,
                 'status_label' => $s->status_label,
-                'formula_lama' => (bool) $s->is_old_formula,
+                'masalah_kualitas' => (bool) $s->has_quality_issue,
             ])
             ->values()
             ->all();

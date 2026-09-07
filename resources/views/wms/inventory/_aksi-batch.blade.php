@@ -43,14 +43,14 @@
         </form>
     @endif
 
-    {{-- Formula Lama: murni penanda informasi, jadi TIDAK dibatasi oleh
+    {{-- Masalah Kualitas: murni penanda informasi, jadi TIDAK dibatasi oleh
          status baris — batch yang sudah DDP atau sedang dikarantina pun
-         tetap boleh diberi tahu formula lama/barunya. --}}
-    <form method="POST" action="{{ route('wms.inventory.old-formula', $stock) }}" class="d-inline">
+         tetap boleh diberi penanda ini. --}}
+    <form method="POST" action="{{ route('wms.inventory.quality-issue', $stock) }}" class="d-inline">
         @csrf
-        <button type="submit" class="btn btn-sm {{ $stock->is_old_formula ? 'btn-info' : 'btn-outline-info' }}"
-                title="{{ $stock->is_old_formula ? 'Tandai sebagai Formula Baru' : 'Tandai sebagai Formula Lama' }}">
-            <i class="bi bi-flask"></i>
+        <button type="submit" class="btn btn-sm {{ $stock->has_quality_issue ? 'btn-danger' : 'btn-outline-danger' }}"
+                title="{{ $stock->has_quality_issue ? 'Lepas penanda Masalah Kualitas' : 'Tandai ada Masalah Kualitas (tidak menahan stok)' }}">
+            <i class="bi bi-exclamation-diamond"></i>
         </button>
     </form>
 @endcan

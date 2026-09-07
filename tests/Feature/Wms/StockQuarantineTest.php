@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * Karantina & Formula Lama — permintaan pemilik produk, bukan PRD.
+ * Karantina & Masalah Kualitas — permintaan pemilik produk, bukan PRD.
  *
  * LIMA HAL YANG KALAU SALAH TIDAK LANGSUNG TERLIHAT
  * ---------------------------------------------------
@@ -31,8 +31,10 @@ use Tests\TestCase;
  *    tanpa perlu mengubah satu pun query alokasi.
  * 4. LEPAS OTOMATIS via sweep, BUKAN via permintaan halaman. Sweep berjalan
  *    lepas dari siapa pun yang sedang membuka layar.
- * 5. FORMULA LAMA MURNI INFORMASI — tidak menyentuh status, tidak
- *    menghalangi alokasi sama sekali.
+ * 5. MASALAH KUALITAS MURNI INFORMASI — tidak menyentuh status, tidak
+ *    menghalangi alokasi sama sekali. Namanya terdengar seperti penahanan,
+ *    jadi justru inilah yang paling perlu dikunci tesnya: yang menahan
+ *    batch tetap Karantina dan DDP, bukan penanda ini.
  */
 class StockQuarantineTest extends TestCase
 {
@@ -345,42 +347,42 @@ class StockQuarantineTest extends TestCase
         $this->assertNotNull($stok->quarantine_released_at);
     }
 
-    /* -------------------------------------------------------- Formula Lama */
+    /* -------------------------------------------------------- Masalah Kualitas */
 
-    public function test_menandai_formula_lama(): void
+    public function test_menandai_masalah_kualitas(): void
     {
         $this->login();
         $stok = $this->stock();
 
-        $this->post(route('wms.inventory.old-formula', $stok))->assertSessionHas('success');
+        $this->post(route('wms.inventory.quality-issue', $stok))->assertSessionHas('success');
 
-        $this->assertTrue($stok->fresh()->is_old_formula);
+        $this->assertTrue($stok->fresh()->has_quality_issue);
     }
 
-    public function test_menandai_formula_lama_dua_kali_membalik_lagi(): void
+    public function test_menandai_masalah_kualitas_dua_kali_membalik_lagi(): void
     {
         $this->login();
-        $stok = $this->stock(['is_old_formula' => true]);
+        $stok = $this->stock(['has_quality_issue' => true]);
 
-        $this->post(route('wms.inventory.old-formula', $stok));
+        $this->post(route('wms.inventory.quality-issue', $stok));
 
-        $this->assertFalse($stok->fresh()->is_old_formula);
+        $this->assertFalse($stok->fresh()->has_quality_issue);
     }
 
-    public function test_formula_lama_berlaku_sebatch(): void
+    public function test_masalah_kualitas_berlaku_sebatch(): void
     {
         $this->login();
         $rakA = $this->stock(['location_id' => $this->bin('B-01-01')->id]);
         $rakB = $this->stock(['location_id' => $this->bin('B-01-02')->id]);
 
-        $this->post(route('wms.inventory.old-formula', $rakA));
+        $this->post(route('wms.inventory.quality-issue', $rakA));
 
-        $this->assertTrue($rakB->fresh()->is_old_formula, 'Formula Lama adalah atribut batch, bukan atribut satu baris rak.');
+        $this->assertTrue($rakB->fresh()->has_quality_issue, 'Masalah Kualitas adalah atribut batch, bukan atribut satu baris rak.');
     }
 
-    public function test_formula_lama_tidak_menghalangi_alokasi(): void
+    public function test_masalah_kualitas_tidak_menghalangi_alokasi(): void
     {
-        $stok = $this->stock(['is_old_formula' => true, 'qty_available' => 50]);
+        $stok = $this->stock(['has_quality_issue' => true, 'qty_available' => 50]);
         $this->login();
 
         $order = SalesOrder::factory()->create(['warehouse_id' => $this->warehouse->id]);
@@ -391,10 +393,10 @@ class StockQuarantineTest extends TestCase
 
         $didapat = app(FifoAllocator::class)->allocate($detail, 10, null);
 
-        $this->assertSame(10, $didapat, 'Formula Lama murni informasi — tidak boleh menghalangi FIFO.');
+        $this->assertSame(10, $didapat, 'Masalah Kualitas murni informasi — tidak boleh menghalangi FIFO.');
     }
 
-    public function test_formula_lama_boleh_ditandai_pada_stok_ddp(): void
+    public function test_masalah_kualitas_boleh_ditandai_pada_stok_ddp(): void
     {
         $this->login();
         $stok = $this->stock([
@@ -402,9 +404,9 @@ class StockQuarantineTest extends TestCase
             'ddp_reason' => InventoryStock::DDP_WRITE_OFF,
         ]);
 
-        $this->post(route('wms.inventory.old-formula', $stok))->assertSessionHas('success');
+        $this->post(route('wms.inventory.quality-issue', $stok))->assertSessionHas('success');
 
-        $this->assertTrue($stok->fresh()->is_old_formula);
+        $this->assertTrue($stok->fresh()->has_quality_issue);
         $this->assertSame(InventoryStock::STATUS_DDP, $stok->fresh()->status, 'Penanda ini tidak boleh mengubah status DDP.');
     }
 

@@ -255,7 +255,7 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])
         ->middleware('can:'.Permission::INVENTORY_TRANSFER);
 
-    // Karantina & Formula Lama — permintaan pemilik produk. Gate TERPISAH
+    // Karantina & Masalah Kualitas — permintaan pemilik produk. Gate TERPISAH
     // dari INVENTORY_ADJUST: ini wewenang Logistik sehari-hari (hasil
     // pemeriksaan QC), bukan koreksi qty yang perlu naik ke Manager.
     Route::middleware('can:'.Permission::INVENTORY_QUARANTINE)->group(function () {
@@ -263,8 +263,8 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.inventory.quarantine');
         Route::post('/inventory/quarantine/{stock}/release', [InventoryController::class, 'releaseQuarantine'])
             ->name('wms.inventory.quarantine.release');
-        Route::post('/inventory/{stock}/old-formula', [InventoryController::class, 'toggleOldFormula'])
-            ->name('wms.inventory.old-formula');
+        Route::post('/inventory/{stock}/quality-issue', [InventoryController::class, 'toggleQualityIssue'])
+            ->name('wms.inventory.quality-issue');
     });
 
     /*

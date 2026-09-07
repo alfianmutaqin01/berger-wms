@@ -436,8 +436,8 @@
                     + data.baris.map((b) => '<tr>'
                         + '<td><div class="fw-semibold font-monospace small">' + lolos(b.sku) + '</div>'
                             + '<div class="text-muted" style="font-size:.72rem">' + lolos(b.nama) + '</div>'
-                            + (b.formula_lama
-                                ? '<span class="badge bg-secondary-subtle text-secondary-emphasis">Formula Lama</span>'
+                            + (b.masalah_kualitas
+                                ? '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger">Masalah Kualitas</span>'
                                 : '')
                         + '</td>'
                         + '<td><div class="font-monospace small">' + lolos(b.batch ?? '—') + '</div>'

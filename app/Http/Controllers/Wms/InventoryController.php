@@ -559,22 +559,32 @@ class InventoryController extends Controller
     }
 
     /**
-     * Menyalakan/mematikan penanda Formula Lama untuk satu batch.
+     * Menyalakan/mematikan penanda Masalah Kualitas untuk satu batch.
      *
      * MURNI INFORMASI — tidak menyentuh status maupun kelayakan jual. Lihat
-     * App\Support\Inventory\StockQuarantine::toggleOldFormula().
+     * App\Support\Inventory\StockQuarantine::toggleQualityIssue().
      */
-    public function toggleOldFormula(Request $request, InventoryStock $stock): RedirectResponse
+    public function toggleQualityIssue(Request $request, InventoryStock $stock): RedirectResponse
     {
         WarehouseScope::assert($stock->warehouse_id, $request->user());
 
-        $hasil = $this->karantina->toggleOldFormula($stock);
+        $hasil = $this->karantina->toggleQualityIssue($stock);
 
-        return back()->with('success', sprintf(
-            '%d baris stok batch %s ditandai "%s".',
-            $hasil['jumlah'],
-            $stock->batch_no,
-            $hasil['nilai'] ? 'Formula Lama' : 'Formula Baru',
-        ));
+        // Kalimatnya sengaja menyebut ulang bahwa stoknya TIDAK ditahan.
+        // Penanda bernama "Masalah Kualitas" mudah dikira sudah mengunci
+        // batch dari penjualan; kalau dikira begitu, batchnya justru tetap
+        // terjual tanpa ada yang sadar.
+        return back()->with('success', $hasil['nilai']
+            ? sprintf(
+                '%d baris stok batch %s ditandai "Masalah Kualitas". Penanda ini tidak menahan stok — '.
+                'pakai Karantina atau DDP kalau batch ini tidak boleh keluar gudang.',
+                $hasil['jumlah'],
+                $stock->batch_no,
+            )
+            : sprintf(
+                'Penanda "Masalah Kualitas" dilepas dari %d baris stok batch %s.',
+                $hasil['jumlah'],
+                $stock->batch_no,
+            ));
     }
 }

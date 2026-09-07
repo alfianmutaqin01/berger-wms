@@ -9,13 +9,13 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Karantina & penanda Formula Lama — permintaan pemilik produk (bukan PRD).
+ * Karantina & penanda Masalah Kualitas — permintaan pemilik produk (bukan PRD).
  *
- * SATU BATCH, SATU KEPUTUSAN. Baik karantina maupun formula lama diterapkan
- * ke SELURUH baris `product_id + warehouse_id + batch_no`, bukan satu baris
- * saja — keduanya melekat pada apa yang terjadi saat produksi/pengujian,
- * bukan pada rak tempat sekarang barangnya duduk. Satu batch yang separuh
- * "formula baru" dan separuh "formula lama" tidak masuk akal secara fisik.
+ * SATU BATCH, SATU KEPUTUSAN. Baik karantina maupun masalah kualitas
+ * diterapkan ke SELURUH baris `product_id + warehouse_id + batch_no`, bukan
+ * satu baris saja — keduanya melekat pada apa yang terjadi saat produksi/
+ * pengujian, bukan pada rak tempat sekarang barangnya duduk. Satu batch yang
+ * separuh bermasalah dan separuh tidak, tidak masuk akal secara fisik.
  *
  * KARANTINA BUKAN DDP. DDP permanen sampai dikeluarkan manual oleh Manager/
  * Super Admin (App\Http\Controllers\Wms\InventoryController::adjust). Karantina
@@ -116,22 +116,28 @@ class StockQuarantine
     }
 
     /**
-     * Menyalakan/mematikan penanda Formula Lama untuk satu batch.
+     * Menyalakan/mematikan penanda Masalah Kualitas untuk satu batch.
      *
      * MURNI INFORMASI. Tidak menyentuh `status`, tidak menghalangi FIFO —
-     * hanya penanda supaya Logistik tahu batch mana yang dibuat sebelum ada
-     * pembaruan resep.
+     * hanya penanda supaya Logistik tahu batch mana yang pernah bermasalah
+     * saat diperiksa.
+     *
+     * PENANDA INI TIDAK MENAHAN BATCH, dan itu disengaja. Yang menahan sudah
+     * ada dan tetap terpisah: KARANTINA untuk tahan sementara, DDP untuk
+     * tahan permanen. Kalau penanda ini ikut memblokir FIFO, ada dua jalan
+     * berbeda untuk melakukan hal yang sama — dan yang satu tidak punya masa
+     * berlaku, catatan alasan, maupun jalur pelepasan seperti karantina.
      *
      * @return array{jumlah:int, nilai:bool} nilai baru setelah ditoggle
      */
-    public function toggleOldFormula(InventoryStock $acuan): array
+    public function toggleQualityIssue(InventoryStock $acuan): array
     {
         return DB::transaction(function () use ($acuan) {
             $baris = $this->kunciSebatch($acuan);
-            $nilaiBaru = ! $acuan->is_old_formula;
+            $nilaiBaru = ! $acuan->has_quality_issue;
 
             foreach ($baris as $stok) {
-                $stok->forceFill(['is_old_formula' => $nilaiBaru])->save();
+                $stok->forceFill(['has_quality_issue' => $nilaiBaru])->save();
             }
 
             // TIDAK dicatat ke stock_movements: ini murni label tampilan,

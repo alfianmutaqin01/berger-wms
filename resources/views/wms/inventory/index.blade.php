@@ -233,9 +233,10 @@
                                         <tr>
                                             <td>
                                                 <small class="font-monospace">{{ $stock->batch_no }}</small>
-                                                @if($stock->is_old_formula)
-                                                    <span class="badge bg-info-subtle text-info-emphasis border border-info d-block mt-1" style="font-size: 0.65rem;">
-                                                        Formula Lama
+                                                @if($stock->has_quality_issue)
+                                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
+                                                        Masalah Kualitas
                                                     </span>
                                                 @endif
                                             </td>
@@ -310,9 +311,10 @@
                                         <tr>
                                             <td>
                                                 <small class="font-monospace">{{ $stock->batch_no }}</small>
-                                                @if($stock->is_old_formula)
-                                                    <span class="badge bg-info-subtle text-info-emphasis border border-info d-block mt-1" style="font-size: 0.65rem;">
-                                                        Formula Lama
+                                                @if($stock->has_quality_issue)
+                                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
+                                                        Masalah Kualitas
                                                     </span>
                                                 @endif
                                             </td>
@@ -385,9 +387,10 @@
                                         <tr>
                                             <td>
                                                 <small class="font-monospace">{{ $stock->batch_no }}</small>
-                                                @if($stock->is_old_formula)
-                                                    <span class="badge bg-info-subtle text-info-emphasis border border-info d-block mt-1" style="font-size: 0.65rem;">
-                                                        Formula Lama
+                                                @if($stock->has_quality_issue)
+                                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
+                                                        Masalah Kualitas
                                                     </span>
                                                 @endif
                                             </td>
