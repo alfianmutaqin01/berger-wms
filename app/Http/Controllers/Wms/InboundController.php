@@ -11,6 +11,7 @@ use App\Support\DocumentNumber;
 use App\Support\Inbound\BinAllocator;
 use App\Support\Inbound\ProductionSheet;
 use App\Support\Inventory\StockActivator;
+use App\Support\Outbound\PendingAllocationFiller;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,8 @@ class InboundController extends Controller
 {
     /** Berkas produksi sementara, disimpan di disk lokal di luar public. */
     private const TEMP_DIR = 'inbound';
+
+    public function __construct(private readonly PendingAllocationFiller $pengisi) {}
 
     /**
      * F-INB-01: Riwayat Input Produksi.
@@ -835,9 +838,10 @@ class InboundController extends Controller
             return back()->with('error', 'Belum ada palet yang dicentang untuk diverifikasi.');
         }
 
-        DB::transaction(function () use ($header, $perubahan, $request) {
+        $susulan = DB::transaction(function () use ($header, $perubahan, $request) {
             $activator = new StockActivator;
             $userId = $request->user()?->id;
+            $produkTersentuh = [];
 
             foreach ($perubahan as $detailId => $nilai) {
                 $header->details()->whereKey($detailId)->update($nilai + [
@@ -849,17 +853,45 @@ class InboundController extends Controller
                 // Stok RESMI AKTIF di sini (PRD §6.3 F-INB-03 langkah 9-10).
                 // Dibaca ulang dari basis data supaya memakai qty & lokasi
                 // yang baru saja disimpan, bukan nilai model yang basi.
-                $activator->activate(
-                    $header->details()->with(['product:id,shelf_life_months', 'header'])->findOrFail($detailId),
-                    $userId
-                );
+                $detail = $header->details()->with(['product:id,shelf_life_months', 'header'])->findOrFail($detailId);
+                $activator->activate($detail, $userId);
+
+                $produkTersentuh[$detail->product_id] = true;
             }
 
             $header->update(['status' => $header->resolveVerificationStatus()]);
+
+            /*
+             * JANJI YANG SUDAH ADA DILAYANI DI SINI — bukan menunggu ada yang
+             * ingat. Inilah jalur yang paling sering dilewati barang di Berger
+             * (produksi -> cek operator -> naik rak), dan dulu justru
+             * satu-satunya jalur masuk stok yang TIDAK melayani janji yang
+             * sudah menumpuk. Akibatnya barang mendarat dalam keadaan bebas,
+             * lalu pesanan lain yang kebetulan diproses lebih dulu
+             * menyambarnya lewat FIFO — sementara jatah yang sudah dijanjikan
+             * berminggu-minggu sebelumnya hilang tanpa ada yang sadar.
+             */
+            $hasil = ['terisi' => 0, 'pesanan' => [], 'booking' => []];
+
+            foreach (array_keys($produkTersentuh) as $productId) {
+                $bagian = $this->pengisi->fill($productId, $header->warehouse_id, $userId);
+
+                $hasil['terisi'] += $bagian['terisi'];
+                $hasil['pesanan'] = array_merge($hasil['pesanan'], $bagian['pesanan']);
+                $hasil['booking'] = array_merge($hasil['booking'], $bagian['booking']);
+            }
+
+            return $hasil;
         });
 
         $header->refresh();
         $tersisa = $header->details()->where('is_verified', false)->count();
+
+        // DILAPORKAN, bukan dikerjakan diam-diam. Barang baru yang sebagian
+        // langsung punya pemilik adalah hal pertama yang perlu diketahui
+        // operator: kalau tidak, ia melihat 10 unit naik rak lalu heran
+        // kenapa yang bisa dijual cuma 5.
+        $catatan = $this->pengisi->ringkasan($susulan);
 
         if ($tersisa > 0) {
             return redirect()->route('wms.inbound.verify.process', $header->document_number)->with(
@@ -868,7 +900,7 @@ class InboundController extends Controller
                     '%d palet terverifikasi. Masih ada %d palet yang belum diverifikasi — dokumen tetap di daftar verifikasi.',
                     count($perubahan),
                     $tersisa
-                )
+                ).($catatan ? ' '.$catatan : '')
             );
         }
 
@@ -876,7 +908,7 @@ class InboundController extends Controller
             'Verifikasi dokumen %s selesai: %d palet terverifikasi dan stoknya kini aktif.',
             $header->document_number,
             $header->details()->count()
-        ));
+        ).($catatan ? ' '.$catatan : ''));
     }
 
     /**

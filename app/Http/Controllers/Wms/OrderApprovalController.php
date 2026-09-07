@@ -14,6 +14,7 @@ use App\Models\SalesOrderRejection;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
 use App\Support\Outbound\OutstandingRecorder;
+use App\Support\Outbound\ProductBooking;
 use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -61,6 +62,7 @@ class OrderApprovalController extends Controller
         private readonly FifoAllocator $allocator,
         private readonly OrderCanceller $canceller,
         private readonly OutstandingRecorder $outstanding,
+        private readonly ProductBooking $booking,
     ) {}
 
     /** Antrean pesanan yang menunggu diterima (F-OUT-02 langkah 1). */
@@ -257,9 +259,31 @@ class OrderApprovalController extends Controller
 
                 $dialokasikan = 0;
                 $menunggu = 0;
+                $dariBooking = 0;
+                $nomorBooking = [];
 
                 foreach ($terkunci->details as $detail) {
-                    $dapat = $this->allocator->allocate($detail, $detail->qty_approved, $userId);
+                    /*
+                     * BOOKING MILIK CUSTOMER INI DIPAKAI LEBIH DULU, sebelum
+                     * FIFO menyentuh stok bebas. Bukan sekadar urutan: tanpa
+                     * langkah ini booking dan pesanan akan sama-sama memegang
+                     * unit yang sama, dan gudang terlihat menjanjikan dua kali
+                     * lipat dari barang yang benar-benar ada.
+                     *
+                     * Yang berpindah bukan cuma jatah yang sudah tercadang.
+                     * Porsi booking yang masih MENUNGGU stok pun ditutup di
+                     * sini, karena mulai sekarang pesanan inilah yang memikul
+                     * janjinya — kalau tidak, satu unit yang sama akan antre
+                     * dua kali begitu barang baru masuk.
+                     */
+                    $booking = $this->booking->consume($detail, $detail->qty_approved, $userId);
+
+                    $dariBooking += $booking['dari_cadangan'];
+                    $nomorBooking = array_merge($nomorBooking, $booking['booking']);
+
+                    $sisa = $detail->qty_approved - $booking['dari_cadangan'];
+                    $dapat = $booking['dari_cadangan'] + $this->allocator->allocate($detail, $sisa, $userId);
+
                     $dialokasikan += $dapat;
                     $menunggu += $detail->qty_approved - $dapat;
                 }
@@ -287,13 +311,30 @@ class OrderApprovalController extends Controller
                     'cancellation_reason' => null,
                 ])->save();
 
-                return ['dialokasikan' => $dialokasikan, 'menunggu' => $menunggu];
+                return [
+                    'dialokasikan' => $dialokasikan,
+                    'menunggu' => $menunggu,
+                    'dari_booking' => $dariBooking,
+                    'nomor_booking' => array_values(array_unique($nomorBooking)),
+                ];
             });
         } catch (RuntimeException $e) {
             return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
         }
 
         $pesan = "Pesanan {$order->order_number} diterima. {$ringkasan['dialokasikan']} unit dicadangkan dari stok.";
+
+        // Disebut TERPISAH. Jatah yang datang dari booking bukan stok yang
+        // baru saja direbut dari pasaran — ia memang sudah disisihkan untuk
+        // customer ini sejak lama, dan yang menerima pesanan perlu tahu
+        // booking mana yang barusan ditutup.
+        if ($ringkasan['dari_booking'] > 0) {
+            $pesan .= sprintf(
+                ' %d unit di antaranya diambil dari booking %s.',
+                $ringkasan['dari_booking'],
+                implode(', ', $ringkasan['nomor_booking']),
+            );
+        }
 
         if ($ringkasan['menunggu'] > 0) {
             return redirect()->route('wms.approval.index')->with('warning', $pesan.sprintf(

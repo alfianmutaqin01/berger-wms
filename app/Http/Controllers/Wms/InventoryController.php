@@ -251,7 +251,7 @@ class InventoryController extends Controller
 
             return $bertambah
                 ? $this->pengisi->fill($stock->product_id, $stock->warehouse_id, $request->user()?->id)
-                : ['terisi' => 0, 'pesanan' => []];
+                : ['terisi' => 0, 'pesanan' => [], 'booking' => []];
         });
 
         $pesan = sprintf(

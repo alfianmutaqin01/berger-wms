@@ -166,6 +166,7 @@
             <!-- OUTBOUND -->
             @canany([
                 \App\Support\Permission::OUTBOUND_APPROVAL,
+                \App\Support\Permission::BOOKING,
                 \App\Support\Permission::OUTBOUND_PICKING_LIST,
                 \App\Support\Permission::OUTBOUND_PICKING_PROCESS,
                 \App\Support\Permission::OUTBOUND_DELIVERY,
@@ -191,6 +192,15 @@
                             </li>
                             <li class="nav-item {{ request()->is('wms/outbound/outstanding') ? 'active' : '' }}">
                                 <a href="/wms/outbound/outstanding" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Outstanding</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::BOOKING)
+                            {{-- Ditaruh di Outbound, bukan Inventory: yang
+                                 dipegang booking adalah janji ke CUSTOMER, dan
+                                 orang yang memakainya sehari-hari adalah orang
+                                 yang sama dengan yang menerima pesanan. --}}
+                            <li class="nav-item {{ request()->is('wms/outbound/booking') ? 'active' : '' }}">
+                                <a href="/wms/outbound/booking" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Booking Produk</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_PICKING_LIST)

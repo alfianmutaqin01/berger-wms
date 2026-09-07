@@ -68,6 +68,15 @@ class StockMovement extends Model
 
     public const REF_SALES_RETURN = 'sales_return';
 
+    /**
+     * Booking produk: jatah yang ditahan untuk customer sebelum pesanannya
+     * masuk. Mutasinya sama bentuknya dengan alokasi pesanan (ALLOCATED lalu
+     * DEALLOCATED), hanya pemiliknya bukan pesanan — dan itulah sebabnya
+     * referensinya dibedakan: menelusuri "kenapa stok ini terkunci" harus
+     * berujung ke booking-nya, bukan ke pesanan yang tidak ada.
+     */
+    public const REF_BOOKING = 'booking';
+
     /** Alasan DDP yang dikenal (docs/2 §3.4 inventory_stocks.ddp_reason). */
     public const REASON_EXPIRED = 'EXPIRED';
 

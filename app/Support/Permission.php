@@ -82,6 +82,16 @@ class Permission
      */
     public const STOCKTAKE_MANAGE = 'stocktake.manage';
 
+    /**
+     * Booking produk: menahan jatah untuk customer sebelum pesanannya masuk.
+     *
+     * Wewenang Logistik, bukan Sales. Yang ditahan adalah stok gudang — dan
+     * setiap unit yang dibooking langsung hilang dari angka yang boleh
+     * dijanjikan ke pelanggan lain. Membuka pintu itu ke Sales berarti siapa
+     * pun bisa mengunci stok untuk pelanggannya sendiri tanpa gudang tahu.
+     */
+    public const BOOKING = 'booking.manage';
+
     /*
      | Transfer antar GUDANG (F-INV-05) — sengaja dipisah dari yang di atas.
      | Memindahkan palet ke rak sebelah dan mengirim satu truk ke Pekanbaru
@@ -172,6 +182,7 @@ class Permission
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
         ],
         self::STOCKTAKE_MANAGE => [Role::SUPER_ADMIN, Role::MANAGER],
+        self::BOOKING => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
         // Penerimaan transfer memutuskan angka stok final di gudang tujuan —
         // wewenang yang sama dengan Verifikasi Logistik pada jalur inbound,

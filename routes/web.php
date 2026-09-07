@@ -6,6 +6,7 @@ use App\Http\Controllers\Sales\DeliveryProofController;
 use App\Http\Controllers\Sales\SalesOrderController;
 use App\Http\Controllers\Wms\AdminController;
 use App\Http\Controllers\Wms\BillingController;
+use App\Http\Controllers\Wms\BookingController;
 use App\Http\Controllers\Wms\CustomerController;
 use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Controllers\Wms\DeliveryController;
@@ -460,6 +461,27 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // memang harus bisa melihat akibatnya.
             Route::get('/outstanding', [OutstandingController::class, 'index'])
                 ->name('wms.outstanding.index');
+        });
+
+        /*
+        | BOOKING PRODUK (keputusan pemilik produk). Menahan jatah untuk satu
+        | customer SEBELUM pesanannya resmi masuk — kasus nyata di Berger:
+        | customer minta jatah dari batch yang belum diproduksi, lalu jatah itu
+        | terlupakan dan terjual ke pesanan lain.
+        |
+        | Wewenang Logistik, bukan Sales: yang ditahan adalah stok gudang, dan
+        | tiap unit yang dibooking langsung hilang dari angka yang boleh
+        | dijanjikan ke pelanggan lain.
+        */
+        Route::middleware('can:'.Permission::BOOKING)->group(function () {
+            Route::get('/booking', [BookingController::class, 'index'])
+                ->name('wms.booking.index');
+            Route::post('/booking', [BookingController::class, 'store'])
+                ->name('wms.booking.store');
+            Route::get('/booking/availability', [BookingController::class, 'availability'])
+                ->name('wms.booking.availability');
+            Route::post('/booking/{booking}/cancel', [BookingController::class, 'cancel'])
+                ->name('wms.booking.cancel');
         });
 
         // PICKING (Fase 6 tahap 3). Dua kelompok untuk dua orang: Logistik
