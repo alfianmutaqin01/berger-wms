@@ -102,7 +102,7 @@
                 <input type="hidden" name="tanpa_pasangan" value="1">
                 <div class="col-12">
                     <span class="badge bg-warning-subtle text-warning-emphasis">
-                        Hanya yang belum berpasangan
+                        Hanya yang Belum ada No. SO yang sama
                     </span>
                     <a href="{{ route('wms.delivery.index') }}" class="small ms-2">Tampilkan semua</a>
                 </div>
@@ -139,7 +139,7 @@
                             @if($note->salesOrder)
                                 <span class="font-monospace">{{ $note->salesOrder->order_number }}</span>
                             @else
-                                <span class="badge bg-warning-subtle text-warning-emphasis">Belum berpasangan</span>
+                                <span class="badge bg-warning-subtle text-warning-emphasis">Belum ada No. SO yang sama</span>
                             @endif
                         </td>
                         <td class="text-center">{{ $note->lines_count }}</td>

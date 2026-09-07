@@ -201,6 +201,11 @@ class PickingRun
     {
         $baris = PickingListItem::query()
             ->where('sales_order_id', $order->id)
+            // Putaran yang berjalan SAJA. Tanpa ini, pesanan yang dibatalkan
+            // untuk KEDUA kalinya akan mengembalikan barang putaran pertama
+            // sekali lagi — barang yang sudah lama ada di rak dihitung masuk
+            // untuk kedua kalinya, dan stok bertambah dari ketiadaan.
+            ->forOrderRound($order)
             ->where('status', '<>', PickingListItem::STATUS_PENDING)
             ->whereHas('pickingList', fn ($q) => $q->where('status', PickingList::STATUS_COMPLETED))
             ->orderBy('id')
@@ -296,6 +301,10 @@ class PickingRun
         $baris = PickingListItem::query()
             ->where('sales_order_id', $order->id)
             ->where('product_id', $productId)
+            // Putaran yang berjalan SAJA — kelebihan hari ini harus kembali
+            // ke batch dan rak yang tadi diturunkan, bukan ke baris putaran
+            // lama yang barangnya sudah lama berdiri di rak.
+            ->forOrderRound($order)
             ->where('status', '<>', PickingListItem::STATUS_PENDING)
             ->whereHas('pickingList', fn ($q) => $q->where('status', PickingList::STATUS_COMPLETED))
             ->orderBy('id')

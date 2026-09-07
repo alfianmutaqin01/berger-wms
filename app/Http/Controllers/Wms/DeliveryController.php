@@ -89,7 +89,7 @@ class DeliveryController extends Controller
             'stats' => [
                 'menunggu' => $terlihat()->where('status', DeliveryNote::STATUS_IMPORTED)->count(),
                 // SJ tanpa pasangan TIDAK ikut disaring gudang: justru karena
-                // belum berpasangan, ia belum punya gudang — menyaringnya
+                // Belum ada No. SO yang sama, ia belum punya gudang — menyaringnya
                 // dengan WarehouseScope akan menyembunyikan persis baris yang
                 // paling perlu dilihat.
                 'tanpa_pasangan' => DeliveryNote::query()->belumBerpasangan()->count(),

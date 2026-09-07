@@ -126,7 +126,7 @@
                         @if($note->salesOrder)
                             <span class="font-monospace">{{ $note->salesOrder->order_number }}</span>
                         @else
-                            <span class="badge bg-warning-subtle text-warning-emphasis">Belum berpasangan</span>
+                            <span class="badge bg-warning-subtle text-warning-emphasis">Belum ada No. SO yang sama</span>
                         @endif
                     </dd>
 

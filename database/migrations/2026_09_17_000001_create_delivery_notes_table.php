@@ -50,7 +50,7 @@ return new class extends Migration
             // SJ perusahaan, termasuk yang pesanannya tidak pernah lewat
             // portal ini. Menolak baris semacam itu berarti menolak berkas
             // yang sebenarnya sah; yang benar adalah menyimpannya sebagai
-            // "belum berpasangan" supaya terlihat.
+            // "Belum ada No. SO yang sama" supaya terlihat.
             $table->foreignId('sales_order_id')->nullable()->constrained()->nullOnDelete();
 
             // "Sell-to Customer No." dari BC, mis. IDR13302 — sama persis

@@ -96,6 +96,7 @@ class Shipment
             $item = PickingListItem::with('product:id,sku,name')
                 ->where('sales_order_id', $order->id)
                 ->where('product_id', $productId)
+                ->forOrderRound($order)
                 ->first();
 
             $baris[] = [
@@ -168,6 +169,7 @@ class Shipment
             $item = PickingListItem::with('product:id,sku,name')
                 ->where('sales_order_id', $order->id)
                 ->where('product_id', $productId)
+                ->forOrderRound($order)
                 ->first();
 
             $diPickingSaja[] = [
@@ -500,6 +502,7 @@ class Shipment
         $dipakai = PickingListItem::query()
             ->where('sales_order_id', $order->id)
             ->where('product_id', $productId)
+            ->forOrderRound($order)
             ->whereNotNull('inventory_stock_id')
             ->pluck('inventory_stock_id')
             ->unique()
@@ -538,6 +541,11 @@ class Shipment
     {
         return PickingListItem::query()
             ->where('picking_list_items.sales_order_id', $order->id)
+            // Putaran yang berjalan SAJA. Pesanan yang pernah dibatalkan
+            // meninggalkan baris picking putaran lama yang barangnya sudah
+            // dikembalikan ke rak; menjumlahkannya membuat layar melaporkan
+            // "diambil dari rak 53" untuk barang yang nyatanya dipicking 3.
+            ->forOrderRound($order)
             ->where('picking_list_items.status', '<>', PickingListItem::STATUS_PENDING)
             ->join('picking_lists', 'picking_lists.id', '=', 'picking_list_items.picking_list_id')
             ->where('picking_lists.status', PickingList::STATUS_COMPLETED)

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -86,6 +87,38 @@ class PickingListItem extends Model
     public function pickedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'picked_by');
+    }
+
+    /* ------------------------------------------------------------ Scope */
+
+    /**
+     * Baris picking dari PUTARAN YANG SEDANG BERJALAN saja.
+     *
+     * WAJIB dipakai setiap kali baris picking dicari lewat sales_order_id.
+     * Sebuah pesanan bisa dipicking BERKALI-KALI: pesanan yang dibatalkan
+     * kembali ke antrean, barangnya dikembalikan ke rak, lalu pesanan itu
+     * diterima dan dipicking lagi di daftar yang baru. Baris picking putaran
+     * lama TIDAK dihapus — ia riwayat daftar picking yang memang sudah
+     * selesai — sehingga menjumlahkan seluruh baris milik satu pesanan akan
+     * menghitung barang yang sudah lama dikembalikan ke rak.
+     *
+     * Akibatnya bukan cuma angka layar yang keliru. Pengembalian stok juga
+     * dicari dengan cara yang sama, jadi tanpa penyaringan ini pembatalan
+     * kedua akan mengembalikan barang putaran pertama SEKALI LAGI — stok
+     * bertambah dari ketiadaan, dan ledger tetap terlihat rapi.
+     *
+     * `picking_list_id` pesanan adalah penanda putaran yang berjalan: ia
+     * dikosongkan saat pembatalan dan diisi lagi saat pesanan masuk daftar
+     * baru. Pesanan tanpa daftar berarti tidak ada putaran yang berjalan,
+     * dan scope ini benar-benar tidak boleh mengembalikan apa pun.
+     */
+    public function scopeForOrderRound(Builder $query, SalesOrder $order): Builder
+    {
+        if ($order->picking_list_id === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('picking_list_items.picking_list_id', $order->picking_list_id);
     }
 
     /* ------------------------------------------------------------ Aturan */
