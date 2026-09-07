@@ -101,7 +101,10 @@ class SalesOrderController extends Controller
     public function edit(Request $request, SalesOrder $order): View
     {
         $this->pastikanMilikSendiri($request, $order);
-        abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
+        // Pesanan yang DITOLAK ikut boleh diubah — itulah inti perbaikan ini.
+        // Yang sudah diterima Logistik tetap tidak, karena isinya sudah jadi
+        // dasar keputusan dan cadangan stok.
+        abort_unless($order->bolehDiperbaiki(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
 
         return view('sales.new_order', $this->formData($request, $order));
     }
@@ -109,12 +112,20 @@ class SalesOrderController extends Controller
     public function update(SalesOrderRequest $request, SalesOrder $order): RedirectResponse
     {
         $this->pastikanMilikSendiri($request, $order);
-        abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
+        // Pesanan yang DITOLAK ikut boleh diubah — itulah inti perbaikan ini.
+        // Yang sudah diterima Logistik tetap tidak, karena isinya sudah jadi
+        // dasar keputusan dan cadangan stok.
+        abort_unless($order->bolehDiperbaiki(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
 
         $data = $request->validated();
         // Diambil ulang dari akun, bukan dipertahankan dari draft: kalau Sales
         // dipindahkan ke gudang lain, draft lamanya ikut pindah bersamanya.
         $data['warehouse_id'] = WarehouseScope::require($request->user());
+
+        // Dibaca SEBELUM disimpan: tandaiTerkirim() akan menghapus penanda
+        // penolakannya, dan sesudah itu tidak ada lagi cara membedakan
+        // pengajuan ulang dari pengiriman draft biasa untuk pesan di layar.
+        $pengajuanUlang = $order->sedangDitolak();
 
         if ($galat = $this->galatDokumen($request, $order)) {
             return back()->withInput()->withErrors(['document' => $galat]);
@@ -135,12 +146,14 @@ class SalesOrderController extends Controller
             }
         });
 
-        return redirect('/sales/my-orders')->with(
-            'success',
-            $request->wantsSubmit()
-                ? 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.'
-                : 'Draft pesanan '.$order->order_number.' diperbarui.'
-        );
+        return redirect('/sales/my-orders')->with('success', match (true) {
+            $request->wantsSubmit() && $pengajuanUlang => 'Pesanan '.$order->order_number
+                .' diajukan ulang ke Logistik. Catatan bahwa pesanan ini pernah ditolak tetap tersimpan.',
+            $request->wantsSubmit() => 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.',
+            $pengajuanUlang => 'Perbaikan pesanan '.$order->order_number
+                .' tersimpan. Pesanannya belum diajukan ulang.',
+            default => 'Draft pesanan '.$order->order_number.' diperbarui.',
+        });
     }
 
     public function destroy(Request $request, SalesOrder $order): RedirectResponse
@@ -195,7 +208,7 @@ class SalesOrderController extends Controller
         $orders = SalesOrder::query()
             ->ownedBy($request->user()->id)
             ->with(['customer:id,code,name', 'warehouse:id,code,name', 'paymentTerm:id,code,name'])
-            ->withCount('details')
+            ->withCount(['details', 'rejections'])
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
             // Draft di atas: itu satu-satunya yang masih menunggu tindakan
@@ -224,6 +237,10 @@ class SalesOrderController extends Controller
             'details.product:id,sku,name,uom',
             'user:id,full_name', 'approvedBy:id,full_name', 'rejectedBy:id,full_name',
             'proofs.verifiedBy:id,full_name',
+            // Seluruh penolakan yang pernah terjadi, bukan hanya yang
+            // terakhir: Sales perlu melihat apa saja yang sudah pernah
+            // diperbaiki, terutama pada pengajuan ketiga dan seterusnya.
+            'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
         ]);
 
         $bukti = $order->proofs->sortByDesc('uploaded_at');
@@ -509,6 +526,14 @@ class SalesOrderController extends Controller
         $order->forceFill([
             'status' => SalesOrder::STATUS_PENDING,
             'submitted_at' => now(),
+            // Pesanan yang pernah ditolak lalu diperbaiki: penanda
+            // penolakannya dibersihkan supaya keadaan SEKARANG-nya jujur —
+            // ia sedang menunggu dinilai, bukan sedang ditolak. Riwayatnya
+            // tetap utuh di sales_order_rejections, dan dari sanalah catatan
+            // "pernah ditolak" tetap terbaca sampai akhir.
+            'rejected_at' => null,
+            'rejected_by' => null,
+            'rejection_reason' => null,
         ])->save();
     }
 

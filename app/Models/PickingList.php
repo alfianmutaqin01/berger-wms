@@ -28,14 +28,14 @@ class PickingList extends Model
     /** Seluruh baris ditandai; barang sudah di loading dock. */
     public const STATUS_COMPLETED = 'completed';
 
-    /** Dibubarkan Logistik; pesanan di dalamnya kembali bebas. */
+    /** Dibatalkan Logistik; pesanan di dalamnya kembali bebas. */
     public const STATUS_CANCELLED = 'cancelled';
 
     public const STATUS_LABELS = [
         self::STATUS_OPEN => 'Menunggu Operator',
         self::STATUS_PICKING => 'Sedang Dikerjakan',
         self::STATUS_COMPLETED => 'Selesai',
-        self::STATUS_CANCELLED => 'Dibubarkan',
+        self::STATUS_CANCELLED => 'Dibatalkan',
     ];
 
     protected $fillable = [
@@ -103,13 +103,13 @@ class PickingList extends Model
     /* ------------------------------------------------------------ Aturan */
 
     /**
-     * Boleh dibubarkan selama BELUM ADA satu baris pun yang diambil.
+     * Boleh dibatalkan selama BELUM ADA satu baris pun yang diambil.
      *
-     * Begitu operator mengambil barang pertama dari rak, membubarkan daftar
+     * Begitu operator mengambil barang pertama dari rak, membatalkan daftar
      * hanya menghapus catatannya — barangnya tetap sudah turun dan tergeletak
      * di dock, dan tidak ada lagi yang menjelaskan kenapa ia di sana.
      */
-    public function bolehDibubarkan(): bool
+    public function bolehDibatalkan(): bool
     {
         return in_array($this->status, [self::STATUS_OPEN, self::STATUS_PICKING], true)
             && ! $this->items()->where('status', '<>', PickingListItem::STATUS_PENDING)->exists();

@@ -114,6 +114,19 @@
                                     </button>
                                 </div>
                             @endif
+                            {{-- Sama alasannya dengan pembatalan: penanda
+                                 penolakan di pesanan dibersihkan begitu Sales
+                                 memperbaiki dan mengajukan ulang, jadi hanya
+                                 tabel riwayat yang masih mengingatnya. --}}
+                            @if($order->rejections_count > 0)
+                                <div class="small mt-1">
+                                    <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none text-warning-emphasis"
+                                            data-bs-toggle="collapse" data-bs-target="#tolak-{{ $order->id }}">
+                                        <i class="bi bi-x-octagon me-1"></i>
+                                        Pernah ditolak {{ $order->rejections_count }}&times;
+                                    </button>
+                                </div>
+                            @endif
                         </td>
                         <td class="font-monospace">{{ $order->bc_so_number ?? '—' }}</td>
                         <td>
@@ -223,6 +236,38 @@
                                             <td class="small font-monospace">{{ $batal->bc_so_number ?? '—' }}</td>
                                             <td class="small text-end">{{ number_format($batal->qty_released) }}</td>
                                             <td class="small">{{ $batal->reason }}</td>
+                                        </tr>
+                                    @endforeach
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    @endif
+                    @if($order->rejections_count > 0)
+                        <tr class="collapse" id="tolak-{{ $order->id }}">
+                            <td colspan="8" class="bg-light-subtle">
+                                <div class="small fw-semibold text-warning-emphasis mb-2">
+                                    Riwayat penolakan pesanan {{ $order->order_number }}
+                                </div>
+                                <table class="table table-sm mb-0 bg-white">
+                                    <thead>
+                                        <tr class="small text-muted">
+                                            <th>Pengajuan</th>
+                                            <th>Waktu</th>
+                                            <th>Oleh</th>
+                                            <th>Alasan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach($order->rejections as $tolak)
+                                        <tr>
+                                            <td class="small">ke-{{ $tolak->attempt_no }}</td>
+                                            <td class="small">
+                                                {{ $tolak->rejected_at?->format('d M Y') }}
+                                                <span class="text-muted">{{ $tolak->rejected_at?->format('H:i') }}</span>
+                                            </td>
+                                            <td class="small">{{ $tolak->rejectedBy?->full_name ?? '—' }}</td>
+                                            <td class="small">{{ $tolak->reason }}</td>
                                         </tr>
                                     @endforeach
                                     </tbody>

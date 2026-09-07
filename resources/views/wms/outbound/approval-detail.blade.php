@@ -40,6 +40,30 @@
     <i class="bi bi-arrow-left me-1"></i> Kembali ke antrean
 </a>
 
+{{-- Apa yang DULU salah, dibawa ke layar penilaian. Tanpa ini, pengajuan
+     kedua dinilai tanpa yang menilainya tahu ia sedang menilai sebuah
+     koreksi — dan alasan penolakan pertama tersimpan di tempat yang tidak
+     dilihat siapa pun saat keputusan diambil. --}}
+@if($order->rejections->isNotEmpty())
+<div class="alert alert-warning border-0 shadow-sm rounded-3">
+    <strong class="d-block mb-2">
+        <i class="bi bi-arrow-repeat me-2"></i>
+        Ini pengajuan ke-{{ $order->rejections->count() + 1 }} — pesanan ini pernah ditolak
+        {{ $order->rejections->count() }}&times;
+    </strong>
+    @foreach($order->rejections as $tolak)
+        <div class="small {{ ! $loop->last ? 'border-bottom pb-2 mb-2' : '' }}">
+            <span class="fw-semibold">Pengajuan ke-{{ $tolak->attempt_no }}:</span>
+            {{ $tolak->reason }}
+            <span class="text-muted">
+                ({{ $tolak->rejected_at?->translatedFormat('d M Y, H:i') }},
+                {{ $tolak->rejectedBy?->full_name ?? '—' }})
+            </span>
+        </div>
+    @endforeach
+</div>
+@endif
+
 <div class="row g-3">
     {{-- ------------------------------------------------ Identitas pesanan --}}
     <div class="col-12 col-xl-4">

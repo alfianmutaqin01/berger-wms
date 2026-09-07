@@ -105,9 +105,41 @@
                     </div>
                 @endif
 
-                @if($order->rejection_reason)
+                {{-- Seluruh penolakan yang pernah terjadi, bukan hanya yang
+                     terakhir. Pada pengajuan ketiga dan seterusnya, mengetahui
+                     apa saja yang SUDAH diperbaiki sama pentingnya dengan
+                     mengetahui apa yang salah sekarang.
+
+                     Bertahan setelah pesanannya diterima: kolom penolakan di
+                     pesanan dikosongkan saat diajukan ulang, blok ini dibaca
+                     dari tabel riwayat yang tidak pernah dibersihkan. --}}
+                @if($order->rejections->isNotEmpty())
                     <div class="alert alert-danger border-0 small mb-0 mt-3 py-2">
-                        <strong>Alasan penolakan:</strong> {{ $order->rejection_reason }}
+                        <div class="fw-semibold mb-2">
+                            <i class="bi bi-x-octagon me-1"></i>
+                            Pesanan ini pernah ditolak {{ $order->rejections->count() }}&times;
+                        </div>
+                        @foreach($order->rejections as $tolak)
+                            <div class="{{ ! $loop->last ? 'border-bottom pb-2 mb-2' : '' }}">
+                                <div class="fw-semibold">
+                                    Pengajuan ke-{{ $tolak->attempt_no }} &middot;
+                                    {{ $tolak->rejected_at?->translatedFormat('d M Y, H:i') }}
+                                </div>
+                                <div>{{ $tolak->reason }}</div>
+                                <div class="text-muted">oleh {{ $tolak->rejectedBy?->full_name ?? '—' }}</div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+
+                @if($order->sedangDitolak())
+                    <div class="alert alert-warning border-0 small mb-0 mt-3 py-2 d-flex flex-wrap align-items-center gap-2">
+                        <span class="flex-grow-1">
+                            Perbaiki item yang dimaksud, lalu ajukan ulang — tidak perlu membuat pesanan baru.
+                        </span>
+                        <a href="{{ url('/sales/orders/'.$order->id.'/edit') }}" class="btn btn-sm btn-warning fw-semibold">
+                            <i class="bi bi-arrow-repeat me-1"></i>Perbaiki &amp; Ajukan Ulang
+                        </a>
                     </div>
                 @endif
             </div>

@@ -65,7 +65,21 @@
                     @endif
                     <div class="text-dark">{{ $order->customer?->name ?? '—' }}</div>
                 </div>
-                <span class="badge bg-{{ $order->status_color }}">{{ $order->status_label }}</span>
+                <div class="text-end">
+                    <span class="badge bg-{{ $order->status_color }}">{{ $order->status_label }}</span>
+                    {{-- MELEKAT SAMPAI AKHIR (permintaan pemilik produk).
+                         Dibaca dari tabel riwayat, bukan dari kolom penolakan
+                         di pesanan — kolom itu sengaja dikosongkan begitu
+                         pesanannya diajukan ulang, sehingga penanda ini tetap
+                         terbaca bahkan setelah pesanannya diterima. --}}
+                    @if($order->rejections_count > 0)
+                        <div class="small mt-1">
+                            <span class="badge bg-danger-subtle text-danger-emphasis">
+                                Pernah ditolak {{ $order->rejections_count }}&times;
+                            </span>
+                        </div>
+                    @endif
+                </div>
             </div>
 
             <div class="d-flex flex-wrap gap-3 small text-muted mb-3">
@@ -89,6 +103,17 @@
                 <a href="{{ url('/sales/orders/'.$order->id) }}" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-eye me-1"></i>Detail
                 </a>
+
+                {{-- Pesanan yang DITOLAK tidak lagi jalan buntu: isinya bisa
+                     diperbaiki lalu diajukan ulang, tanpa mengetik ulang
+                     seluruh baris sebagai pesanan baru. Tombolnya sengaja
+                     berbeda dari "Ubah" milik draft — yang ini membawa Sales
+                     ke perbaikan atas sesuatu yang sudah pernah dinilai. --}}
+                @if($order->sedangDitolak())
+                    <a href="{{ url('/sales/orders/'.$order->id.'/edit') }}" class="btn btn-sm btn-warning fw-semibold">
+                        <i class="bi bi-arrow-repeat me-1"></i>Perbaiki &amp; Ajukan Ulang
+                    </a>
+                @endif
 
                 {{-- Ubah, hapus, dan kirim HANYA muncul untuk draft. Tombol
                      yang tampil lalu ditolak server adalah cacat UX; aturan

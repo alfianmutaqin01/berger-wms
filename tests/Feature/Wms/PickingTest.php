@@ -649,9 +649,9 @@ class PickingTest extends TestCase
         $this->assertStringContainsString('A-01-01', $koreksi->notes);
     }
 
-    /* ------------------------------------------------------- Pembubaran */
+    /* ------------------------------------------------------- Pembatalan */
 
-    public function test_daftar_yang_belum_tersentuh_bisa_dibubarkan(): void
+    public function test_daftar_yang_belum_tersentuh_bisa_dibatalkan(): void
     {
         $this->stok(100);
         $this->loginAt($this->karawang);
@@ -672,7 +672,7 @@ class PickingTest extends TestCase
         $this->assertSame(SalesOrder::STATUS_APPROVED, $order->status);
     }
 
-    public function test_daftar_yang_sudah_dikerjakan_sebagian_tidak_bisa_dibubarkan(): void
+    public function test_daftar_yang_sudah_dikerjakan_sebagian_tidak_bisa_dibatalkan(): void
     {
         $daftar = $this->daftarSiapDikerjakan();
         $this->post(route('wms.picking.item.pick', [$daftar, $daftar->items()->first()]));

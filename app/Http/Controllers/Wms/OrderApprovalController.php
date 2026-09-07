@@ -10,6 +10,7 @@ use App\Models\SalesOrder;
 use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
 use App\Models\SalesOrderOutstanding;
+use App\Models\SalesOrderRejection;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
 use App\Support\Outbound\OutstandingRecorder;
@@ -80,7 +81,11 @@ class OrderApprovalController extends Controller
             ->search($filters['search'])
             ->when($filters['warehouse'], fn ($q, $w) => $q->where('warehouse_id', $w))
             ->with(['customer:id,code,name', 'user:id,full_name', 'warehouse:id,code,name'])
-            ->withCount('details')
+            // Pengajuan ULANG harus terbaca dari antrean, bukan baru ketahuan
+            // setelah layar penerimaannya dibuka: pesanan yang pernah ditolak
+            // menuntut perhatian yang berbeda dari pesanan yang baru pertama
+            // kali masuk.
+            ->withCount(['details', 'rejections'])
             // Terlama di atas: ini antrean, bukan kabar terbaru. Pesanan yang
             // sudah menunggu paling lama justru yang paling mendesak.
             ->orderBy('submitted_at')
@@ -123,6 +128,10 @@ class OrderApprovalController extends Controller
         $order->load([
             'customer', 'user:id,full_name', 'warehouse', 'paymentTerm',
             'details.product:id,sku,name,uom',
+            // Alasan penolakan sebelumnya ikut dibawa: yang menilai pengajuan
+            // kedua perlu tahu apa yang dulu salah, kalau tidak koreksi Sales
+            // dinilai tanpa tahu ia sedang mengoreksi apa.
+            'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
         ]);
 
         $tersedia = $this->allocator->availableFor(
@@ -307,6 +316,20 @@ class OrderApprovalController extends Controller
 
                 $this->pastikanMasihMenunggu($terkunci);
 
+                // Riwayatnya ditulis SEBELUM kolom pesanannya diisi, memakai
+                // submitted_at yang masih menunjuk pengajuan yang sedang
+                // dinilai. Pesanan ini boleh diperbaiki lalu diajukan lagi,
+                // dan begitu itu terjadi kolom penolakan di pesanannya
+                // dikosongkan — hanya tabel inilah yang tetap mengingatnya.
+                SalesOrderRejection::create([
+                    'sales_order_id' => $terkunci->id,
+                    'reason' => $request->validated('rejection_reason'),
+                    'attempt_no' => $terkunci->rejections()->count() + 1,
+                    'submitted_at' => $terkunci->submitted_at,
+                    'rejected_at' => now(),
+                    'rejected_by' => $request->user()?->id,
+                ]);
+
                 $terkunci->fill([
                     'status' => SalesOrder::STATUS_REJECTED,
                     'rejection_reason' => $request->validated('rejection_reason'),
@@ -466,14 +489,18 @@ class OrderApprovalController extends Controller
                 // Pesanan yang PERNAH dibatalkan lalu diterima lagi: kolom
                 // cancelled_at-nya sudah dibersihkan supaya keadaan sekarang
                 // jujur, jadi hanya tabel riwayat yang masih mengingatnya.
-                ->orWhereHas('cancellations'))
+                ->orWhereHas('cancellations')
+                // Sama halnya dengan penolakan: pesanan yang ditolak lalu
+                // diperbaiki dan diajukan ulang sudah tidak punya rejected_at
+                // lagi, dan hanya tabel riwayatnya yang masih mengingat.
+                ->orWhereHas('rejections'))
             ->search($filters['search'])
             // "diterima" TIDAK mencakup yang sudah dibatalkan: pesanan yang
             // dibatalkan memang pernah diterima, tetapi hasil akhirnya bukan
             // itu lagi, dan menghitungnya sebagai diterima membuat rekap
             // penerimaan lebih besar daripada yang benar-benar berjalan.
             ->when($filters['hasil'] === 'diterima', fn ($q) => $q->whereNotNull('approved_at')->whereNull('cancelled_at'))
-            ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereNotNull('rejected_at'))
+            ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereHas('rejections'))
             // Menyaring lewat tabel riwayat, bukan lewat cancelled_at: pesanan
             // yang dibatalkan lalu diterima lagi tetap harus bisa ditemukan di
             // sini — pembatalannya benar-benar pernah terjadi, dan justru
@@ -481,8 +508,9 @@ class OrderApprovalController extends Controller
             ->when($filters['hasil'] === 'dibatalkan', fn ($q) => $q->whereHas('cancellations'))
             ->with(['customer:id,code,name', 'warehouse:id,code,name',
                 'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name',
-                'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at')])
-            ->withCount(['details', 'cancellations'])
+                'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
+                'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->latest('rejected_at')])
+            ->withCount(['details', 'cancellations', 'rejections'])
             ->orderByDesc(DB::raw("GREATEST(COALESCE(approved_at, 'epoch'), COALESCE(rejected_at, 'epoch'), COALESCE(cancelled_at, 'epoch'))"))
             ->paginate(15)
             ->withQueryString();

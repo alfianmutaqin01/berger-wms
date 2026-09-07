@@ -145,6 +145,18 @@ class SalesOrder extends Model
     }
 
     /**
+     * Seluruh penolakan yang pernah dialami pesanan ini.
+     *
+     * Kosong berarti belum pernah ditolak. Terisi berarti pernah — SEKALIPUN
+     * pesanannya sekarang sudah diterima dan selesai, karena inilah catatan
+     * yang menurut pemilik produk harus melekat sampai akhir.
+     */
+    public function rejections(): HasMany
+    {
+        return $this->hasMany(SalesOrderRejection::class);
+    }
+
+    /**
      * Pesanan INDUK yang nomor SO-nya ditumpangi pesanan ini.
      *
      * Terisi hanya pada pesanan tambahan yang digabung ke satu invoice.
@@ -164,7 +176,7 @@ class SalesOrder extends Model
      * Daftar picking yang sedang memuat pesanan ini.
      *
      * Terisi sejak Logistik menyusun daftar sampai daftarnya selesai atau
-     * dibubarkan. NULL berarti pesanan ini masih bebas dimasukkan ke daftar
+     * dibatalkan. NULL berarti pesanan ini masih bebas dimasukkan ke daftar
      * mana pun — itulah pemeriksaan yang mencegah satu pesanan diambil dua
      * kali oleh dua operator.
      */
@@ -244,6 +256,32 @@ class SalesOrder extends Model
     public function isEditable(): bool
     {
         return $this->status === self::STATUS_DRAFT;
+    }
+
+    /**
+     * Boleh diperbaiki isinya lalu diajukan lagi ke Logistik.
+     *
+     * Lebih luas daripada isEditable(): pesanan yang DITOLAK ikut masuk.
+     * Sebelumnya penolakan adalah jalan buntu, sehingga pesanan 50 baris yang
+     * ditolak karena satu item keliru memaksa Sales mengetik ulang semuanya
+     * sebagai pesanan baru — dan pesanan barunya tidak punya hubungan apa pun
+     * dengan yang ditolak, sehingga Logistik tidak pernah tahu ini pengajuan
+     * kedua atas hal yang sama.
+     *
+     * SENGAJA TIDAK DISATUKAN dengan isEditable(). Yang boleh DIHAPUS tetap
+     * hanya draft: pesanan yang pernah ditolak membawa riwayat penolakan yang
+     * harus bertahan, dan menghapusnya berarti menghapus jejak itu juga.
+     */
+    public function bolehDiperbaiki(): bool
+    {
+        return $this->status === self::STATUS_DRAFT
+            || $this->status === self::STATUS_REJECTED;
+    }
+
+    /** Pesanan yang sedang ditolak dan menunggu diperbaiki Sales. */
+    public function sedangDitolak(): bool
+    {
+        return $this->status === self::STATUS_REJECTED;
     }
 
     /** Pesanan bermetode dokumen: rincian item menyusul dari Logistik. */

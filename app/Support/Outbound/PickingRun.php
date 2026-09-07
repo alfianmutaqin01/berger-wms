@@ -557,7 +557,7 @@ class PickingRun
                 $daftar->claimedBy?->full_name ?? 'operator lain'
             ),
             PickingList::STATUS_COMPLETED => sprintf('Daftar %s sudah selesai dikerjakan.', $daftar->list_number),
-            default => sprintf('Daftar %s sudah dibubarkan Logistik.', $daftar->list_number),
+            default => sprintf('Daftar %s sudah dibatalkan Logistik.', $daftar->list_number),
         };
     }
 }

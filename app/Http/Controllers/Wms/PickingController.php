@@ -115,14 +115,14 @@ class PickingController extends Controller
             ));
     }
 
-    /** Membubarkan daftar yang belum tersentuh; pesanannya kembali ke antrean. */
+    /** Membatalkan daftar yang belum tersentuh; pesanannya kembali ke antrean. */
     public function cancel(Request $request, PickingList $list): RedirectResponse
     {
         WarehouseScope::assert($list->warehouse_id, $request->user());
 
         $data = $request->validate([
             'cancellation_reason' => ['required', 'string', 'min:10', 'max:1000'],
-        ], [], ['cancellation_reason' => 'alasan pembubaran']);
+        ], [], ['cancellation_reason' => 'alasan pembatalan']);
 
         try {
             $this->penyusun->cancel($list, $data['cancellation_reason'], $request->user()?->id);
@@ -133,7 +133,7 @@ class PickingController extends Controller
         return redirect()
             ->route('wms.picking.batching')
             ->with('success', sprintf(
-                'Daftar %s dibubarkan. Pesanannya kembali ke antrean dan bisa disusun ulang.',
+                'Daftar %s dibatalkan. Pesanannya kembali ke antrean dan bisa disusun ulang.',
                 $list->list_number
             ));
     }

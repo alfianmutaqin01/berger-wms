@@ -165,12 +165,17 @@
                             </div>
                         </div>
 
-                        @if($daftar->bolehDibubarkan())
-                        <button type="button" class="btn btn-sm btn-outline-danger rounded-3 mt-2 tombol-bubar"
-                                data-bs-toggle="modal" data-bs-target="#modalBubar"
+                        @if($daftar->bolehDibatalkan())
+                        <button type="button" class="btn btn-sm btn-outline-danger rounded-3 mt-2 tombol-batal"
+                                data-bs-toggle="modal" data-bs-target="#modalBatal"
                                 data-aksi="{{ route('wms.picking.cancel', $daftar) }}"
                                 data-nomor="{{ $daftar->list_number }}">
-                            <i class="bi bi-x-circle me-1"></i> Bubarkan
+                            {{-- "Daftar" ikut ditulis: di sistem ini "batalkan"
+                                 juga dipakai untuk membatalkan PESANAN, dan
+                                 yang dibatalkan di sini hanya susunan daftar
+                                 pickingnya — pesanannya kembali ke antrean,
+                                 tidak ikut batal. --}}
+                            <i class="bi bi-x-circle me-1"></i> Batalkan Daftar
                         </button>
                         @endif
                     </div>
@@ -216,16 +221,16 @@
 </div>
 
 {{-- Satu modal dipakai bersama seluruh baris daftar. --}}
-<div class="modal fade" id="modalBubar" tabindex="-1">
+<div class="modal fade" id="modalBatal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <form method="POST" id="formBubar" class="modal-content rounded-4 border-0">
+        <form method="POST" id="formBatal" class="modal-content rounded-4 border-0">
             @csrf
             <div class="modal-header border-0">
-                <h5 class="modal-title fw-bold">Bubarkan Daftar</h5>
+                <h5 class="modal-title fw-bold">Batalkan Daftar</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-warning border-0 rounded-3 small fw-semibold" id="bubarNomor"></div>
+                <div class="alert alert-warning border-0 rounded-3 small fw-semibold" id="batalNomor"></div>
                 <p class="text-muted small">
                     Pesanan di dalamnya kembali ke antrean dan bisa disusun ulang. Hanya bisa selama
                     <strong>belum ada satu baris pun</strong> yang ditandai operator.
@@ -236,7 +241,7 @@
             </div>
             <div class="modal-footer border-0">
                 <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Tutup</button>
-                <button type="submit" class="btn btn-danger rounded-3">Bubarkan</button>
+                <button type="submit" class="btn btn-danger rounded-3">Batalkan Daftar</button>
             </div>
         </form>
     </div>
@@ -311,11 +316,11 @@ document.addEventListener('DOMContentLoaded', function () {
         form.submit();
     });
 
-    const formBubar = document.getElementById('formBubar');
-    document.querySelectorAll('.tombol-bubar').forEach(function (t) {
+    const formBatal = document.getElementById('formBatal');
+    document.querySelectorAll('.tombol-batal').forEach(function (t) {
         t.addEventListener('click', function () {
-            formBubar.action = t.dataset.aksi;
-            document.getElementById('bubarNomor').textContent = 'Daftar ' + t.dataset.nomor;
+            formBatal.action = t.dataset.aksi;
+            document.getElementById('batalNomor').textContent = 'Daftar ' + t.dataset.nomor;
         });
     });
 

@@ -1,7 +1,19 @@
 @extends('layouts.soms')
 
-@section('title', $order ? 'Ubah Draft Pesanan' : 'Buat Pesanan Baru')
-@section('page_title', $order ? 'Ubah Draft Pesanan' : 'Buat Pesanan Baru')
+@php
+    // Tiga keadaan, tiga judul. Layar yang menyebut "Ubah Draft" padahal Sales
+    // sedang memperbaiki pesanan yang ditolak membuat orang ragu apakah ia
+    // membuka pesanan yang benar.
+    $sedangDitolak = $order?->sedangDitolak() ?? false;
+    $judulHalaman = match (true) {
+        $sedangDitolak => 'Perbaiki Pesanan yang Ditolak',
+        $order !== null => 'Ubah Draft Pesanan',
+        default => 'Buat Pesanan Baru',
+    };
+@endphp
+
+@section('title', $judulHalaman)
+@section('page_title', $judulHalaman)
 
 @php
     // Nilai awal: isian lama (setelah validasi gagal), lalu draft yang
@@ -29,6 +41,30 @@
             <ul class="mb-0 mt-2 small">
                 @foreach($errors->all() as $pesan)<li>{{ $pesan }}</li>@endforeach
             </ul>
+        </div>
+        @endif
+
+        {{-- Alasan penolakannya dibawa KE DALAM formulir. Sales yang harus
+             mengingat-ingat apa yang salah sambil menyunting akan memperbaiki
+             barang yang keliru, dan pengajuan keduanya ditolak lagi. --}}
+        @if($sedangDitolak && $order->rejections->isNotEmpty())
+        <div class="alert alert-danger border-0 shadow-sm rounded-3">
+            <strong class="d-block mb-2">
+                <i class="bi bi-x-octagon-fill me-2"></i>Pesanan ini ditolak Logistik
+            </strong>
+            @foreach($order->rejections as $tolak)
+                <div class="small {{ ! $loop->last ? 'border-bottom pb-2 mb-2' : '' }}">
+                    <span class="fw-semibold">Pengajuan ke-{{ $tolak->attempt_no }}:</span>
+                    {{ $tolak->reason }}
+                    <span class="text-muted">
+                        ({{ $tolak->rejected_at?->translatedFormat('d M Y') }},
+                        {{ $tolak->rejectedBy?->full_name ?? '—' }})
+                    </span>
+                </div>
+            @endforeach
+            <div class="small mt-2 fst-italic">
+                Perbaiki itemnya di bawah, lalu tekan <strong>Ajukan Ulang</strong>. Nomor pesanannya tetap sama.
+            </div>
         </div>
         @endif
 
@@ -178,11 +214,13 @@
 
                 <div class="card-footer bg-white border-top-0 p-4 d-flex flex-column flex-md-row gap-2">
                     <button type="submit" name="action" value="draft" class="btn btn-outline-secondary flex-grow-1">
-                        <i class="bi bi-save me-1"></i> Simpan Draft
+                        <i class="bi bi-save me-1"></i>
+                        {{ $sedangDitolak ? 'Simpan Perbaikan' : 'Simpan Draft' }}
                     </button>
                     <button type="submit" name="action" value="submit" class="btn btn-primary flex-grow-1 fw-bold"
                             @disabled(! $cutoffOpen)>
-                        <i class="bi bi-send me-1"></i> Submit Order
+                        <i class="bi {{ $sedangDitolak ? 'bi-arrow-repeat' : 'bi-send' }} me-1"></i>
+                        {{ $sedangDitolak ? 'Ajukan Ulang' : 'Submit Order' }}
                     </button>
                 </div>
             </form>

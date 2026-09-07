@@ -117,6 +117,18 @@
                                     <i class="bi bi-paperclip"></i> PO customer: {{ $order->customer_po_number ?? '—' }}
                                 </div>
                             @endif
+                            {{-- Pengajuan ULANG terbaca sejak di antrean.
+                                 Pesanan yang pernah ditolak menuntut perhatian
+                                 berbeda dari yang baru pertama kali masuk, dan
+                                 mengetahuinya setelah layar penilaian terbuka
+                                 sudah terlambat untuk mengatur urutan kerja. --}}
+                            @if($order->rejections_count > 0)
+                                <div class="small mt-1">
+                                    <span class="badge bg-warning-subtle text-warning-emphasis">
+                                        <i class="bi bi-arrow-repeat me-1"></i>Pengajuan ke-{{ $order->rejections_count + 1 }}
+                                    </span>
+                                </div>
+                            @endif
                         </td>
                         <td>
                             <div class="fw-semibold">{{ $order->customer?->name ?? '—' }}</div>

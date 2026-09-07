@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Menyusun dan membubarkan daftar picking — pekerjaan LOGISTIK.
+ * Menyusun dan membatalkan daftar picking — pekerjaan LOGISTIK.
  *
  * Pasangannya adalah PickingRun, yang memegang pekerjaan OPERATOR. Keduanya
  * sengaja dipisah karena dijalankan orang berbeda dengan wewenang berbeda:
@@ -90,7 +90,7 @@ class PickingListBuilder
     }
 
     /**
-     * Membubarkan daftar dan mengembalikan pesanannya ke antrean.
+     * Membatalkan daftar dan mengembalikan pesanannya ke antrean.
      *
      * @throws RuntimeException
      */
@@ -99,8 +99,8 @@ class PickingListBuilder
         DB::transaction(function () use ($list, $reason, $userId) {
             $terkunci = PickingList::query()->lockForUpdate()->findOrFail($list->id);
 
-            if (! $terkunci->bolehDibubarkan()) {
-                throw new RuntimeException($this->alasanTidakBolehDibubarkan($terkunci));
+            if (! $terkunci->bolehDibatalkan()) {
+                throw new RuntimeException($this->alasanTidakBolehDibatalkan($terkunci));
             }
 
             // Barisnya dihapus, bukan disimpan sebagai riwayat: tidak ada
@@ -128,7 +128,7 @@ class PickingListBuilder
      * tidak ada. Membiarkannya berarti operator disuruh mengambil barang
      * untuk pesanan yang sudah tidak berlaku.
      *
-     * Daftar yang jadi kosong ikut dibubarkan — lihat build(): daftar tanpa
+     * Daftar yang jadi kosong ikut dibatalkan — lihat build(): daftar tanpa
      * baris adalah tugas yang tidak bisa diselesaikan siapa pun.
      */
     public function keluarkanPesanan(SalesOrder $order, ?int $userId): void
@@ -159,7 +159,7 @@ class PickingListBuilder
             'cancelled_at' => now(),
             'cancelled_by' => $userId,
             'cancellation_reason' => sprintf(
-                'Bubar sendiri: pesanan terakhir di dalamnya (%s) dibatalkan.',
+                'Batal sendiri: pesanan terakhir di dalamnya (%s) dibatalkan.',
                 $order->order_number
             ),
         ])->save();
@@ -263,22 +263,22 @@ class PickingListBuilder
         }
     }
 
-    private function alasanTidakBolehDibubarkan(PickingList $daftar): string
+    private function alasanTidakBolehDibatalkan(PickingList $daftar): string
     {
         if ($daftar->status === PickingList::STATUS_COMPLETED) {
             return sprintf(
-                'Daftar %s sudah selesai dan barangnya ada di loading dock. Membubarkannya hanya menghapus catatan — '.
+                'Daftar %s sudah selesai dan barangnya ada di loading dock. Membatalkannya hanya menghapus catatan — '.
                 'barangnya tetap sudah turun dari rak, dan tidak ada lagi yang menjelaskan kenapa ia di sana.',
                 $daftar->list_number
             );
         }
 
         if ($daftar->status === PickingList::STATUS_CANCELLED) {
-            return sprintf('Daftar %s memang sudah dibubarkan.', $daftar->list_number);
+            return sprintf('Daftar %s memang sudah dibatalkan.', $daftar->list_number);
         }
 
         return sprintf(
-            'Daftar %s sudah dikerjakan sebagian oleh operator. Bubarkan hanya selama belum ada satu baris pun yang '.
+            'Daftar %s sudah dikerjakan sebagian oleh operator. Batalkan hanya selama belum ada satu baris pun yang '.
             'ditandai; sesudah itu, barangnya sudah turun dari rak dan harus dikembalikan dulu secara fisik.',
             $daftar->list_number
         );
