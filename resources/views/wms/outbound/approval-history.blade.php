@@ -98,6 +98,22 @@
                                     <span class="badge bg-info-subtle text-info-emphasis">Gabung invoice</span>
                                 </div>
                             @endif
+                            {{-- BERTAHAN SEKALIPUN PESANANNYA SUDAH DITERIMA LAGI.
+                                 Kolom pembatalan di pesanan sengaja dibersihkan
+                                 saat diterima ulang supaya keadaan sekarang
+                                 jujur; hitungan ini dibaca dari tabel riwayat,
+                                 yang tidak pernah dibersihkan. Tanpa penanda
+                                 ini, PO yang sudah tiga kali batal terlihat
+                                 sama bersihnya dengan yang mulus sejak awal. --}}
+                            @if($order->cancellations_count > 0)
+                                <div class="small mt-1">
+                                    <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none text-danger-emphasis"
+                                            data-bs-toggle="collapse" data-bs-target="#batal-{{ $order->id }}">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i>
+                                        Pernah dibatalkan {{ $order->cancellations_count }}&times;
+                                    </button>
+                                </div>
+                            @endif
                         </td>
                         <td class="font-monospace">{{ $order->bc_so_number ?? '—' }}</td>
                         <td>
@@ -169,6 +185,51 @@
                             @endif
                         </td>
                     </tr>
+                    @if($order->cancellations_count > 0)
+                        {{-- Setiap pembatalan berdiri sendiri: siapa, kapan,
+                             alasannya, dan nomor SO yang saat itu dilepas.
+                             Nomor SO-nya ikut ditampilkan karena justru itu
+                             yang ditelusuri ketika angka di BC dan WMS berbeda
+                             — nomornya sudah tidak ada lagi di pesanannya. --}}
+                        <tr class="collapse" id="batal-{{ $order->id }}">
+                            <td colspan="8" class="bg-light-subtle">
+                                <div class="small fw-semibold text-danger-emphasis mb-2">
+                                    Riwayat pembatalan pesanan {{ $order->order_number }}
+                                </div>
+                                <table class="table table-sm mb-0 bg-white">
+                                    <thead>
+                                        <tr class="small text-muted">
+                                            <th>Waktu</th>
+                                            <th>Oleh</th>
+                                            <th>Sumber</th>
+                                            <th>No. SO saat itu</th>
+                                            <th class="text-end">Unit dilepas</th>
+                                            <th>Alasan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach($order->cancellations as $batal)
+                                        <tr>
+                                            <td class="small">
+                                                {{ $batal->cancelled_at?->format('d M Y') }}
+                                                <span class="text-muted">{{ $batal->cancelled_at?->format('H:i') }}</span>
+                                            </td>
+                                            <td class="small">{{ $batal->cancelledBy?->full_name ?? '—' }}</td>
+                                            <td class="small">
+                                                <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                                    {{ $batal->source_label }}
+                                                </span>
+                                            </td>
+                                            <td class="small font-monospace">{{ $batal->bc_so_number ?? '—' }}</td>
+                                            <td class="small text-end">{{ number_format($batal->qty_released) }}</td>
+                                            <td class="small">{{ $batal->reason }}</td>
+                                        </tr>
+                                    @endforeach
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    @endif
                 @empty
                     <tr>
                         <td colspan="8" class="text-center py-5 text-muted">

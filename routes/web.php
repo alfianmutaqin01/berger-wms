@@ -15,6 +15,7 @@ use App\Http\Controllers\Wms\InventoryController;
 use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OrderApprovalController;
+use App\Http\Controllers\Wms\OutstandingController;
 use App\Http\Controllers\Wms\PickingController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
@@ -412,6 +413,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // dokumen BC dan bukan diketik ulang.
             Route::post('/approval/{order}/so-number', [OrderApprovalController::class, 'renameSoNumber'])
                 ->name('wms.approval.so-number');
+
+            // RIWAYAT OUTSTANDING. Menumpang izin yang sama dengan penerimaan
+            // pesanan, bukan izin baru: kekurangan LAHIR dari keputusan
+            // penerimaan, dan siapa pun yang berwenang mengambil keputusan itu
+            // memang harus bisa melihat akibatnya.
+            Route::get('/outstanding', [OutstandingController::class, 'index'])
+                ->name('wms.outstanding.index');
         });
 
         // PICKING (Fase 6 tahap 3). Dua kelompok untuk dua orang: Logistik

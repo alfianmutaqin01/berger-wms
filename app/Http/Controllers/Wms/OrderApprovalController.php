@@ -9,8 +9,10 @@ use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
+use App\Models\SalesOrderOutstanding;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
+use App\Support\Outbound\OutstandingRecorder;
 use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -57,6 +59,7 @@ class OrderApprovalController extends Controller
     public function __construct(
         private readonly FifoAllocator $allocator,
         private readonly OrderCanceller $canceller,
+        private readonly OutstandingRecorder $outstanding,
     ) {}
 
     /** Antrean pesanan yang menunggu diterima (F-OUT-02 langkah 1). */
@@ -240,7 +243,7 @@ class OrderApprovalController extends Controller
                 // layar yang sama sama-sama lolos pemeriksaan di show().
                 $this->pastikanMasihMenunggu($terkunci);
 
-                $this->tulisRincian($terkunci, $request->itemData());
+                $this->tulisRincian($terkunci, $request->itemData(), $userId);
                 $terkunci->load('details');
 
                 $dialokasikan = 0;
@@ -459,7 +462,11 @@ class OrderApprovalController extends Controller
             // sehingga riwayat memunculkan pesanan yang tidak dicari.
             ->where(fn ($q) => $q->whereNotNull('approved_at')
                 ->orWhereNotNull('rejected_at')
-                ->orWhereNotNull('cancelled_at'))
+                ->orWhereNotNull('cancelled_at')
+                // Pesanan yang PERNAH dibatalkan lalu diterima lagi: kolom
+                // cancelled_at-nya sudah dibersihkan supaya keadaan sekarang
+                // jujur, jadi hanya tabel riwayat yang masih mengingatnya.
+                ->orWhereHas('cancellations'))
             ->search($filters['search'])
             // "diterima" TIDAK mencakup yang sudah dibatalkan: pesanan yang
             // dibatalkan memang pernah diterima, tetapi hasil akhirnya bukan
@@ -467,10 +474,15 @@ class OrderApprovalController extends Controller
             // penerimaan lebih besar daripada yang benar-benar berjalan.
             ->when($filters['hasil'] === 'diterima', fn ($q) => $q->whereNotNull('approved_at')->whereNull('cancelled_at'))
             ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereNotNull('rejected_at'))
-            ->when($filters['hasil'] === 'dibatalkan', fn ($q) => $q->whereNotNull('cancelled_at'))
+            // Menyaring lewat tabel riwayat, bukan lewat cancelled_at: pesanan
+            // yang dibatalkan lalu diterima lagi tetap harus bisa ditemukan di
+            // sini — pembatalannya benar-benar pernah terjadi, dan justru
+            // pesanan seperti itulah yang paling perlu ditelusuri.
+            ->when($filters['hasil'] === 'dibatalkan', fn ($q) => $q->whereHas('cancellations'))
             ->with(['customer:id,code,name', 'warehouse:id,code,name',
-                'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name'])
-            ->withCount('details')
+                'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name',
+                'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at')])
+            ->withCount(['details', 'cancellations'])
             ->orderByDesc(DB::raw("GREATEST(COALESCE(approved_at, 'epoch'), COALESCE(rejected_at, 'epoch'), COALESCE(cancelled_at, 'epoch'))"))
             ->paginate(15)
             ->withQueryString();
@@ -491,7 +503,7 @@ class OrderApprovalController extends Controller
      *
      * @param  list<array{product_id:int, qty_approved:int, qty_ordered:int}>  $item
      */
-    private function tulisRincian(SalesOrder $order, array $item): void
+    private function tulisRincian(SalesOrder $order, array $item, ?int $userId): void
     {
         foreach ($item as $baris) {
             $detail = SalesOrderDetail::firstOrNew([
@@ -510,6 +522,23 @@ class OrderApprovalController extends Controller
             // kelak dikoreksi.
             $detail->outstanding_qty = max(0, $detail->qty_ordered - $detail->qty_approved);
             $detail->save();
+
+            // Riwayat outstanding (permintaan pemilik produk). Kolom di atas
+            // hanya menyimpan keadaan sekarang dan akan ditimpa saat barangnya
+            // berangkat; tanpa baris riwayat ini, "PO itu dulu kurang berapa"
+            // tidak bisa lagi dijawab begitu kekurangannya tertutup.
+            $this->outstanding->record(
+                $order,
+                $detail,
+                $detail->outstanding_qty,
+                SalesOrderOutstanding::CAUSE_APPROVAL,
+                $userId,
+                sprintf(
+                    'Dipesan %d, disetujui %d saat penerimaan.',
+                    $detail->qty_ordered,
+                    $detail->qty_approved,
+                ),
+            );
         }
 
         // Baris yang dibuang Logistik dari kisi ikut hilang. Dipakai saat

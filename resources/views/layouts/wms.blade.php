@@ -177,6 +177,9 @@
                             <li class="nav-item {{ request()->is('wms/outbound/approval/history') ? 'active' : '' }}">
                                 <a href="/wms/outbound/approval/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Penerimaan</span></a>
                             </li>
+                            <li class="nav-item {{ request()->is('wms/outbound/outstanding') ? 'active' : '' }}">
+                                <a href="/wms/outbound/outstanding" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Outstanding</span></a>
+                            </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_PICKING_LIST)
                             <li class="nav-item {{ request()->is('wms/outbound/picking/batching') ? 'active' : '' }}">

@@ -7,6 +7,7 @@ use App\Models\InventoryStock;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderOutstanding;
 use App\Models\StockMovement;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Collection;
@@ -47,7 +48,10 @@ use RuntimeException;
  */
 class Shipment
 {
-    public function __construct(private readonly PickingRun $picking) {}
+    public function __construct(
+        private readonly PickingRun $picking,
+        private readonly OutstandingRecorder $outstanding,
+    ) {}
 
     /**
      * Perbandingan qty dokumen BC dengan yang benar-benar diambil dari rak.
@@ -308,7 +312,7 @@ class Shipment
                 }
             }
 
-            $this->catatQtyTerkirim($order, $qtySj, $substitusi ? $terkunci : null);
+            $this->catatQtyTerkirim($order, $qtySj, $userId, $substitusi ? $terkunci : null);
 
             $order->forceFill([
                 'status' => SalesOrder::STATUS_SHIPPING,
@@ -554,7 +558,7 @@ class Shipment
      *
      * @param  array<int, int>  $qtySj
      */
-    private function catatQtyTerkirim(SalesOrder $order, array $qtySj, ?DeliveryNote $substitusi = null): void
+    private function catatQtyTerkirim(SalesOrder $order, array $qtySj, ?int $userId, ?DeliveryNote $substitusi = null): void
     {
         foreach ($order->details as $detail) {
             $terkirim = $qtySj[$detail->product_id] ?? 0;
@@ -569,11 +573,11 @@ class Shipment
              */
             $digantikan = $substitusi !== null && $terkirim === 0;
 
+            $sisa = $digantikan ? 0 : max(0, (int) $detail->qty_ordered - $terkirim);
+
             $detail->forceFill([
                 'qty_shipped' => $terkirim,
-                'outstanding_qty' => $digantikan
-                    ? 0
-                    : max(0, (int) $detail->qty_ordered - $terkirim),
+                'outstanding_qty' => $sisa,
                 'substitution_note' => $digantikan
                     ? sprintf(
                         'Digantikan SKU lain sesuai Surat Jalan %s (%s).',
@@ -582,6 +586,24 @@ class Shipment
                     )
                     : $detail->substitution_note,
             ])->save();
+
+            // Riwayat outstanding. Menahan diri kalau angkanya tidak berubah
+            // adalah tugas OutstandingRecorder, bukan di sini: pesanan yang
+            // sejak awal disetujui sebagian menghasilkan kekurangan yang sama
+            // persis di sini, dan mencatatnya lagi berarti satu kekurangan
+            // terbaca sebagai dua.
+            $this->outstanding->record(
+                $order,
+                $detail,
+                $sisa,
+                SalesOrderOutstanding::CAUSE_SHIPMENT,
+                $userId,
+                sprintf(
+                    'Surat Jalan berangkat dengan %d dari %d yang dipesan.',
+                    $terkirim,
+                    $detail->qty_ordered,
+                ),
+            );
         }
     }
 
