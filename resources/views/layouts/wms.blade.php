@@ -80,11 +80,13 @@
                 \App\Support\Permission::INBOUND_RETURNS,
                 \App\Support\Permission::INBOUND_VERIFY,
                 \App\Support\Permission::INVENTORY_VIEW,
+                \App\Support\Permission::STOCKTAKE_COUNT,
                 \App\Support\Permission::TRANSFER_HISTORY,
             ])
                 @php
                     $inboundOpen = request()->is('wms/inbound*')
                         || request()->is('wms/inventory*')
+                        || request()->is('wms/stocktake*')
                         || request()->is('wms/transfers*');
 
                     // Produksi hanya ada di Karawang. Bagi staff Pekanbaru dan
@@ -134,8 +136,18 @@
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INVENTORY_VIEW)
-                            <li class="nav-item {{ request()->is('wms/inventory*') ? 'active' : '' }}">
+                            <li class="nav-item {{ request()->is('wms/inventory') || request()->is('wms/inventory/*') ? 'active' : '' }}">
                                 <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok (Inventory)</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::STOCKTAKE_COUNT)
+                            {{-- Menu sendiri, bukan menumpang Denah. Opname
+                                 adalah PROSES bertahap dengan awal, akhir, dan
+                                 penanggung jawab; menyembunyikannya di dalam
+                                 layar master data membuatnya luput justru dari
+                                 orang yang harus memantaunya. --}}
+                            <li class="nav-item {{ request()->is('wms/stocktake*') ? 'active' : '' }}">
+                                <a href="/wms/stocktake" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Stok Opname</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::TRANSFER_HISTORY)

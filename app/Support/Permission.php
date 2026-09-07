@@ -63,6 +63,25 @@ class Permission
      */
     public const INVENTORY_QUARANTINE = 'inventory.quarantine';
 
+    /**
+     * MEMASUKKAN hasil hitungan fisik saat stok opname.
+     *
+     * Terbuka sampai Operator Gudang: merekalah yang berdiri di depan rak dan
+     * menghitung. Memasukkan hitungan TIDAK mengubah stok sama sekali — ia
+     * hanya menumpuk sebagai catatan sampai laporannya disahkan.
+     */
+    public const STOCKTAKE_COUNT = 'stocktake.count';
+
+    /**
+     * Membuka sesi opname dan MENGESAHKAN laporannya.
+     *
+     * SENGAJA DIPISAH dari yang menghitung. Pengesahan itulah yang benar-benar
+     * menggeser angka stok — kadang ribuan unit sekaligus — dan orang yang
+     * salah menghitung tidak boleh sekaligus menjadi orang yang mengesahkan
+     * koreksi atas kesalahannya sendiri.
+     */
+    public const STOCKTAKE_MANAGE = 'stocktake.manage';
+
     /*
      | Transfer antar GUDANG (F-INV-05) — sengaja dipisah dari yang di atas.
      | Memindahkan palet ke rak sebelah dan mengirim satu truk ke Pekanbaru
@@ -149,6 +168,10 @@ class Permission
         self::INVENTORY_ADJUST => [Role::SUPER_ADMIN, Role::MANAGER],
         self::INVENTORY_TRANSFER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::INVENTORY_QUARANTINE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::STOCKTAKE_COUNT => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
+        self::STOCKTAKE_MANAGE => [Role::SUPER_ADMIN, Role::MANAGER],
 
         // Penerimaan transfer memutuskan angka stok final di gudang tujuan —
         // wewenang yang sama dengan Verifikasi Logistik pada jalur inbound,

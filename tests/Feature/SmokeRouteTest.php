@@ -17,6 +17,8 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
+use App\Models\StockTake;
+use App\Models\StockTakeItem;
 use App\Models\StockTransfer;
 use App\Models\StockTransferDetail;
 use App\Models\User;
@@ -294,9 +296,28 @@ class SmokeRouteTest extends TestCase
             'uploaded_by' => $order->user_id,
         ]);
 
+        // --- Sesi stok opname yang sedang dihitung, dengan satu barisnya ---
+        $opname = StockTake::create([
+            'reference' => 'ST260901001',
+            'warehouse_id' => $this->warehouse->id,
+            'scope_type' => StockTake::SCOPE_WAREHOUSE,
+            'scope_value' => null,
+            'status' => StockTake::STATUS_COUNTING,
+            'opened_at' => now(),
+        ]);
+        StockTakeItem::create([
+            'stock_take_id' => $opname->id,
+            'location_id' => $lokasi->id,
+            'product_id' => $produk->id,
+            'batch_no' => 'BT-SMOKE',
+            'qty_system' => 10,
+        ]);
+
         $this->parameter = [
             'proof' => $bukti->id,
             'order' => $order->id,
+            'stocktake' => $opname->id,
+            'location' => $lokasi->id,
             'doc_no' => $header->document_number,
             'po_number' => $order->order_number,
             'transfer' => $transfer->id,

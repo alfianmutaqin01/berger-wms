@@ -21,6 +21,7 @@ use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ProofVerificationController;
 use App\Http\Controllers\Wms\ReportController;
+use App\Http\Controllers\Wms\StockTakeController;
 use App\Http\Controllers\Wms\StockTransferController;
 use App\Http\Controllers\Wms\UserController;
 use App\Support\Permission;
@@ -263,6 +264,40 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.inventory.quarantine.release');
         Route::post('/inventory/{stock}/old-formula', [InventoryController::class, 'toggleOldFormula'])
             ->name('wms.inventory.old-formula');
+    });
+
+    /*
+    | STOK OPNAME (permintaan pemilik produk). DUA GATE, sengaja berbeda:
+    |
+    |   stocktake.count  — memasukkan hasil hitungan fisik. Terbuka sampai
+    |                      Operator Gudang, karena merekalah yang berdiri di
+    |                      depan rak. Tidak mengubah satu pun angka stok.
+    |   stocktake.manage — membuka sesi dan MENGESAHKAN laporannya. Pengesahan
+    |                      itulah yang menggeser stok, kadang ribuan unit
+    |                      sekaligus, jadi ia tidak boleh berada di tangan yang
+    |                      sama dengan yang menghitung.
+    |
+    | URUTAN PENTING: '/stocktake/items/...' didaftarkan sebelum
+    | '/stocktake/{stocktake}', kalau tidak "items" tertangkap sebagai id sesi.
+    */
+    Route::middleware('can:'.Permission::STOCKTAKE_COUNT)->group(function () {
+        Route::get('/stocktake', [StockTakeController::class, 'index'])
+            ->name('wms.stocktake.index');
+        Route::post('/stocktake/items/{item}/count', [StockTakeController::class, 'count'])
+            ->name('wms.stocktake.count');
+        Route::get('/stocktake/{stocktake}', [StockTakeController::class, 'show'])
+            ->name('wms.stocktake.show');
+        Route::get('/stocktake/{stocktake}/report', [StockTakeController::class, 'report'])
+            ->name('wms.stocktake.report');
+    });
+
+    Route::middleware('can:'.Permission::STOCKTAKE_MANAGE)->group(function () {
+        Route::post('/stocktake', [StockTakeController::class, 'store'])
+            ->name('wms.stocktake.store');
+        Route::post('/stocktake/{stocktake}/finalize', [StockTakeController::class, 'finalize'])
+            ->name('wms.stocktake.finalize');
+        Route::post('/stocktake/{stocktake}/cancel', [StockTakeController::class, 'cancel'])
+            ->name('wms.stocktake.cancel');
     });
 
     // Impor Stok Awal — mengisi gudang yang sudah berjalan ke sistem baru.
