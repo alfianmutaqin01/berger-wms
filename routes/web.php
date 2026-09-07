@@ -333,6 +333,11 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // Denah gudang — didaftarkan SEBELUM /locations/{location} agar
             // "map" tidak tertangkap sebagai parameter route model binding.
             Route::get('/locations/map', [LocationController::class, 'map'])->name('wms.locations.map');
+            // Isi satu titik rak, diambil saat kotaknya diklik di denah.
+            // Terpisah dari halamannya supaya denah berisi ~2.264 kotak tidak
+            // perlu membawa rincian batch yang 99% tidak pernah dibuka.
+            Route::get('/locations/{location}/contents', [LocationController::class, 'contents'])
+                ->name('wms.locations.contents');
             Route::post('/locations', [LocationController::class, 'store'])->name('wms.locations.store');
             Route::put('/locations/{location}', [LocationController::class, 'update'])->name('wms.locations.update');
             Route::patch('/locations/{location}/status', [LocationController::class, 'toggleStatus'])->name('wms.locations.status');

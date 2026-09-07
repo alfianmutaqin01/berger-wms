@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreLocationRequest;
 use App\Http\Requests\Wms\UpdateLocationRequest;
+use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Support\WarehouseScope;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -81,18 +83,23 @@ class LocationController extends Controller
      * DATA CONTRACT (view: wms.master.locations-map)
      * ----------------------------------------------
      * $racks      : Collection<string, Collection<int, Collection<Location>>>
-     *               rak => level => daftar bin (terurut nomor sel)
-     * $rackMeta   : array<string, array{zone:?string, total:int, inactive:int}>
+     *               rak => level => daftar titik rak (terurut nomor sel)
+     * $rackMeta   : array<string, array{zone:?string, total:int, inactive:int,
+     *               terisi:int, qty:int}>
+     * $isi        : array<int, array{qty:int, sku:int}> — location_id => ringkasan isi
      * $warehouses : Collection<Warehouse>
      * $warehouse  : ?Warehouse — gudang yang sedang ditampilkan
      * $zones      : list<string>
-     * $stats      : array{total:int, active:int, inactive:int, per_zone:array}
+     * $stats      : array{total:int, active:int, inactive:int, terisi:int, qty:int,
+     *               per_zone:array}
      * $filters    : array{warehouse_id:?string, zone:?string, highlight:?string}
      *
-     * CATATAN FASE 4: halaman ini belum menampilkan ISI bin karena tabel
-     * `inventory_stocks` belum ada. Struktur tampilannya sudah disiapkan untuk
-     * itu — tiap kotak bin punya slot indikator keterisian yang tinggal diisi
-     * begitu data stok tersedia, tanpa perlu menyusun ulang denahnya.
+     * ISINYA DIRINGKAS DI SINI, RINCIANNYA MENYUSUL LEWAT contents().
+     * Denah satu gudang memuat ~2.264 kotak; menyertakan rincian batch di
+     * setiap kotak membuat halamannya membengkak berkali lipat demi data yang
+     * 99% tidak pernah dibuka. Yang ikut ke halaman hanya dua angka per rak —
+     * cukup untuk mewarnai dan menuliskan jumlahnya — sementara daftar
+     * produk, batch, dan kedaluwarsanya diambil saat kotaknya diklik.
      */
     public function map(Request $request): View
     {
@@ -120,21 +127,30 @@ class LocationController extends Controller
             ->inStorageOrder()
             ->get();
 
-        // Disusun rak -> level -> bin. Pengelompokan dilakukan di PHP karena
-        // seluruh bin satu gudang (~2.264 baris) sudah diambil sekali jalan;
-        // memecahnya jadi query per rak justru menghasilkan puluhan query.
+        // Disusun rak -> level -> titik rak. Pengelompokan dilakukan di PHP
+        // karena seluruh titik satu gudang (~2.264 baris) sudah diambil sekali
+        // jalan; memecahnya jadi query per rak justru menghasilkan puluhan query.
         $racks = $locations->groupBy('rack')->map(
-            fn ($binsPerRack) => $binsPerRack->groupBy('level')
+            fn ($titikPerRak) => $titikPerRak->groupBy('level')
         );
 
-        $rackMeta = $racks->map(fn ($levels, $rack) => [
-            'zone' => $levels->flatten()->first()?->zone,
-            'total' => $levels->flatten()->count(),
-            'inactive' => $levels->flatten()->where('is_active', false)->count(),
-        ])->all();
+        $isi = $this->ringkasanIsi($locations->pluck('id')->all());
+
+        $rackMeta = $racks->map(function ($levels, $rack) use ($isi) {
+            $titik = $levels->flatten();
+
+            return [
+                'zone' => $titik->first()?->zone,
+                'total' => $titik->count(),
+                'inactive' => $titik->where('is_active', false)->count(),
+                'terisi' => $titik->filter(fn ($t) => isset($isi[$t->id]))->count(),
+                'qty' => $titik->sum(fn ($t) => $isi[$t->id]['qty'] ?? 0),
+            ];
+        })->all();
 
         return view('wms.master.locations-map', [
             'racks' => $racks,
+            'isi' => $isi,
             'rackMeta' => $rackMeta,
             'warehouses' => $pilihan,
             'warehouse' => $warehouse,
@@ -143,11 +159,89 @@ class LocationController extends Controller
                 'total' => (clone $base)->count(),
                 'active' => (clone $base)->where('is_active', true)->count(),
                 'inactive' => (clone $base)->where('is_active', false)->count(),
+                'terisi' => count($isi),
+                'qty' => array_sum(array_column($isi, 'qty')),
                 'per_zone' => (clone $base)->selectRaw('zone, count(*) as jumlah')
                     ->groupBy('zone')->pluck('jumlah', 'zone'),
             ],
             'filters' => $filters,
         ]);
+    }
+
+    /**
+     * Rincian isi satu titik rak — dipanggil saat kotaknya diklik di denah.
+     *
+     * TERPISAH dari map() dengan sengaja: lihat catatan di sana. Yang
+     * dikembalikan adalah SELURUH baris stok di titik itu, termasuk yang
+     * berstatus karantina dan DDP — rak fisiknya memang memuat semua itu, dan
+     * denah yang hanya menyebut barang layak jual membuat orang mencari-cari
+     * barang yang sebenarnya ada di depan matanya.
+     */
+    public function contents(Request $request, Location $location): JsonResponse
+    {
+        WarehouseScope::assert($location->warehouse_id, $request->user());
+
+        $baris = InventoryStock::query()
+            ->where('location_id', $location->id)
+            ->with('product:id,sku,name,uom')
+            ->orderBy('product_id')
+            ->orderBy('production_date')
+            ->get()
+            ->map(fn (InventoryStock $s) => [
+                'sku' => $s->product?->sku ?? '—',
+                'nama' => $s->product?->name ?? '—',
+                'uom' => $s->product?->uom,
+                'batch' => $s->batch_no,
+                'produksi' => $s->production_date?->format('d M Y'),
+                'kedaluwarsa' => $s->expiry_date?->format('d M Y'),
+                'tersedia' => (int) $s->qty_available,
+                'teralokasi' => (int) $s->qty_allocated,
+                'status' => $s->status,
+                'status_label' => $s->status_label,
+                'formula_lama' => (bool) $s->is_old_formula,
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'kode' => $location->code,
+            'baris' => $baris,
+            'total' => array_sum(array_map(
+                fn (array $b) => $b['tersedia'] + $b['teralokasi'],
+                $baris
+            )),
+        ]);
+    }
+
+    /**
+     * Ringkasan isi tiap titik rak: berapa unit, berapa SKU.
+     *
+     * Satu query untuk seluruh gudang. Menghitungnya per kotak berarti ribuan
+     * query pada satu kali muat halaman.
+     *
+     * @param  list<int>  $locationIds
+     * @return array<int, array{qty:int, sku:int}>
+     */
+    private function ringkasanIsi(array $locationIds): array
+    {
+        if ($locationIds === []) {
+            return [];
+        }
+
+        return InventoryStock::query()
+            ->whereIn('location_id', $locationIds)
+            ->groupBy('location_id')
+            // qty_available DITAMBAH qty_allocated: yang dilihat orang saat
+            // berdiri di depan rak adalah barang fisiknya, dan barang yang
+            // sudah dicadangkan untuk pesanan tetap berdiri di sana sampai
+            // benar-benar diambil operator.
+            ->selectRaw('location_id, SUM(qty_available + qty_allocated) AS qty, COUNT(DISTINCT product_id) AS sku')
+            ->havingRaw('SUM(qty_available + qty_allocated) > 0')
+            ->get()
+            ->mapWithKeys(fn ($b) => [
+                (int) $b->location_id => ['qty' => (int) $b->qty, 'sku' => (int) $b->sku],
+            ])
+            ->all();
     }
 
     public function store(StoreLocationRequest $request): RedirectResponse
