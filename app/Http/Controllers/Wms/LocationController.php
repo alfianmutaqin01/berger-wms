@@ -199,6 +199,8 @@ class LocationController extends Controller
                 'status' => $s->status,
                 'status_label' => $s->status_label,
                 'masalah_kualitas' => (bool) $s->has_quality_issue,
+                'dahulukan' => (bool) $s->prioritize_out,
+                'alasan_dahulukan' => $s->prioritize_reason,
             ])
             ->values()
             ->all();

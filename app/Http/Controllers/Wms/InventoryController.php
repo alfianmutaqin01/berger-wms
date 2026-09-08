@@ -559,6 +559,58 @@ class InventoryController extends Controller
     }
 
     /**
+     * Menandai satu batch supaya KELUAR DULUAN, mendahului yang lebih tua.
+     *
+     * Kebalikan karantina, dan satu-satunya penanda yang benar-benar mengubah
+     * urutan alokasi. Alasannya WAJIB — lihat StockQuarantine::prioritize().
+     */
+    public function prioritize(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'stock_id' => ['required', 'integer', 'exists:inventory_stocks,id'],
+            'reason' => ['required', 'string', 'max:500'],
+        ], [], [
+            'reason' => 'alasan',
+        ]);
+
+        $stock = InventoryStock::with('product:id,sku')->findOrFail($validated['stock_id']);
+
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
+        try {
+            $jumlah = $this->karantina->prioritize($stock, $validated['reason'], $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('warning', sprintf(
+            '%d baris stok batch %s (%s) ditandai DAHULUKAN KELUAR — batch ini akan dialokasikan lebih dulu '.
+            'walau ada batch yang lebih tua. Lepas penandanya begitu tidak diperlukan lagi supaya FIFO kembali normal.',
+            $jumlah,
+            $stock->batch_no,
+            $stock->product?->sku ?? '—',
+        ));
+    }
+
+    /** Melepas penanda Dahulukan Keluar — batch kembali mengantre menurut umurnya. */
+    public function releasePriority(Request $request, InventoryStock $stock): RedirectResponse
+    {
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
+        try {
+            $jumlah = $this->karantina->releasePriority($stock, $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', sprintf(
+            'Penanda Dahulukan Keluar dilepas dari %d baris stok batch %s. Urutan kembali FIFO.',
+            $jumlah,
+            $stock->batch_no,
+        ));
+    }
+
+    /**
      * Menyalakan/mematikan penanda Masalah Kualitas untuk satu batch.
      *
      * MURNI INFORMASI — tidak menyentuh status maupun kelayakan jual. Lihat

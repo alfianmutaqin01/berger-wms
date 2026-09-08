@@ -239,6 +239,12 @@
                                                         Masalah Kualitas
                                                     </span>
                                                 @endif
+                                                @if($stock->prioritize_out)
+                                                    <span class="badge bg-success-subtle text-success-emphasis border border-success d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Dialokasikan lebih dulu, mendahului batch yang lebih tua. Alasan: {{ $stock->prioritize_reason }}">
+                                                        ↑ Dahulukan Keluar
+                                                    </span>
+                                                @endif
                                             </td>
                                             <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M y') }}</td>
@@ -317,6 +323,12 @@
                                                         Masalah Kualitas
                                                     </span>
                                                 @endif
+                                                @if($stock->prioritize_out)
+                                                    <span class="badge bg-success-subtle text-success-emphasis border border-success d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Dialokasikan lebih dulu, mendahului batch yang lebih tua. Alasan: {{ $stock->prioritize_reason }}">
+                                                        ↑ Dahulukan Keluar
+                                                    </span>
+                                                @endif
                                             </td>
                                             <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">
@@ -391,6 +403,12 @@
                                                     <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
                                                           title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
                                                         Masalah Kualitas
+                                                    </span>
+                                                @endif
+                                                @if($stock->prioritize_out)
+                                                    <span class="badge bg-success-subtle text-success-emphasis border border-success d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Dialokasikan lebih dulu, mendahului batch yang lebih tua. Alasan: {{ $stock->prioritize_reason }}">
+                                                        ↑ Dahulukan Keluar
                                                     </span>
                                                 @endif
                                             </td>
@@ -725,6 +743,55 @@
         </form>
     </div>
 </div>
+
+{{-- Dahulukan Keluar — kebalikan karantina. Alasannya WAJIB: ini satu-satunya
+     penanda yang melanggar FIFO, dan orang akan bertanya kenapa batch baru
+     keluar duluan sementara yang lama menua di rak. --}}
+<div class="modal fade" id="modalPrioritas" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ route('wms.inventory.prioritize') }}" class="modal-content border-0 rounded-4">
+            @csrf
+            <input type="hidden" name="stock_id" id="prtStockId">
+            <div class="modal-header border-bottom-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-box-arrow-up text-success me-2"></i>Dahulukan Keluar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="bg-light rounded-3 p-3 mb-3 small">
+                    <div><strong id="prtSku" class="font-monospace"></strong></div>
+                    <div class="text-muted">Batch <span id="prtBatch" class="font-monospace"></span></div>
+                </div>
+
+                <div class="alert alert-success border-0 rounded-3 small mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Batch ini akan <strong>dialokasikan lebih dulu</strong> walau ada batch yang lebih tua —
+                    berlaku untuk pesanan, booking, maupun pengeluaran saat kirim. Penanda lepas sendiri
+                    begitu batchnya habis.
+                </div>
+
+                <div class="alert alert-warning border-0 rounded-3 small mb-3">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Batch yang lebih tua akan <strong>menunggu lebih lama</strong> dan bisa mendekati
+                    kedaluwarsa. Lepas penandanya begitu tidak diperlukan lagi.
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold">Alasan <span class="text-danger">*</span></label>
+                    <textarea name="reason" class="form-control" rows="2" maxlength="500" required
+                              placeholder="Contoh: batch B05 diminta customer PT Aneka, harus dikosongkan lebih dulu."></textarea>
+                    <small class="text-muted">
+                        Ikut tercatat di ledger stok dan terbaca di layar ini — supaya nanti masih ada yang
+                        bisa menjawab kenapa FIFO dilewati.
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-success fw-bold">Dahulukan Batch Ini</button>
+            </div>
+        </form>
+    </div>
+</div>
 @endcan
 @endsection
 
@@ -784,6 +851,17 @@
                 karantina.querySelector('#krtStockId').value = b.dataset.stock;
                 karantina.querySelector('#krtSku').textContent = b.dataset.sku || '—';
                 karantina.querySelector('#krtBatch').textContent = b.dataset.batch || '—';
+            });
+        }
+
+        const prioritas = document.getElementById('modalPrioritas');
+        if (prioritas) {
+            prioritas.addEventListener('show.bs.modal', function (e) {
+                const b = e.relatedTarget;
+
+                prioritas.querySelector('#prtStockId').value = b.dataset.stock;
+                prioritas.querySelector('#prtSku').textContent = b.dataset.sku || '—';
+                prioritas.querySelector('#prtBatch').textContent = b.dataset.batch || '—';
             });
         }
     });

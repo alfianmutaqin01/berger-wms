@@ -439,6 +439,10 @@
                             + (b.masalah_kualitas
                                 ? '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger">Masalah Kualitas</span>'
                                 : '')
+                            + (b.dahulukan
+                                ? '<span class="badge bg-success-subtle text-success-emphasis border border-success" title="'
+                                    + lolos(b.alasan_dahulukan ?? '') + '">↑ Dahulukan Keluar</span>'
+                                : '')
                         + '</td>'
                         + '<td><div class="font-monospace small">' + lolos(b.batch ?? '—') + '</div>'
                             + '<div class="text-muted" style="font-size:.72rem">exp ' + lolos(b.kedaluwarsa ?? '—') + '</div>'

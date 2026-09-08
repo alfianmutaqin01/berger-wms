@@ -116,8 +116,9 @@ class ProductBooking
             ->where('warehouse_id', $booking->warehouse_id)
             ->where('status', InventoryStock::STATUS_ACTIVE)
             ->where('qty_available', '>', 0)
-            ->orderBy('production_date')
-            ->orderBy('id')
+            // Urutan yang sama persis dengan alokasi pesanan — termasuk
+            // penanda "Dahulukan Keluar". Lihat scopeUrutanKeluar().
+            ->urutanKeluar()
             ->lockForUpdate()
             ->get();
 

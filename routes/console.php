@@ -45,6 +45,26 @@ Schedule::command('stock:sweep-quarantine')
 
 /*
 |--------------------------------------------------------------------------
+| Lepas penanda "Dahulukan Keluar" dari batch yang isinya sudah habis
+|--------------------------------------------------------------------------
+|
+| Permintaan pemilik produk: penandanya berlaku sampai batchnya habis, bukan
+| sampai ada yang ingat mematikannya. Diselisihkan lagi 5 menit dari sweep
+| karantina — sengaja BELAKANGAN, karena batch yang baru lepas karantina
+| pagi itu bisa saja juga sedang bertanda dahulukan.
+|
+| Keterlambatan sehari tidak berakibat apa pun: batch kosong tidak pernah
+| ikut dicalonkan keluar, jadi penanda yang tertinggal padanya tidak
+| memengaruhi urutan siapa pun.
+*/
+Schedule::command('stock:sweep-priority')
+    ->dailyAt('00:15')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
 | Bersihkan sisa data: sesi mati, berkas impor telantar, riwayat login lama
 |--------------------------------------------------------------------------
 |

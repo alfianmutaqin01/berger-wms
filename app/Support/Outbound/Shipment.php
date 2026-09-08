@@ -517,6 +517,13 @@ class Shipment
             ->get()
             ->sortBy([
                 fn (InventoryStock $s) => in_array($s->id, $dipakai, true) ? 0 : 1,
+                // Sama dengan InventoryStock::scopeUrutanKeluar(): batch yang
+                // ditandai "Dahulukan Keluar" naik ke depan. Disalin di sini
+                // karena urutan di sini TIDAK bisa lewat scope — kunci
+                // pertamanya (batch yang dipakai pesanan ini) hanya diketahui
+                // di PHP. Kunci pertama itu tetap menang: batch yang benar-
+                // benar naik ke kendaraan tidak boleh disalip oleh apa pun.
+                fn (InventoryStock $s) => $s->prioritize_out ? 0 : 1,
                 fn (InventoryStock $s) => $s->production_date?->timestamp ?? 0,
                 fn (InventoryStock $s) => $s->id,
             ])

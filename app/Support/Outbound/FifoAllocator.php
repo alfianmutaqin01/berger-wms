@@ -53,11 +53,12 @@ class FifoAllocator
             ->where('warehouse_id', $order->warehouse_id)
             ->where('status', InventoryStock::STATUS_ACTIVE)
             ->where('qty_available', '>', 0)
-            // FIFO: tanggal produksi tertua dulu. id sebagai pemecah seri
-            // supaya urutannya pasti — dua batch bertanggal sama tanpa
-            // pengurut kedua bisa datang dalam urutan berbeda tiap query.
-            ->orderBy('production_date')
-            ->orderBy('id')
+            // Urutan keluar dipusatkan di InventoryStock::scopeUrutanKeluar()
+            // — batch bertanda "Dahulukan Keluar" lebih dulu, sisanya FIFO
+            // (tanggal produksi tertua, id sebagai pemecah seri supaya
+            // urutannya pasti). Ditulis di satu tempat karena jalur booking
+            // dan pengiriman harus memakai urutan yang sama persis.
+            ->urutanKeluar()
             ->lockForUpdate()
             ->get();
 

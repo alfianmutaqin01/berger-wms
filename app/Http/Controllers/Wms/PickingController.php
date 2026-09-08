@@ -164,7 +164,12 @@ class PickingController extends Controller
         WarehouseScope::assert($list->warehouse_id, $request->user());
 
         $baris = $list->items()
-            ->with(['product:id,sku,name,uom', 'location:id,code', 'salesOrder.customer:id,code,name'])
+            // stock ikut dimuat demi penanda "Dahulukan Keluar": operator yang
+            // melihat batch baru diambil sementara yang lama masih di rak akan
+            // mengira daftarnya salah. Alasannya harus terbaca di kertas yang
+            // ia bawa, bukan cuma tersimpan di layar Logistik.
+            ->with(['product:id,sku,name,uom', 'location:id,code', 'salesOrder.customer:id,code,name',
+                'stock:id,prioritize_out,prioritize_reason'])
             // Urutan berjalan operator: menurut kode rak, dari A ke belakang
             // (F-OUT-03 #3). Diurutkan lewat join supaya yang menentukan
             // adalah KODE raknya, bukan id barisnya.

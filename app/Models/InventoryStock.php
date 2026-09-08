@@ -74,6 +74,11 @@ class InventoryStock extends Model
         'status',
         'ddp_reason',
         'has_quality_issue',
+        'prioritize_out',
+        'prioritize_reason',
+        'prioritized_at',
+        'prioritized_by',
+        'prioritize_released_at',
         'quarantine_days',
         'quarantine_until',
         'quarantined_at',
@@ -95,6 +100,9 @@ class InventoryStock extends Model
             'expiry_date' => 'date',
             'verified_at' => 'datetime',
             'has_quality_issue' => 'boolean',
+            'prioritize_out' => 'boolean',
+            'prioritized_at' => 'datetime',
+            'prioritize_released_at' => 'datetime',
             'quarantine_days' => 'integer',
             'quarantine_until' => 'date',
             'quarantined_at' => 'datetime',
@@ -138,6 +146,11 @@ class InventoryStock extends Model
         return $this->belongsTo(User::class, 'quarantined_by');
     }
 
+    public function prioritizedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'prioritized_by');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Scope
@@ -158,10 +171,33 @@ class InventoryStock extends Model
             ->whereDate('expiry_date', '>', now()->toDateString());
     }
 
-    /** Urutan FIFO: batch tertua keluar duluan. */
-    public function scopeFifo(Builder $query): Builder
+    /**
+     * URUTAN KELUAR — satu-satunya sumber urutan batch untuk SEMUA jalur
+     * keluar: alokasi pesanan (FifoAllocator), pencadangan booking
+     * (ProductBooking::reserve) dan pengeluaran kekurangan saat kirim
+     * (Shipment::keluarkanKekurangan).
+     *
+     * DULUNYA scopeFifo(), DAN NAMANYA SENGAJA DIGANTI. Sejak ada penanda
+     * "Dahulukan Keluar", urutannya bukan FIFO murni lagi — scope bernama
+     * fifo() yang ternyata tidak FIFO adalah jebakan bagi siapa pun yang
+     * membacanya nanti.
+     *
+     * BATCH BERTANDA NAIK KE DEPAN, sisanya tetap FIFO. Di antara sesama
+     * batch bertanda pun tetap FIFO: penandanya menjawab "yang mana yang
+     * keluar duluan", bukan membatalkan urutan umur sama sekali.
+     *
+     * KETIGA JALUR WAJIB MEMAKAI SCOPE INI. Sebelumnya masing-masing menulis
+     * orderBy sendiri — tiga salinan aturan yang sama. Kalau penandanya cuma
+     * dipasang di satu jalur, batch bertanda didahulukan saat pesanan
+     * diterima tetapi TIDAK saat barangnya dikeluarkan, dan ketimpangan
+     * seperti itu baru ketahuan berbulan-bulan kemudian.
+     */
+    public function scopeUrutanKeluar(Builder $query): Builder
     {
-        return $query->orderBy('production_date')->orderBy('id');
+        return $query
+            ->orderByDesc('prioritize_out')
+            ->orderBy('production_date')
+            ->orderBy('id');
     }
 
     /**

@@ -164,6 +164,15 @@
                         <td>
                             <span class="font-monospace">{{ $item->batch_no ?? '—' }}</span>
                             <div class="small text-muted">{{ $item->production_date?->format('d M Y') }}</div>
+                            @if($item->stock?->prioritize_out)
+                                {{-- Kenapa batch ini, bukan yang lebih tua. Tanpa kalimat ini
+                                     operator wajar mengira daftarnya salah dan mengambil sendiri
+                                     batch yang lebih tua "supaya benar". --}}
+                                <div class="badge bg-success-subtle text-success-emphasis border border-success mt-1 text-wrap text-start"
+                                     style="font-size:.65rem; max-width: 180px;">
+                                    ↑ Didahulukan — {{ $item->stock->prioritize_reason }}
+                                </div>
+                            @endif
                         </td>
                         <td>
                             <div class="small">{{ $item->salesOrder?->customer?->name ?? '—' }}</div>

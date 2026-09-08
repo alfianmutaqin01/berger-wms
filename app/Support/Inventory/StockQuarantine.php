@@ -9,7 +9,18 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Karantina & penanda Masalah Kualitas — permintaan pemilik produk (bukan PRD).
+ * Penanda batch — permintaan pemilik produk (bukan PRD). Ada tiga, dan
+ * ketiganya sengaja berbeda sifat:
+ *
+ *   MASALAH KUALITAS — murni informasi, tidak menyentuh urutan sama sekali.
+ *   KARANTINA        — MENGELUARKAN batch dari pencalonan, sementara.
+ *   DAHULUKAN KELUAR — batch tetap dicalonkan, hanya NAIK KE DEPAN antrean.
+ *
+ * Karantina dan Dahulukan Keluar adalah dua arah yang berlawanan pada sumbu
+ * yang sama, jadi keduanya tidak masuk akal menyala bersamaan dalam praktik
+ * — tetapi TIDAK dilarang: karantina lepas sendiri, dan begitu lepas, batch
+ * bertanda langsung naik ke depan. Melarangnya justru memaksa Logistik
+ * mengingat untuk menandai ulang setelah karantina berakhir.
  *
  * SATU BATCH, SATU KEPUTUSAN. Baik karantina maupun masalah kualitas
  * diterapkan ke SELURUH baris `product_id + warehouse_id + batch_no`, bukan
@@ -145,6 +156,113 @@ class StockQuarantine
             // mencatatnya di ledger stok hanya akan menenggelamkan mutasi
             // yang sungguh-sungguh berarti secara fisik.
             return ['jumlah' => $baris->count(), 'nilai' => $nilaiBaru];
+        });
+    }
+
+    /**
+     * Menandai satu batch supaya KELUAR DULUAN, mendahului batch yang lebih
+     * tua — kebalikan karantina.
+     *
+     * SATU-SATUNYA PENANDA YANG MENGUBAH URUTAN ALOKASI. Penegakannya bukan
+     * di sini melainkan di InventoryStock::scopeUrutanKeluar(), yang dipakai
+     * ketiga jalur keluar. Kelas ini hanya memasang penandanya.
+     *
+     * ALASAN WAJIB, dan ini bukan sekadar tata cara: melanggar FIFO akan
+     * ditanyakan orang, dan tanpa alasan tertulis penanda yang dimaksudkan
+     * sementara berubah jadi keadaan permanen tanpa pemilik.
+     *
+     * DICATAT KE LEDGER, berbeda dari Masalah Kualitas. Qty-nya memang tidak
+     * berubah, tetapi ini keputusan yang MENGUBAH barang mana yang keluar ke
+     * pelanggan — persis jenis kejadian yang harus bisa ditelusuri, sama
+     * seperti karantina.
+     *
+     * @return int jumlah baris yang ikut ditandai
+     *
+     * @throws RuntimeException
+     */
+    public function prioritize(InventoryStock $acuan, string $alasan, int $userId): int
+    {
+        if (trim($alasan) === '') {
+            throw new RuntimeException('Alasan mendahulukan batch wajib diisi.');
+        }
+
+        return DB::transaction(function () use ($acuan, $alasan, $userId) {
+            $baris = $this->kunciSebatch($acuan);
+
+            if ($baris->isEmpty()) {
+                throw new RuntimeException('Baris stok ini sudah tidak ada.');
+            }
+
+            // Batch yang tidak layak jual tidak akan pernah dicalonkan keluar,
+            // jadi mendahulukannya adalah penanda yang tidak berarti apa-apa —
+            // dan justru menyesatkan orang yang mengira barangnya sudah
+            // diprioritaskan. Karantina TIDAK ikut ditolak: ia akan lepas
+            // sendiri, dan begitu lepas penanda ini langsung berlaku.
+            $takLayak = $baris->first(fn (InventoryStock $s) => in_array(
+                $s->status, [InventoryStock::STATUS_DDP, InventoryStock::STATUS_EXPIRED], true
+            ));
+
+            if ($takLayak !== null) {
+                throw new RuntimeException(sprintf(
+                    'Batch %s berstatus "%s" — tidak boleh dijual sama sekali, jadi mendahulukannya tidak ada artinya.',
+                    $acuan->batch_no,
+                    $takLayak->status_label,
+                ));
+            }
+
+            $sekarang = now();
+
+            foreach ($baris as $stok) {
+                $stok->forceFill([
+                    'prioritize_out' => true,
+                    'prioritize_reason' => $alasan,
+                    'prioritized_at' => $sekarang,
+                    'prioritized_by' => $userId,
+                    'prioritize_released_at' => null,
+                ])->save();
+
+                $this->catatPergerakan($stok, $userId, sprintf(
+                    'DAHULUKAN KELUAR: batch ini didahulukan mendahului batch yang lebih tua — %s',
+                    $alasan,
+                ));
+            }
+
+            return $baris->count();
+        });
+    }
+
+    /**
+     * Melepas penanda "Dahulukan Keluar" — batch kembali mengantre menurut
+     * umurnya.
+     *
+     * @param  bool  $olehSistem  true bila dilepas sweep karena batchnya habis,
+     *                            bukan oleh keputusan orang
+     * @return int jumlah baris yang dilepas
+     *
+     * @throws RuntimeException
+     */
+    public function releasePriority(InventoryStock $acuan, ?int $userId, bool $olehSistem = false): int
+    {
+        return DB::transaction(function () use ($acuan, $userId, $olehSistem) {
+            $baris = $this->kunciSebatch($acuan)
+                ->filter(fn (InventoryStock $s) => (bool) $s->prioritize_out);
+
+            if ($baris->isEmpty()) {
+                throw new RuntimeException('Batch ini sedang tidak ditandai untuk didahulukan.');
+            }
+
+            foreach ($baris as $stok) {
+                $stok->forceFill([
+                    'prioritize_out' => false,
+                    'prioritize_released_at' => now(),
+                ])->save();
+
+                $this->catatPergerakan($stok, $userId, $olehSistem
+                    ? 'DAHULUKAN KELUAR BERAKHIR: batch habis, penanda dilepas otomatis oleh sweep harian.'
+                    : 'DAHULUKAN KELUAR DILEPAS — batch kembali mengantre menurut umurnya (FIFO).');
+            }
+
+            return $baris->count();
         });
     }
 

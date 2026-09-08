@@ -343,7 +343,7 @@ class InventoryTest extends TestCase
             'batch_no' => 'TERTUA', 'location_id' => $this->bin('B-01-02')->id,
         ]);
 
-        $urutan = InventoryStock::query()->fifo()->pluck('batch_no')->all();
+        $urutan = InventoryStock::query()->urutanKeluar()->pluck('batch_no')->all();
 
         $this->assertSame(['TERTUA', 'BARU'], $urutan);
     }
