@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EpodController;
+use App\Http\Controllers\Sales\DashboardController as SalesDashboardController;
 use App\Http\Controllers\Sales\DeliveryProofController;
 use App\Http\Controllers\Sales\SalesOrderController;
 use App\Http\Controllers\Wms\ActivityLogController;
@@ -115,9 +116,8 @@ Route::middleware(['auth', 'session.track'])->group(function () {
 
 // SALES PORTAL ROUTES
 Route::prefix('sales')->middleware(['auth', 'session.track', 'portal:sales'])->group(function () {
-    Route::get('/dashboard', function () {
-        return view('sales.dashboard');
-    });
+    Route::get('/dashboard', [SalesDashboardController::class, 'index'])
+        ->name('sales.dashboard');
     Route::get('/my-orders', [SalesOrderController::class, 'history']);
     Route::post('/report-return', [SalesOrderController::class, 'reportReturn']);
     Route::get('/new-order', [SalesOrderController::class, 'create']);
