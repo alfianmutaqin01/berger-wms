@@ -77,7 +77,7 @@
                 \App\Support\Permission::INBOUND_CREATE,
                 \App\Support\Permission::INBOUND_HISTORY,
                 \App\Support\Permission::INBOUND_PUTAWAY,
-                \App\Support\Permission::INBOUND_RETURNS,
+                \App\Support\Permission::RETURN_VIEW,
                 \App\Support\Permission::INBOUND_VERIFY,
                 \App\Support\Permission::INVENTORY_VIEW,
                 \App\Support\Permission::STOCKTAKE_COUNT,
@@ -125,9 +125,9 @@
                                 <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Put-away</span></a>
                             </li>
                         @endcan
-                        @can(\App\Support\Permission::INBOUND_RETURNS)
+                        @can(\App\Support\Permission::RETURN_VIEW)
                             <li class="nav-item {{ request()->is('wms/inbound/returns*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/returns" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penerimaan Retur</span></a>
+                                <a href="/wms/inbound/returns" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penolakan Customer</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INBOUND_VERIFY)

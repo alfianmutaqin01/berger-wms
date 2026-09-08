@@ -42,6 +42,8 @@ class DocumentNumber
 
     public const TYPE_PICKING_LIST = 'picking_list';
 
+    public const TYPE_SALES_RETURN = 'sales_return';
+
     /**
      * Nomor daftar picking: PL{YYMMDD}{urut 3 digit}.
      *
@@ -64,6 +66,33 @@ class DocumentNumber
         );
 
         return 'PL'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Nomor laporan penolakan customer: RJ{YYMMDD}{urut 3 digit}.
+     *
+     * LINTAS GUDANG, sama seperti PL dan TF: laporan penolakan dibaca Sales
+     * (yang tidak terikat gudang), Logistik, dan Operator sekaligus, dan
+     * nomor yang berulang di tiap gudang membuat "RJ260930001" berarti tiga
+     * laporan berbeda tergantung siapa yang menyebutnya.
+     *
+     * RJ, bukan RTN atau RET — sengaja dua huruf agar sebaris dengan PO, PL,
+     * TF, dan SJ. Nomor dokumen di sini selalu dibaca dan disebut lewat
+     * telepon, dan panjang yang seragam membuatnya lebih mudah dieja.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forSalesReturn(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_SALES_RETURN,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'RJ'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
     }
 
     /**

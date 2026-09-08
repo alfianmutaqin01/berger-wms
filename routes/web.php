@@ -10,6 +10,7 @@ use App\Http\Controllers\Wms\AdminController;
 use App\Http\Controllers\Wms\BillingController;
 use App\Http\Controllers\Wms\BookingController;
 use App\Http\Controllers\Wms\CustomerController;
+use App\Http\Controllers\Wms\CustomerRejectionController;
 use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Controllers\Wms\DeliveryController;
 use App\Http\Controllers\Wms\ImportController;
@@ -234,10 +235,35 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.inbound.verify.store');
         });
 
-        Route::middleware('can:'.Permission::INBOUND_RETURNS)->group(function () {
-            Route::get('/returns', [InboundController::class, 'returnsIndex']);
-            Route::post('/returns/{id}', [InboundController::class, 'processReturn']);
+        /*
+        | PENOLAKAN CUSTOMER (Fase 7).
+        |
+        | Daftar dan detailnya dibuka SEMUA yang terlibat — termasuk Operator,
+        | yang perlu tahu ada barang menunggu dinaikkan tanpa harus ditelepon.
+        | Yang dipagari berbeda adalah tindakannya: menyetujui klaim dan
+        | memverifikasi barang milik Logistik, menaikkan ke rak milik Operator.
+        | Memisahkannya di sinilah yang membuat orang yang menaikkan barang
+        | tidak sekaligus mengesahkan hasil kerjanya sendiri.
+        */
+        Route::middleware('can:'.Permission::RETURN_VIEW)->group(function () {
+            Route::get('/returns', [CustomerRejectionController::class, 'index'])
+                ->name('wms.returns.index');
+            Route::get('/returns/{retur}', [CustomerRejectionController::class, 'show'])
+                ->name('wms.returns.show');
         });
+
+        Route::middleware('can:'.Permission::RETURN_APPROVE)->group(function () {
+            Route::post('/returns/{retur}/approve', [CustomerRejectionController::class, 'approve'])
+                ->name('wms.returns.approve');
+            Route::post('/returns/{retur}/reject', [CustomerRejectionController::class, 'reject'])
+                ->name('wms.returns.reject');
+            Route::post('/returns/{retur}/verify', [CustomerRejectionController::class, 'verify'])
+                ->name('wms.returns.verify');
+        });
+
+        Route::post('/returns/detail/{detail}/putaway', [CustomerRejectionController::class, 'putaway'])
+            ->middleware('can:'.Permission::RETURN_PUTAWAY)
+            ->name('wms.returns.putaway');
     });
 
     // Produksi & Operator boleh MELIHAT stok, tapi tidak mengubahnya —

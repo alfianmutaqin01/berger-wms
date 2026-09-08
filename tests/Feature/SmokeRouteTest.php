@@ -17,6 +17,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
+use App\Models\SalesReturn;
 use App\Models\StockTake;
 use App\Models\StockTakeItem;
 use App\Models\StockTransfer;
@@ -313,8 +314,19 @@ class SmokeRouteTest extends TestCase
             'qty_system' => 10,
         ]);
 
+        $retur = SalesReturn::create([
+            'reference' => 'RJ260901001',
+            'sales_order_id' => $order->id,
+            'customer_id' => $order->customer_id,
+            'warehouse_id' => $this->warehouse->id,
+            'status' => SalesReturn::STATUS_REPORTED,
+            'reason' => 'Contoh penolakan untuk uji asap.',
+            'reported_at' => now(),
+        ]);
+
         $this->parameter = [
             'proof' => $bukti->id,
+            'retur' => $retur->id,
             'order' => $order->id,
             'stocktake' => $stocktake->id,
             'location' => $lokasi->id,

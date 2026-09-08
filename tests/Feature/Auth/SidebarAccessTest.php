@@ -32,7 +32,7 @@ class SidebarAccessTest extends TestCase
         '/wms/inbound/create' => Permission::INBOUND_CREATE,
         '/wms/inbound/history' => Permission::INBOUND_HISTORY,
         '/wms/inbound/putaway' => Permission::INBOUND_PUTAWAY,
-        '/wms/inbound/returns' => Permission::INBOUND_RETURNS,
+        '/wms/inbound/returns' => Permission::RETURN_VIEW,
         '/wms/inbound/verify' => Permission::INBOUND_VERIFY,
         '/wms/inventory' => Permission::INVENTORY_VIEW,
         '/wms/outbound/approval' => Permission::OUTBOUND_APPROVAL,
@@ -53,7 +53,7 @@ class SidebarAccessTest extends TestCase
         Permission::INBOUND_CREATE => 'Input Produksi',
         Permission::INBOUND_HISTORY => 'Riwayat Produksi',
         Permission::INBOUND_PUTAWAY => 'Put-away',
-        Permission::INBOUND_RETURNS => 'Penerimaan Retur',
+        Permission::RETURN_VIEW => 'Penolakan Customer',
         Permission::INBOUND_VERIFY => 'Verifikasi Logistik',
         Permission::INVENTORY_VIEW => 'Data Stok',
         Permission::OUTBOUND_APPROVAL => 'Terima Pesanan',
@@ -167,7 +167,7 @@ class SidebarAccessTest extends TestCase
         // Bukan wewenangnya: put-away, picking, retur, billing, master data.
         $this->assertStringNotContainsString('Put-away', $html);
         $this->assertStringNotContainsString('Proses Picking', $html);
-        $this->assertStringNotContainsString('Penerimaan Retur', $html);
+        $this->assertStringNotContainsString('Penolakan Customer', $html);
         $this->assertStringNotContainsString('Billing & Piutang', $html);
         $this->assertStringNotContainsString('Pengaturan Sistem', $html);
     }
@@ -180,7 +180,7 @@ class SidebarAccessTest extends TestCase
 
         $this->assertStringContainsString('Put-away', $html);
         $this->assertStringContainsString('Proses Picking', $html);
-        $this->assertStringContainsString('Penerimaan Retur', $html);
+        $this->assertStringContainsString('Penolakan Customer', $html);
         $this->assertStringContainsString('Data Stok', $html);
 
         $this->assertStringNotContainsString('Input Produksi', $html);
@@ -188,15 +188,24 @@ class SidebarAccessTest extends TestCase
         $this->assertStringNotContainsString('Billing & Piutang', $html);
     }
 
-    /** Manager mengawasi, tidak ikut mengerjakan tugas operasional harian. */
-    public function test_manager_tidak_dapat_tugas_operasional_harian(): void
+    /**
+     * Manager mengawasi, tidak ikut MENGANGKAT BARANG.
+     *
+     * Garisnya bukan "operasional vs bukan" melainkan pekerjaan fisik: yang
+     * ditolak di sini semuanya menuntut orangnya berdiri di depan rak. Manager
+     * tetap boleh mengambil KEPUTUSAN atas gudangnya sendiri — itu aturan yang
+     * ditetapkan pemilik produk ("manager sama dengan admin namun terbatas di
+     * wilayah kerja sendiri"), dan karena itu menyetujui penolakan customer
+     * ada padanya sementara menaikkan barangnya ke rak tidak.
+     */
+    public function test_manager_tidak_mengerjakan_pekerjaan_fisik_gudang(): void
     {
         $user = $this->loginAs(Role::MANAGER);
 
         foreach ([
             Permission::INBOUND_CREATE,
             Permission::INBOUND_PUTAWAY,
-            Permission::INBOUND_RETURNS,
+            Permission::RETURN_PUTAWAY,
             Permission::OUTBOUND_PICKING_PROCESS,
         ] as $feature) {
             $this->assertFalse(
@@ -205,9 +214,11 @@ class SidebarAccessTest extends TestCase
             );
         }
 
+        // Sebaliknya, keputusan atas gudangnya sendiri memang wewenangnya.
+        $this->assertTrue(Permission::allows($user, Permission::RETURN_APPROVE));
+
         $this->get('/wms/inbound/create')->assertForbidden();
         $this->get('/wms/inbound/putaway')->assertForbidden();
-        $this->get('/wms/inbound/returns')->assertForbidden();
         $this->get('/wms/outbound/picking')->assertForbidden();
     }
 

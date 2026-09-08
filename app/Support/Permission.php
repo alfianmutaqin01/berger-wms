@@ -39,7 +39,21 @@ class Permission
 
     public const INBOUND_PUTAWAY = 'inbound.putaway';
 
-    public const INBOUND_RETURNS = 'inbound.returns';
+    /**
+     * PENOLAKAN CUSTOMER — barang yang ditolak saat pengiriman lalu kembali.
+     *
+     * DIPECAH TIGA, karena tiga peran berbeda mengerjakan tiga hal berbeda
+     * pada dokumen yang sama. Menyatukannya jadi satu izin berarti Operator
+     * yang menaikkan barang ke rak juga boleh mengesahkan hasil kerjanya
+     * sendiri — persis yang dihindari di STOCKTAKE_COUNT vs STOCKTAKE_MANAGE.
+     */
+    public const RETURN_VIEW = 'return.view';
+
+    /** Menyetujui klaim penolakan DAN memverifikasi barangnya di rak. */
+    public const RETURN_APPROVE = 'return.approve';
+
+    /** Menaikkan barang tolakan ke rak, memisah yang bagus dari yang DDP. */
+    public const RETURN_PUTAWAY = 'return.putaway';
 
     public const INBOUND_VERIFY = 'inbound.verify';
 
@@ -186,7 +200,16 @@ class Permission
         self::INBOUND_CREATE => [Role::SUPER_ADMIN, Role::PRODUCTION],
         self::INBOUND_HISTORY => [Role::SUPER_ADMIN, Role::MANAGER, Role::PRODUCTION],
         self::INBOUND_PUTAWAY => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
-        self::INBOUND_RETURNS => [Role::SUPER_ADMIN, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR],
+        /*
+         | PENOLAKAN CUSTOMER. Semua yang terlibat boleh MELIHAT antreannya —
+         | Operator perlu tahu ada barang menunggu dinaikkan, dan tanpa itu ia
+         | harus ditelepon setiap kali. Yang dipisah adalah tindakannya.
+         */
+        self::RETURN_VIEW => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
+        self::RETURN_APPROVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::RETURN_PUTAWAY => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
         self::INBOUND_VERIFY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
         // Stok: Produksi & Operator hanya MELIHAT (butuh cek lokasi saat

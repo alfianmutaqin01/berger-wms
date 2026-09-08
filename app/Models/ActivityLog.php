@@ -45,6 +45,14 @@ class ActivityLog extends Model
 
     public const PICKING_RELEASE = 'picking.release';
 
+    public const RETURN_APPROVE = 'return.approve';
+
+    public const RETURN_REJECT = 'return.reject';
+
+    public const RETURN_PUTAWAY = 'return.putaway';
+
+    public const RETURN_VERIFY = 'return.verify';
+
     public const ORDER_RESHIP = 'order.reship';
 
     /** Label Indonesia untuk penyaring & tampilan. */
@@ -61,6 +69,10 @@ class ActivityLog extends Model
         self::BOOKING_CANCEL => 'Batal Booking',
         self::STOCKTAKE_FINALIZE => 'Sahkan Stocktake',
         self::PICKING_RELEASE => 'Lepas Tugas Picking',
+        self::RETURN_APPROVE => 'Setujui Penolakan Customer',
+        self::RETURN_REJECT => 'Tolak Laporan Penolakan',
+        self::RETURN_PUTAWAY => 'Naikkan Barang Tolakan',
+        self::RETURN_VERIFY => 'Verifikasi Barang Tolakan',
         self::ORDER_RESHIP => 'Kirim Ulang Outstanding',
     ];
 

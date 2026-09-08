@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Support\DocumentNumber;
 use App\Support\OrderCutoff;
+use App\Support\Returns\CustomerRejection;
 use App\Support\StockIndicator;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +22,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use RuntimeException;
 
 /**
  * Portal Sales — pembuatan dan riwayat pesanan (PRD §6.5 F-OUT-01).
@@ -274,11 +276,49 @@ class SalesOrderController extends Controller
 
     /* ------------------------------------------------------- Penolakan */
 
-    public function reportReturn(Request $request): RedirectResponse
+    /**
+     * Sales melaporkan barang yang ditolak customer, dari depan toko.
+     *
+     * MENEMPEL DI HALAMAN DETAIL PESANAN, bukan halaman sendiri — aturan yang
+     * sama dengan unggah bukti Surat Jalan: keduanya dikerjakan bersamaan
+     * dalam satu kunjungan, sambil memegang HP, sebelum truk pergi.
+     */
+    public function reportReturn(Request $request, CustomerRejection $penolakan): RedirectResponse
     {
-        // Retur adalah lingkup Fase 7 (rencana pembangunan). Sengaja dibiarkan apa adanya
-        // agar tidak ada mekanisme setengah jadi yang menyentuh stok.
-        return back()->with('error', 'Pelaporan penolakan barang belum tersedia (dijadwalkan Fase 7).');
+        $order = SalesOrder::query()->findOrFail((int) $request->input('order_id'));
+
+        $this->pastikanMilikSendiri($request, $order);
+
+        $data = $request->validate([
+            'order_id' => ['required', 'integer'],
+            // Alasan WAJIB dan tidak boleh sepatah kata. Logistik yang
+            // menilai klaim ini tidak ikut ke toko; kalimat "ditolak" saja
+            // tidak memberinya apa pun untuk dinilai.
+            'reason' => ['required', 'string', 'min:10', 'max:1000'],
+            'qty' => ['required', 'array', 'min:1'],
+            'qty.*' => ['nullable', 'integer', 'min:0'],
+        ], [], ['reason' => 'alasan penolakan', 'qty' => 'jumlah yang ditolak']);
+
+        // Baris berjumlah nol atau kosong bukan kesalahan — Sales mencentang
+        // sebagian item saja dan sisanya dibiarkan kosong.
+        $baris = [];
+
+        foreach ($data['qty'] as $detailId => $qty) {
+            if ((int) $qty > 0) {
+                $baris[] = ['detail_id' => (int) $detailId, 'qty' => (int) $qty];
+            }
+        }
+
+        try {
+            $retur = $penolakan->report($order, $baris, $data['reason'], $request->user()?->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', sprintf(
+            'Laporan penolakan %s terkirim. Logistik akan memeriksanya bersama foto Surat Jalan Anda.',
+            $retur->reference,
+        ));
     }
 
     /* -------------------------------------------------------- Pencarian */
