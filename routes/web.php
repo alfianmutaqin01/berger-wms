@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EpodController;
 use App\Http\Controllers\Sales\DeliveryProofController;
 use App\Http\Controllers\Sales\SalesOrderController;
+use App\Http\Controllers\Wms\ActivityLogController;
 use App\Http\Controllers\Wms\AdminController;
 use App\Http\Controllers\Wms\BillingController;
 use App\Http\Controllers\Wms\BookingController;
@@ -421,6 +422,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
         Route::get('/sequence', [AdminController::class, 'sequence'])
             ->middleware('can:'.Permission::ADMIN_SEQUENCE);
+
+        // Log aktivitas — SUPER ADMIN SAJA, dan HANYA BACA. Tidak ada rute
+        // tulis di sini bukan karena belum dibuat: log yang bisa disunting
+        // oleh orang yang tercatat di dalamnya bukan log.
+        Route::get('/activity-log', [ActivityLogController::class, 'index'])
+            ->middleware('can:'.Permission::ADMIN_AUDIT)
+            ->name('wms.admin.activity-log');
     });
 
     // OUTBOUND — proses picking di tangan Operator; sisanya alur Logistik.

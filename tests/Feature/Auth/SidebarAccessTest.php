@@ -223,15 +223,22 @@ class SidebarAccessTest extends TestCase
     /* --------------------------------------------------- Stok: lihat vs ubah */
 
     /** Produksi & Operator boleh MELIHAT stok, tapi tidak boleh mengubahnya. */
-    public function test_produksi_dan_operator_tidak_dapat_mengubah_stok(): void
+    /**
+     * MENGUBAH JUMLAH tetap tertutup bagi keduanya. Memindahkan antar rak
+     * TIDAK mengubah jumlah, jadi ia wewenang yang berbeda — dan sejak
+     * permintaan pemilik produk, Operator Gudang boleh melakukannya.
+     */
+    public function test_produksi_dan_operator_tidak_dapat_mengubah_jumlah_stok(): void
     {
         foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
             $this->loginAs($slug);
 
             $this->get('/wms/inventory')->assertOk();
             $this->post('/wms/inventory/adjust')->assertForbidden();
-            $this->post('/wms/inventory/transfer')->assertForbidden();
         }
+
+        $this->loginAs(Role::PRODUCTION);
+        $this->post('/wms/inventory/transfer')->assertForbidden();
     }
 
     /** Logistik boleh transfer stok antar lokasi, tapi tidak boleh adjustment. */

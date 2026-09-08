@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\StockBooking;
 use App\Models\Warehouse;
+use App\Support\Activity;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\ProductBooking;
 use App\Support\WarehouseScope;
@@ -139,6 +141,30 @@ class BookingController extends Controller
         $tertahan = $booking->qty_reserved;
         $menunggu = $booking->qty_waiting;
 
+        Activity::record(
+            ActivityLog::BOOKING_CREATE,
+            sprintf(
+                'Membuat booking %s untuk %s: %d %s (%d ditahan dari stok, %d menunggu produksi).',
+                $booking->reference,
+                $booking->customer?->name ?? '—',
+                $booking->qty_booked,
+                $booking->product?->sku ?? '—',
+                $tertahan,
+                $menunggu,
+            ),
+            $booking,
+            $booking->warehouse_id,
+            [
+                'referensi' => $booking->reference,
+                'customer' => $booking->customer?->name,
+                'sku' => $booking->product?->sku,
+                'qty' => $booking->qty_booked,
+                'tertahan' => $tertahan,
+                'menunggu' => $menunggu,
+                'dibutuhkan' => $data['needed_by'] ?? null,
+            ],
+        );
+
         $pesan = sprintf(
             'Booking %s dibuat untuk %s: %d %s.',
             $booking->reference,
@@ -184,6 +210,26 @@ class BookingController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::BOOKING_CANCEL,
+            sprintf(
+                'Membatalkan booking %s (%s) — %d unit kembali jadi stok bebas. Alasan: %s',
+                $booking->reference,
+                $booking->customer?->name ?? '—',
+                $dilepas,
+                $data['cancel_reason'],
+            ),
+            $booking,
+            $booking->warehouse_id,
+            [
+                'referensi' => $booking->reference,
+                'customer' => $booking->customer?->name,
+                'sku' => $booking->product?->sku,
+                'dilepas' => $dilepas,
+                'alasan' => $data['cancel_reason'],
+            ],
+        );
+
         return redirect()->route('wms.booking.index')->with('success', sprintf(
             'Booking %s dibatalkan. %d unit kembali menjadi stok bebas.',
             $booking->reference,
@@ -201,16 +247,21 @@ class BookingController extends Controller
 
         WarehouseScope::assert((int) $data['warehouse_id'], $request->user());
 
-        $tersedia = $this->allocator->availableFor(
-            [(int) $data['product_id']],
-            (int) $data['warehouse_id'],
-        );
+        $produkId = (int) $data['product_id'];
+        $gudangId = (int) $data['warehouse_id'];
+
+        $tersedia = $this->allocator->availableFor([$produkId], $gudangId);
 
         return response()->json([
             // Angka ini SUDAH bersih dari yang dibooking dan yang teralokasi
             // pesanan — keduanya duduk di qty_allocated, sementara availableFor
             // hanya menjumlahkan qty_available.
-            'tersedia' => $tersedia[(int) $data['product_id']] ?? 0,
+            'tersedia' => $tersedia[$produkId] ?? 0,
+            // "Nol di sini" dan "tidak ada di mana pun" adalah dua keadaan yang
+            // sangat berbeda dan dahulu terbaca sama. Stok gudang lain TIDAK
+            // bisa dipakai booking ini, tetapi orang yang baru saja
+            // memasukkannya berhak tahu ke mana perginya.
+            'gudang_lain' => $this->allocator->elsewhereFor([$produkId], $gudangId)[$produkId] ?? [],
         ]);
     }
 }

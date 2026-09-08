@@ -134,4 +134,47 @@ class FifoAllocator
             ->map(fn ($n) => (int) $n)
             ->all();
     }
+
+    /**
+     * Stok produk yang sama TETAPI DI GUDANG LAIN — untuk dijelaskan, bukan
+     * untuk dipakai.
+     *
+     * KENAPA INI ADA. Stok terikat gudang, dan itu benar: barang di Pekanbaru
+     * tidak bisa dipicking untuk pesanan Karawang. Tetapi layar ketersediaan
+     * dahulu hanya menampilkan angka nol, tanpa membedakan "produk ini memang
+     * habis" dari "produknya ada, cuma di gudang sebelah". Dua keadaan yang
+     * sangat berbeda, terbaca persis sama — dan orang yang baru saja
+     * memasukkan stoknya sendiri wajar menyimpulkan sistemnya tidak membaca
+     * stok itu.
+     *
+     * Angka ini TIDAK PERNAH ikut dialokasikan. Ia hanya kalimat penjelas;
+     * memindahkannya tetap lewat Transfer Antar Gudang (F-INV-05).
+     *
+     * @return array<int, list<array{gudang:string, nama:string, qty:int}>>
+     *                                                                      rincian per product_id, gudang terbanyak dulu
+     */
+    public function elsewhereFor(array $productIds, int $exceptWarehouseId): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        return InventoryStock::query()
+            ->join('warehouses', 'warehouses.id', '=', 'inventory_stocks.warehouse_id')
+            ->whereIn('inventory_stocks.product_id', $productIds)
+            ->where('inventory_stocks.warehouse_id', '!=', $exceptWarehouseId)
+            ->where('inventory_stocks.status', InventoryStock::STATUS_ACTIVE)
+            ->groupBy('inventory_stocks.product_id', 'warehouses.code', 'warehouses.name')
+            ->havingRaw('SUM(inventory_stocks.qty_available) > 0')
+            ->selectRaw('inventory_stocks.product_id, warehouses.code, warehouses.name, SUM(inventory_stocks.qty_available) AS tersedia')
+            ->orderByDesc('tersedia')
+            ->get()
+            ->groupBy('product_id')
+            ->map(fn ($baris) => $baris->map(fn ($b) => [
+                'gudang' => $b->code,
+                'nama' => $b->name,
+                'qty' => (int) $b->tersedia,
+            ])->values()->all())
+            ->all();
+    }
 }

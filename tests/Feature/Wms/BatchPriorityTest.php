@@ -34,8 +34,9 @@ use Tests\TestCase;
  *    penandanya cuma berlaku di satu jalur, batchnya didahulukan saat pesanan
  *    diterima tetapi tidak saat barangnya keluar — dan itu baru ketahuan
  *    berbulan-bulan kemudian.
- * 2. FIFO TETAP BERLAKU DI ANTARA SESAMA BATCH BERTANDA. Penandanya menjawab
- *    "yang mana duluan", bukan membatalkan urutan umur sama sekali.
+ * 2. DUA ARAH DALAM SATU ANTREAN. Batch bertanda diurutkan LIFO (termuda
+ *    dulu), yang tidak bertanda tetap FIFO. Salah satu arah saja yang benar
+ *    tidak akan menghasilkan galat apa pun — cuma batch yang salah terkirim.
  * 3. ALASAN WAJIB, ditegakkan constraint database — bukan cuma validasi form.
  *    Tanpa itu penanda sementara berubah jadi keadaan permanen tanpa pemilik.
  * 4. LEPAS SENDIRI SAAT BATCH HABIS, dan "habis" berarti qty_available DAN
@@ -176,7 +177,7 @@ class BatchPriorityTest extends TestCase
         $this->assertSame(100, $b05->fresh()->qty_available);
     }
 
-    public function test_sesama_batch_bertanda_tetap_fifo(): void
+    public function test_sesama_batch_bertanda_diurutkan_terbalik_lifo(): void
     {
         $userId = $this->login()->id;
         $tanda = [
@@ -191,9 +192,9 @@ class BatchPriorityTest extends TestCase
 
         app(FifoAllocator::class)->allocate($this->detail(10), 10, null);
 
-        $this->assertSame(90, $lama->fresh()->qty_available,
-            'Penanda menjawab batch mana yang duluan — bukan membatalkan urutan umur di antara sesamanya.');
-        $this->assertSame(100, $muda->fresh()->qty_available);
+        $this->assertSame(90, $muda->fresh()->qty_available,
+            'Pada batch bertanda, FIFO berubah jadi LIFO — yang termuda keluar duluan.');
+        $this->assertSame(100, $lama->fresh()->qty_available);
     }
 
     public function test_batch_bertanda_habis_dulu_baru_lanjut_ke_yang_tertua(): void
@@ -427,6 +428,97 @@ class BatchPriorityTest extends TestCase
         $this->assertSame('Diminta customer PT Aneka.', $segar->prioritize_reason,
             'Alasan & waktu penandaan adalah jejak audit — hilang kalau ditimpa null saat dilepas.');
         $this->assertNotNull($segar->prioritized_at);
+    }
+
+    /* ------------------------------------------------- Ikut pindah ke rak lain */
+
+    public function test_penanda_ikut_pindah_saat_stok_dipindahkan_ke_rak_lain(): void
+    {
+        $this->login();
+        $stok = $this->batch('B05', now()->subMonth()->toDateString(), 100, [
+            'prioritize_out' => true,
+            'prioritize_reason' => 'Diminta customer PT Aneka.',
+            'prioritized_at' => now(),
+            'prioritized_by' => $this->penanda()->id,
+            'has_quality_issue' => true,
+        ]);
+        $this->rak('B-95-01');
+
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $stok->id,
+            'to_location_code' => 'B-95-01',
+            'qty' => 40,
+            'reason' => 'Merapikan rak.',
+        ])->assertSessionHas('success');
+
+        $tujuan = InventoryStock::where('batch_no', 'B05')
+            ->whereHas('location', fn ($q) => $q->where('code', 'B-95-01'))
+            ->first();
+
+        $this->assertNotNull($tujuan);
+        $this->assertTrue($tujuan->prioritize_out,
+            'Penanda melekat pada BATCH. Baris baru tanpa penanda membuat separuh batch didahulukan dan separuhnya tidak.');
+        $this->assertSame('Diminta customer PT Aneka.', $tujuan->prioritize_reason);
+        $this->assertTrue($tujuan->has_quality_issue);
+    }
+
+    public function test_batch_terkarantina_bisa_dipindahkan_ke_rak_lain(): void
+    {
+        $this->login();
+        $stok = $this->batch('B05', now()->subMonth()->toDateString(), 100, [
+            'status' => InventoryStock::STATUS_QUARANTINE,
+            'quarantine_days' => 7,
+            'quarantine_until' => now()->addDays(7)->toDateString(),
+            'quarantined_at' => now(),
+            'quarantined_by' => $this->penanda()->id,
+        ]);
+        $this->rak('B-96-01');
+
+        // Tanpa metadata karantina yang ikut pindah, CHECK constraint
+        // inventory_stocks_karantina_lengkap menolak baris tujuannya dan
+        // pemindahan gagal dengan galat database mentah.
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $stok->id,
+            'to_location_code' => 'B-96-01',
+            'qty' => 40,
+            'reason' => 'Merapikan rak.',
+        ])->assertSessionHas('success');
+
+        $tujuan = InventoryStock::where('batch_no', 'B05')
+            ->whereHas('location', fn ($q) => $q->where('code', 'B-96-01'))
+            ->first();
+
+        $this->assertNotNull($tujuan);
+        $this->assertSame(InventoryStock::STATUS_QUARANTINE, $tujuan->status);
+        $this->assertNotNull($tujuan->quarantine_until);
+    }
+
+    public function test_operator_gudang_boleh_memindahkan_antar_rak(): void
+    {
+        $this->login(Role::WAREHOUSE_OPERATOR);
+        $stok = $this->batch('B05', now()->subMonth()->toDateString());
+        $this->rak('B-97-01');
+
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $stok->id,
+            'to_location_code' => 'B-97-01',
+            'qty' => 10,
+            'reason' => 'Merapikan rak.',
+        ])->assertSessionHas('success');
+    }
+
+    public function test_operator_gudang_tetap_tidak_boleh_mengubah_qty(): void
+    {
+        $this->login(Role::WAREHOUSE_OPERATOR);
+        $stok = $this->batch('B05', now()->subMonth()->toDateString());
+
+        // Memindahkan TIDAK mengubah jumlah; menambah/mengurangi tetap
+        // wewenang Manager & Super Admin.
+        $this->post('/wms/inventory/adjust', [
+            'stock_id' => $stok->id,
+            'qty_new' => 999,
+            'reason' => 'Coba mengubah qty.',
+        ])->assertForbidden();
     }
 
     /* --------------------------------------------------------- Sweep habis */

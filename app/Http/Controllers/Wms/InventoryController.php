@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreInventoryStockRequest;
+use App\Models\ActivityLog;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\ProductCategory;
 use App\Models\StockMovement;
+use App\Support\Activity;
 use App\Support\Inventory\StockQuarantine;
 use App\Support\Outbound\PendingAllocationFiller;
 use App\Support\ShelfLife;
@@ -254,6 +256,29 @@ class InventoryController extends Controller
                 : ['terisi' => 0, 'pesanan' => [], 'booking' => []];
         });
 
+        Activity::record(
+            ActivityLog::STOCK_ADJUST,
+            sprintf(
+                'Mengoreksi %s batch %s dari %d menjadi %d%s.',
+                $stock->product?->sku ?? '—',
+                $stock->batch_no ?? '—',
+                $qtyLama,
+                $qtyBaru,
+                ($validated['ddp_reason'] ?? null) ? ' dan menandainya DDP' : '',
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'qty_sebelum' => $qtyLama,
+                'qty_sesudah' => $qtyBaru,
+                'selisih' => $qtyBaru - $qtyLama,
+                'ddp' => $validated['ddp_reason'] ?? null,
+                'alasan' => $validated['reason'],
+            ],
+        );
+
         $pesan = sprintf(
             'Koreksi tersimpan: %s batch %s dari %d menjadi %d.',
             $stock->product?->sku ?? '—',
@@ -352,6 +377,29 @@ class InventoryController extends Controller
             ];
         });
 
+        Activity::record(
+            ActivityLog::STOCK_ADD,
+            sprintf(
+                'Menambahkan %d unit %s batch %s ke rak %s (gudang %s). Total batch di rak itu jadi %d.',
+                $qty,
+                $produk->sku,
+                $request->validated('batch_no'),
+                $lokasi->code,
+                $lokasi->warehouse?->code ?? '—',
+                $hasil['total'],
+            ),
+            $lokasi,
+            $lokasi->warehouse_id,
+            [
+                'sku' => $produk->sku,
+                'batch' => $request->validated('batch_no'),
+                'qty' => $qty,
+                'rak' => $lokasi->code,
+                'baris_baru' => $hasil['baru'],
+                'alasan' => $request->validated('reason'),
+            ],
+        );
+
         $pesan = sprintf(
             '%s batch %s di %s: %s %d unit (total sekarang %d).',
             $produk->sku,
@@ -426,6 +474,10 @@ class InventoryController extends Controller
             return back()->with('error', 'Lokasi tujuan sama dengan lokasi asal.');
         }
 
+        // Dibaca SEBELUM transaksi: location_id baris asal tidak berubah, tapi
+        // relasinya belum tentu masih termuat setelahnya.
+        $asal = $stock->location?->code ?? '—';
+
         DB::transaction(function () use ($stock, $tujuan, $qty, $validated, $request) {
             $asalSebelum = $stock->qty_available;
             $stock->qty_available = $asalSebelum - $qty;
@@ -453,6 +505,32 @@ class InventoryController extends Controller
                     'inbound_detail_id' => $stock->inbound_detail_id,
                     'verified_by' => $stock->verified_by,
                     'verified_at' => $stock->verified_at,
+
+                    // SELURUH PENANDA BATCH IKUT PINDAH. Ketiganya melekat pada
+                    // batch — pada apa yang terjadi saat produksi/pengujian —
+                    // bukan pada rak tempat barangnya kebetulan duduk. Baris
+                    // baru tanpa penanda akan membuat separuh batch dikarantina
+                    // dan separuhnya bebas dijual, padahal barangnya sama.
+                    //
+                    // Metadata karantina WAJIB ikut, bukan cuma statusnya:
+                    // CHECK inventory_stocks_karantina_lengkap menolak baris
+                    // berstatus 'quarantine' yang tanggal & pemasangnya kosong,
+                    // jadi tanpa ini memindahkan batch terkarantina gagal
+                    // dengan galat constraint mentah.
+                    'quarantine_days' => $stock->quarantine_days,
+                    'quarantine_until' => $stock->quarantine_until?->toDateString(),
+                    'quarantined_at' => $stock->quarantined_at,
+                    'quarantined_by' => $stock->quarantined_by,
+                    'quarantine_note' => $stock->quarantine_note,
+                    'quarantine_released_at' => $stock->quarantine_released_at,
+
+                    'has_quality_issue' => $stock->has_quality_issue,
+
+                    'prioritize_out' => $stock->prioritize_out,
+                    'prioritize_reason' => $stock->prioritize_reason,
+                    'prioritized_at' => $stock->prioritized_at,
+                    'prioritized_by' => $stock->prioritized_by,
+                    'prioritize_released_at' => $stock->prioritize_released_at,
                 ]);
             }
 
@@ -485,6 +563,28 @@ class InventoryController extends Controller
                 'qty_after' => $tujuanStok->qty_available,
             ]);
         });
+
+        Activity::record(
+            ActivityLog::STOCK_TRANSFER,
+            sprintf(
+                'Memindahkan %d %s batch %s dari rak %s ke rak %s.',
+                $qty,
+                $stock->product?->sku ?? '—',
+                $stock->batch_no ?? '—',
+                $asal,
+                $tujuan->code,
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'qty' => $qty,
+                'dari_rak' => $asal,
+                'ke_rak' => $tujuan->code,
+                'alasan' => $validated['reason'],
+            ],
+        );
 
         return back()->with('success', sprintf(
             '%d %s batch %s dipindahkan ke %s.',
@@ -529,6 +629,26 @@ class InventoryController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::QUARANTINE_PLACE,
+            sprintf(
+                'Mengarantina batch %s (%s) selama %d hari.',
+                $stock->batch_no ?? '—',
+                $stock->product?->sku ?? '—',
+                $validated['days'],
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'hari' => (int) $validated['days'],
+                'sampai' => $stock->fresh()->quarantine_until?->toDateString(),
+                'baris' => $jumlah,
+                'catatan' => $validated['note'] ?? null,
+            ],
+        );
+
         return back()->with('warning', sprintf(
             '%d baris stok batch %s (%s) dikarantina %d hari. Otomatis kembali jadi Good Stock setelah %s '.
             '— tidak perlu tindakan manual.',
@@ -550,6 +670,14 @@ class InventoryController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::QUARANTINE_RELEASE,
+            sprintf('Melepas karantina batch %s lebih awal.', $stock->batch_no ?? '—'),
+            $stock,
+            $stock->warehouse_id,
+            ['batch' => $stock->batch_no, 'baris' => $jumlah],
+        );
 
         return back()->with('success', sprintf(
             'Karantina dibatalkan untuk %d baris stok batch %s. Kembali jadi Good Stock.',
@@ -583,6 +711,24 @@ class InventoryController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::PRIORITIZE,
+            sprintf(
+                'Menandai batch %s (%s) DAHULUKAN KELUAR — mendahului batch yang lebih tua. Alasan: %s',
+                $stock->batch_no ?? '—',
+                $stock->product?->sku ?? '—',
+                $validated['reason'],
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'baris' => $jumlah,
+                'alasan' => $validated['reason'],
+            ],
+        );
+
         return back()->with('warning', sprintf(
             '%d baris stok batch %s (%s) ditandai DAHULUKAN KELUAR — batch ini akan dialokasikan lebih dulu '.
             'walau ada batch yang lebih tua. Lepas penandanya begitu tidak diperlukan lagi supaya FIFO kembali normal.',
@@ -603,6 +749,14 @@ class InventoryController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::PRIORITIZE_RELEASE,
+            sprintf('Melepas penanda Dahulukan Keluar dari batch %s — urutan kembali FIFO.', $stock->batch_no ?? '—'),
+            $stock,
+            $stock->warehouse_id,
+            ['batch' => $stock->batch_no, 'baris' => $jumlah],
+        );
+
         return back()->with('success', sprintf(
             'Penanda Dahulukan Keluar dilepas dari %d baris stok batch %s. Urutan kembali FIFO.',
             $jumlah,
@@ -621,6 +775,19 @@ class InventoryController extends Controller
         WarehouseScope::assert($stock->warehouse_id, $request->user());
 
         $hasil = $this->karantina->toggleQualityIssue($stock);
+
+        Activity::record(
+            ActivityLog::QUALITY_ISSUE,
+            sprintf(
+                '%s penanda Masalah Kualitas pada batch %s (%s).',
+                $hasil['nilai'] ? 'Memasang' : 'Melepas',
+                $stock->batch_no ?? '—',
+                $stock->product?->sku ?? '—',
+            ),
+            $stock,
+            $stock->warehouse_id,
+            ['batch' => $stock->batch_no, 'menyala' => $hasil['nilai'], 'baris' => $hasil['jumlah']],
+        );
 
         // Kalimatnya sengaja menyebut ulang bahwa stoknya TIDAK ditahan.
         // Penanda bernama "Masalah Kualitas" mudah dikira sudah mengunci

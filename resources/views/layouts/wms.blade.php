@@ -288,6 +288,11 @@
                                 <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Pengaturan Dokumen</span></a>
                             </li>
                         @endcan
+                        @can(\App\Support\Permission::ADMIN_AUDIT)
+                            <li class="nav-item {{ request()->is('wms/admin/activity-log') ? 'active' : '' }}">
+                                <a href="/wms/admin/activity-log" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Log Aktivitas</span></a>
+                            </li>
+                        @endcan
                     </ul>
                 </li>
             @endcanany

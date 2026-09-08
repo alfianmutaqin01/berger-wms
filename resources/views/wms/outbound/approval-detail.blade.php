@@ -388,7 +388,10 @@
                 <td>${lolos(b.nama)}</td>
                 <td>${lolos(b.uom ?? '')}</td>
                 <td class="angka">${b.qty_ordered}</td>
-                <td class="angka ${angka(b.stok) === 0 ? 'text-danger fw-semibold' : ''}">${angka(b.stok)}</td>
+                <td class="angka ${angka(b.stok) === 0 ? 'text-danger fw-semibold' : ''}">
+                    ${angka(b.stok)}
+                    ${gudangLain(b)}
+                </td>
                 <td class="angka">
                     <input type="number" min="0" max="${b.qty_ordered}" step="1"
                         value="${setuju}" data-i="${i}" class="setuju"
@@ -412,6 +415,22 @@
 
         kisiKosong.classList.toggle('d-none', baris.length > 0);
         hitungTotal();
+    }
+
+    // "Stok nol di gudang ini" dan "produknya tidak ada di mana pun" adalah dua
+    // keadaan yang sangat berbeda, dan yang pertama sering berarti barangnya
+    // salah gudang — bukan benar-benar habis. Tanpa keterangan ini Logistik
+    // menolak baris pesanan padahal barangnya ada, cuma di gudang sebelah.
+    function gudangLain(b) {
+        const lain = b.gudang_lain || [];
+        if (lain.length === 0) return '';
+
+        const rincian = lain
+            .map((g) => lolos(g.gudang) + ' ' + angka(g.qty))
+            .join(', ');
+
+        return '<div class="text-warning-emphasis fw-normal" style="font-size:.7rem">'
+            + 'ada di ' + rincian + ' (gudang lain)</div>';
     }
 
     function badge(setuju, kurang, b) {

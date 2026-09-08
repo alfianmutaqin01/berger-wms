@@ -49,7 +49,16 @@ class Permission
 
     public const INVENTORY_ADJUST = 'inventory.adjust';
 
-    /** Pemindahan antar RAK di dalam satu gudang (F-INV-02). */
+    /**
+     * Pemindahan antar RAK di dalam satu gudang (F-INV-02).
+     *
+     * TERBUKA SAMPAI OPERATOR GUDANG — keputusan pemilik produk. Merekalah
+     * yang benar-benar mengangkat barangnya; memaksa mereka memanggil Logistik
+     * hanya untuk mencatat perpindahan yang sudah terjadi membuat sistem
+     * tertinggal dari kenyataan di rak. Memindahkan TIDAK mengubah jumlah stok
+     * sama sekali, jadi wewenang ini tidak bisa dipakai untuk menambah atau
+     * mengurangi apa pun — itu tetap INVENTORY_ADJUST.
+     */
     public const INVENTORY_TRANSFER = 'inventory.transfer';
 
     /**
@@ -144,6 +153,17 @@ class Permission
     public const ADMIN_SEQUENCE = 'admin.sequence';
 
     /**
+     * Log aktivitas: siapa melakukan apa, kapan — SUPER ADMIN SAJA.
+     *
+     * Manager sengaja TIDAK ikut, walau ia ikut di hampir semua gate admin
+     * lainnya. Log ini merekam tindakan Manager juga; memberi Manager akses
+     * membaca log berarti orang yang diawasi memegang jendela pengawasnya
+     * sendiri. Log yang bisa dibaca pelakunya masih berguna, tetapi bukan lagi
+     * alat pemeriksaan.
+     */
+    public const ADMIN_AUDIT = 'admin.audit';
+
+    /**
      * Fitur => daftar slug role yang diizinkan.
      *
      * Super Admin sengaja ditulis eksplisit di setiap baris, bukan lewat
@@ -176,7 +196,9 @@ class Permission
             Role::PRODUCTION, Role::WAREHOUSE_OPERATOR,
         ],
         self::INVENTORY_ADJUST => [Role::SUPER_ADMIN, Role::MANAGER],
-        self::INVENTORY_TRANSFER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::INVENTORY_TRANSFER => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
         self::INVENTORY_QUARANTINE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::STOCKTAKE_COUNT => [
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
@@ -214,6 +236,7 @@ class Permission
         self::MASTER_LOCATIONS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_USERS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_SEQUENCE => [Role::SUPER_ADMIN, Role::MANAGER],
+        self::ADMIN_AUDIT => [Role::SUPER_ADMIN],
     ];
 
     /** Seluruh nama fitur, dipakai AppServiceProvider untuk mendaftarkan Gate. */

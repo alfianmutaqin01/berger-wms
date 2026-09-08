@@ -315,9 +315,24 @@ document.addEventListener('DOMContentLoaded', function () {
                 // "Bebas" — bukan "ada". Angka ini sudah dikurangi yang
                 // dibooking dan yang teralokasi pesanan, dan menyebutnya
                 // "stok" saja akan membuat orang mengira sisanya lebih banyak.
-                kotak.textContent = 'Stok bebas sekarang: ' + Number(d.tersedia).toLocaleString('id-ID')
+                let pesan = 'Stok bebas sekarang: ' + Number(d.tersedia).toLocaleString('id-ID')
                     + '. Lebih dari itu boleh dibooking — sisanya menunggu produksi.';
-                kotak.className = d.tersedia > 0 ? 'form-text text-success' : 'form-text text-warning';
+
+                // "Nol di gudang ini" dan "tidak ada di mana pun" adalah dua
+                // keadaan yang sangat berbeda. Tanpa kalimat ini, orang yang
+                // baru saja memasukkan stoknya ke gudang lain akan menyimpulkan
+                // sistemnya tidak membaca stok itu.
+                const lain = d.gudang_lain || [];
+                if (lain.length > 0) {
+                    pesan += ' Produk ini ada di gudang lain — '
+                        + lain.map((g) => g.gudang + ' ' + Number(g.qty).toLocaleString('id-ID')).join(', ')
+                        + ' — tetapi stok gudang lain TIDAK bisa dipakai booking ini. Pindahkan lewat Transfer Antar Gudang dulu.';
+                }
+
+                kotak.textContent = pesan;
+                kotak.className = d.tersedia > 0
+                    ? 'form-text text-success'
+                    : (lain.length > 0 ? 'form-text text-danger' : 'form-text text-warning');
             })
             .catch(() => {
                 kotak.textContent = 'Stok bebas gagal diperiksa. Booking tetap bisa dibuat.';

@@ -524,7 +524,13 @@ class Shipment
                 // di PHP. Kunci pertama itu tetap menang: batch yang benar-
                 // benar naik ke kendaraan tidak boleh disalip oleh apa pun.
                 fn (InventoryStock $s) => $s->prioritize_out ? 0 : 1,
-                fn (InventoryStock $s) => $s->production_date?->timestamp ?? 0,
+                // Bertanda = LIFO (termuda dulu), tidak bertanda = FIFO
+                // (tertua dulu). Dua arah dijadikan satu kunci dengan
+                // membalik tandanya, karena sortBy() hanya bisa satu arah
+                // untuk seluruh daftar kunci.
+                fn (InventoryStock $s) => $s->prioritize_out
+                    ? -($s->production_date?->timestamp ?? 0)
+                    : ($s->production_date?->timestamp ?? 0),
                 fn (InventoryStock $s) => $s->id,
             ])
             ->values();

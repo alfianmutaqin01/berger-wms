@@ -123,16 +123,41 @@ class InventoryTest extends TestCase
         $this->assertSame(180, $stock->fresh()->qty_available);
     }
 
-    public function test_produksi_dan_operator_tidak_boleh_transfer(): void
+    /**
+     * Produksi HANYA MELIHAT; Operator Gudang boleh memindahkan antar rak.
+     *
+     * Keputusan pemilik produk: Operator-lah yang benar-benar mengangkat
+     * barangnya, dan memaksa mereka memanggil Logistik hanya untuk mencatat
+     * perpindahan yang sudah terjadi membuat sistem tertinggal dari kenyataan
+     * di rak. Yang tetap tertutup bagi Operator adalah MENGUBAH JUMLAH —
+     * lihat test_produksi_dan_operator_tidak_boleh_koreksi_qty().
+     */
+    public function test_produksi_tidak_boleh_transfer_tetapi_operator_boleh(): void
     {
         $stock = $this->stock();
         $this->bin('B-01-02');
 
+        $this->loginAs(Role::PRODUCTION);
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $stock->id, 'to_location_code' => 'B-01-02',
+            'qty' => 10, 'reason' => 'percobaan tidak sah',
+        ])->assertForbidden();
+
+        $this->loginAs(Role::WAREHOUSE_OPERATOR);
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $stock->id, 'to_location_code' => 'B-01-02',
+            'qty' => 10, 'reason' => 'merapikan rak',
+        ])->assertSessionHas('success');
+    }
+
+    public function test_produksi_dan_operator_tidak_boleh_koreksi_qty(): void
+    {
+        $stock = $this->stock();
+
         foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
             $this->loginAs($slug);
-            $this->post('/wms/inventory/transfer', [
-                'stock_id' => $stock->id, 'to_location_code' => 'B-01-02',
-                'qty' => 10, 'reason' => 'percobaan tidak sah',
+            $this->post('/wms/inventory/adjust', [
+                'stock_id' => $stock->id, 'qty_new' => 999, 'reason' => 'percobaan tidak sah',
             ])->assertForbidden();
         }
     }

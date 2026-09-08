@@ -141,7 +141,16 @@ class OrderApprovalController extends Controller
             $order->warehouse_id
         );
 
-        $baris = $order->details->map(function (SalesOrderDetail $detail) use ($tersedia) {
+        // Stok produk yang sama di gudang LAIN. Tidak bisa dipakai pesanan ini,
+        // tetapi "stok nol" dan "stoknya ada, cuma di gudang sebelah" adalah
+        // dua keadaan yang sangat berbeda — dan yang kedua sering berarti
+        // barangnya salah gudang, bukan benar-benar habis.
+        $diGudangLain = $this->allocator->elsewhereFor(
+            $order->details->pluck('product_id')->all(),
+            $order->warehouse_id
+        );
+
+        $baris = $order->details->map(function (SalesOrderDetail $detail) use ($tersedia, $diGudangLain) {
             $stok = $tersedia[$detail->product_id] ?? 0;
 
             return [
@@ -151,6 +160,12 @@ class OrderApprovalController extends Controller
                 'uom' => $detail->product?->uom,
                 'qty_ordered' => $detail->qty_ordered,
                 'stok' => $stok,
+                // Hanya ditampilkan saat gudang ini kurang — kalau stoknya
+                // cukup, keberadaan barang di gudang lain tidak relevan dan
+                // hanya menambah bacaan.
+                'gudang_lain' => $stok < $detail->qty_ordered
+                    ? ($diGudangLain[$detail->product_id] ?? [])
+                    : [],
                 // Usulan = min(pesan, stok), sesuai F-OUT-02 langkah 3.
                 // Hanya USULAN: Logistik boleh menaikkannya sampai qty pesan.
                 'usul' => min($detail->qty_ordered, $stok),

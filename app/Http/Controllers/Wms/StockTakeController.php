@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Location;
 use App\Models\StockTake;
 use App\Models\StockTakeItem;
 use App\Models\Warehouse;
+use App\Support\Activity;
 use App\Support\Inventory\StockTakeRun;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -218,6 +220,27 @@ class StockTakeController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::STOCKTAKE_FINALIZE,
+            sprintf(
+                'Mengesahkan laporan stok opname %s: %d baris disesuaikan (+%d / -%d unit), %d baris belum dihitung.',
+                $stocktake->reference,
+                $hasil['disesuaikan'],
+                $hasil['naik'],
+                $hasil['turun'],
+                $hasil['belum'],
+            ),
+            $stocktake,
+            $stocktake->warehouse_id,
+            [
+                'referensi' => $stocktake->reference,
+                'disesuaikan' => $hasil['disesuaikan'],
+                'naik' => $hasil['naik'],
+                'turun' => $hasil['turun'],
+                'belum_dihitung' => $hasil['belum'],
+            ],
+        );
 
         $pesan = sprintf(
             'Laporan opname %s disahkan. %d baris disesuaikan (+%d / -%d unit).',

@@ -182,9 +182,15 @@ class InventoryStock extends Model
      * fifo() yang ternyata tidak FIFO adalah jebakan bagi siapa pun yang
      * membacanya nanti.
      *
-     * BATCH BERTANDA NAIK KE DEPAN, sisanya tetap FIFO. Di antara sesama
-     * batch bertanda pun tetap FIFO: penandanya menjawab "yang mana yang
-     * keluar duluan", bukan membatalkan urutan umur sama sekali.
+     * BATCH BERTANDA NAIK KE DEPAN DAN DIURUTKAN TERBALIK (LIFO) — keputusan
+     * pemilik produk: "pada tanda ini FIFO berubah jadi LIFO". Yang tidak
+     * bertanda tetap FIFO seperti biasa.
+     *
+     * Dua arah dalam satu query, jadi urutan keduanya ditulis sebagai satu
+     * ekspresi: kunci LIFO hanya terisi untuk baris bertanda, dan baris yang
+     * tidak bertanda seluruhnya bernilai NULL di situ sehingga jatuh ke kunci
+     * FIFO berikutnya. Memisahkannya jadi dua query berarti ada dua tempat
+     * yang bisa berbeda pendapat tentang batch mana yang keluar duluan.
      *
      * KETIGA JALUR WAJIB MEMAKAI SCOPE INI. Sebelumnya masing-masing menulis
      * orderBy sendiri — tiga salinan aturan yang sama. Kalau penandanya cuma
@@ -196,6 +202,7 @@ class InventoryStock extends Model
     {
         return $query
             ->orderByDesc('prioritize_out')
+            ->orderByRaw('CASE WHEN prioritize_out THEN production_date END DESC NULLS LAST')
             ->orderBy('production_date')
             ->orderBy('id');
     }
