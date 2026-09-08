@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\Reporting\AdminDashboard;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
@@ -26,9 +28,23 @@ class DashboardController extends Controller
         };
     }
 
-    public function admin()
+    /**
+     * Dashboard utama — dibuka Super Admin, Manager, dan Logistik.
+     *
+     * SATU HALAMAN, TIGA SUDUT PANDANG. Yang berbeda bukan halamannya
+     * melainkan kartu mana yang punya isi: AdminDashboard hanya menghitung
+     * metrik yang boleh dilihat pemanggilnya, sehingga kartu yang tidak
+     * berhak tidak pernah ikut terkirim ke layar. Lihat alasan lengkapnya di
+     * App\Support\Reporting\AdminDashboard.
+     */
+    public function admin(Request $request, AdminDashboard $dashboard)
     {
-        return view('wms.dashboard.admin');
+        $user = $request->user();
+
+        return view('wms.dashboard.admin', [
+            'm' => $dashboard->untuk($user),
+            'gudang' => $user?->warehouse?->display_label,
+        ]);
     }
 
     public function produksi()
