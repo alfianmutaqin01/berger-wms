@@ -122,7 +122,7 @@
                         @endcan
                         @can(\App\Support\Permission::INBOUND_PUTAWAY)
                             <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Proses Put-away</span></a>
+                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Put-away</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INBOUND_RETURNS)
@@ -137,17 +137,17 @@
                         @endcan
                         @can(\App\Support\Permission::INVENTORY_VIEW)
                             <li class="nav-item {{ request()->is('wms/inventory') || request()->is('wms/inventory/*') ? 'active' : '' }}">
-                                <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok (Inventory)</span></a>
+                                <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::STOCKTAKE_COUNT)
-                            {{-- Menu sendiri, bukan menumpang Denah. Opname
+                            {{-- Menu sendiri, bukan menumpang Denah. Stocktake
                                  adalah PROSES bertahap dengan awal, akhir, dan
                                  penanggung jawab; menyembunyikannya di dalam
                                  layar master data membuatnya luput justru dari
                                  orang yang harus memantaunya. --}}
                             <li class="nav-item {{ request()->is('wms/stocktake*') ? 'active' : '' }}">
-                                <a href="/wms/stocktake" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Stok Opname</span></a>
+                                <a href="/wms/stocktake" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Stocktake</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::TRANSFER_HISTORY)
@@ -280,12 +280,12 @@
                         @endcan
                         @can(\App\Support\Permission::ADMIN_USERS)
                             <li class="nav-item {{ request()->is('wms/admin/users') ? 'active' : '' }}">
-                                <a href="/wms/admin/users" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Manajemen User</span></a>
+                                <a href="/wms/admin/users" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>User Management</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_SEQUENCE)
                             <li class="nav-item {{ request()->is('wms/admin/sequence') ? 'active' : '' }}">
-                                <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Pengaturan Dokumen</span></a>
+                                <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penomoran Dokumen</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_AUDIT)

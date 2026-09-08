@@ -6,21 +6,21 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Stok opname — mencocokkan angka sistem dengan barang yang benar-benar ada
+ * Stocktake — mencocokkan angka sistem dengan barang yang benar-benar ada
  * di rak, sebulan atau tiga bulan sekali.
  *
  * ANGKA SISTEM DIBEKUKAN SAAT SESI DIBUKA, bukan dibaca ulang saat hasilnya
  * disahkan. Menghitung satu gudang makan waktu berjam-jam sampai berhari-hari,
  * dan selama itu barang tetap keluar-masuk. Kalau pembandingnya angka
  * "sekarang", tiap pengiriman yang berangkat di tengah penghitungan akan
- * terbaca sebagai selisih opname — padahal ia justru pergerakan yang benar dan
+ * terbaca sebagai selisih stocktake — padahal ia justru pergerakan yang benar dan
  * sudah tercatat rapi di ledger.
  *
  * KOREKSINYA DITERAPKAN SEBAGAI SELISIH, BUKAN SEBAGAI PENIMPAAN
  * --------------------------------------------------------------
  * Saat disahkan, yang ditambahkan ke stok adalah (fisik - beku), bukan angka
  * fisiknya langsung. Dengan begitu barang yang sah keluar setelah dihitung
- * tidak dihidupkan kembali oleh laporan opname. Inilah yang membuat opname
+ * tidak dihidupkan kembali oleh laporan stocktake. Inilah yang membuat stocktake
  * tidak perlu membekukan seluruh operasi gudang.
  *
  * STOK BARU AKTIF SETELAH LAPORAN DISAHKAN (keputusan pemilik produk). Selama
@@ -70,7 +70,7 @@ return new class extends Migration
             )");
 
         // Sesi yang sudah disahkan WAJIB punya jejak siapa dan kapan. Laporan
-        // opname tanpa penanggung jawab tidak bisa dipakai menjawab apa pun.
+        // stocktake tanpa penanggung jawab tidak bisa dipakai menjawab apa pun.
         DB::statement("ALTER TABLE stock_takes ADD CONSTRAINT stock_takes_finalisasi_lengkap
             CHECK (
                 status <> 'finalized'

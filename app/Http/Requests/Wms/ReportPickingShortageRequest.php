@@ -14,7 +14,7 @@ use Illuminate\Foundation\Http\FormRequest;
  *
  * ALASAN WAJIB dan minimalnya panjang. Selisih stok tanpa keterangan adalah
  * angka yang hilang tanpa jejak, dan itu persis yang paling sering dicari
- * saat opname berikutnya. "Kurang" bukan keterangan.
+ * saat stocktake berikutnya. "Kurang" bukan keterangan.
  */
 class ReportPickingShortageRequest extends FormRequest
 {

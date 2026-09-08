@@ -138,7 +138,7 @@ return new class extends Migration
         // Selisih WAJIB beralasan, dan alasan hanya boleh ada pada selisih.
         // Ditegakkan di database, bukan hanya di FormRequest: baris selisih
         // tanpa keterangan adalah stok yang hilang tanpa jejak, dan itu
-        // persis yang paling sering ditanyakan saat opname.
+        // persis yang paling sering ditanyakan saat stocktake.
         DB::statement("
             ALTER TABLE picking_list_items
             ADD CONSTRAINT picking_list_items_discrepancy_check

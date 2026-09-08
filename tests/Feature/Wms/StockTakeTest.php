@@ -18,15 +18,15 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * Stok opname — mencocokkan angka sistem dengan barang di rak.
+ * Stocktake — mencocokkan angka sistem dengan barang di rak.
  *
  * EMPAT HAL YANG KALAU SALAH TIDAK LANGSUNG TERLIHAT
  * ---------------------------------------------------
  * 1. MENGHITUNG TIDAK MENGUBAH STOK. Selama sesi berjalan, angka gudang tidak
  *    boleh bergeser satu unit pun; yang mengubahnya hanya pengesahan laporan.
  * 2. KOREKSINYA SELISIH, BUKAN PENIMPAAN. Barang yang sah berangkat SETELAH
- *    raknya dihitung tidak boleh dihidupkan kembali oleh laporan opname —
- *    inilah yang membuat opname tidak perlu membekukan operasi gudang, dan
+ *    raknya dihitung tidak boleh dihidupkan kembali oleh laporan stocktake —
+ *    inilah yang membuat stocktake tidak perlu membekukan operasi gudang, dan
  *    yang paling mudah dirusak oleh "sederhanakan saja jadi set qty".
  * 3. RAK YANG TIDAK DIHITUNG TIDAK DISENTUH. Menganggapnya kosong berarti satu
  *    rak yang terlewat langsung menghapus stoknya dari sistem.
@@ -137,7 +137,7 @@ class StockTakeTest extends TestCase
         $this->post(route('wms.stocktake.finalize', $sesi))->assertForbidden();
     }
 
-    public function test_sales_tidak_boleh_membuka_stok_opname(): void
+    public function test_sales_tidak_boleh_membuka_stok_stocktake(): void
     {
         $this->loginAs(Role::SALES);
 
@@ -276,7 +276,7 @@ class StockTakeTest extends TestCase
     /*
     | Penyimpanan tanpa memuat ulang halaman.
     |
-    | Satu sesi opname bisa berisi ribuan baris. Dengan submit biasa, orang
+    | Satu sesi stocktake bisa berisi ribuan baris. Dengan submit biasa, orang
     | yang sudah menghitung sampai baris terakhir dilempar kembali ke puncak
     | halaman setiap kali satu centang ditekan. Layarnya mengirim lewat
     | fetch(), dan endpoint yang sama harus menjawab dua bentuk.
@@ -302,7 +302,7 @@ class StockTakeTest extends TestCase
             ->assertJsonPath('ringkasan.selisih', 1);
     }
 
-    /** Penolakan aturan opname harus terbaca juga oleh layar yang memakai fetch. */
+    /** Penolakan aturan stocktake harus terbaca juga oleh layar yang memakai fetch. */
     public function test_penolakan_hitungan_lewat_json_menjawab_422_beserta_alasannya(): void
     {
         $this->loginAs();

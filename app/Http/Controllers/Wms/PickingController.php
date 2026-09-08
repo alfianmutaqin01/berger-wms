@@ -5,15 +5,19 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ReportPickingShortageRequest;
 use App\Http\Requests\Wms\StorePickingListRequest;
+use App\Models\ActivityLog;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
 use App\Models\SalesOrder;
+use App\Support\Activity;
 use App\Support\Outbound\PickingListBuilder;
 use App\Support\Outbound\PickingRun;
+use App\Support\Permission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 use RuntimeException;
 
@@ -192,6 +196,12 @@ class PickingController extends Controller
             ],
             'bolehDikerjakan' => $list->status === PickingList::STATUS_PICKING
                 && $list->claimed_by === $request->user()?->id,
+            // Logistik/Manager melepas tugas milik ORANG LAIN. Sengaja tidak
+            // ditampilkan untuk daftar yang ia pegang sendiri — untuk itu
+            // tombolnya sudah ada di kelompok tombol operator.
+            'bolehMelepasTugas' => $list->status === PickingList::STATUS_PICKING
+                && $list->claimed_by !== $request->user()?->id
+                && Gate::allows(Permission::OUTBOUND_PICKING_LIST),
         ]);
     }
 
@@ -208,6 +218,71 @@ class PickingController extends Controller
         return redirect()
             ->route('wms.picking.show', $list)
             ->with('success', sprintf('Daftar %s sekarang tugas Anda. Selamat berjalan.', $list->list_number));
+    }
+
+    /**
+     * Melepas tugas yang sudah diambil — daftar kembali bebas diambil orang lain.
+     *
+     * DUA PINTU MASUK, SATU JALAN KELUAR. Operator melepas tugasnya sendiri;
+     * Logistik/Manager boleh melepas milik siapa pun, dan itu satu-satunya
+     * jalan saat operatornya sudah pulang dan daftarnya tertinggal terkunci.
+     * Keduanya lewat PickingRun::release() supaya tidak ada dua versi aturan.
+     *
+     * ALASAN WAJIB. Yang melepas biasanya tahu sebabnya — pengiriman digeser
+     * ke besok, atau tugasnya dioper ke orang lain — dan itulah yang Logistik
+     * butuhkan untuk memutuskan daftar ini disusun ulang atau tidak.
+     */
+    public function release(Request $request, PickingList $list): RedirectResponse
+    {
+        WarehouseScope::assert($list->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'release_reason' => ['required', 'string', 'min:5', 'max:500'],
+        ], [
+            'release_reason.required' => 'Alasan melepas tugas wajib diisi — Logistik perlu tahu kenapa daftar ini kembali.',
+        ], ['release_reason' => 'alasan']);
+
+        $user = $request->user();
+        // Pengawas = yang boleh menyusun daftar picking. Ia pula yang akan
+        // mengatur ulang daftarnya sesudah dilepas.
+        $pengawas = Gate::allows(Permission::OUTBOUND_PICKING_LIST);
+
+        try {
+            $dikosongkan = $this->picking->release($list, $user, $pengawas && $list->claimed_by !== $user?->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::PICKING_RELEASE,
+            sprintf(
+                'Melepas tugas picking %s — daftar kembali bebas diambil. Alasan: %s',
+                $list->list_number,
+                $data['release_reason'],
+            ),
+            $list,
+            $list->warehouse_id,
+            [
+                'daftar' => $list->list_number,
+                'baris_dikosongkan' => $dikosongkan,
+                'alasan' => $data['release_reason'],
+            ],
+        );
+
+        $pesan = sprintf(
+            'Tugas %s dilepas. Daftarnya kembali ke antrean dan bisa diambil operator lain.',
+            $list->list_number,
+        );
+
+        // Baris yang tandanya ikut hilang WAJIB disebut. Operator yang sudah
+        // menandai lima rak berhak tahu bahwa lima tanda itu kini kosong lagi.
+        if ($dikosongkan > 0) {
+            $pesan .= sprintf(' %d baris yang sudah ditandai dikembalikan ke keadaan belum diambil.', $dikosongkan);
+        }
+
+        return redirect()
+            ->route($pengawas ? 'wms.picking.batching' : 'wms.picking.queue')
+            ->with('warning', $pesan);
     }
 
     /** Jalur cepat: satu ketuk, barangnya lengkap sesuai daftar. */

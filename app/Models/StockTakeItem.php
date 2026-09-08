@@ -8,11 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Satu baris hitungan opname: satu batch, di satu rak.
+ * Satu baris hitungan stocktake: satu batch, di satu rak.
  *
  * Sepadan satu-satu dengan baris `inventory_stocks` yang ada saat sesi
  * dibuka. Keterangannya (rak, produk, batch) DISALIN ke sini, bukan dibaca
- * lewat relasi saat laporan dibuka — laporan opname harus menunjukkan angka
+ * lewat relasi saat laporan dibuka — laporan stocktake harus menunjukkan angka
  * yang sama setahun kemudian, sekalipun baris stok aslinya sudah habis dan
  * dibersihkan.
  */

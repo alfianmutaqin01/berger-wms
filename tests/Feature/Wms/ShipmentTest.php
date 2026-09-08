@@ -37,7 +37,7 @@ use Tests\TestCase;
  *    produk: dipesan 15, dipicking 10, di SJ hanya 8. Yang berangkat 8, dan
  *    2 pail yang sudah turun dari rak HARUS kembali ke stok. Tanpa itu, stok
  *    tercatat berkurang 10 sementara yang pergi hanya 8 — dan selisihnya
- *    baru ketahuan saat opname.
+ *    baru ketahuan saat stocktake.
  * 2. SJ TIDAK BOLEH LEBIH BANYAK DARIPADA YANG DIPICKING. Mengirim 12
  *    padahal 10 yang diambil mustahil secara fisik; mengikutinya membuat
  *    catatan stok berbohong.
@@ -369,10 +369,10 @@ class ShipmentTest extends TestCase
             ->value('notes');
 
         // Kalimatnya menentukan ke mana orang mencari nanti. Menyebutnya
-        // selisih stok akan mengirim opname berikutnya mengejar selisih yang
+        // selisih stok akan mengirim stocktake berikutnya mengejar selisih yang
         // tidak pernah ada.
         $this->assertStringContainsString('PENGGANTI', $catatan);
-        $this->assertStringNotContainsString('opname', $catatan);
+        $this->assertStringNotContainsString('stocktake', $catatan);
     }
 
     public function test_konfirmasi_tanpa_alasan_ditolak(): void
@@ -527,7 +527,7 @@ class ShipmentTest extends TestCase
         $this->loginAt($this->karawang);
 
         // Ini justru temuan paling berharga dari seluruh pencocokan;
-        // menyembunyikannya di balik kata "berhasil" membuat opname
+        // menyembunyikannya di balik kata "berhasil" membuat stocktake
         // berikutnya menemukan selisih yang tidak bisa dilacak asalnya.
         $this->kirim($note)->assertSessionHas('warning');
 
@@ -536,7 +536,7 @@ class ShipmentTest extends TestCase
 
         $this->assertSame(-2, $mutasi->qty_change);
         $this->assertStringContainsString('lebih banyak daripada yang tercatat dipicking', $mutasi->notes);
-        $this->assertStringContainsString('opname', $mutasi->notes);
+        $this->assertStringContainsString('stocktake', $mutasi->notes);
     }
 
     public function test_kekurangan_yang_stoknya_tidak_cukup_dilaporkan_bukan_dipaksakan(): void

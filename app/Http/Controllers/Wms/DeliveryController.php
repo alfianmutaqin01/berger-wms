@@ -183,12 +183,12 @@ class DeliveryController extends Controller
         if ($hasil['kurang_di_rak'] > 0) {
             // Temuan stok kurang. Ini justru yang paling berharga dari
             // seluruh pencocokan ini, dan menyembunyikannya di balik kata
-            // "berhasil" membuat opname berikutnya menemukan selisih yang
+            // "berhasil" membuat stocktake berikutnya menemukan selisih yang
             // sudah tidak bisa dilacak asalnya.
             $peringatan[] = sprintf(
                 'Surat Jalan menyebut %d unit LEBIH BANYAK daripada yang tercatat dipicking. '.
                 'Selisihnya sudah dikeluarkan dari stok mengikuti dokumen — artinya isi rak sebenarnya lebih sedikit '.
-                'daripada angka di sistem. Perlu ditelusuri saat opname.',
+                'daripada angka di sistem. Perlu ditelusuri saat stocktake.',
                 $hasil['kurang_di_rak'],
             );
         }

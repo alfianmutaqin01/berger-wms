@@ -79,7 +79,7 @@
                     </tr>
                     <tr>
                         <td><span class="text-muted small">2 Jam lalu</span></td>
-                        <td><span class="badge bg-secondary-subtle text-secondary-emphasis">Stock Opname</span></td>
+                        <td><span class="badge bg-secondary-subtle text-secondary-emphasis">Stocktake</span></td>
                         <td class="fw-semibold">Cek Fisik B-03</td>
                         <td>B-03-All</td>
                         <td><i class="bi bi-check-circle-fill text-success"></i> Selesai</td>

@@ -296,8 +296,8 @@ class SmokeRouteTest extends TestCase
             'uploaded_by' => $order->user_id,
         ]);
 
-        // --- Sesi stok opname yang sedang dihitung, dengan satu barisnya ---
-        $opname = StockTake::create([
+        // --- Sesi stocktake yang sedang dihitung, dengan satu barisnya ---
+        $stocktake = StockTake::create([
             'reference' => 'ST260901001',
             'warehouse_id' => $this->warehouse->id,
             'scope_type' => StockTake::SCOPE_WAREHOUSE,
@@ -306,7 +306,7 @@ class SmokeRouteTest extends TestCase
             'opened_at' => now(),
         ]);
         StockTakeItem::create([
-            'stock_take_id' => $opname->id,
+            'stock_take_id' => $stocktake->id,
             'location_id' => $lokasi->id,
             'product_id' => $produk->id,
             'batch_no' => 'BT-SMOKE',
@@ -316,7 +316,7 @@ class SmokeRouteTest extends TestCase
         $this->parameter = [
             'proof' => $bukti->id,
             'order' => $order->id,
-            'stocktake' => $opname->id,
+            'stocktake' => $stocktake->id,
             'location' => $lokasi->id,
             'doc_no' => $header->document_number,
             'po_number' => $order->order_number,

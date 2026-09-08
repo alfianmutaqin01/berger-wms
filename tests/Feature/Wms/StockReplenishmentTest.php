@@ -134,7 +134,7 @@ class StockReplenishmentTest extends TestCase
             'batch_no' => 'BT-001',
             'production_date' => now()->subMonths(2)->toDateString(),
             'qty' => 50,
-            'reason' => 'Stok opname awal, barang sudah di rak.',
+            'reason' => 'Stocktake awal, barang sudah di rak.',
         ], $ganti));
     }
 
@@ -158,7 +158,7 @@ class StockReplenishmentTest extends TestCase
         $gerak = StockMovement::where('movement_type', StockMovement::TYPE_ADJUSTMENT)->firstOrFail();
         $this->assertSame(50, $gerak->qty_change);
         $this->assertSame(0, $gerak->qty_before);
-        $this->assertStringContainsString('opname', $gerak->notes);
+        $this->assertStringContainsStringIgnoringCase('stocktake', $gerak->notes);
     }
 
     /** Tanggal kedaluwarsa dihitung dengan aturan yang sama seperti inbound. */

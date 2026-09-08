@@ -21,7 +21,7 @@ use RuntimeException;
  * seharusnya didahulukan kembali ke antrean belakang tanpa ada yang tahu.
  *
  * SWEEP, BUKAN DIPICU SAAT PENGAMBILAN. Qty bisa mencapai nol lewat banyak
- * jalur (kirim, koreksi, transfer, opname); menempelkan pelepasan di
+ * jalur (kirim, koreksi, transfer, stocktake); menempelkan pelepasan di
  * masing-masing berarti lima salinan aturan yang sama dan satu yang terlupa.
  * Lagi pula penanda yang tertinggal pada batch kosong TIDAK berbahaya — batch
  * kosong tidak pernah ikut dicalonkan keluar. Jadi keterlambatan sehari tidak

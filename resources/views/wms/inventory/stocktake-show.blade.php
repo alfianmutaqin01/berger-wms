@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Hitung Opname '.$sesi->reference)
-@section('page_title', 'Hitung Opname '.$sesi->reference)
+@section('title', 'Hitung Stocktake '.$sesi->reference)
+@section('page_title', 'Hitung Stocktake '.$sesi->reference)
 
 @section('content')
 {{-- Disusun DERET -> RAK, sama seperti denah, supaya orang yang menghitung
@@ -10,7 +10,7 @@
      melintasi gudang untuk satu produk. --}}
 
 <a href="{{ route('wms.stocktake.index') }}" class="btn btn-sm btn-light rounded-3 mb-3">
-    <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar opname
+    <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar stocktake
 </a>
 
 @foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
@@ -192,20 +192,20 @@
         <form method="POST" action="{{ route('wms.stocktake.finalize', $sesi) }}" class="modal-content rounded-4 border-0">
             @csrf
             <div class="modal-header border-0">
-                <h5 class="modal-title fw-bold">Sahkan Laporan Opname</h5>
+                <h5 class="modal-title fw-bold">Sahkan Laporan Stocktake</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <p class="text-muted small">
                     Seluruh selisih akan <strong>diterapkan ke stok</strong> dan tercatat di ledger sebagai
-                    koreksi opname. Sesudah ini hitungannya tidak bisa diubah lagi.
+                    koreksi stocktake. Sesudah ini hitungannya tidak bisa diubah lagi.
                 </p>
                 @if($ringkasan['belum'] > 0)
                     <div class="alert alert-warning border-0 rounded-3 small">
                         <i class="bi bi-exclamation-triangle me-1"></i>
                         <strong>{{ number_format($ringkasan['belum']) }} baris belum dihitung.</strong>
                         Baris itu <strong>tidak akan disentuh</strong> — stoknya tetap seperti sekarang, dan
-                        laporannya akan menyebutkan bahwa cakupan opname ini belum penuh.
+                        laporannya akan menyebutkan bahwa cakupan stocktake ini belum penuh.
                     </div>
                 @endif
                 <div class="border rounded-3 p-3 small">
@@ -235,7 +235,7 @@
 /*
  * Menyimpan hitungan TANPA memuat ulang halaman.
  *
- * MENGAPA INI PENTING, bukan sekadar kenyamanan: satu sesi opname bisa berisi
+ * MENGAPA INI PENTING, bukan sekadar kenyamanan: satu sesi stocktake bisa berisi
  * ribuan baris. Dengan submit biasa, orang yang sudah menghitung sampai baris
  * terakhir dilempar kembali ke puncak halaman setiap kali satu centang
  * ditekan — dan harus menggulir turun lagi mencari tempatnya semula. Pada
@@ -324,7 +324,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 .then((hasil) => {
                     if (! hasil.ok) {
                         // 422 dari validasi membawa bentuk yang berbeda dari
-                        // 422 aturan opname; keduanya sama-sama harus terbaca.
+                        // 422 aturan stocktake; keduanya sama-sama harus terbaca.
                         const pesan = hasil.data.pesan
                             || (hasil.data.errors && Object.values(hasil.data.errors)[0][0])
                             || 'Hitungan gagal disimpan.';

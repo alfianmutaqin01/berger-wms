@@ -256,7 +256,7 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])
         ->middleware('can:'.Permission::INVENTORY_TRANSFER);
 
-    // Penanda batch (Karantina, Masalah Kualitas, Dahulukan Keluar) —
+    // Penanda batch (Karantina, Quality Issue, Dahulukan Keluar) —
     // permintaan pemilik produk. Gate TERPISAH
     // dari INVENTORY_ADJUST: ini wewenang Logistik sehari-hari (hasil
     // pemeriksaan QC), bukan koreksi qty yang perlu naik ke Manager.
@@ -532,6 +532,16 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         Route::get('/picking/list/{list}', [PickingController::class, 'show'])
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.show');
+
+        // MELEPAS TUGAS dipakai KEDUA peran, jadi gate-nya "salah satu boleh"
+        // — sama seperti membaca rinciannya. Operator melepas tugasnya
+        // sendiri; Logistik/Manager melepas milik siapa pun, dan itu
+        // satu-satunya jalan saat operatornya sudah pulang dan daftarnya
+        // tertinggal terkunci. Batas siapa-boleh-melepas-milik-siapa
+        // ditegakkan di dalam PickingRun::release(), bukan oleh rute ini.
+        Route::post('/picking/list/{list}/release', [PickingController::class, 'release'])
+            ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
+            ->name('wms.picking.release');
 
         // SURAT JALAN (Fase 6 tahap 4). TIDAK ada rute "cetak": dokumen
         // resminya terbit di sistem BC, dan yang dikerjakan di sini adalah

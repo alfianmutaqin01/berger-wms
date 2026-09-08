@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * Karantina & Masalah Kualitas — permintaan pemilik produk, bukan PRD.
+ * Karantina & Quality Issue — permintaan pemilik produk, bukan PRD.
  *
  * LIMA HAL YANG KALAU SALAH TIDAK LANGSUNG TERLIHAT
  * ---------------------------------------------------
@@ -347,7 +347,7 @@ class StockQuarantineTest extends TestCase
         $this->assertNotNull($stok->quarantine_released_at);
     }
 
-    /* -------------------------------------------------------- Masalah Kualitas */
+    /* -------------------------------------------------------- Quality Issue */
 
     public function test_menandai_masalah_kualitas(): void
     {
@@ -377,7 +377,7 @@ class StockQuarantineTest extends TestCase
 
         $this->post(route('wms.inventory.quality-issue', $rakA));
 
-        $this->assertTrue($rakB->fresh()->has_quality_issue, 'Masalah Kualitas adalah atribut batch, bukan atribut satu baris rak.');
+        $this->assertTrue($rakB->fresh()->has_quality_issue, 'Quality Issue adalah atribut batch, bukan atribut satu baris rak.');
     }
 
     public function test_masalah_kualitas_tidak_menghalangi_alokasi(): void
@@ -393,7 +393,7 @@ class StockQuarantineTest extends TestCase
 
         $didapat = app(FifoAllocator::class)->allocate($detail, 10, null);
 
-        $this->assertSame(10, $didapat, 'Masalah Kualitas murni informasi — tidak boleh menghalangi FIFO.');
+        $this->assertSame(10, $didapat, 'Quality Issue murni informasi — tidak boleh menghalangi FIFO.');
     }
 
     public function test_masalah_kualitas_boleh_ditandai_pada_stok_ddp(): void

@@ -38,7 +38,7 @@ use Tests\TestCase;
  * pembatalan dicari dengan cara yang sama persis. Tanpa penyaringan putaran,
  * pembatalan KEDUA mengembalikan barang putaran pertama sekali lagi — stok
  * bertambah dari ketiadaan, ledger-nya tetap terlihat rapi, dan selisihnya
- * baru ketahuan saat opname.
+ * baru ketahuan saat stocktake.
  */
 class RepeatPickingTest extends TestCase
 {

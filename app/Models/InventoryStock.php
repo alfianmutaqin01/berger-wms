@@ -59,7 +59,7 @@ class InventoryStock extends Model
         self::DDP_EXPIRED => 'Lewat masa simpan',
         self::DDP_RETURN_DAMAGED => 'Retur rusak',
         self::DDP_WRITE_OFF => 'Write-off',
-        self::DDP_OPNAME => 'Temuan opname',
+        self::DDP_OPNAME => 'Temuan stocktake',
     ];
 
     protected $fillable = [

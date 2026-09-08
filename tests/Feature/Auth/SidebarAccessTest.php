@@ -52,10 +52,10 @@ class SidebarAccessTest extends TestCase
     private const MENU_LABELS = [
         Permission::INBOUND_CREATE => 'Input Produksi',
         Permission::INBOUND_HISTORY => 'Riwayat Produksi',
-        Permission::INBOUND_PUTAWAY => 'Proses Put-away',
+        Permission::INBOUND_PUTAWAY => 'Put-away',
         Permission::INBOUND_RETURNS => 'Penerimaan Retur',
         Permission::INBOUND_VERIFY => 'Verifikasi Logistik',
-        Permission::INVENTORY_VIEW => 'Data Stok (Inventory)',
+        Permission::INVENTORY_VIEW => 'Data Stok',
         Permission::OUTBOUND_APPROVAL => 'Terima Pesanan',
         Permission::OUTBOUND_PICKING_LIST => 'Daftar Picking',
         Permission::OUTBOUND_PICKING_PROCESS => 'Proses Picking',
@@ -65,8 +65,8 @@ class SidebarAccessTest extends TestCase
         Permission::MASTER_CUSTOMERS => 'Master Customers',
         Permission::MASTER_PRODUCTS => 'Master Products',
         Permission::MASTER_LOCATIONS => 'Master Lokasi Rak',
-        Permission::ADMIN_USERS => 'Manajemen User',
-        Permission::ADMIN_SEQUENCE => 'Pengaturan Dokumen',
+        Permission::ADMIN_USERS => 'User Management',
+        Permission::ADMIN_SEQUENCE => 'Penomoran Dokumen',
         Permission::REPORTS_VIEW => 'Laporan & Analisis',
     ];
 
@@ -162,10 +162,10 @@ class SidebarAccessTest extends TestCase
 
         $this->assertStringContainsString('Input Produksi', $html);
         $this->assertStringContainsString('Riwayat Produksi', $html);
-        $this->assertStringContainsString('Data Stok (Inventory)', $html);
+        $this->assertStringContainsString('Data Stok', $html);
 
         // Bukan wewenangnya: put-away, picking, retur, billing, master data.
-        $this->assertStringNotContainsString('Proses Put-away', $html);
+        $this->assertStringNotContainsString('Put-away', $html);
         $this->assertStringNotContainsString('Proses Picking', $html);
         $this->assertStringNotContainsString('Penerimaan Retur', $html);
         $this->assertStringNotContainsString('Billing & Piutang', $html);
@@ -178,10 +178,10 @@ class SidebarAccessTest extends TestCase
 
         $html = $this->get('/wms/dashboard/operator')->assertOk()->getContent();
 
-        $this->assertStringContainsString('Proses Put-away', $html);
+        $this->assertStringContainsString('Put-away', $html);
         $this->assertStringContainsString('Proses Picking', $html);
         $this->assertStringContainsString('Penerimaan Retur', $html);
-        $this->assertStringContainsString('Data Stok (Inventory)', $html);
+        $this->assertStringContainsString('Data Stok', $html);
 
         $this->assertStringNotContainsString('Input Produksi', $html);
         $this->assertStringNotContainsString('Terima Pesanan', $html);
@@ -285,7 +285,7 @@ class SidebarAccessTest extends TestCase
 
         // Tidak boleh ada jejak menu Portal WMS di layout Sales.
         $this->assertStringNotContainsString('Berger WMS', $html);
-        $this->assertStringNotContainsString('Data Stok (Inventory)', $html);
+        $this->assertStringNotContainsString('Data Stok', $html);
         $this->assertStringNotContainsString('My Customers', $html);
     }
 }

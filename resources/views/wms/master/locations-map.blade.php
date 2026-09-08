@@ -437,7 +437,7 @@
                         + '<td><div class="fw-semibold font-monospace small">' + lolos(b.sku) + '</div>'
                             + '<div class="text-muted" style="font-size:.72rem">' + lolos(b.nama) + '</div>'
                             + (b.masalah_kualitas
-                                ? '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger">Masalah Kualitas</span>'
+                                ? '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger">Quality Issue</span>'
                                 : '')
                             + (b.dahulukan
                                 ? '<span class="badge bg-success-subtle text-success-emphasis border border-success" title="'

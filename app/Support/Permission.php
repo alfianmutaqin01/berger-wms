@@ -62,7 +62,7 @@ class Permission
     public const INVENTORY_TRANSFER = 'inventory.transfer';
 
     /**
-     * Penanda batch: Karantina, Masalah Kualitas, dan Dahulukan Keluar —
+     * Penanda batch: Karantina, Quality Issue, dan Dahulukan Keluar —
      * permintaan pemilik produk, bukan PRD.
      *
      * SENGAJA DIPISAH dari INVENTORY_ADJUST. Koreksi qty dan penandaan DDP
@@ -73,7 +73,7 @@ class Permission
     public const INVENTORY_QUARANTINE = 'inventory.quarantine';
 
     /**
-     * MEMASUKKAN hasil hitungan fisik saat stok opname.
+     * MEMASUKKAN hasil hitungan fisik saat stocktake.
      *
      * Terbuka sampai Operator Gudang: merekalah yang berdiri di depan rak dan
      * menghitung. Memasukkan hitungan TIDAK mengubah stok sama sekali — ia
@@ -82,7 +82,7 @@ class Permission
     public const STOCKTAKE_COUNT = 'stocktake.count';
 
     /**
-     * Membuka sesi opname dan MENGESAHKAN laporannya.
+     * Membuka sesi stocktake dan MENGESAHKAN laporannya.
      *
      * SENGAJA DIPISAH dari yang menghitung. Pengesahan itulah yang benar-benar
      * menggeser angka stok — kadang ribuan unit sekaligus — dan orang yang

@@ -77,6 +77,14 @@
                         <a href="{{ route('wms.picking.show', $daftar) }}" class="btn btn-primary btn-lg rounded-3">
                             <i class="bi bi-arrow-right-circle me-1"></i> Lanjutkan
                         </a>
+                        {{-- Alasannya wajib, jadi pelepasannya lewat layar
+                             rincian — bukan satu ketuk dari sini. Melepas tugas
+                             tanpa sebab membuat Logistik menemukan daftar yang
+                             kembali ke antrean tanpa tahu harus diapakan. --}}
+                        <a href="{{ route('wms.picking.show', $daftar) }}#modalLepasTugas"
+                           class="btn btn-outline-secondary btn-sm rounded-3">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i> Batal Ambil Tugas
+                        </a>
                     @else
                         {{-- Tugas orang lain tetap TERLIHAT, tapi tidak bisa
                              diambil. Menyembunyikannya membuat operator

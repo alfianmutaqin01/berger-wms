@@ -64,13 +64,13 @@
         </button>
     @endif
 
-    {{-- Masalah Kualitas: murni penanda informasi, jadi TIDAK dibatasi oleh
+    {{-- Quality Issue: murni penanda informasi, jadi TIDAK dibatasi oleh
          status baris — batch yang sudah DDP atau sedang dikarantina pun
          tetap boleh diberi penanda ini. --}}
     <form method="POST" action="{{ route('wms.inventory.quality-issue', $stock) }}" class="d-inline">
         @csrf
         <button type="submit" class="btn btn-sm {{ $stock->has_quality_issue ? 'btn-danger' : 'btn-outline-danger' }}"
-                title="{{ $stock->has_quality_issue ? 'Lepas penanda Masalah Kualitas' : 'Tandai ada Masalah Kualitas (tidak menahan stok)' }}">
+                title="{{ $stock->has_quality_issue ? 'Lepas penanda Quality Issue' : 'Tandai ada Quality Issue (tidak menahan stok)' }}">
             <i class="bi bi-exclamation-diamond"></i>
         </button>
     </form>

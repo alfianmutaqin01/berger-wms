@@ -808,4 +808,160 @@ class PickingTest extends TestCase
 
         return $daftar->refresh();
     }
+
+    /* --------------------------------------------------- Melepas tugas */
+
+    public function test_operator_dapat_melepas_tugas_yang_sudah_diambil(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Pengiriman digeser ke besok.',
+        ])->assertSessionHas('warning');
+
+        $segar = $daftar->refresh();
+
+        $this->assertSame(PickingList::STATUS_OPEN, $segar->status);
+        $this->assertNull($segar->claimed_by);
+        $this->assertNull($segar->claimed_at);
+    }
+
+    public function test_pesanan_kembali_ke_status_diterima_saat_tugas_dilepas(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Dioper ke operator lain.',
+        ]);
+
+        // Layar Sales & Logistik harus berhenti mengatakan barangnya sedang
+        // diambil begitu tidak ada lagi yang mengambilnya.
+        $this->assertSame(SalesOrder::STATUS_APPROVED, $daftar->orders()->first()->status);
+    }
+
+    public function test_baris_yang_sudah_ditandai_dikosongkan_saat_tugas_dilepas(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+        $baris = $daftar->items()->first();
+
+        $this->post(route('wms.picking.item.pick', [$daftar, $baris]));
+        $this->assertNotSame(PickingListItem::STATUS_PENDING, $baris->fresh()->status);
+
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Pengiriman digeser ke besok.',
+        ]);
+
+        $this->assertSame(PickingListItem::STATUS_PENDING, $baris->fresh()->status,
+            'Operator berikutnya tidak boleh mewarisi tanda yang tidak ia buat sendiri.');
+        $this->assertNull($baris->fresh()->qty_picked);
+    }
+
+    /**
+     * Menandai baris TIDAK menyentuh stok — yang menggerakkan angka hanya
+     * Siap Loading. Karena itu melepas tugas tidak perlu membalik apa pun,
+     * dan test ini yang menjaga anggapan itu tetap benar.
+     */
+    public function test_melepas_tugas_tidak_menggerakkan_stok_sama_sekali(): void
+    {
+        $stok = $this->stok(100);
+        $daftar = $this->daftarSiapDikerjakan(10, $stok);
+        $baris = $daftar->items()->first();
+
+        $sebelumTersedia = $stok->fresh()->qty_available;
+        $sebelumTeralokasi = $stok->fresh()->qty_allocated;
+
+        $this->post(route('wms.picking.item.pick', [$daftar, $baris]));
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Pengiriman digeser ke besok.',
+        ]);
+
+        $this->assertSame($sebelumTersedia, $stok->fresh()->qty_available);
+        $this->assertSame($sebelumTeralokasi, $stok->fresh()->qty_allocated);
+    }
+
+    public function test_daftar_yang_dilepas_bisa_diambil_operator_lain(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Dioper ke operator lain.',
+        ]);
+
+        $lain = $this->loginAt($this->karawang, Role::WAREHOUSE_OPERATOR);
+        $this->post(route('wms.picking.claim', $daftar))->assertSessionHas('success');
+
+        $this->assertSame($lain->id, $daftar->refresh()->claimed_by);
+    }
+
+    public function test_alasan_wajib_diisi_saat_melepas_tugas(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->post(route('wms.picking.release', $daftar), ['release_reason' => ''])
+            ->assertSessionHasErrors('release_reason');
+
+        $this->assertSame(PickingList::STATUS_PICKING, $daftar->refresh()->status);
+    }
+
+    public function test_operator_tidak_boleh_melepas_tugas_operator_lain(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->loginAt($this->karawang, Role::WAREHOUSE_OPERATOR);
+
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Coba melepas tugas orang lain.',
+        ])->assertSessionHas('error');
+
+        $this->assertSame(PickingList::STATUS_PICKING, $daftar->refresh()->status);
+    }
+
+    /**
+     * Satu-satunya jalan saat operatornya sudah pulang dan daftarnya
+     * tertinggal terkunci atas namanya.
+     */
+    public function test_logistik_boleh_melepas_tugas_operator_yang_sudah_pulang(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->loginAt($this->karawang, Role::LOGISTICS);
+
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Operator sudah pulang, dioper besok pagi.',
+        ])->assertSessionHas('warning');
+
+        $this->assertSame(PickingList::STATUS_OPEN, $daftar->refresh()->status);
+        $this->assertNull($daftar->refresh()->claimed_by);
+    }
+
+    public function test_daftar_yang_sudah_selesai_tidak_bisa_dilepas(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        foreach ($daftar->items as $baris) {
+            $this->post(route('wms.picking.item.pick', [$daftar, $baris]));
+        }
+        $this->post(route('wms.picking.complete', $daftar));
+
+        $this->assertSame(PickingList::STATUS_COMPLETED, $daftar->refresh()->status);
+
+        // Sesudah Siap Loading, barangnya sudah turun ke dock dan stok sudah
+        // berkurang. Melepas tugas di titik ini tidak membalik apa pun.
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Coba melepas yang sudah selesai.',
+        ])->assertSessionHas('error');
+
+        $this->assertSame(PickingList::STATUS_COMPLETED, $daftar->refresh()->status);
+    }
+
+    public function test_gudang_lain_tidak_boleh_melepas_tugas(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->loginAt($this->pekanbaru, Role::LOGISTICS);
+
+        $this->post(route('wms.picking.release', $daftar), [
+            'release_reason' => 'Percobaan lintas gudang.',
+        ])->assertForbidden();
+    }
 }

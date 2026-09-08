@@ -113,6 +113,14 @@
                 </label>
             </div>
 
+            {{-- Pengiriman digeser ke besok, atau tugasnya dioper ke orang
+                 lain. Tanpa pintu ini satu-satunya jalan adalah Logistik
+                 membubarkan seluruh daftar lalu menyusunnya lagi dari nol. --}}
+            <button type="button" class="btn btn-outline-secondary rounded-3"
+                    data-bs-toggle="modal" data-bs-target="#modalLepasTugas">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Batal Ambil Tugas
+            </button>
+
             <form method="POST" action="{{ route('wms.picking.complete', $list) }}" id="formSelesai"
                   onsubmit="return confirm('Selesaikan daftar ini? Stok di rak akan berkurang dan pesanannya berpindah ke Siap Kirim.');">
                 @csrf
@@ -122,6 +130,15 @@
                 </button>
             </form>
         </div>
+        @elseif($bolehMelepasTugas)
+        {{-- Logistik/Manager: melepas tugas milik operator lain. Satu-satunya
+             jalan saat operatornya sudah pulang dan daftarnya tertinggal
+             terkunci atas namanya. --}}
+        <button type="button" class="btn btn-outline-warning rounded-3"
+                data-bs-toggle="modal" data-bs-target="#modalLepasTugas">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>
+            Lepas Tugas {{ $list->claimedBy?->full_name }}
+        </button>
         @endif
     </div>
 
@@ -250,6 +267,53 @@
         </div>
     </div>
 </div>
+
+@if($bolehDikerjakan || $bolehMelepasTugas)
+<div class="modal fade" id="modalLepasTugas" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ route('wms.picking.release', $list) }}" class="modal-content rounded-4 border-0">
+            @csrf
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-arrow-counterclockwise text-secondary me-2"></i>Lepas Tugas Picking
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">
+                    Daftar <strong class="font-monospace">{{ $list->list_number }}</strong> kembali ke antrean
+                    dan bisa diambil operator lain. Isinya <strong>tidak dibubarkan</strong> — kalau susunannya
+                    memang perlu diubah, Logistik yang mengaturnya dari halaman Daftar Picking.
+                </p>
+
+                @if($ringkas['selesai'] > 0)
+                    {{-- Wajib disebut. Operator yang sudah menandai beberapa rak
+                         berhak tahu bahwa tandanya akan hilang — dan itu memang
+                         harus hilang, karena operator berikutnya tidak boleh
+                         mewarisi tanda yang tidak ia buat sendiri. --}}
+                    <div class="alert alert-warning border-0 rounded-3 small">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        <strong>{{ $ringkas['selesai'] }} baris sudah ditandai</strong> dan tandanya akan
+                        dikosongkan. Stok di rak tidak berubah sama sekali — yang mengurangi stok hanya
+                        tombol Siap Loading, dan itu belum ditekan.
+                    </div>
+                @endif
+
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold">Alasan <span class="text-danger">*</span></label>
+                    <textarea name="release_reason" class="form-control" rows="2" maxlength="500" required
+                              placeholder="Contoh: pengiriman digeser ke besok. / Dioper ke Pak Dedi."></textarea>
+                    <small class="text-muted">Terbaca Logistik saat ia mengatur ulang daftar picking.</small>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-warning fw-bold">Lepas Tugas</button>
+            </div>
+        </form>
+    </div>
+</div>
+@endif
 
 @if($bolehDikerjakan)
 {{-- Pintu keadaan khusus. Sengaja di balik satu ketukan tambahan supaya

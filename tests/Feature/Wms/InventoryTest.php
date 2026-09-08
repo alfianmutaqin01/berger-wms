@@ -383,7 +383,7 @@ class InventoryTest extends TestCase
         $this->post('/wms/inventory/adjust', [
             'stock_id' => $stock->id,
             'qty_new' => 178,
-            'reason' => 'Hasil opname 31 Agu 2026, 2 pail rusak saat penurunan.',
+            'reason' => 'Hasil stocktake 31 Agu 2026, 2 pail rusak saat penurunan.',
         ])->assertSessionHas('success');
 
         $this->assertSame(178, $stock->fresh()->qty_available);
@@ -394,7 +394,7 @@ class InventoryTest extends TestCase
         $this->assertSame(180, $ledger->qty_before);
         $this->assertSame(178, $ledger->qty_after);
         $this->assertSame($manager->id, $ledger->user_id);
-        $this->assertStringContainsString('opname', $ledger->notes);
+        $this->assertStringContainsString('stocktake', $ledger->notes);
     }
 
     public function test_koreksi_tanpa_alasan_ditolak(): void
@@ -535,7 +535,7 @@ class InventoryTest extends TestCase
         $this->loginAs();
         $stock = $this->stock();
         $this->post('/wms/inventory/adjust', [
-            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi opname.',
+            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi stocktake.',
         ]);
 
         $ledger = StockMovement::first();
@@ -549,7 +549,7 @@ class InventoryTest extends TestCase
         $this->loginAs();
         $stock = $this->stock();
         $this->post('/wms/inventory/adjust', [
-            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi opname.',
+            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi stocktake.',
         ]);
 
         $ledger = StockMovement::first();
@@ -679,7 +679,7 @@ class InventoryTest extends TestCase
             'batch_no' => 'BT-UJI-001',
             'production_date' => now()->subMonth()->toDateString(),
             'qty' => 12,
-            'reason' => 'Stok opname, barang sudah di rak.',
+            'reason' => 'Stocktake, barang sudah di rak.',
         ])->assertSessionHas('success');
 
         $stok = InventoryStock::where('product_id', $produk->id)->first();
@@ -714,7 +714,7 @@ class InventoryTest extends TestCase
             'batch_no' => 'BT-UJI-002',
             'production_date' => now()->subMonth()->toDateString(),
             'qty' => 12,
-            'reason' => 'Stok opname, barang sudah di rak.',
+            'reason' => 'Stocktake, barang sudah di rak.',
         ])->assertSessionHasErrors('location_code');
 
         $this->assertSame(0, InventoryStock::count());

@@ -16,7 +16,7 @@ use Throwable;
  * DICATAT DI TEMPAT KEJADIAN, BUKAN LEWAT OBSERVER MODEL. Observer tahu kolom
  * mana yang berubah tetapi tidak tahu MENGAPA: satu baris stok yang qty-nya
  * turun terlihat sama persis entah ia dikoreksi Manager, dipicking operator,
- * atau disahkan lewat opname. Yang perlu dibaca orang enam bulan kemudian
+ * atau disahkan lewat stocktake. Yang perlu dibaca orang enam bulan kemudian
  * adalah maksudnya, dan maksud itu hanya diketahui di titik tindakannya.
  *
  * MENCATAT TIDAK BOLEH MENGGAGALKAN TINDAKANNYA. Kalau penulisan log gagal —

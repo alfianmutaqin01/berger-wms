@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Penanda batch "Formula Lama" diganti jadi "Masalah Kualitas" —
+ * Penanda batch "Formula Lama" diganti jadi "Quality Issue" —
  * permintaan pemilik produk.
  *
  * KOLOMNYA DIGANTI NAMA, BUKAN DITAMBAH BARU. Penandanya sudah dipakai di

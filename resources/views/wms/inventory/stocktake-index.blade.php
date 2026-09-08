@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Stok Opname')
-@section('page_title', 'Stok Opname')
+@section('title', 'Stocktake')
+@section('page_title', 'Stocktake')
 
 @section('content')
 {{-- Permintaan pemilik produk: mencocokkan angka sistem dengan barang yang
@@ -43,7 +43,7 @@
     @can(\App\Support\Permission::STOCKTAKE_MANAGE)
     <div class="card border-0 shadow-sm rounded-4 mb-4">
         <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-clipboard-check text-primary me-2"></i> Buka Sesi Opname</h5>
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-clipboard-check text-primary me-2"></i> Buka Sesi Stocktake</h5>
             <small class="text-muted">
                 Angka sistem dibekukan saat sesi dibuka. Stok tidak berubah sampai laporannya disahkan.
             </small>
@@ -92,7 +92,7 @@
                 <div class="col-12">
                     <label class="form-label small fw-semibold mt-2">Catatan (opsional)</label>
                     <input type="text" name="note" class="form-control" maxlength="1000"
-                           placeholder="mis. opname triwulan III">
+                           placeholder="mis. stocktake triwulan III">
                 </div>
             </form>
         </div>
@@ -102,7 +102,7 @@
 
 <div class="card shadow-sm border-0 rounded-4">
     <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
-        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-clock-history text-primary me-2"></i> Riwayat Opname</h5>
+        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-clock-history text-primary me-2"></i> Riwayat Stocktake</h5>
         <small class="text-muted">Terbaru di atas.</small>
     </div>
     <div class="card-body px-4 pt-3">
@@ -170,7 +170,7 @@
                     <tr>
                         <td colspan="7" class="text-center py-5 text-muted">
                             <i class="bi bi-clipboard-check display-6 d-block mb-2 opacity-50"></i>
-                            Belum pernah ada stok opname.
+                            Belum pernah ada stocktake.
                         </td>
                     </tr>
                 @endforelse

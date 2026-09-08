@@ -43,6 +43,10 @@ class ActivityLog extends Model
 
     public const STOCKTAKE_FINALIZE = 'stocktake.finalize';
 
+    public const PICKING_RELEASE = 'picking.release';
+
+    public const ORDER_RESHIP = 'order.reship';
+
     /** Label Indonesia untuk penyaring & tampilan. */
     public const ACTION_LABELS = [
         self::STOCK_ADD => 'Tambah Stok',
@@ -50,12 +54,14 @@ class ActivityLog extends Model
         self::STOCK_TRANSFER => 'Pindah Rak',
         self::QUARANTINE_PLACE => 'Karantina',
         self::QUARANTINE_RELEASE => 'Lepas Karantina',
-        self::QUALITY_ISSUE => 'Penanda Masalah Kualitas',
+        self::QUALITY_ISSUE => 'Penanda Quality Issue',
         self::PRIORITIZE => 'Dahulukan Keluar',
         self::PRIORITIZE_RELEASE => 'Lepas Dahulukan Keluar',
         self::BOOKING_CREATE => 'Buat Booking',
         self::BOOKING_CANCEL => 'Batal Booking',
-        self::STOCKTAKE_FINALIZE => 'Sahkan Stok Opname',
+        self::STOCKTAKE_FINALIZE => 'Sahkan Stocktake',
+        self::PICKING_RELEASE => 'Lepas Tugas Picking',
+        self::ORDER_RESHIP => 'Kirim Ulang Outstanding',
     ];
 
     public $timestamps = false;

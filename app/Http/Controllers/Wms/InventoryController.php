@@ -781,7 +781,7 @@ class InventoryController extends Controller
     }
 
     /**
-     * Menyalakan/mematikan penanda Masalah Kualitas untuk satu batch.
+     * Menyalakan/mematikan penanda Quality Issue untuk satu batch.
      *
      * MURNI INFORMASI — tidak menyentuh status maupun kelayakan jual. Lihat
      * App\Support\Inventory\StockQuarantine::toggleQualityIssue().
@@ -795,7 +795,7 @@ class InventoryController extends Controller
         Activity::record(
             ActivityLog::QUALITY_ISSUE,
             sprintf(
-                '%s penanda Masalah Kualitas pada batch %s (%s).',
+                '%s penanda Quality Issue pada batch %s (%s).',
                 $hasil['nilai'] ? 'Memasang' : 'Melepas',
                 $stock->batch_no ?? '—',
                 $stock->product?->sku ?? '—',
@@ -806,18 +806,18 @@ class InventoryController extends Controller
         );
 
         // Kalimatnya sengaja menyebut ulang bahwa stoknya TIDAK ditahan.
-        // Penanda bernama "Masalah Kualitas" mudah dikira sudah mengunci
+        // Penanda bernama "Quality Issue" mudah dikira sudah mengunci
         // batch dari penjualan; kalau dikira begitu, batchnya justru tetap
         // terjual tanpa ada yang sadar.
         return back()->with('success', $hasil['nilai']
             ? sprintf(
-                '%d baris stok batch %s ditandai "Masalah Kualitas". Penanda ini tidak menahan stok — '.
+                '%d baris stok batch %s ditandai "Quality Issue". Penanda ini tidak menahan stok — '.
                 'pakai Karantina atau DDP kalau batch ini tidak boleh keluar gudang.',
                 $hasil['jumlah'],
                 $stock->batch_no,
             )
             : sprintf(
-                'Penanda "Masalah Kualitas" dilepas dari %d baris stok batch %s.',
+                'Penanda "Quality Issue" dilepas dari %d baris stok batch %s.',
                 $hasil['jumlah'],
                 $stock->batch_no,
             ));

@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\DB;
  * dianggap kebenaran, sehingga mengimpor berkas yang sama dua kali
  * menghasilkan angka yang sama. Kalau ditambahkan, satu impor ulang yang
  * tidak disengaja melipatgandakan stok seluruh gudang tanpa tanda apa pun,
- * dan baru ketahuan saat stock opname berikutnya.
+ * dan baru ketahuan saat stocktake berikutnya.
  */
 class OpeningStockImporter extends Importer
 {

@@ -236,7 +236,7 @@
                                                 @if($stock->has_quality_issue)
                                                     <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
                                                           title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
-                                                        Masalah Kualitas
+                                                        Quality Issue
                                                     </span>
                                                 @endif
                                                 @if($stock->prioritize_out)
@@ -320,7 +320,7 @@
                                                 @if($stock->has_quality_issue)
                                                     <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
                                                           title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
-                                                        Masalah Kualitas
+                                                        Quality Issue
                                                     </span>
                                                 @endif
                                                 @if($stock->prioritize_out)
@@ -402,7 +402,7 @@
                                                 @if($stock->has_quality_issue)
                                                     <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
                                                           title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
-                                                        Masalah Kualitas
+                                                        Quality Issue
                                                     </span>
                                                 @endif
                                                 @if($stock->prioritize_out)
@@ -564,7 +564,7 @@
                         <label for="tsAlasan" class="form-label fw-semibold">Alasan <span class="text-danger">*</span></label>
                         <textarea name="reason" id="tsAlasan" rows="2" required minlength="5" maxlength="500"
                                   class="form-control"
-                                  placeholder="mis. Stok opname 1 Sep, barang sudah di rak sejak sebelum sistem dipakai">{{ old('reason') }}</textarea>
+                                  placeholder="mis. Stocktake 1 Sep, barang sudah di rak sejak sebelum sistem dipakai">{{ old('reason') }}</textarea>
                         <small class="text-muted">Tercatat di ledger sebagai koreksi, berikut nama Anda.</small>
                     </div>
                 </div>
@@ -676,7 +676,7 @@
                 <div class="mb-2">
                     <label class="form-label small fw-semibold">Alasan Koreksi <span class="text-danger">*</span></label>
                     <textarea name="reason" class="form-control" rows="2" minlength="5" maxlength="500" required
-                              placeholder="Contoh: hasil opname 31 Agu 2026, selisih 2 pail rusak saat penurunan."></textarea>
+                              placeholder="Contoh: hasil stocktake 31 Agu 2026, selisih 2 pail rusak saat penurunan."></textarea>
                     <small class="text-muted">Wajib diisi — tercatat permanen di ledger stok.</small>
                 </div>
             </div>

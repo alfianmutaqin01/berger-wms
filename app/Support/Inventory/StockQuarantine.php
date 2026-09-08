@@ -22,7 +22,7 @@ use RuntimeException;
  * bertanda langsung naik ke depan. Melarangnya justru memaksa Logistik
  * mengingat untuk menandai ulang setelah karantina berakhir.
  *
- * SATU BATCH, SATU KEPUTUSAN. Baik karantina maupun masalah kualitas
+ * SATU BATCH, SATU KEPUTUSAN. Baik karantina maupun quality issue
  * diterapkan ke SELURUH baris `product_id + warehouse_id + batch_no`, bukan
  * satu baris saja — keduanya melekat pada apa yang terjadi saat produksi/
  * pengujian, bukan pada rak tempat sekarang barangnya duduk. Satu batch yang
@@ -127,7 +127,7 @@ class StockQuarantine
     }
 
     /**
-     * Menyalakan/mematikan penanda Masalah Kualitas untuk satu batch.
+     * Menyalakan/mematikan penanda Quality Issue untuk satu batch.
      *
      * MURNI INFORMASI. Tidak menyentuh `status`, tidak menghalangi FIFO —
      * hanya penanda supaya Logistik tahu batch mana yang pernah bermasalah
@@ -171,7 +171,7 @@ class StockQuarantine
      * ditanyakan orang, dan tanpa alasan tertulis penanda yang dimaksudkan
      * sementara berubah jadi keadaan permanen tanpa pemilik.
      *
-     * DICATAT KE LEDGER, berbeda dari Masalah Kualitas. Qty-nya memang tidak
+     * DICATAT KE LEDGER, berbeda dari Quality Issue. Qty-nya memang tidak
      * berubah, tetapi ini keputusan yang MENGUBAH barang mana yang keluar ke
      * pelanggan — persis jenis kejadian yang harus bisa ditelusuri, sama
      * seperti karantina.

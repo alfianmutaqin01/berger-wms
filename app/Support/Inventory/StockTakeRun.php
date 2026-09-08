@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Seluruh aturan stok opname, di satu tempat.
+ * Seluruh aturan stocktake, di satu tempat.
  *
  * TIGA KEPUTUSAN YANG MEMBENTUK BERKAS INI
  * ----------------------------------------
@@ -20,14 +20,14 @@ use RuntimeException;
  * 1. ANGKA SISTEM DIBEKUKAN SAAT SESI DIBUKA. Menghitung satu gudang makan
  *    waktu berjam-jam sampai berhari-hari, dan selama itu barang tetap
  *    keluar-masuk. Kalau pembandingnya angka "sekarang", tiap pengiriman yang
- *    berangkat di tengah penghitungan terbaca sebagai selisih opname —
+ *    berangkat di tengah penghitungan terbaca sebagai selisih stocktake —
  *    padahal ia pergerakan yang benar dan sudah tercatat rapi di ledger.
  *
  * 2. KOREKSINYA DITERAPKAN SEBAGAI SELISIH, BUKAN PENIMPAAN. Yang ditambahkan
  *    ke stok saat pengesahan adalah (fisik - beku), bukan angka fisiknya
  *    langsung. Dengan begitu barang yang sah keluar SETELAH raknya dihitung
- *    tidak dihidupkan kembali oleh laporan opname. Inilah yang membuat opname
- *    tidak perlu membekukan seluruh operasi gudang — dan tanpa itu, opname
+ *    tidak dihidupkan kembali oleh laporan stocktake. Inilah yang membuat stocktake
+ *    tidak perlu membekukan seluruh operasi gudang — dan tanpa itu, stocktake
  *    justru menjadi sumber selisih baru.
  *
  * 3. STOK BARU BERUBAH SAAT LAPORAN DISAHKAN (keputusan pemilik produk).
@@ -57,7 +57,7 @@ class StockTakeRun
         return DB::transaction(function () use ($gudang, $scopeType, $scopeValue, $catatan, $userId) {
             if (StockTake::berjalan()->where('warehouse_id', $gudang->id)->exists()) {
                 throw new RuntimeException(
-                    'Gudang ini masih punya sesi opname yang berjalan. Selesaikan atau batalkan sesi itu '.
+                    'Gudang ini masih punya sesi stocktake yang berjalan. Selesaikan atau batalkan sesi itu '.
                     'lebih dulu — dua sesi sekaligus berarti dua angka beku untuk rak yang sama.'
                 );
             }
@@ -123,7 +123,7 @@ class StockTakeRun
     /**
      * Mengesahkan laporan: seluruh selisih diterapkan ke stok.
      *
-     * SATU-SATUNYA titik di mana opname menyentuh angka stok.
+     * SATU-SATUNYA titik di mana stocktake menyentuh angka stok.
      *
      * @return array{baris:int, disesuaikan:int, naik:int, turun:int, belum:int}
      *
@@ -252,7 +252,7 @@ class StockTakeRun
                 'reference_id' => $sesi->id,
                 'batch_no' => $item->batch_no,
                 'notes' => sprintf(
-                    'Stok opname %s: hitungan fisik %d, sistem %d (batch %s).',
+                    'Stocktake %s: hitungan fisik %d, sistem %d (batch %s).',
                     $sesi->reference,
                     (int) $item->qty_physical,
                     (int) $item->qty_system,
@@ -292,7 +292,7 @@ class StockTakeRun
 
         throw new RuntimeException(sprintf(
             'Rak ini punya %d unit yang sudah dicadangkan untuk pesanan, sementara hasil hitungan hanya %d. '.
-            'Barang yang sudah dijanjikan ke pelanggan tidak boleh hilang lewat opname — batalkan dulu '.
+            'Barang yang sudah dijanjikan ke pelanggan tidak boleh hilang lewat stocktake — batalkan dulu '.
             'alokasinya atau perbaiki pesanannya, baru hitungan ini bisa disimpan.',
             $stok->qty_allocated,
             $qtyFisik,

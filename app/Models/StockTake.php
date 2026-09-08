@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Satu sesi stok opname.
+ * Satu sesi stocktake.
  *
  * Siklusnya pendek dan sengaja hanya punya satu pintu keluar yang mengubah
  * stok: counting -> finalized. Selama masih counting, tidak satu pun angka

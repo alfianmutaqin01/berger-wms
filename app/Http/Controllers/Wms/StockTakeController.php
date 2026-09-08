@@ -18,12 +18,12 @@ use Illuminate\View\View;
 use RuntimeException;
 
 /**
- * Stok opname — mencocokkan angka sistem dengan barang yang benar-benar ada
+ * Stocktake — mencocokkan angka sistem dengan barang yang benar-benar ada
  * di rak, sebulan atau tiga bulan sekali (permintaan pemilik produk).
  *
  * MENGAPA MENU SENDIRI, BUKAN MENUMPANG DENAH
  * -------------------------------------------
- * Denah menjawab "di mana barangnya" dan boleh dibuka kapan saja. Opname
+ * Denah menjawab "di mana barangnya" dan boleh dibuka kapan saja. Stocktake
  * adalah PROSES bertahap dengan awal, akhir, dan penanggung jawab: sesi
  * dibuka, rak dihitung satu per satu selama berhari-hari, lalu laporannya
  * disahkan dan stok berubah. Menaruh proses berpemilik seperti itu di dalam
@@ -44,7 +44,7 @@ use RuntimeException;
  */
 class StockTakeController extends Controller
 {
-    public function __construct(private readonly StockTakeRun $opname) {}
+    public function __construct(private readonly StockTakeRun $stocktake) {}
 
     public function index(Request $request): View
     {
@@ -100,7 +100,7 @@ class StockTakeController extends Controller
         }
 
         try {
-            $sesi = $this->opname->open(
+            $sesi = $this->stocktake->open(
                 Warehouse::findOrFail($data['warehouse_id']),
                 $data['scope_type'],
                 $nilai,
@@ -112,7 +112,7 @@ class StockTakeController extends Controller
         }
 
         return redirect()->route('wms.stocktake.show', $sesi)->with('success', sprintf(
-            'Sesi opname %s dibuka. %d baris stok dibekukan angkanya — stok belum berubah sama sekali '.
+            'Sesi stocktake %s dibuka. %d baris stok dibekukan angkanya — stok belum berubah sama sekali '.
             'sampai laporannya disahkan.',
             $sesi->reference,
             $sesi->items()->count(),
@@ -146,7 +146,7 @@ class StockTakeController extends Controller
      *
      * MENJAWAB DUA PEMANGGIL, dan itu disengaja. Layar penghitungan
      * mengirimnya lewat fetch() dan menerima JSON, sehingga halaman TIDAK
-     * dimuat ulang: sesi opname bisa berisi ribuan baris, dan memuat ulang
+     * dimuat ulang: sesi stocktake bisa berisi ribuan baris, dan memuat ulang
      * setiap kali satu baris disimpan akan melempar orang yang sudah
      * menghitung sampai baris terakhir kembali ke puncak halaman.
      *
@@ -171,7 +171,7 @@ class StockTakeController extends Controller
         ]);
 
         try {
-            $this->opname->count(
+            $this->stocktake->count(
                 $item,
                 (int) $data['qty_physical'],
                 $data['count_note'] ?? null,
@@ -216,7 +216,7 @@ class StockTakeController extends Controller
         WarehouseScope::assert($stocktake->warehouse_id, $request->user());
 
         try {
-            $hasil = $this->opname->finalize($stocktake, $request->user()?->id);
+            $hasil = $this->stocktake->finalize($stocktake, $request->user()?->id);
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -224,7 +224,7 @@ class StockTakeController extends Controller
         Activity::record(
             ActivityLog::STOCKTAKE_FINALIZE,
             sprintf(
-                'Mengesahkan laporan stok opname %s: %d baris disesuaikan (+%d / -%d unit), %d baris belum dihitung.',
+                'Mengesahkan laporan stocktake %s: %d baris disesuaikan (+%d / -%d unit), %d baris belum dihitung.',
                 $stocktake->reference,
                 $hasil['disesuaikan'],
                 $hasil['naik'],
@@ -243,7 +243,7 @@ class StockTakeController extends Controller
         );
 
         $pesan = sprintf(
-            'Laporan opname %s disahkan. %d baris disesuaikan (+%d / -%d unit).',
+            'Laporan stocktake %s disahkan. %d baris disesuaikan (+%d / -%d unit).',
             $stocktake->reference,
             $hasil['disesuaikan'],
             $hasil['naik'],
@@ -254,7 +254,7 @@ class StockTakeController extends Controller
             // Dikatakan apa adanya. Laporan yang menyembunyikan bagian yang
             // belum dihitung akan dibaca sebagai "seluruh gudang sudah cocok".
             $pesan .= sprintf(
-                ' %d baris TIDAK sempat dihitung dan sengaja tidak disentuh — cakupan opname ini belum penuh.',
+                ' %d baris TIDAK sempat dihitung dan sengaja tidak disentuh — cakupan stocktake ini belum penuh.',
                 $hasil['belum'],
             );
         }
@@ -268,19 +268,19 @@ class StockTakeController extends Controller
         WarehouseScope::assert($stocktake->warehouse_id, $request->user());
 
         try {
-            $this->opname->cancel($stocktake, $request->user()?->id);
+            $this->stocktake->cancel($stocktake, $request->user()?->id);
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
 
         return redirect()->route('wms.stocktake.index')->with('success', sprintf(
-            'Sesi opname %s dibatalkan. Tidak ada angka stok yang berubah.',
+            'Sesi stocktake %s dibatalkan. Tidak ada angka stok yang berubah.',
             $stocktake->reference,
         ));
     }
 
     /**
-     * Laporan stok global hasil opname — per SKU, bukan per rak.
+     * Laporan stok global hasil stocktake — per SKU, bukan per rak.
      *
      * Yang ditanyakan pembacanya adalah "SKU ini sekarang berapa", dan
      * jawabannya tidak boleh berupa daftar rak yang harus dijumlahkan sendiri.

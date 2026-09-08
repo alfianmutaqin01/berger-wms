@@ -302,7 +302,7 @@
                     Dokumen menyebut <strong>lebih banyak</strong> daripada yang tercatat dipicking.
                     Dokumen BC yang berlaku, jadi selisihnya tetap dinyatakan berangkat dan
                     <strong>dikeluarkan dari stok</strong> — artinya isi rak sebenarnya lebih sedikit daripada
-                    angka di sistem. Selisih ini akan tercatat di Riwayat Mutasi untuk ditelusuri saat opname.
+                    angka di sistem. Selisih ini akan tercatat di Riwayat Mutasi untuk ditelusuri saat stocktake.
                 </div>
                 @endif
 

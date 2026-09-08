@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Laporan Opname '.$sesi->reference)
-@section('page_title', 'Laporan Opname '.$sesi->reference)
+@section('title', 'Laporan Stocktake '.$sesi->reference)
+@section('page_title', 'Laporan Stocktake '.$sesi->reference)
 
 @push('styles')
 <style>
@@ -17,14 +17,14 @@
 @endpush
 
 @section('content')
-{{-- Laporan stok global hasil opname — PER SKU, bukan per rak.
+{{-- Laporan stok global hasil stocktake — PER SKU, bukan per rak.
      Yang ditanyakan pembacanya adalah "SKU ini sekarang berapa", dan
      jawabannya tidak boleh berupa daftar rak yang harus dijumlahkan sendiri.
      Rincian per raknya tetap ada di layar penghitungan. --}}
 
 <div class="no-print mb-3 d-flex flex-wrap gap-2">
     <a href="{{ route('wms.stocktake.index') }}" class="btn btn-sm btn-light rounded-3">
-        <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar opname
+        <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar stocktake
     </a>
     <button type="button" class="btn btn-sm btn-primary rounded-3" onclick="window.print()">
         <i class="bi bi-printer me-1"></i> Cetak
@@ -43,7 +43,7 @@
     <div class="card-body p-4">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 border-bottom pb-3 mb-3">
             <div>
-                <h4 class="fw-bold text-dark mb-1">Laporan Stok Opname</h4>
+                <h4 class="fw-bold text-dark mb-1">Laporan Stocktake</h4>
                 <div class="fs-5 font-monospace">{{ $sesi->reference }}</div>
             </div>
             <div class="small text-muted text-md-end">
@@ -80,7 +80,7 @@
             <div class="alert alert-secondary border-0 rounded-3">
                 <i class="bi bi-info-circle me-2"></i>
                 <strong>{{ number_format($ringkasan['belum']) }} dari {{ number_format($ringkasan['baris']) }} baris
-                tidak dihitung</strong> dalam sesi ini dan tidak disentuh sama sekali. Cakupan opname ini
+                tidak dihitung</strong> dalam sesi ini dan tidak disentuh sama sekali. Cakupan stocktake ini
                 belum penuh — angkanya tetap seperti sebelumnya.
             </div>
         @endif

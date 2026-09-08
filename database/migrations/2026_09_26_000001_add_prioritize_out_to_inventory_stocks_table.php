@@ -35,7 +35,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('inventory_stocks', function (Blueprint $table) {
-            // Batch, bukan baris — sama seperti karantina & masalah kualitas.
+            // Batch, bukan baris — sama seperti karantina & quality issue.
             // Satu batch bisa terpisah di beberapa rak; mendahulukan satu rak
             // saja akan membuat sisa batch yang sama tetap mengantre di
             // belakang, dan "B05 keluar duluan" hanya benar separuh.

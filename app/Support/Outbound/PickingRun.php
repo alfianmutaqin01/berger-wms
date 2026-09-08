@@ -77,6 +77,85 @@ class PickingRun
     }
 
     /**
+     * Operator melepas tugas yang sudah diambilnya — daftar kembali bebas.
+     *
+     * KENAPA INI PERLU ADA. Tugas yang sudah diambil dahulu terkunci
+     * selamanya atas nama satu orang. Pengiriman ditunda ke besok, atau orang
+     * yang memegangnya pulang lebih dulu — dan satu-satunya jalan keluar
+     * adalah Logistik MEMBUBARKAN seluruh daftar lalu menyusunnya lagi dari
+     * nol. Terlalu mahal untuk keadaan yang justru sering terjadi.
+     *
+     * AMAN TERHADAP BUKU BESAR, dan itu bukan kebetulan: menandai baris
+     * picking TIDAK menyentuh stok sama sekali — yang menggerakkan angka
+     * hanyalah complete(). Jadi melepas tugas cukup mengosongkan tanda pada
+     * barisnya; tidak ada satu pun mutasi yang perlu dibalik. Sesudah
+     * complete() ditekan, jalan ini tertutup: barangnya sudah turun ke dock.
+     *
+     * BARIS YANG SUDAH DITANDAI IKUT DIKOSONGKAN. Membiarkannya berarti
+     * operator berikutnya mewarisi tanda yang tidak ia buat sendiri, dan
+     * "sudah diambil" jadi keterangan yang tidak ada yang bisa menjamin.
+     *
+     * PESANANNYA KEMBALI KE STATUS DITERIMA, bukan tetap "sedang dipicking".
+     * Layar Sales dan Logistik harus berhenti mengatakan barangnya sedang
+     * diambil begitu tidak ada lagi yang mengambilnya.
+     *
+     * DAFTARNYA TIDAK DIBUBARKAN. Isinya tetap utuh dan langsung bisa
+     * diambil operator lain — kalau susunannya memang perlu diubah, Logistik
+     * punya pintunya sendiri (PickingListBuilder::cancel).
+     *
+     * @param  bool  $olehPengawas  true bila dilepas Logistik/Manager, bukan
+     *                              oleh operator yang memegangnya
+     * @return int jumlah baris yang tandanya ikut dikosongkan
+     *
+     * @throws RuntimeException
+     */
+    public function release(PickingList $list, User $pelaku, bool $olehPengawas = false): int
+    {
+        return DB::transaction(function () use ($list, $pelaku, $olehPengawas) {
+            $terkunci = PickingList::query()->lockForUpdate()->findOrFail($list->id);
+
+            if ($terkunci->status !== PickingList::STATUS_PICKING) {
+                throw new RuntimeException(sprintf(
+                    'Daftar %s sedang tidak dikerjakan siapa pun (status: %s), jadi tidak ada tugas untuk dilepas.',
+                    $terkunci->list_number,
+                    $terkunci->status_label,
+                ));
+            }
+
+            // Operator hanya boleh melepas tugasnya SENDIRI. Pengawas boleh
+            // melepas milik siapa pun — itu satu-satunya jalan saat orangnya
+            // sudah pulang dan daftarnya tertinggal terkunci.
+            if (! $olehPengawas && $terkunci->claimed_by !== $pelaku->id) {
+                throw new RuntimeException(
+                    'Daftar ini tugas operator lain. Minta Logistik yang melepasnya.'
+                );
+            }
+
+            $dikosongkan = $terkunci->items()
+                ->where('status', '<>', PickingListItem::STATUS_PENDING)
+                ->update([
+                    'qty_picked' => null,
+                    'status' => PickingListItem::STATUS_PENDING,
+                    'discrepancy_reason' => null,
+                    'picked_at' => null,
+                    'picked_by' => null,
+                ]);
+
+            $terkunci->fill([
+                'status' => PickingList::STATUS_OPEN,
+                'claimed_by' => null,
+                'claimed_at' => null,
+            ])->save();
+
+            $terkunci->orders()->lockForUpdate()->get()->each(
+                fn (SalesOrder $order) => $order->forceFill(['status' => SalesOrder::STATUS_APPROVED])->save()
+            );
+
+            return $dikosongkan;
+        });
+    }
+
+    /**
      * Menandai satu baris terambil PENUH — jalur cepat, satu ketuk.
      *
      * @throws RuntimeException
