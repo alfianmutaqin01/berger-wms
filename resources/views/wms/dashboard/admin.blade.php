@@ -169,6 +169,45 @@
     .activity-row:hover {
         background-color: #f8fafc;
     }
+
+    /* =========================================================
+       LAYAR PONSEL (< 576px)
+
+       Sembilan kartu bertumpuk satu per baris berarti sepuluh
+       layar gulir sebelum sampai grafik — pada layar 360px itu
+       membuat dashboard lebih lambat dibaca daripada membuka
+       menunya satu per satu. Di bawah sini kartunya dua per
+       baris dan seluruh ukurannya dikecilkan bersama-sama:
+       memperkecil kolomnya saja hanya menghasilkan kartu sempit
+       berisi angka raksasa yang terpotong.
+       ========================================================= */
+    @media (max-width: 575.98px) {
+        .dashboard-hero-card { border-radius: .9rem; }
+        .dashboard-hero-card .p-4 { padding: 1rem !important; }
+        .dashboard-hero-card h3 { font-size: 1.1rem; }
+        .dashboard-hero-card p { font-size: .78rem; }
+
+        .stat-card { border-radius: .85rem; }
+        .stat-card .card-body { padding: .75rem !important; }
+        .stat-card h2 { font-size: 1.35rem; }
+        .stat-card h6 { font-size: .74rem; }
+        .stat-card .small,
+        .stat-card small { font-size: .68rem; line-height: 1.25; }
+
+        .stat-icon-badge {
+            width: 32px; height: 32px;
+            border-radius: 9px;
+            font-size: .95rem;
+        }
+
+        /* Tanda panah hanya hiasan yang menunjukkan kartunya bisa
+           ditekan — di layar sentuh seluruh kartunya memang sudah
+           bisa ditekan, jadi ia cuma memakan lebar. */
+        .action-chevron { display: none !important; }
+
+        .supervision-card { border-radius: .85rem; }
+        .supervision-card .card-body { padding: .85rem !important; }
+    }
 </style>
 @endpush
 
@@ -221,7 +260,7 @@
 <div class="row g-3 mb-4">
     {{-- 1. BUTUH DITERIMA / OUTBOUND APPROVAL --}}
     @isset($m['menunggu_diterima'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.approval.index') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-warning">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -260,7 +299,7 @@
 
     {{-- 2. VERIFIKASI INBOUND --}}
     @isset($m['inbound_menunggu'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.inbound.verify') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-indigo">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -290,7 +329,7 @@
 
     {{-- 3. SIAP DIPICKING --}}
     @isset($m['siap_dipicking'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.picking.batching') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-primary">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -320,7 +359,7 @@
 
     {{-- 4. DAFTAR PICKING --}}
     @isset($m['picking_berjalan'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.picking.queue') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-info">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -352,7 +391,7 @@
 
     {{-- 5. DALAM PENGIRIMAN --}}
     @isset($m['dalam_pengiriman'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.delivery.index') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-secondary">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -382,7 +421,7 @@
 
     {{-- 6. BUKTI KIRIM --}}
     @isset($m['bukti_menunggu'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.verification.index') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-success">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -412,7 +451,7 @@
 
     {{-- 7. OUTSTANDING --}}
     @isset($m['outstanding'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.outstanding.index') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-danger">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -442,7 +481,7 @@
 
     {{-- 8. SEGERA KEDALUWARSA --}}
     @isset($m['segera_kedaluwarsa'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.inventory.index') }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-danger">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -474,7 +513,7 @@
 
     {{-- 9. KARANTINA --}}
     @isset($m['karantina'])
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-6 col-xl-3">
             <a href="{{ route('wms.inventory.index', ['status' => 'quarantine']) }}" class="stat-card-link">
                 <div class="card h-100 stat-card stat-card-warning">
                     <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -525,7 +564,7 @@
     <div class="row g-3 mb-4">
         {{-- KOREKSI STOK --}}
         @isset($m['koreksi_stok'])
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-sm-6 col-md-4">
                 <div class="card h-100 supervision-card">
                     <div class="card-body p-4">
                         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -556,7 +595,7 @@
 
         {{-- STOCKTAKE --}}
         @isset($m['stocktake'])
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-sm-6 col-md-4">
                 <div class="card h-100 supervision-card">
                     <div class="card-body p-4">
                         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -603,7 +642,7 @@
 
         {{-- PENGGUNA --}}
         @isset($m['pengguna'])
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-sm-6 col-md-4">
                 <div class="card h-100 supervision-card">
                     <div class="card-body p-4">
                         <div class="d-flex justify-content-between align-items-center mb-3">

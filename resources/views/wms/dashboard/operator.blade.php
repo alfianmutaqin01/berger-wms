@@ -93,6 +93,49 @@
         border: 1px solid rgba(226, 232, 240, .9);
         box-shadow: 0 2px 8px rgba(18, 57, 98, .04);
     }
+
+    /* =========================================================
+       LAYAR PONSEL (< 576px)
+
+       BERBEDA DENGAN DUA DASHBOARD LAIN, kartu di sini SENGAJA
+       TIDAK dipersempit jadi dua per baris. Tiap kartu di halaman
+       ini adalah tombol yang ditekan sambil berdiri di depan rak,
+       sering dengan satu tangan dan kadang bersarung tangan —
+       memampatkannya jadi separuh lebar demi memuat lebih banyak
+       di layar hanya memperbanyak salah tekan. Yang dikecilkan
+       adalah paddingnya, bukan sasaran tekannya.
+       ========================================================= */
+    @media (max-width: 575.98px) {
+        .dashboard-hero-card { border-radius: .9rem; }
+        .dashboard-hero-card .p-4 { padding: 1rem !important; }
+        .dashboard-hero-card h3 { font-size: 1.1rem; }
+        .dashboard-hero-card p { font-size: .78rem; }
+
+        .stat-card { border-radius: .85rem; }
+        .stat-card .card-body { padding: .9rem !important; }
+        .stat-card h2 { font-size: 1.5rem; }
+
+        .stat-icon-badge {
+            width: 34px; height: 34px;
+            border-radius: 9px;
+            font-size: 1rem;
+        }
+
+        /* Sasaran tekan tetap setinggi jempol. */
+        .stat-card .btn,
+        .tugas-saya-card .btn { min-height: 42px; }
+
+        .tugas-saya-card { border-radius: .85rem; padding: 1rem !important; }
+        .tugas-saya-card h5 { font-size: 1.05rem; }
+
+        .panel-card .card-body { padding: .85rem !important; }
+        .tabel-tugas th,
+        .tabel-tugas td { font-size: .78rem; }
+        /* Jumlah baris tidak menentukan tindakan apa pun di layar
+           sekecil ini; nomor daftar dan tombolnya yang dicari. */
+        .tabel-tugas th:nth-child(2),
+        .tabel-tugas td:nth-child(2) { display: none; }
+    }
 </style>
 @endpush
 
@@ -240,7 +283,7 @@
     </div>
     <div class="card-body px-4 pb-4 pt-3">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0 tabel-tugas">
                 <thead class="table-light text-muted small">
                     <tr>
                         <th>NO. DAFTAR</th>

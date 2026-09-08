@@ -104,6 +104,47 @@
         border: 1px solid rgba(226, 232, 240, .9);
         box-shadow: 0 2px 8px rgba(18, 57, 98, .04);
     }
+
+    /* =========================================================
+       LAYAR PONSEL (< 576px) — dua kartu per baris, seluruh
+       ukurannya dikecilkan bersama-sama. Memperkecil kolomnya
+       saja hanya menghasilkan kartu sempit berisi angka raksasa
+       yang terpotong.
+       ========================================================= */
+    @media (max-width: 575.98px) {
+        .dashboard-hero-card { border-radius: .9rem; }
+        .dashboard-hero-card .p-4 { padding: 1rem !important; }
+        .dashboard-hero-card h3 { font-size: 1.1rem; }
+        .dashboard-hero-card p { font-size: .78rem; }
+
+        .stat-card { border-radius: .85rem; }
+        .stat-card .card-body { padding: .75rem !important; }
+        .stat-card h2 { font-size: 1.35rem; }
+        .stat-card h6 { font-size: .74rem; }
+        .stat-card .small,
+        .stat-card small { font-size: .68rem; line-height: 1.25; }
+
+        .stat-icon-badge {
+            width: 32px; height: 32px;
+            border-radius: 9px;
+            font-size: .95rem;
+        }
+
+        /* Hiasan penunjuk "bisa ditekan" — di layar sentuh seluruh
+           kartunya memang sudah bisa ditekan. */
+        .action-chevron { display: none !important; }
+
+        /* Tabel serahan terakhir: kolom yang paling tidak dicari
+           saat berdiri di lapangan disembunyikan, bukan dipaksa
+           muat lalu terpotong di tengah kata. */
+        .panel-card .card-body { padding: .85rem !important; }
+        .tabel-serahan th:nth-child(2),
+        .tabel-serahan td:nth-child(2),
+        .tabel-serahan th:nth-child(4),
+        .tabel-serahan td:nth-child(4) { display: none; }
+        .tabel-serahan th,
+        .tabel-serahan td { font-size: .78rem; }
+    }
 </style>
 @endpush
 
@@ -148,7 +189,7 @@
 
 <div class="row g-3 mb-4">
     {{-- 1. Sudah diserahkan, belum naik rak. --}}
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-3">
         <a href="{{ route('wms.inbound.history') }}" class="stat-card-link">
             <div class="card h-100 stat-card stat-card-warning">
                 <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -175,7 +216,7 @@
 
     {{-- 2. Sudah di rak, tapi stoknya BELUM RESMI — yang paling sering
          disalahpahami: barang terlihat ada tetapi belum bisa dijual. --}}
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-3">
         <a href="{{ route('wms.inbound.history') }}" class="stat-card-link">
             <div class="card h-100 stat-card stat-card-indigo">
                 <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -199,7 +240,7 @@
     </div>
 
     {{-- 3. Hasil yang sudah tuntas. --}}
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-3">
         <a href="{{ route('wms.inbound.history') }}" class="stat-card-link">
             <div class="card h-100 stat-card stat-card-success">
                 <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -228,7 +269,7 @@
          berguna: yang dinyatakan Produksi tidak sama dengan yang sampai di
          rak. Tanpa kartu ini, selisihnya baru ketahuan lewat stocktake
          berbulan-bulan kemudian. --}}
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-3">
         <a href="{{ route('wms.inbound.history') }}" class="stat-card-link">
             <div class="card h-100 stat-card stat-card-danger">
                 <div class="card-body p-3 p-xl-4 d-flex flex-column justify-content-between">
@@ -272,7 +313,7 @@
     </div>
     <div class="card-body px-4 pb-4 pt-3">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0 tabel-serahan">
                 <thead class="table-light text-muted small">
                     <tr>
                         <th>NO. DOKUMEN</th>
