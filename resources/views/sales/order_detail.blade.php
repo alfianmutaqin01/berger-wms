@@ -295,6 +295,116 @@
         </div>
         @endif
 
+
+        {{-- ============ PENOLAKAN CUSTOMER (Fase 7) ============
+
+             DITARUH TEPAT DI BAWAH BUKTI SURAT JALAN, dan itu seluruh
+             alasannya ada di sini: keduanya dikerjakan dalam SATU kunjungan.
+             Sales berdiri di depan toko, memotret Surat Jalan, dan pada saat
+             itu juga tahu barang mana yang tidak diterima. Memisahkannya ke
+             halaman lain berarti ia harus mengingat lalu kembali lagi nanti —
+             dan yang tidak dilaporkan hari itu biasanya tidak pernah
+             dilaporkan sama sekali. --}}
+        @if($laporanTolak)
+        <div class="card border-0 shadow-sm rounded-4 mb-3">
+            <div class="card-header bg-white border-bottom-0 pt-3 px-3 px-md-4">
+                <h6 class="fw-bold mb-0">
+                    <i class="bi bi-arrow-return-left text-danger me-2"></i>Penolakan Customer
+                </h6>
+                <small class="text-muted">{{ $laporanTolak->reference }}</small>
+            </div>
+            <div class="card-body px-3 px-md-4">
+                <span class="badge bg-{{ $laporanTolak->status_color }}-subtle text-{{ $laporanTolak->status_color }}-emphasis rounded-pill mb-2">
+                    {{ $laporanTolak->status_label }}
+                </span>
+
+                <ul class="list-unstyled small mb-2">
+                    @foreach($laporanTolak->details as $b)
+                        <li class="d-flex justify-content-between border-bottom py-1">
+                            <span>{{ $b->product?->sku }}</span>
+                            <span class="fw-semibold">
+                                {{ $b->qty_rejected }}
+                                @if($b->qty_approved !== null && $b->qty_approved !== $b->qty_rejected)
+                                    <span class="text-muted">&rarr; disetujui {{ $b->qty_approved }}</span>
+                                @endif
+                            </span>
+                        </li>
+                    @endforeach
+                </ul>
+
+                <p class="small text-muted mb-0">{{ $laporanTolak->reason }}</p>
+
+                {{-- Alasan Logistik menolak laporan WAJIB terlihat di sini.
+                     Tanpa itu, satu-satunya cara Sales tahu kenapa klaimnya
+                     tidak diterima adalah menelepon. --}}
+                @if($laporanTolak->status === \App\Models\SalesReturn::STATUS_REJECTED && $laporanTolak->approval_note)
+                    <div class="alert alert-danger border-0 small mt-2 mb-0 py-2">
+                        <strong>Laporan ditolak Logistik:</strong> {{ $laporanTolak->approval_note }}
+                    </div>
+                @endif
+            </div>
+        </div>
+        @endif
+
+        @if($bolehLaporTolak && ! $laporanTolak)
+        <div class="card border-0 shadow-sm rounded-4 mb-3 border-top border-danger border-3">
+            <div class="card-header bg-white border-bottom-0 pt-3 px-3 px-md-4">
+                <h6 class="fw-bold mb-0">
+                    <i class="bi bi-arrow-return-left text-danger me-2"></i>Ada barang yang ditolak customer?
+                </h6>
+                <small class="text-muted">
+                    Isi hanya kalau ada. Kosongkan saja kalau semuanya diterima.
+                </small>
+            </div>
+            <div class="card-body px-3 px-md-4">
+                <form method="POST" action="/sales/report-return">
+                    @csrf
+                    <input type="hidden" name="order_id" value="{{ $order->id }}">
+
+                    <div class="mb-3">
+                        @foreach($order->details as $d)
+                            @continue(($d->qty_shipped ?? 0) < 1)
+                            <div class="d-flex align-items-center gap-2 border-bottom py-2">
+                                <div class="flex-grow-1 min-w-0">
+                                    <div class="fw-semibold small text-truncate">{{ $d->product?->name }}</div>
+                                    <small class="text-muted">
+                                        {{ $d->product?->sku }} &middot; terkirim {{ $d->qty_shipped }} {{ $d->product?->uom }}
+                                    </small>
+                                </div>
+                                {{-- Batas atasnya qty_shipped, bukan qty_ordered:
+                                     yang bisa ditolak hanyalah barang yang
+                                     benar-benar berangkat. --}}
+                                <input type="number" name="qty[{{ $d->id }}]"
+                                       class="form-control form-control-sm text-center flex-shrink-0"
+                                       style="width:78px" min="0" max="{{ $d->qty_shipped }}"
+                                       placeholder="0" inputmode="numeric">
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <label class="form-label small fw-semibold">
+                        Kenapa ditolak? <span class="text-danger">*</span>
+                    </label>
+                    {{-- Wajib dan tidak boleh sepatah kata: Logistik yang
+                         menilai klaim ini tidak ikut ke toko, dan "ditolak"
+                         saja tidak memberinya apa pun untuk dinilai. --}}
+                    <textarea name="reason" class="form-control mb-2" rows="3" minlength="10"
+                              placeholder="Mis. warna tidak sesuai contoh, tutup penyok saat diturunkan."></textarea>
+
+                    <div class="alert alert-warning border-0 small py-2 mb-2">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Barangnya akan ditagih kembali ke gudang. Logistik memeriksa laporan ini
+                        bersama foto Surat Jalan Anda.
+                    </div>
+
+                    <button class="btn btn-danger rounded-3 w-100">
+                        <i class="bi bi-send me-1"></i> Laporkan Penolakan
+                    </button>
+                </form>
+            </div>
+        </div>
+        @endif
+
         <!-- ============ Item pesanan ============ -->
         <div class="card border-0 shadow-sm rounded-4 mb-3">
             <div class="card-header bg-white border-bottom-0 pt-3 px-3 px-md-4">

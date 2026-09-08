@@ -646,6 +646,111 @@ class CustomerRejectionTest extends TestCase
         $this->assertSame(1, SalesReturnDetail::where('sales_return_id', $retur->id)->count());
     }
 
+    /* ------------------------------------------- Formulir di sisi Sales */
+
+    /**
+     * LUBANG YANG PERNAH ADA: seluruh alur backend sudah jalan, tetapi
+     * formulirnya tidak pernah dipasang di halaman Sales — jadi tidak ada
+     * satu pun cara memanggilnya dari layar. Test ini yang menahannya.
+     */
+    public function test_formulir_lapor_penolakan_muncul_di_detail_pesanan_sales(): void
+    {
+        $order = $this->pesananTerkirim();
+        $this->masuk($this->sales);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertSee('Ada barang yang ditolak customer?')
+            ->assertSee('Laporkan Penolakan')
+            ->assertSee('/sales/report-return', false);
+    }
+
+    public function test_sales_melaporkan_penolakan_lewat_formulir_halaman(): void
+    {
+        $order = $this->pesananTerkirim();
+        $detail = $order->details()->first();
+
+        $this->masuk($this->sales);
+
+        $this->post('/sales/report-return', [
+            'order_id' => $order->id,
+            'reason' => 'Warna tidak sesuai contoh, customer menolak tiga pail.',
+            'qty' => [$detail->id => 3],
+        ])->assertRedirect();
+
+        $retur = SalesReturn::where('sales_order_id', $order->id)->firstOrFail();
+
+        $this->assertSame(3, $retur->details()->first()->qty_rejected);
+        $this->assertSame(SalesReturn::STATUS_REPORTED, $retur->status);
+    }
+
+    /** Baris yang dikosongkan Sales bukan kesalahan — ia hanya tidak ditolak. */
+    public function test_baris_yang_dikosongkan_tidak_ikut_dilaporkan(): void
+    {
+        $order = $this->pesananTerkirim();
+        $detail = $order->details()->first();
+
+        $this->masuk($this->sales);
+
+        $this->post('/sales/report-return', [
+            'order_id' => $order->id,
+            'reason' => 'Hanya sebagian yang ditolak customer.',
+            'qty' => [$detail->id => 0],
+        ])->assertRedirect();
+
+        $this->assertSame(0, SalesReturn::where('sales_order_id', $order->id)->count());
+        $this->assertNotNull(session('error'));
+    }
+
+    /** Setelah melapor, formulirnya berganti jadi keadaan laporannya. */
+    public function test_setelah_melapor_yang_tampil_adalah_keadaan_laporannya(): void
+    {
+        $retur = $this->returDisetujui(qtyTolak: 4);
+
+        $this->masuk($this->sales);
+
+        $this->get('/sales/orders/'.$retur->sales_order_id)
+            ->assertOk()
+            ->assertSee($retur->reference)
+            ->assertSee('Menunggu Naik Rak')
+            ->assertDontSee('Laporkan Penolakan');
+    }
+
+    /** Alasan Logistik menolak klaim WAJIB terlihat Sales tanpa menelepon. */
+    public function test_alasan_logistik_menolak_laporan_terlihat_oleh_sales(): void
+    {
+        $order = $this->pesananTerkirim();
+
+        $retur = $this->jasa()->report(
+            $order,
+            [['detail_id' => $order->details()->first()->id, 'qty' => 2]],
+            'Customer menolak dua unit.',
+            $this->sales->id,
+        );
+
+        $logistik = $this->login(Role::LOGISTICS);
+        $this->jasa()->reject($retur, 'Barangnya tidak pernah sampai gudang.', $logistik->id);
+
+        $this->masuk($this->sales);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertSee('Laporan ditolak Logistik')
+            ->assertSee('Barangnya tidak pernah sampai gudang.');
+    }
+
+    public function test_pesanan_yang_belum_berangkat_tidak_menampilkan_formulirnya(): void
+    {
+        $order = $this->pesananTerkirim();
+        $order->forceFill(['status' => SalesOrder::STATUS_PICKING])->save();
+
+        $this->masuk($this->sales);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertDontSee('Ada barang yang ditolak customer?');
+    }
+
     /* ---------------------------------------------------------- Halaman */
 
     public function test_halaman_daftar_menampilkan_antrean_dan_istilah_barunya(): void

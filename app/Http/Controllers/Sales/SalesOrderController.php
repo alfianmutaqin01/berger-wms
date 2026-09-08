@@ -9,6 +9,7 @@ use App\Models\DeliveryProof;
 use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\SalesOrder;
+use App\Models\SalesReturn;
 use App\Support\DocumentNumber;
 use App\Support\OrderCutoff;
 use App\Support\Returns\CustomerRejection;
@@ -230,7 +231,7 @@ class SalesOrderController extends Controller
     }
 
     /** Detail + timeline status (docs/4 §3.3.3). */
-    public function show(Request $request, SalesOrder $order): View
+    public function show(Request $request, SalesOrder $order, CustomerRejection $penolakan): View
     {
         $this->pastikanMilikSendiri($request, $order);
 
@@ -262,6 +263,25 @@ class SalesOrderController extends Controller
             'alasanDitolak' => $bukti->contains('status', DeliveryProof::STATUS_PENDING)
                 ? null
                 : $bukti->firstWhere('status', DeliveryProof::STATUS_REJECTED)?->rejection_reason,
+
+            /*
+             * PENOLAKAN CUSTOMER (Fase 7).
+             *
+             * Formulirnya menempel di halaman ini, tepat di bawah unggah
+             * bukti, karena keduanya dikerjakan dalam SATU KUNJUNGAN: Sales
+             * berdiri di depan toko, memotret Surat Jalan, dan pada saat itu
+             * juga tahu barang mana yang tidak diterima. Memisahkannya ke
+             * halaman lain berarti ia harus mengingat lalu kembali lagi
+             * nanti — dan yang tidak dilaporkan hari itu biasanya tidak
+             * pernah dilaporkan sama sekali.
+             */
+            'bolehLaporTolak' => $penolakan->bolehMelapor($order, $request->user())
+                && $order->cancelled_at === null,
+            'laporanTolak' => SalesReturn::query()
+                ->where('sales_order_id', $order->id)
+                ->with('details.product:id,sku')
+                ->latest('id')
+                ->first(),
         ]);
     }
 
