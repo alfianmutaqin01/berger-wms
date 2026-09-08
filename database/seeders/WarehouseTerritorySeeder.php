@@ -8,10 +8,10 @@ use Illuminate\Database\Seeder;
 /**
  * Cakupan wilayah tiap gudang — keputusan pemilik produk, 2026-09-02.
  *
- *   Karawang  (WH-01) : SEMUA wilayah, tanpa kecuali. Satu-satunya gudang yang
+ *   Karawang  (ID11_1001) : SEMUA wilayah, tanpa kecuali. Satu-satunya gudang yang
  *                       pasti bisa mengirim ke mana pun.
- *   Pekanbaru (WH-02) : HANYA Sumatera 1 dan Sumatera 2.
- *   Surabaya  (WH-03) : semua KECUALI Sumatera 1 dan Sumatera 2.
+ *   Pekanbaru (ID1I_1001) : HANYA Sumatera 1 dan Sumatera 2.
+ *   Surabaya  (ID1B_1001) : semua KECUALI Sumatera 1 dan Sumatera 2.
  *
  * Satu wilayah boleh dilayani lebih dari satu gudang: Sumatera dikirim dari
  * Karawang MAUPUN Pekanbaru, dan Jawa Timur belum tentu dari Surabaya. Karena
@@ -37,9 +37,9 @@ class WarehouseTerritorySeeder extends Seeder
     public function run(): void
     {
         $aturan = [
-            'WH-01' => [Warehouse::MODE_ALL, []],
-            'WH-02' => [Warehouse::MODE_ONLY, self::SUMATERA],
-            'WH-03' => [Warehouse::MODE_EXCEPT, self::SUMATERA],
+            'ID11_1001' => [Warehouse::MODE_ALL, []],
+            'ID1I_1001' => [Warehouse::MODE_ONLY, self::SUMATERA],
+            'ID1B_1001' => [Warehouse::MODE_EXCEPT, self::SUMATERA],
         ];
 
         foreach ($aturan as $kode => [$mode, $wilayah]) {

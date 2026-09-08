@@ -491,6 +491,44 @@
                 </p>
 
                 <div class="row g-3">
+                    {{-- GUDANG DIPILIH, TIDAK DISIMPULKAN DARI KODE RAK. Kode rak
+                         tidak unik antar gudang — "A-01-02" ada di Karawang maupun
+                         Pekanbaru — sehingga menyimpulkannya bisa menaruh stok di
+                         gudang yang sama sekali tidak dimaksud tanpa pesan galat.
+
+                         Yang gudangnya tunggal (Manager, Logistik) tidak diberi
+                         pilihan sama sekali: pilihan yang cuma punya satu jawaban
+                         hanya menambah langkah, dan wewenangnya tetap ditegakkan
+                         di belakang oleh WarehouseScope. --}}
+                    @if($warehouses->count() > 1)
+                        <div class="col-12">
+                            <label for="tsGudang" class="form-label fw-semibold">
+                                Gudang Tujuan <span class="text-danger">*</span>
+                            </label>
+                            <select name="warehouse_id" id="tsGudang" required class="form-select">
+                                <option value="">— pilih gudang —</option>
+                                @foreach($warehouses as $w)
+                                    <option value="{{ $w->id }}" @selected(old('warehouse_id') == $w->id)>
+                                        {{ $w->code }} — {{ $w->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <small class="text-muted">
+                                Wajib dipilih. Kode rak yang sama bisa ada di lebih dari satu gudang,
+                                jadi raknya dicari di dalam gudang ini saja.
+                            </small>
+                        </div>
+                    @else
+                        <input type="hidden" name="warehouse_id" value="{{ $warehouses->first()?->id }}">
+                        <div class="col-12">
+                            <div class="alert alert-light border rounded-3 small mb-0">
+                                <i class="bi bi-building me-1"></i>
+                                Masuk ke gudang <strong>{{ $warehouses->first()?->code }} —
+                                {{ $warehouses->first()?->name }}</strong>, wilayah kerja Anda.
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="col-12 col-md-6">
                         <label for="tsSku" class="form-label fw-semibold">SKU <span class="text-danger">*</span></label>
                         <input type="text" name="sku" id="tsSku" required maxlength="50"

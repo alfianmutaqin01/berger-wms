@@ -54,6 +54,13 @@ class StoreInventoryStockRequest extends FormRequest
     {
         return [
             'sku' => ['required', 'string', 'max:50'],
+            // WAJIB, dan itu perbaikan atas cacat nyata. Dahulu gudangnya
+            // disimpulkan dari kode rak saja — padahal kode rak TIDAK unik
+            // antar gudang: "A-01-02" ada di Karawang MAUPUN Pekanbaru.
+            // Pencariannya mengambil yang pertama ditemukan, jadi stok bisa
+            // mendarat di gudang yang sama sekali tidak dimaksud, tanpa satu
+            // pun pesan galat. Itulah yang terjadi pada batch 642346774.
+            'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
             'location_code' => ['required', 'string', 'max:20'],
             'batch_no' => ['required', 'string', 'max:50'],
             // Tanggal produksi di masa depan membuat tanggal kedaluwarsa
@@ -77,6 +84,7 @@ class StoreInventoryStockRequest extends FormRequest
     {
         return [
             'sku' => 'SKU',
+            'warehouse_id' => 'gudang',
             'location_code' => 'kode lokasi',
             'batch_no' => 'nomor batch',
             'production_date' => 'tanggal produksi',
@@ -100,12 +108,19 @@ class StoreInventoryStockRequest extends FormRequest
                 $v->errors()->add('sku', 'SKU tidak ditemukan atau produknya tidak aktif.');
             }
 
+            // Dicari DI DALAM gudang yang dipilih. Tanpa penjepitan ini,
+            // kode rak yang kembar di gudang lain akan menang begitu saja.
             $lokasi = Location::active()
+                ->where('warehouse_id', (int) $this->input('warehouse_id'))
                 ->whereRaw('UPPER(code) = ?', [$this->input('location_code')])
                 ->first();
 
             if ($lokasi === null) {
-                $v->errors()->add('location_code', 'Kode lokasi tidak ditemukan atau lokasinya tidak aktif.');
+                $v->errors()->add('location_code', sprintf(
+                    'Rak "%s" tidak ada atau tidak aktif DI GUDANG YANG DIPILIH. '.
+                    'Rak dengan kode sama di gudang lain sengaja tidak dipakai.',
+                    $this->input('location_code'),
+                ));
             }
 
             $this->produk = $produk;

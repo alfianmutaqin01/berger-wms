@@ -47,7 +47,7 @@ class UserSeeder extends Seeder
                 'phone_number' => '081234567890',
                 'role_slug' => Role::LOGISTICS,
                 'department_slug' => 'logistik',
-                'warehouse_code' => 'WH-01',
+                'warehouse_code' => 'ID11_1001',
                 'is_active' => true,
             ],
             [
@@ -67,7 +67,7 @@ class UserSeeder extends Seeder
                 'phone_number' => '081377788899',
                 'role_slug' => Role::PRODUCTION,
                 'department_slug' => 'produksi',
-                'warehouse_code' => 'WH-02',
+                'warehouse_code' => 'ID1I_1001',
                 // Contoh akun nonaktif (resign): datanya tetap ada, tidak bisa login.
                 'is_active' => false,
             ],
@@ -88,7 +88,7 @@ class UserSeeder extends Seeder
                 'phone_number' => '081255566677',
                 'role_slug' => Role::WAREHOUSE_OPERATOR,
                 'department_slug' => 'logistik',
-                'warehouse_code' => 'WH-01',
+                'warehouse_code' => 'ID11_1001',
                 'is_active' => true,
             ],
         ];

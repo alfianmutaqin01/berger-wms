@@ -125,6 +125,10 @@ class StockReplenishmentTest extends TestCase
     private function tambahStok(array $ganti = [])
     {
         return $this->post('/wms/inventory/stocks', array_merge([
+            // Gudang WAJIB disebut: kode rak tidak unik antar gudang, jadi
+            // menyimpulkannya dari kode rak bisa menaruh stok di gudang yang
+            // sama sekali tidak dimaksud.
+            'warehouse_id' => $this->gudang->id,
             'sku' => 'APKO-001',
             'location_code' => 'A-01-02',
             'batch_no' => 'BT-001',
@@ -147,7 +151,8 @@ class StockReplenishmentTest extends TestCase
         $this->assertSame(50, $stok->qty_available);
         $this->assertSame('BT-001', $stok->batch_no);
         $this->assertSame($this->lokasi->id, $stok->location_id);
-        // Gudang diturunkan dari lokasi, tidak diminta terpisah.
+        // Gudangnya adalah yang DIPILIH di formulir, dan raknya dicari di
+        // dalam gudang itu — bukan kebalikannya.
         $this->assertSame($this->gudang->id, $stok->warehouse_id);
 
         $gerak = StockMovement::where('movement_type', StockMovement::TYPE_ADJUSTMENT)->firstOrFail();

@@ -94,6 +94,22 @@ class InventoryController extends Controller
         // daftar batch di dalamnya TIDAK PERNAH memakai kriteria berbeda —
         // kalau berbeda, sebuah SKU bisa muncul dengan accordion kosong.
         $terpilih = fn () => (clone $base)
+            // BARIS KOSONG TIDAK DITAMPILKAN. Baris dengan tersedia DAN
+            // teralokasi sama-sama nol bukan stok — ia sisa dari batch yang
+            // sudah habis atau seluruhnya dipindah ke rak lain. Menampilkannya
+            // membuat orang membaca "batch ini ada di rak ZB-01-01" padahal
+            // raknya kosong, dan pada gudang yang sudah lama berjalan baris
+            // semacam ini menumpuk sampai menenggelamkan stok yang sungguhan.
+            //
+            // TIDAK DIHAPUS, hanya disembunyikan: barisnya masih dirujuk
+            // stock_movements sebagai reference_id, dan riwayat "batch ini
+            // pernah di rak itu" tetap terbaca di buku besar.
+            //
+            // teralokasi ikut diperiksa, bukan cuma tersedia: batch yang
+            // habis dicadangkan untuk pesanan masih berdiri di rak dan WAJIB
+            // terlihat — kalau tidak, operator picking mencari barang yang
+            // menurut layar tidak ada.
+            ->whereRaw('(qty_available + qty_allocated) > 0')
             ->search($filters['search'])
             ->when($filters['location_id'], fn ($q, $id) => $q->where('location_id', $id))
             ->when($filters['batch'], fn ($q, $b) => $q->where('batch_no', 'ILIKE', '%'.$b.'%'))

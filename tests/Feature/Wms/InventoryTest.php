@@ -643,4 +643,108 @@ class InventoryTest extends TestCase
         $this->assertSame(0, $ledger->qty_before);
         $this->assertSame(StockMovement::REF_INBOUND, $ledger->reference_type);
     }
+
+    /* ------------------------------------------- Tambah stok & baris kosong */
+
+    /**
+     * GUDANG DIPILIH, TIDAK DISIMPULKAN DARI KODE RAK.
+     *
+     * Kode rak TIDAK unik antar gudang. Sebelum perbaikan ini, "A-01-02"
+     * dicari tanpa menyebut gudangnya dan yang menang adalah baris pertama
+     * yang ditemukan — sehingga stok bisa mendarat di gudang yang sama sekali
+     * tidak dimaksud, tanpa satu pun pesan galat.
+     */
+    public function test_tambah_stok_memakai_rak_di_gudang_yang_dipilih(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+        $parts = Location::parseCode('A-01-02');
+
+        // Rak berkode SAMA di dua gudang. Yang di gudang lain sengaja dibuat
+        // LEBIH DULU supaya ia yang menang kalau gudangnya tidak dijepit.
+        $rakGudangLain = Location::create([
+            'warehouse_id' => $lain->id, 'code' => 'A-01-02',
+            'rack' => $parts['rack'], 'level' => $parts['level'], 'cell' => $parts['cell'],
+            'zone' => Location::ZONE_FAST, 'is_active' => true,
+        ]);
+        $rakGudangSaya = $this->bin('A-01-02');
+
+        $produk = Product::factory()->create(['sku' => 'ID1-UJI-001', 'is_active' => true]);
+
+        $this->post(route('wms.inventory.store'), [
+            'warehouse_id' => $this->warehouse->id,
+            'sku' => 'ID1-UJI-001',
+            'location_code' => 'A-01-02',
+            'batch_no' => 'BT-UJI-001',
+            'production_date' => now()->subMonth()->toDateString(),
+            'qty' => 12,
+            'reason' => 'Stok opname, barang sudah di rak.',
+        ])->assertSessionHas('success');
+
+        $stok = InventoryStock::where('product_id', $produk->id)->first();
+
+        $this->assertNotNull($stok);
+        $this->assertSame($rakGudangSaya->id, $stok->location_id,
+            'Rak dicari DI DALAM gudang yang dipilih, bukan yang pertama ketemu.');
+        $this->assertSame($this->warehouse->id, $stok->warehouse_id);
+        $this->assertNotSame($rakGudangLain->id, $stok->location_id);
+    }
+
+    public function test_tambah_stok_ditolak_bila_rak_tidak_ada_di_gudang_yang_dipilih(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+        $parts = Location::parseCode('A-09-09');
+        Location::create([
+            'warehouse_id' => $lain->id, 'code' => 'A-09-09',
+            'rack' => $parts['rack'], 'level' => $parts['level'], 'cell' => $parts['cell'],
+            'zone' => Location::ZONE_FAST, 'is_active' => true,
+        ]);
+
+        Product::factory()->create(['sku' => 'ID1-UJI-002', 'is_active' => true]);
+
+        // Raknya ADA, tapi di gudang lain. Dahulu ini akan berhasil dan
+        // menaruh stoknya di gudang yang salah tanpa pesan apa pun.
+        $this->post(route('wms.inventory.store'), [
+            'warehouse_id' => $this->warehouse->id,
+            'sku' => 'ID1-UJI-002',
+            'location_code' => 'A-09-09',
+            'batch_no' => 'BT-UJI-002',
+            'production_date' => now()->subMonth()->toDateString(),
+            'qty' => 12,
+            'reason' => 'Stok opname, barang sudah di rak.',
+        ])->assertSessionHasErrors('location_code');
+
+        $this->assertSame(0, InventoryStock::count());
+    }
+
+    /**
+     * Baris yang tersedia DAN teralokasi sama-sama nol bukan stok — ia sisa
+     * batch yang habis atau seluruhnya dipindah ke rak lain.
+     */
+    public function test_baris_stok_kosong_tidak_ditampilkan(): void
+    {
+        $this->loginAs();
+        $kosong = $this->stock(['qty_available' => 0, 'qty_allocated' => 0, 'batch_no' => 'BT-KOSONG']);
+        $this->stock(['qty_available' => 5, 'qty_allocated' => 0, 'batch_no' => 'BT-ISI']);
+
+        $terlihat = $this->batchDiLayar()->pluck('batch_no');
+
+        $this->assertTrue($terlihat->contains('BT-ISI'));
+        $this->assertFalse($terlihat->contains('BT-KOSONG'), 'Rak kosong tidak boleh terbaca sebagai berisi.');
+        $this->assertDatabaseHas('inventory_stocks', ['id' => $kosong->id]);
+    }
+
+    public function test_baris_yang_habis_dicadangkan_tetap_ditampilkan(): void
+    {
+        $this->loginAs();
+        $this->stock(['qty_available' => 0, 'qty_allocated' => 20, 'batch_no' => 'BT-DICADANGKAN']);
+
+        $terlihat = $this->batchDiLayar()->pluck('batch_no');
+
+        $this->assertTrue($terlihat->contains('BT-DICADANGKAN'),
+            'Barangnya masih berdiri di rak. Menyembunyikannya membuat operator picking mencari barang yang menurut layar tidak ada.');
+    }
 }
