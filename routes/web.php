@@ -474,6 +474,14 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // memang harus bisa melihat akibatnya.
             Route::get('/outstanding', [OutstandingController::class, 'index'])
                 ->name('wms.outstanding.index');
+
+            // KIRIM ULANG kekurangan. Gate-nya sama dengan Terima Pesanan
+            // (OUTBOUND_APPROVAL) dan itu disengaja: membuka putaran baru
+            // mencadangkan stok persis seperti menerima pesanan, jadi
+            // wewenangnya harus sebesar itu pula — bukan sekadar wewenang
+            // membaca riwayat.
+            Route::post('/outstanding/{order}/reship', [OutstandingController::class, 'reship'])
+                ->name('wms.outstanding.reship');
         });
 
         /*

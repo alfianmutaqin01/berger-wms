@@ -3,11 +3,17 @@
 namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
+use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
 use App\Models\SalesOrderOutstanding;
+use App\Support\Activity;
+use App\Support\Outbound\Reshipment;
 use App\Support\WarehouseScope;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use RuntimeException;
 
 /**
  * Riwayat Outstanding — kekurangan pesanan yang pernah terjadi.
@@ -38,6 +44,8 @@ use Illuminate\View\View;
  */
 class OutstandingController extends Controller
 {
+    public function __construct(private readonly Reshipment $reshipment) {}
+
     public function index(Request $request): View
     {
         $user = $request->user();
@@ -80,12 +88,101 @@ class OutstandingController extends Controller
             ->paginate(20)
             ->withQueryString();
 
+        /*
+         * Pesanan mana yang tombol "Kirim Ulang"-nya boleh muncul.
+         *
+         * Dihitung SEKALI untuk seluruh halaman, bukan per baris: satu SKU
+         * yang kurang bisa muncul beberapa kali dalam riwayat pesanan yang
+         * sama, dan bertanya ke database di dalam perulangan Blade berarti
+         * dua puluh baris menjadi dua puluh query.
+         *
+         * Ini hanya menentukan TAMPIL atau tidaknya tombol. Penegakan yang
+         * sebenarnya ada di Reshipment::open(), di dalam kunci — daftar ini
+         * sudah basi begitu halamannya terkirim ke layar.
+         */
+        $idPesanan = $baris->pluck('sales_order_id')->unique()->values();
+
+        $bolehKirimUlang = $idPesanan->isEmpty() ? collect() : SalesOrder::query()
+            ->whereIn('id', $idPesanan)
+            ->whereIn('status', Reshipment::STATUS_BOLEH)
+            ->whereHas('details', fn ($d) => $d->where('outstanding_qty', '>', 0))
+            ->pluck('id')
+            ->flip();
+
         return view('wms.outbound.outstanding', [
             'baris' => $baris,
             'warehouses' => WarehouseScope::options($user),
             'filters' => $filters,
             'stats' => $this->angkaBerjalan($request),
+            'bolehKirimUlang' => $bolehKirimUlang,
         ]);
+    }
+
+    /**
+     * KIRIM ULANG: membuka putaran pengiriman berikutnya atas kekurangan.
+     *
+     * NOMOR SO SAMA, SURAT JALAN BARU. Tidak ada pesanan baru yang dibuat —
+     * pesanan yang sama dibuka kembali, lalu masuk lagi ke Daftar Picking dan
+     * mendapat Surat Jalan sendiri dari sistem BC. Lihat
+     * App\Support\Outbound\Reshipment untuk alasan lengkapnya.
+     */
+    public function reship(Request $request, SalesOrder $order): RedirectResponse
+    {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'note' => ['nullable', 'string', 'max:1000'],
+        ], [], ['note' => 'catatan']);
+
+        try {
+            $hasil = $this->reshipment->open($order, $data['note'] ?? null, $request->user()?->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::ORDER_RESHIP,
+            sprintf(
+                'Membuka pengiriman ulang ke-%d untuk %s: %d unit kurang, %d berhasil dicadangkan dari stok.',
+                $hasil['putaran'],
+                $order->order_number,
+                $hasil['diminta'],
+                $hasil['didapat'],
+            ),
+            $order,
+            $order->warehouse_id,
+            [
+                'pesanan' => $order->order_number,
+                'putaran' => $hasil['putaran'],
+                'diminta' => $hasil['diminta'],
+                'didapat' => $hasil['didapat'],
+                'catatan' => $data['note'] ?? null,
+            ],
+        );
+
+        $pesan = sprintf(
+            'Pengiriman ulang ke-%d dibuka untuk %s. Pesanan kembali ke Daftar Picking dengan nomor SO yang sama, '.
+            'dan akan mendapat Surat Jalan baru.',
+            $hasil['putaran'],
+            $order->order_number,
+        );
+
+        // Yang tidak kebagian stok WAJIB dikatakan. Orang yang menekan tombol
+        // untuk 50 unit akan mengira 50 itu sudah aman; kalau yang terpegang
+        // cuma 30, sisanya tetap terutang dan tidak ada yang tahu.
+        if ($hasil['didapat'] < $hasil['diminta']) {
+            return redirect()->route('wms.outstanding.index')->with('warning', $pesan.sprintf(
+                ' Dari %d unit yang kurang, %d belum kebagian stok dan TETAP tercatat outstanding — '.
+                'bisa dikirim ulang lagi begitu stoknya ada.',
+                $hasil['diminta'],
+                $hasil['diminta'] - $hasil['didapat'],
+            ));
+        }
+
+        return redirect()->route('wms.outstanding.index')->with('success', $pesan.sprintf(
+            ' Seluruh %d unit sudah dicadangkan dari stok.',
+            $hasil['didapat'],
+        ));
     }
 
     /**

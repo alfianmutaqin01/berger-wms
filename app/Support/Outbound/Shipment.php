@@ -27,7 +27,7 @@ use RuntimeException;
  * Bagian terakhir itu yang paling mudah terlewat. Barangnya nyata: ia ada di
  * loading dock, tidak ikut naik kendaraan. Tanpa mengembalikannya, stok
  * tercatat berkurang 10 sementara yang benar-benar pergi hanya 8 — dan
- * selisihnya tidak akan ketahuan sampai opname berikutnya.
+ * selisihnya tidak akan ketahuan sampai stocktake berikutnya.
  *
  * SJ LEBIH BANYAK DARIPADA YANG DIPICKING TIDAK DITOLAK — ia adalah TEMUAN
  * STOK KURANG (keputusan pemilik produk, mengoreksi rancangan awal saya yang
@@ -39,7 +39,7 @@ use RuntimeException;
  * Menolaknya menyembunyikan temuan itu. Yang benar: qty SJ tetap dipakai
  * sebagai yang terkirim, dan kekurangannya dikeluarkan dari stok — sehingga
  * angka di sistem turun menyusul kenyataan di rak, dan selisihnya punya baris
- * ledger yang bisa ditelusuri saat opname.
+ * ledger yang bisa ditelusuri saat stocktake.
  *
  * STATUS PESAN TERPISAH DARI STATUS BARANG. Kalau WhatsApp gagal, truk tetap
  * berangkat (keputusan pemilik produk); kegagalannya ditandai untuk
@@ -458,7 +458,7 @@ class Shipment
                 // Dua sebab yang catatannya HARUS berbeda. Keduanya menulis
                 // OUT dengan jumlah yang sama, tetapi yang satu berarti "rak
                 // lebih kosong daripada catatan" dan yang lain berarti
-                // "barangnya ditukar". Menyamakan kalimatnya membuat opname
+                // "barangnya ditukar". Menyamakan kalimatnya membuat stocktake
                 // berikutnya mengejar selisih yang tidak pernah ada.
                 'notes' => $pengganti
                     ? sprintf(
@@ -473,7 +473,7 @@ class Shipment
                     : sprintf(
                         'Surat Jalan %s menyebut %d lebih banyak daripada yang tercatat dipicking; '.
                         'selisih %d dikeluarkan dari rak %s (batch %s). Stok tercatat ternyata lebih besar '.
-                        'daripada isi rak sebenarnya — perlu ditelusuri saat opname.',
+                        'daripada isi rak sebenarnya — perlu ditelusuri saat stocktake.',
                         $documentNo,
                         $qty,
                         $ambil,
@@ -572,10 +572,24 @@ class Shipment
     /**
      * Menuliskan qty yang benar-benar berangkat ke baris pesanan.
      *
-     * `outstanding_qty` DIHITUNG ULANG dari qty pesanan dikurangi yang
-     * dikirim, bukan ditambahkan ke nilai lama. Nilai lama adalah selisih
-     * saat penerimaan; menambahkannya akan menghitung kekurangan yang sama
-     * dua kali pada pesanan yang memang sejak awal disetujui sebagian.
+     * `qty_shipped` MENUMPUK ANTAR PUTARAN, `outstanding_qty` DIHITUNG ULANG
+     * dari qty pesanan dikurangi seluruh yang sudah dikirim.
+     *
+     * Dahulu qty_shipped ditimpa, dan itu benar selama satu pesanan hanya
+     * berangkat sekali. Sejak ada Pengiriman Ulang (App\Support\Outbound\
+     * Reshipment), Surat Jalan kedua akan MENGHAPUS catatan keberangkatan
+     * pertama: pesanan 10 yang berangkat 6 lalu menyusul 4 akan tercatat
+     * "terkirim 4, kurang 6" — terbalik dari kenyataannya, dan pelanggan
+     * ditagih barang yang sudah ia terima.
+     *
+     * Kekurangannya tetap DIHITUNG ULANG, bukan ditambahkan: nilai lamanya
+     * adalah selisih saat penerimaan, dan menambahkannya akan menghitung
+     * kekurangan yang sama dua kali pada pesanan yang sejak awal disetujui
+     * sebagian.
+     *
+     * Aman dari penghitungan ganda karena satu Surat Jalan hanya bisa
+     * berangkat SEKALI: pastikanBolehDikirim() menolak dokumen yang sudah
+     * berstatus shipped, dan pesanannya wajib berstatus siap kirim.
      *
      * @param  array<int, int>  $qtySj
      */
@@ -594,10 +608,15 @@ class Shipment
              */
             $digantikan = $substitusi !== null && $terkirim === 0;
 
-            $sisa = $digantikan ? 0 : max(0, (int) $detail->qty_ordered - $terkirim);
+            // Seluruh yang pernah berangkat untuk baris ini, putaran ini
+            // termasuk. Pada pesanan yang cuma berangkat sekali nilainya sama
+            // persis dengan $terkirim, jadi perilaku lama tidak berubah.
+            $totalTerkirim = (int) $detail->qty_shipped + $terkirim;
+
+            $sisa = $digantikan ? 0 : max(0, (int) $detail->qty_ordered - $totalTerkirim);
 
             $detail->forceFill([
-                'qty_shipped' => $terkirim,
+                'qty_shipped' => $totalTerkirim,
                 'outstanding_qty' => $sisa,
                 'substitution_note' => $digantikan
                     ? sprintf(
