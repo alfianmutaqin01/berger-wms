@@ -660,7 +660,7 @@ class CustomerRejectionTest extends TestCase
 
         $this->get('/sales/orders/'.$order->id)
             ->assertOk()
-            ->assertSee('Ada barang yang ditolak customer?')
+            ->assertSee('Ada barang yang ditolak')
             ->assertSee('Laporkan Penolakan')
             ->assertSee('/sales/report-return', false);
     }
@@ -748,7 +748,7 @@ class CustomerRejectionTest extends TestCase
 
         $this->get('/sales/orders/'.$order->id)
             ->assertOk()
-            ->assertDontSee('Ada barang yang ditolak customer?');
+            ->assertDontSee('Ada barang yang ditolak');
     }
 
     /* ---------------------------------------------------------- Halaman */
@@ -776,5 +776,94 @@ class CustomerRejectionTest extends TestCase
             ->assertOk()
             ->assertSee($retur->reference)
             ->assertSee('belum menambah stok', false);
+    }
+
+    /**
+     * Formulirnya TERTUTUP sampai diminta, dan itu bukan soal rapi-rapian.
+     * Dahulu setiap item pesanan langsung digambar sebagai satu kolom angka;
+     * pesanan dua puluh item berarti dua puluh kolom yang harus digulir
+     * setiap kali halaman dibuka, padahal penolakan itu perkara yang jarang.
+     */
+    public function test_formulir_penolakan_tertutup_sampai_dibuka(): void
+    {
+        $order = $this->pesananTerkirim();
+        $this->masuk($this->sales);
+
+        $html = $this->get('/sales/orders/'.$order->id)->assertOk()->getContent();
+
+        $this->assertStringContainsString('id="bukaTolak"', $html);
+        $this->assertStringContainsString('id="formTolak" class="d-none"', $html);
+
+        // Tidak ada satu pun kolom qty yang tergambar duluan: baris hanya
+        // lahir setelah Sales memilih produknya.
+        $this->assertStringNotContainsString('name="qty[', $html);
+    }
+
+    public function test_item_penolakan_dicari_sambil_diketik(): void
+    {
+        $order = $this->pesananTerkirim();
+        $this->masuk($this->sales);
+
+        $html = $this->get('/sales/orders/'.$order->id)->assertOk()->getContent();
+
+        $this->assertStringContainsString('templateTolak', $html);
+        $this->assertStringContainsString('Ketik SKU atau nama produk', $html);
+        $this->assertStringContainsString($this->produk->sku, $html);
+    }
+
+    /**
+     * Yang tidak berangkat tidak bisa ditolak, dan penjagaannya harus sudah
+     * ada di daftar pilihan — bukan cuma di validasi server. Sales tidak
+     * boleh sampai mengetik nama produk yang memang tidak pernah dikirim.
+     */
+    public function test_barang_yang_tidak_berangkat_tidak_muncul_di_pilihan(): void
+    {
+        $order = $this->pesananTerkirim();
+
+        $lain = Product::factory()->create(['sku' => 'SKU-TIDAK-BERANGKAT']);
+
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $lain->id,
+            'qty_ordered' => 5,
+            'qty_approved' => 5,
+            'qty_shipped' => 0,
+            'outstanding_qty' => 5,
+        ]);
+
+        $this->masuk($this->sales);
+
+        $html = $this->get('/sales/orders/'.$order->id)->assertOk()->getContent();
+
+        // Namanya tetap muncul di kartu Item Pesanan, jadi yang diperiksa
+        // adalah isi daftar pilihan formulirnya.
+        $this->assertStringNotContainsString('"sku":"SKU-TIDAK-BERANGKAT"', $html);
+        $this->assertStringContainsString('"sku":"'.$this->produk->sku.'"', $html);
+    }
+
+    /**
+     * Kekurangan punya dua sebab, dan dahulu keduanya tampil sebagai satu
+     * angka "Tidak terpenuhi". Baris yang disetujui penuh lalu berangkat
+     * kurang terbaca seolah angkanya salah hitung.
+     */
+    public function test_kekurangan_saat_kirim_dibedakan_dari_yang_tidak_disetujui(): void
+    {
+        $order = $this->pesananTerkirim();
+
+        // Rincian disetujui/terkirim memang hanya digambar sesudah approval.
+        $order->forceFill(['approved_at' => now()->subDays(2)])->save();
+
+        $order->details()->first()->forceFill([
+            'qty_shipped' => 9,
+            'outstanding_qty' => 1,
+        ])->save();
+
+        $this->masuk($this->sales);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertSee('Terkirim')
+            ->assertSee('1 belum berangkat')
+            ->assertDontSee('1 tidak disetujui');
     }
 }

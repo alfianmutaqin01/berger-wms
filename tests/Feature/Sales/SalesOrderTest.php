@@ -748,7 +748,7 @@ class SalesOrderTest extends TestCase
         $this->get('/sales/orders/'.$order->id)
             ->assertOk()
             ->assertDontSee('Disetujui')
-            ->assertDontSee('Tidak terpenuhi');
+            ->assertDontSee('tidak disetujui');
     }
 
     /** Sesudah approval, qty disetujui dan Outstanding barulah muncul. */
@@ -769,6 +769,6 @@ class SalesOrderTest extends TestCase
             ->assertOk()
             ->assertSee('Disetujui')
             ->assertSee('80')
-            ->assertSee('Tidak terpenuhi');
+            ->assertSee('20 tidak disetujui');
     }
 }
