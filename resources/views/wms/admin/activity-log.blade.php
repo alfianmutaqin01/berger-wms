@@ -62,7 +62,15 @@
             </div>
             <div class="col-12 d-flex gap-2 mt-2">
                 <button class="btn btn-sm btn-dark px-3"><i class="bi bi-funnel me-1"></i>Terapkan</button>
-                <a href="{{ route('wms.admin.activity-log') }}" class="btn btn-sm btn-outline-secondary">Bersihkan</a>
+                {{-- "Reset Filter", bukan "Bersihkan". Tombol ini hanya mengosongkan
+                     penyaring di atas, tetapi pada halaman log kata "bersihkan" terbaca
+                     sebagai membuang isinya — padahal log tidak bisa dihapus siapa pun,
+                     dan yang mengira baru saja menghapus jejak menyimpulkan hal yang
+                     keliru tentang apa yang barusan dia lakukan. --}}
+                <a href="{{ route('wms.admin.activity-log') }}" class="btn btn-sm btn-outline-secondary"
+                   title="Kosongkan penyaring — isi log tidak berubah">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Filter
+                </a>
             </div>
         </form>
     </div>

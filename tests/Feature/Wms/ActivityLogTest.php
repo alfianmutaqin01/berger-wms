@@ -138,6 +138,27 @@ class ActivityLogTest extends TestCase
         $this->get(route('wms.admin.activity-log'))->assertForbidden();
     }
 
+    /**
+     * Halamannya tidak boleh menjanjikan tindakan yang tidak ada.
+     *
+     * Tombol reset penyaring sempat berlabel "Bersihkan" — pada halaman log,
+     * kata itu terbaca sebagai membuang isinya. Yang menekannya lalu melihat
+     * daftar kembali penuh akan mengira penghapusan gagal, padahal log memang
+     * tidak bisa dihapus siapa pun. Sekalian dipastikan batas simpannya
+     * tertulis, supaya yang mencari kejadian lama tahu kenapa tidak ketemu.
+     */
+    public function test_halaman_log_tidak_menawarkan_penghapusan(): void
+    {
+        $this->login(Role::SUPER_ADMIN);
+
+        $this->get(route('wms.admin.activity-log'))
+            ->assertOk()
+            ->assertDontSee('Bersihkan')
+            ->assertSee('Reset Filter')
+            ->assertSee('tidak bisa diubah maupun dihapus')
+            ->assertSee(ActivityLog::umurSimpanHari().' hari terakhir');
+    }
+
     /* ------------------------------------------------- Tindakan yang dicatat */
 
     public function test_koreksi_stok_tercatat_beserta_nilai_sebelum_dan_sesudah(): void
