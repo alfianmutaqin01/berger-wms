@@ -649,6 +649,120 @@ class CustomerRejectionTest extends TestCase
             ->assertSee('Penolakan Customer');
     }
 
+    /* ----------------------- Antrean Operator baru terisi setelah disetujui */
+
+    /**
+     * Laporan yang masih menunggu keputusan Logistik adalah pekerjaan kertas,
+     * bukan pekerjaan gudang: barangnya belum tentu jadi naik rak, dan qty
+     * yang disetujui bisa lebih kecil daripada yang dilaporkan Sales.
+     * Operator yang melihatnya lebih dulu tidak punya satu pun tombol untuk
+     * menanggapinya.
+     */
+    public function test_operator_belum_melihat_laporan_yang_belum_disetujui(): void
+    {
+        $order = $this->pesananTerkirim();
+        $detail = $order->details()->first();
+
+        $retur = $this->jasa()->report(
+            $order,
+            [['detail_id' => $detail->id, 'qty' => 4]],
+            'Warna tidak sesuai contoh, customer menolak seluruhnya.',
+            $this->sales->id,
+        );
+
+        $this->login(Role::WAREHOUSE_OPERATOR);
+
+        $this->get(route('wms.returns.index'))
+            ->assertOk()
+            ->assertDontSee($retur->reference)
+            // Antrean persetujuan bukan pekerjaannya.
+            ->assertDontSee('Menunggu Persetujuan');
+    }
+
+    /**
+     * Menyembunyikan baris dari daftar saja cuma soal tampilan: alamatnya
+     * masih bisa dibuka langsung. 404, bukan 403 — halaman ini tidak perlu
+     * mengakui bahwa dokumennya ada.
+     */
+    public function test_operator_tidak_bisa_membuka_laporan_yang_belum_disetujui(): void
+    {
+        $order = $this->pesananTerkirim();
+        $detail = $order->details()->first();
+
+        $retur = $this->jasa()->report(
+            $order,
+            [['detail_id' => $detail->id, 'qty' => 4]],
+            'Warna tidak sesuai contoh, customer menolak seluruhnya.',
+            $this->sales->id,
+        );
+
+        $this->login(Role::WAREHOUSE_OPERATOR);
+
+        $this->get(route('wms.returns.show', $retur))->assertNotFound();
+    }
+
+    /** Begitu disetujui, barisnya langsung muncul — tanpa perlu ditelepon. */
+    public function test_setelah_disetujui_langsung_muncul_di_antrean_operator(): void
+    {
+        $retur = $this->returDisetujui();
+
+        $this->login(Role::WAREHOUSE_OPERATOR);
+
+        $this->get(route('wms.returns.index'))
+            ->assertOk()
+            ->assertSee($retur->reference);
+
+        $this->get(route('wms.returns.show', $retur))
+            ->assertOk()
+            ->assertSee('Naikkan ke Rak');
+    }
+
+    /**
+     * Klaim yang DITOLAK Logistik tidak pernah menjadi pekerjaan Operator:
+     * barangnya tidak balik ke gudang.
+     */
+    public function test_laporan_yang_ditolak_tidak_masuk_antrean_operator(): void
+    {
+        $order = $this->pesananTerkirim();
+        $detail = $order->details()->first();
+
+        $retur = $this->jasa()->report(
+            $order,
+            [['detail_id' => $detail->id, 'qty' => 4]],
+            'Warna tidak sesuai contoh, customer menolak seluruhnya.',
+            $this->sales->id,
+        );
+
+        $this->jasa()->reject($retur, 'Foto tidak menunjukkan kerusakan yang diklaim.', $this->sales->id);
+
+        $this->login(Role::WAREHOUSE_OPERATOR);
+
+        $this->get(route('wms.returns.index'))
+            ->assertOk()
+            ->assertDontSee($retur->reference);
+    }
+
+    /** Logistik tetap melihat seluruh daftarnya, termasuk yang belum diputus. */
+    public function test_logistik_tetap_melihat_laporan_yang_belum_disetujui(): void
+    {
+        $order = $this->pesananTerkirim();
+        $detail = $order->details()->first();
+
+        $retur = $this->jasa()->report(
+            $order,
+            [['detail_id' => $detail->id, 'qty' => 4]],
+            'Warna tidak sesuai contoh, customer menolak seluruhnya.',
+            $this->sales->id,
+        );
+
+        $this->login(Role::LOGISTICS);
+
+        $this->get(route('wms.returns.index'))
+            ->assertOk()
+            ->assertSee($retur->reference)
+            ->assertSee('Menunggu Persetujuan');
+    }
+
     public function test_gudang_lain_ditolak(): void
     {
         $retur = $this->returDisetujui();

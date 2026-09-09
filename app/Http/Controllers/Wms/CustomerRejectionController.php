@@ -38,6 +38,27 @@ class CustomerRejectionController extends Controller
     {
         $user = $request->user();
 
+        /*
+         * OPERATOR TIDAK MELIHAT KLAIM YANG BELUM DIPUTUSKAN.
+         *
+         * Laporan yang masih 'reported' adalah pekerjaan kertas milik
+         * Logistik: barangnya belum tentu jadi naik rak, dan qty yang
+         * disetujui bisa lebih kecil daripada yang dilaporkan Sales. Operator
+         * yang melihatnya lebih dulu tidak punya satu pun tombol untuk
+         * menanggapinya — yang ia dapat hanya baris yang tidak bisa
+         * dikerjakan, dan itu membuat sisa daftarnya ikut terbaca sebagai
+         * "belum waktunya".
+         *
+         * Yang ditolak juga tidak muncul: barangnya tidak pernah balik ke
+         * gudang, jadi tidak pernah menjadi pekerjaan Operator.
+         *
+         * Dibaca dari IZIN MENYETUJUI, bukan dari nama peran. Super Admin
+         * memegang keduanya dan tetap melihat seluruh daftar.
+         */
+        $bolehSetujui = Gate::allows(Permission::RETURN_APPROVE);
+
+        $tersembunyi = [SalesReturn::STATUS_REPORTED, SalesReturn::STATUS_REJECTED];
+
         $filters = [
             'search' => $request->query('search'),
             'status' => $request->query('status'),
@@ -48,6 +69,7 @@ class CustomerRejectionController extends Controller
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
             ->when($filters['warehouse'], fn ($q, $w) => $q->where('warehouse_id', $w))
+            ->unless($bolehSetujui, fn ($q) => $q->whereNotIn('status', $tersembunyi))
             ->tap(fn ($q) => WarehouseScope::apply($q, $user))
             ->with([
                 'salesOrder:id,order_number,bc_so_number',
@@ -76,7 +98,13 @@ class CustomerRejectionController extends Controller
             'baris' => $baris,
             'warehouses' => WarehouseScope::options($user),
             'filters' => $filters,
-            'statuses' => SalesReturn::STATUS_LABELS,
+            // Saringan status ikut dipangkas. Menawarkan "Menunggu
+            // Persetujuan" kepada Operator berarti menjanjikan daftar yang
+            // pasti kosong.
+            'statuses' => $bolehSetujui
+                ? SalesReturn::STATUS_LABELS
+                : array_diff_key(SalesReturn::STATUS_LABELS, array_flip($tersembunyi)),
+            'bolehSetujui' => $bolehSetujui,
             'stats' => $this->angka($request),
         ]);
     }
@@ -84,6 +112,23 @@ class CustomerRejectionController extends Controller
     public function show(Request $request, SalesReturn $retur): View
     {
         WarehouseScope::assert($retur->warehouse_id, $request->user());
+
+        /*
+         * Penjagaan yang sama seperti di daftar, ditegakkan lagi di sini.
+         * Menyembunyikan baris dari daftar saja cuma soal tampilan: alamatnya
+         * masih bisa dibuka langsung, dan Operator tetap membaca klaim yang
+         * belum diputuskan Logistik berikut qty yang mungkin tidak jadi
+         * disetujui. 404, bukan 403 — halaman ini tidak perlu mengakui bahwa
+         * dokumennya ada.
+         */
+        abort_if(
+            ! Gate::allows(Permission::RETURN_APPROVE)
+                && in_array($retur->status, [
+                    SalesReturn::STATUS_REPORTED,
+                    SalesReturn::STATUS_REJECTED,
+                ], true),
+            404,
+        );
 
         $retur->load([
             'details.product:id,sku,name,uom',
@@ -300,7 +345,11 @@ class CustomerRejectionController extends Controller
         $q = fn () => WarehouseScope::apply(SalesReturn::query(), $request->user());
 
         return [
-            'persetujuan' => $q()->menungguPersetujuan()->count(),
+            // Tidak dihitung sama sekali kalau kartunya memang tidak digambar.
+            // Angka yang tidak boleh dilihat tidak perlu dibaca dari database.
+            'persetujuan' => Gate::allows(Permission::RETURN_APPROVE)
+                ? $q()->menungguPersetujuan()->count()
+                : 0,
             'putaway' => $q()->menungguPutaway()->count(),
             'verifikasi' => $q()->menungguVerifikasi()->count(),
         ];

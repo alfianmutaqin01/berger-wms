@@ -23,8 +23,11 @@
     </div>
 </div>
 
-{{-- Tiga angka, tiga antrean, dan tiap kartu menyaring daftarnya. --}}
+{{-- Tiap kartu menyaring daftarnya. Yang menyetujui melihat tiga antrean;
+     Operator hanya dua — antrean persetujuan bukan pekerjaannya, dan angka
+     yang tidak bisa ditindaklanjuti cuma jadi kabar yang menggantung. --}}
 <div class="row g-2 g-md-3 mb-3">
+    @if($bolehSetujui)
     <div class="col-4">
         <a href="{{ route('wms.returns.index', ['status' => \App\Models\SalesReturn::STATUS_REPORTED]) }}"
            class="text-decoration-none">
@@ -36,7 +39,8 @@
             </div>
         </a>
     </div>
-    <div class="col-4">
+    @endif
+    <div class="{{ $bolehSetujui ? 'col-4' : 'col-6' }}">
         <a href="{{ route('wms.returns.index', ['status' => \App\Models\SalesReturn::STATUS_PUTAWAY_PENDING]) }}"
            class="text-decoration-none">
             <div class="card h-100 border-0 shadow-sm rounded-4 border-start border-primary border-4">
@@ -47,7 +51,7 @@
             </div>
         </a>
     </div>
-    <div class="col-4">
+    <div class="{{ $bolehSetujui ? 'col-4' : 'col-6' }}">
         <a href="{{ route('wms.returns.index', ['status' => \App\Models\SalesReturn::STATUS_VERIFICATION_PENDING]) }}"
            class="text-decoration-none">
             <div class="card h-100 border-0 shadow-sm rounded-4 border-start border-info border-4">
