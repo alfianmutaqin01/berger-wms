@@ -3,6 +3,7 @@
 namespace Tests\Feature\Wms;
 
 use App\Models\Customer;
+use App\Models\DeliveryProof;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\PickingList;
@@ -117,7 +118,7 @@ class CustomerRejectionTest extends TestCase
      * Pesanan yang sudah berangkat, lengkap dengan jejak picking-nya —
      * dari situlah batch dan tanggal produksi barang tolakan diambil.
      */
-    private function pesananTerkirim(int $qty = 10, string $batch = 'BT-001'): SalesOrder
+    private function pesananTerkirim(int $qty = 10, string $batch = 'BT-001', bool $denganBukti = true): SalesOrder
     {
         $order = SalesOrder::factory()->create([
             'user_id' => $this->sales->id,
@@ -157,6 +158,25 @@ class CustomerRejectionTest extends TestCase
             'status' => PickingListItem::STATUS_PICKED,
             'picked_at' => now()->subDay(),
         ]);
+
+        /*
+         * Foto Surat Jalan bertanda tangan. Sejak laporan penolakan tidak
+         * bisa dikirim tanpa bukti, hampir seluruh test di berkas ini
+         * membutuhkannya — jadi disiapkan di sini, bukan diulang satu per
+         * satu. Yang menguji penjagaannya memanggil dengan $denganBukti false.
+         */
+        if ($denganBukti) {
+            DeliveryProof::create([
+                'sales_order_id' => $order->id,
+                'path' => 'delivery-proofs/sj.jpg',
+                'original_name' => 'sj.jpg',
+                'size' => 1024,
+                'mime' => 'image/jpeg',
+                'status' => DeliveryProof::STATUS_PENDING,
+                'uploaded_by' => $this->sales->id,
+                'uploaded_at' => now()->subHours(2),
+            ]);
+        }
 
         return $order->refresh();
     }
@@ -839,5 +859,88 @@ class CustomerRejectionTest extends TestCase
         // adalah isi daftar pilihan formulirnya.
         $this->assertStringNotContainsString('"sku":"SKU-TIDAK-BERANGKAT"', $html);
         $this->assertStringContainsString('"sku":"'.$this->produk->sku.'"', $html);
+    }
+
+    /* --------------------------------- Foto Surat Jalan wajib lebih dulu */
+
+    /**
+     * LUBANG YANG PERNAH ADA: laporan penolakan bisa dikirim tanpa satu pun
+     * foto Surat Jalan. Laporan itu adalah tagihan barang kembali ke gudang,
+     * dan Logistik yang menilainya tidak ikut ke toko — satu-satunya hal yang
+     * bisa ia periksa adalah Surat Jalan bertanda tangan. Laporan tanpa foto
+     * memaksanya memutuskan berdasarkan kalimat saja, dan pada saat fotonya
+     * menyusul, barangnya sudah terlanjur dijadwalkan naik rak.
+     */
+    public function test_laporan_penolakan_tanpa_foto_surat_jalan_ditolak(): void
+    {
+        $order = $this->pesananTerkirim(denganBukti: false);
+        $detail = $order->details()->first();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Unggah dulu foto Surat Jalan');
+
+        $this->jasa()->report(
+            $order,
+            [['detail_id' => $detail->id, 'qty' => 2]],
+            'Warna tidak sesuai contoh, customer menolak sebagian.',
+            $this->sales->id,
+        );
+    }
+
+    public function test_tidak_ada_laporan_yang_tersimpan_saat_fotonya_belum_ada(): void
+    {
+        $order = $this->pesananTerkirim(denganBukti: false);
+        $detail = $order->details()->first();
+
+        $this->masuk($this->sales);
+
+        $this->post('/sales/report-return', [
+            'order_id' => $order->id,
+            'reason' => 'Warna tidak sesuai contoh, customer menolak sebagian.',
+            'qty' => [$detail->id => 2],
+        ])->assertSessionHas('error');
+
+        $this->assertSame(0, SalesReturn::query()->count());
+    }
+
+    /**
+     * Foto yang sudah DITOLAK Logistik tidak dihitung: laporan yang bersandar
+     * padanya berarti bersandar pada bukti yang sudah dinyatakan tidak sah.
+     */
+    public function test_foto_yang_sudah_ditolak_logistik_tidak_membuka_formulir(): void
+    {
+        $order = $this->pesananTerkirim();
+        $logistik = $this->login(Role::LOGISTICS);
+
+        $order->proofs()->first()->forceFill([
+            'status' => DeliveryProof::STATUS_REJECTED,
+            'rejection_reason' => 'Tanda tangan pelanggan tidak terbaca.',
+            'verified_by' => $logistik->id,
+            'verified_at' => now(),
+        ])->save();
+
+        $this->assertFalse(
+            $this->jasa()->bolehMelapor($order->refresh(), $this->sales),
+            'Bukti yang sudah ditolak bukan bukti.',
+        );
+    }
+
+    /**
+     * Formulirnya tidak sekadar hilang: halaman MENGATAKAN kenapa. Kartu yang
+     * lenyap tanpa keterangan terbaca sebagai fitur yang rusak, dan Sales
+     * menelepon Logistik untuk sesuatu yang bisa dijawab satu kalimat.
+     */
+    public function test_halaman_mengatakan_fotonya_harus_diunggah_dulu(): void
+    {
+        $order = $this->pesananTerkirim(denganBukti: false);
+
+        $this->masuk($this->sales);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertSee('Ada barang yang ditolak customer?')
+            ->assertSee('Unggah dulu foto Surat Jalan')
+            // Formulirnya sendiri belum ada.
+            ->assertDontSee('id="formTolak"', false);
     }
 }

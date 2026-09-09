@@ -92,6 +92,32 @@ class CustomerRejection
             }
 
             /*
+             * FOTO SURAT JALAN HARUS SUDAH ADA.
+             *
+             * Laporan penolakan adalah tagihan barang kembali ke gudang, dan
+             * yang menilainya — Logistik — tidak ikut ke toko. Satu-satunya
+             * hal yang bisa ia periksa adalah Surat Jalan bertanda tangan:
+             * di situ terlihat berapa yang benar-benar diterima pelanggan dan
+             * apa yang dicoretnya. Laporan yang datang tanpa foto memaksa
+             * Logistik memutuskan berdasarkan kalimat saja, dan pada saat
+             * fotonya menyusul, barangnya sudah terlanjur dijadwalkan naik
+             * rak.
+             *
+             * Yang dihitung adalah bukti yang MASIH BERLAKU. Foto yang sudah
+             * ditolak Logistik tidak dihitung: laporan yang bersandar padanya
+             * berarti bersandar pada bukti yang sudah dinyatakan tidak sah.
+             */
+            $adaBukti = $terkunci->proofs()->masihBerlaku()->exists();
+
+            if (! $adaBukti) {
+                throw new RuntimeException(
+                    'Unggah dulu foto Surat Jalan yang sudah ditandatangani pelanggan. '
+                    .'Logistik menilai laporan penolakan bersama foto itu, jadi laporan '
+                    .'tanpa foto tidak bisa diperiksa.'
+                );
+            }
+
+            /*
              * SATU LAPORAN BERJALAN PER PESANAN.
              *
              * Laporan kedua yang dibuka sebelum yang pertama selesai akan
@@ -519,12 +545,37 @@ class CustomerRejection
             ->get();
     }
 
-    /** Apakah user ini boleh melaporkan penolakan untuk pesanan itu? */
+    /**
+     * Boleh membuka formulir lapor penolakan?
+     *
+     * FOTO SURAT JALAN IKUT DIPERIKSA di sini, bukan hanya di report().
+     * Penjagaan di server saja berarti Sales mengetik seluruh laporannya
+     * sambil berdiri di depan toko, menekan kirim, lalu baru diberi tahu ia
+     * kurang satu langkah — dan isian yang sudah diketiknya hilang.
+     */
     public function bolehMelapor(?SalesOrder $order, ?User $user): bool
     {
         return $order !== null
             && $user !== null
             && $order->user_id === $user->id
-            && in_array($order->status, self::BOLEH_LAPOR, true);
+            && in_array($order->status, self::BOLEH_LAPOR, true)
+            && $order->proofs()->masihBerlaku()->exists();
+    }
+
+    /**
+     * Pesanannya sudah boleh dilaporkan, tetapi fotonya belum ada.
+     *
+     * Dipisahkan dari bolehMelapor() supaya halaman bisa MENGATAKAN kenapa
+     * formulirnya belum muncul. Kartu yang hilang tanpa keterangan akan
+     * terbaca sebagai fitur yang rusak, dan Sales menelepon Logistik untuk
+     * menanyakan sesuatu yang bisa dijawab satu kalimat di layar.
+     */
+    public function menungguBuktiDulu(?SalesOrder $order, ?User $user): bool
+    {
+        return $order !== null
+            && $user !== null
+            && $order->user_id === $user->id
+            && in_array($order->status, self::BOLEH_LAPOR, true)
+            && ! $order->proofs()->masihBerlaku()->exists();
     }
 }

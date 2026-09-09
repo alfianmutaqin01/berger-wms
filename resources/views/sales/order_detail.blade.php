@@ -346,6 +346,29 @@
         </div>
         @endif
 
+        {{-- Foto Surat Jalan belum ada. Formulirnya BELUM DIBUKA, dan
+             alasannya dikatakan — bukan dibiarkan jadi kartu yang hilang.
+             Laporan penolakan adalah tagihan barang kembali ke gudang, dan
+             Logistik yang menilainya tidak ikut ke toko: satu-satunya hal
+             yang bisa ia periksa adalah Surat Jalan bertanda tangan. --}}
+        @if($perluBuktiDulu && ! $laporanTolak)
+        <div class="card border-0 shadow-sm rounded-4 mb-3">
+            <div class="card-body px-3 px-md-4 py-3">
+                <div class="d-flex gap-2">
+                    <i class="bi bi-arrow-return-left text-muted fs-5"></i>
+                    <div class="small">
+                        <div class="fw-semibold text-dark mb-1">Ada barang yang ditolak customer?</div>
+                        <span class="text-muted">
+                            Unggah dulu foto Surat Jalan yang sudah ditandatangani pelanggan di kartu
+                            di atas. Logistik menilai laporan penolakan bersama foto itu, jadi
+                            formulirnya baru terbuka setelah fotonya ada.
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
         @if($bolehLaporTolak && ! $laporanTolak)
         @php
             /*
@@ -514,8 +537,7 @@
                                         Outstanding {{ number_format($outstanding) }}
                                     </span>
                                     <span class="text-muted">
-                                        dari {{ number_format($d->qty_ordered) }} dipesan &mdash;
-                                        menunggu dijadwalkan Logistik untuk pengiriman ulang.
+                                        dari {{ number_format($d->qty_ordered) }} dipesan.
                                     </span>
                                 </div>
                             @endif

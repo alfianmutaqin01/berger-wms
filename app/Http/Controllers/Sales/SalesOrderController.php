@@ -277,6 +277,11 @@ class SalesOrderController extends Controller
              */
             'bolehLaporTolak' => $penolakan->bolehMelapor($order, $request->user())
                 && $order->cancelled_at === null,
+
+            // Sudah boleh melapor, tapi foto Surat Jalannya belum ada.
+            // Halaman mengatakan itu, bukan menyembunyikan kartunya.
+            'perluBuktiDulu' => $penolakan->menungguBuktiDulu($order, $request->user())
+                && $order->cancelled_at === null,
             'laporanTolak' => SalesReturn::query()
                 ->where('sales_order_id', $order->id)
                 ->with('details.product:id,sku')
