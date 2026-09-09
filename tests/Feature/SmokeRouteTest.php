@@ -26,6 +26,7 @@ use App\Models\StockTransferDetail;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Reporting\ReportCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
@@ -356,6 +357,10 @@ class SmokeRouteTest extends TestCase
             'note' => $suratJalan->id,
             'token' => $suratJalan->epod_token,
             'notification' => $notifikasi->id,
+            // Kunci laporan, bukan id. Diambil dari katalognya sendiri supaya
+            // laporan yang suatu hari dihapus tidak meninggalkan contoh mati
+            // yang membuat smoke test menembak URL yang sudah tidak ada.
+            'key' => array_key_first(ReportCatalog::daftar()),
         ];
     }
 

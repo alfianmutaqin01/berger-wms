@@ -396,8 +396,23 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.transfers.cancel');
     });
 
-    Route::get('/reports', [ReportController::class, 'index'])
-        ->middleware('can:'.Permission::REPORTS_VIEW);
+    // Laporan & Ekspor (Fase 11 tahap 4). REPORTS_VIEW menjaga pintunya;
+    // izin per laporan diperiksa lagi di dalam ReportController karena
+    // kunci laporannya datang dari URL, bukan dari daftar rute.
+    Route::middleware('can:'.Permission::REPORTS_VIEW)->group(function () {
+        Route::get('/reports', [ReportController::class, 'index'])
+            ->name('wms.reports.index');
+
+        // Unduhan didaftarkan LEBIH DULU. Kalau '/reports/{key}' menang
+        // duluan, '/reports/penjualan-selesai/unduh' tidak akan pernah
+        // tercapai — dan yang menekan tombol unduh hanya melihat halaman
+        // pratinjau terbuka lagi tanpa penjelasan apa pun.
+        Route::get('/reports/{key}/unduh', [ReportController::class, 'download'])
+            ->name('wms.reports.download');
+
+        Route::get('/reports/{key}', [ReportController::class, 'show'])
+            ->name('wms.reports.show');
+    });
 
     Route::prefix('master')->group(function () {
         // Master Pelanggan (PRD §6.2 F-MASTER-06) — sudah terhubung ke database.

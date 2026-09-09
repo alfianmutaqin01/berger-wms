@@ -64,7 +64,7 @@
             @endcan
 
             @can(\App\Support\Permission::REPORTS_VIEW)
-                <li class="nav-item {{ request()->is('wms/reports') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->is('wms/reports*') ? 'active' : '' }}">
                     <a href="/wms/reports" class="nav-link">
                         <i class="bi bi-file-earmark-bar-graph"></i>
                         <span>Laporan & Analisis</span>

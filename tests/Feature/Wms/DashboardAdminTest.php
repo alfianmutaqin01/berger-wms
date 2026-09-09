@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
 use App\Support\Reporting\AdminDashboard;
+use App\Support\Reporting\ReportRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -445,5 +446,79 @@ class DashboardAdminTest extends TestCase
             // Angka dummy lama yang harus benar-benar hilang.
             ->assertDontSee('156 PO')
             ->assertDontSee('Toko Makmur');
+    }
+
+    /* ------------------------------------------------- Papan peringkat */
+
+    /**
+     * Papan peringkat dashboard dan laporan Produk Terlaris WAJIB sepakat.
+     *
+     * Keduanya menjawab pertanyaan yang persis sama, jadi kalau dashboard
+     * punya query sendiri cukup satu perbedaan kecil untuk membuat sebuah
+     * produk jadi nomor satu di layar tetapi nomor tiga di berkas Excel —
+     * dan tidak ada cara menebak mana yang benar. Karena itu kartunya
+     * memanggil ReportRunner yang sama, dan test ini menguncinya.
+     */
+    public function test_papan_peringkat_dashboard_sama_dengan_laporan(): void
+    {
+        $admin = $this->login(Role::SUPER_ADMIN);
+
+        $laris = Product::factory()->create(['sku' => 'LARIS-1', 'name' => 'Paling Laku']);
+        $sepi = Product::factory()->create(['sku' => 'SEPI-1', 'name' => 'Jarang Keluar']);
+
+        // Dipesan paling banyak tetapi hampir tidak pernah terkirim: tidak
+        // boleh menyalip yang benar-benar keluar.
+        $this->pesananTerkirim($sepi, dipesan: 900, terkirim: 3);
+        $this->pesananTerkirim($laris, dipesan: 60, terkirim: 60);
+
+        $peringkat = $this->metrik($admin)['terlaris'];
+
+        $this->assertSame('LARIS-1', $peringkat['produk'][0]['sku']);
+        $this->assertSame(60, $peringkat['produk'][0]['terkirim']);
+        $this->assertSame('SEPI-1', $peringkat['produk'][1]['sku']);
+        $this->assertSame(AdminDashboard::HARI_PERINGKAT, $peringkat['hari']);
+
+        $laporan = (new ReportRunner)->jalankan('produk-terlaris', $admin, [
+            'dari' => now()->subDays(AdminDashboard::HARI_PERINGKAT)->toDateString(),
+            'sampai' => now()->toDateString(),
+            'warehouse_id' => null,
+        ], AdminDashboard::PUNCAK);
+
+        $this->assertSame(
+            array_column($peringkat['produk'], 'sku'),
+            array_map(fn ($b) => $b[1], $laporan['baris']),
+            'Urutan di dashboard harus identik dengan urutan di laporan.',
+        );
+
+        $this->get('/wms/dashboard/admin')
+            ->assertOk()
+            ->assertSee('Produk Terlaris')
+            ->assertSee('Paling Laku')
+            ->assertSee('Pelanggan Teratas');
+    }
+
+    /** Logistik ikut melihat papan peringkat — izinnya REPORTS_VIEW. */
+    public function test_logistik_ikut_melihat_papan_peringkat(): void
+    {
+        $logistik = $this->login(Role::LOGISTICS);
+
+        $this->assertArrayHasKey('terlaris', $this->metrik($logistik));
+    }
+
+    private function pesananTerkirim(Product $produk, int $dipesan, int $terkirim): void
+    {
+        $order = $this->pesanan(SalesOrder::STATUS_COMPLETED, extra: [
+            'shipped_at' => now()->subDay(),
+            'completed_at' => now()->subDay(),
+        ]);
+
+        SalesOrderDetail::create([
+            'sales_order_id' => $order->id,
+            'product_id' => $produk->id,
+            'qty_ordered' => $dipesan,
+            'qty_approved' => $dipesan,
+            'qty_shipped' => $terkirim,
+            'outstanding_qty' => max($dipesan - $terkirim, 0),
+        ]);
     }
 }

@@ -121,6 +121,16 @@ class ActivityLog extends Model
     /** Pengaturan Sistem diubah (Fase 10). */
     public const SETTINGS_UPDATE = 'settings.update';
 
+    /**
+     * Laporan diunduh (Fase 11).
+     *
+     * Satu berkas Excel berisi data pelanggan beserta volume pembeliannya
+     * bisa beredar selamanya setelah keluar sekali. Yang tercatat bukan
+     * pembacaannya di layar (itu akan membanjiri log), melainkan momen
+     * datanya MENINGGALKAN sistem.
+     */
+    public const REPORT_EXPORT = 'report.export';
+
     /** Label Indonesia untuk penyaring & tampilan. */
     public const ACTION_LABELS = [
         self::STOCK_ADD => 'Tambah Stok',
@@ -163,6 +173,7 @@ class ActivityLog extends Model
         self::MASTER_UPDATE => 'Ubah Master Data',
         self::MASTER_DEACTIVATE => 'Nonaktifkan Master Data',
         self::SETTINGS_UPDATE => 'Ubah Pengaturan Sistem',
+        self::REPORT_EXPORT => 'Unduh Laporan',
     ];
 
     /**

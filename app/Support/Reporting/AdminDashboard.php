@@ -123,6 +123,7 @@ class AdminDashboard
             'karantina' => [Permission::INVENTORY_QUARANTINE, $this->karantina(...)],
             'segera_kedaluwarsa' => [Permission::INVENTORY_VIEW, $this->segeraKedaluwarsa(...)],
             'tren' => [Permission::REPORTS_VIEW, $this->tren(...)],
+            'terlaris' => [Permission::REPORTS_VIEW, $this->terlaris(...)],
 
             /* -------------------- Pengawasan: Manager & Super Admin saja.
              |
@@ -414,5 +415,54 @@ class AdminDashboard
         }
 
         return ['label' => $label, 'masuk' => $deretMasuk, 'selesai' => $deretSelesai];
+    }
+
+    /* ------------------------------------------------- Peringkat 30 hari */
+
+    /** Berapa hari ke belakang yang dihitung papan peringkat dashboard. */
+    public const HARI_PERINGKAT = 30;
+
+    /** Berapa baris yang muat di kartu tanpa membuatnya jadi tabel penuh. */
+    public const PUNCAK = 5;
+
+    /**
+     * Lima produk dan lima pelanggan teratas 30 hari terakhir.
+     *
+     * DIHITUNG ULANG LEWAT ReportRunner, BUKAN DENGAN QUERY SENDIRI.
+     * Kartu ini dan laporan Produk Terlaris menjawab pertanyaan yang persis
+     * sama, jadi keduanya wajib menjawabnya dengan angka yang sama. Kalau
+     * dashboard punya query sendiri, cukup satu perbedaan kecil — misalnya
+     * dashboard ikut menghitung baris ber-qty nol sementara laporannya tidak —
+     * untuk membuat "APKO 5L" nomor satu di layar tetapi nomor tiga di berkas
+     * Excel, tanpa ada yang tahu mana yang benar.
+     *
+     * @return array{hari:int, produk:list<array>, pelanggan:list<array>}
+     */
+    private function terlaris(?User $user): array
+    {
+        $runner = new ReportRunner;
+
+        $periode = [
+            'dari' => now()->subDays(self::HARI_PERINGKAT)->toDateString(),
+            'sampai' => now()->toDateString(),
+            'warehouse_id' => null,
+        ];
+
+        $produk = $runner->jalankan('produk-terlaris', $user, $periode, self::PUNCAK);
+        $pelanggan = $runner->jalankan('pelanggan-teratas', $user, $periode, self::PUNCAK);
+
+        return [
+            'hari' => self::HARI_PERINGKAT,
+            // Kolomnya dipetakan ke nama di sini supaya Blade tidak perlu tahu
+            // urutan kolom laporan — urutan yang suatu hari akan bergeser.
+            'produk' => array_map(fn ($b) => [
+                'sku' => $b[1], 'nama' => $b[2], 'satuan' => $b[4],
+                'terkirim' => $b[5], 'pesanan' => $b[6],
+            ], $produk['baris']),
+            'pelanggan' => array_map(fn ($b) => [
+                'kode' => $b[1], 'nama' => $b[2],
+                'pesanan' => $b[3], 'terkirim' => $b[5],
+            ], $pelanggan['baris']),
+        ];
     }
 }
