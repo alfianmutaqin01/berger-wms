@@ -582,11 +582,37 @@
                             <h2 class="mb-0 fw-bold text-dark">{{ $m['koreksi_stok']['jumlah'] }}</h2>
                             <span class="text-muted">kali penyesuaian</span>
                         </div>
-                        <div class="d-flex align-items-center gap-2 pt-2 border-top">
-                            <span class="badge {{ $m['koreksi_stok']['neto'] < 0 ? 'bg-danger-subtle text-danger' : ($m['koreksi_stok']['neto'] > 0 ? 'bg-success-subtle text-success' : 'bg-light text-muted border') }} rounded-pill px-2 py-1">
-                                Neto {{ $m['koreksi_stok']['neto'] > 0 ? '+' : '' }}{{ number_format($m['koreksi_stok']['neto']) }} unit
-                            </span>
-                            <span class="text-muted small">Pergeseran neto stok</span>
+                        {{-- "Pergeseran neto stok" tidak menjelaskan apa pun; ia
+                             hanya mengulang kata "neto". Yang sebenarnya ingin
+                             diketahui: setelah semua koreksi digabung, catatan
+                             stok jadi LEBIH BANYAK atau LEBIH SEDIKIT — dan itu
+                             dua kabar yang sangat berbeda. --}}
+                        @php
+                            $neto = $m['koreksi_stok']['neto'];
+                        @endphp
+                        <div class="pt-2 border-top">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge rounded-pill px-2 py-1 {{ $neto < 0 ? 'bg-danger-subtle text-danger' : ($neto > 0 ? 'bg-success-subtle text-success' : 'bg-light text-muted border') }}">
+                                    {{ $neto > 0 ? '+' : '' }}{{ number_format($neto) }} unit
+                                </span>
+                                <span class="text-dark small fw-medium">
+                                    @if($neto > 0)
+                                        Barang lebih banyak daripada catatan
+                                    @elseif($neto < 0)
+                                        Barang kurang dari catatan
+                                    @else
+                                        Koreksinya saling menutup
+                                    @endif
+                                </span>
+                            </div>
+                            {{-- Peringatan bahwa neto BISA MENYEMBUNYIKAN kesalahan
+                                 harus ada di kartunya, bukan cuma di kode: angka
+                                 kecil di sini tidak berarti tidak ada masalah. --}}
+                            <small class="text-muted d-block mt-1" style="font-size:.72rem">
+                                Gabungan seluruh koreksi. Tambah dan kurang bisa saling menutup,
+                                jadi angka kecil belum tentu berarti aman — lihat
+                                <a href="{{ route('wms.reports.show', 'pergerakan-stok') }}" class="text-decoration-none">rinciannya</a>.
+                            </small>
                         </div>
                     </div>
                 </div>
