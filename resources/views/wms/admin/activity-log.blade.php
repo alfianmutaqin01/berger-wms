@@ -151,7 +151,7 @@
      dipertanggungjawabkan. --}}
 <p class="text-center text-muted small mt-3 mb-0">
     <i class="bi bi-clock-history me-1"></i>
-    Riwayat disimpan {{ \App\Models\ActivityLog::UMUR_SIMPAN_HARI }} hari terakhir, lalu dibuang otomatis.
+    Riwayat disimpan {{ \App\Models\ActivityLog::umurSimpanHari() }} hari terakhir, lalu dibuang otomatis.
     Log tidak bisa diubah maupun dihapus satu per satu.
 </p>
 @endsection

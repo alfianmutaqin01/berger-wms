@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
  * Menghapus log aktivitas yang umurnya sudah lewat batas simpan.
  *
  * Keputusan pemilik produk: log hilang otomatis setelah 90 hari. Angkanya ada
- * di ActivityLog::UMUR_SIMPAN_HARI supaya halaman log bisa mengatakannya
+ * di ActivityLog::umurSimpanHari() supaya halaman log bisa mengatakannya
  * kepada pembaca — orang yang mencari kejadian empat bulan lalu berhak tahu
  * bahwa yang ia cari memang sudah tidak ada, bukan menyimpulkan sendiri bahwa
  * kejadiannya tidak pernah tercatat.
@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\DB;
 class PurgeActivityLogs extends Command
 {
     protected $signature = 'activity:purge
-        {--days= : Umur maksimal dalam hari (default ActivityLog::UMUR_SIMPAN_HARI)}
+        {--days= : Umur maksimal dalam hari (default ActivityLog::umurSimpanHari())}
         {--dry-run : Hitung saja, tidak menghapus}';
 
     protected $description = 'Menghapus log aktivitas yang lebih tua daripada batas simpan';
@@ -41,7 +41,7 @@ class PurgeActivityLogs extends Command
 
     public function handle(): int
     {
-        $hari = (int) ($this->option('days') ?: ActivityLog::UMUR_SIMPAN_HARI);
+        $hari = (int) ($this->option('days') ?: ActivityLog::umurSimpanHari());
 
         if ($hari < 1) {
             $this->error('Umur simpan minimal 1 hari.');

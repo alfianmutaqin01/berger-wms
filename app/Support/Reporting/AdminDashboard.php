@@ -15,6 +15,7 @@ use App\Models\StockTakeItem;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Support\Permission;
+use App\Support\Settings;
 use App\Support\WarehouseScope;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -57,11 +58,24 @@ use Illuminate\Support\Facades\DB;
  */
 class AdminDashboard
 {
-    /** Ambang "sebentar lagi kedaluwarsa" dalam hari. */
-    public const AMBANG_KEDALUWARSA = 90;
+    /**
+     * Ambang "sebentar lagi kedaluwarsa" dan "karantina segera lepas".
+     *
+     * METODE, bukan konstanta, sejak Fase 10: keduanya kini diatur Super Admin
+     * lewat Pengaturan Sistem. Ambang kedaluwarsa membaca setelan yang SAMA
+     * dengan halaman Data Stok — kalau keduanya punya angka sendiri, dashboard
+     * akan menyebut "12 batch" sementara halamannya menampilkan 9, dan tidak
+     * ada yang tahu mana yang benar.
+     */
+    public static function ambangKedaluwarsa(): int
+    {
+        return Settings::get(Settings::EXPIRY_WARNING_DAYS);
+    }
 
-    /** Ambang "karantina segera lepas" dalam hari. */
-    public const AMBANG_KARANTINA_LEPAS = 7;
+    public static function ambangKarantinaLepas(): int
+    {
+        return Settings::get(Settings::QUARANTINE_SOON_DAYS);
+    }
 
     /** Berapa bulan ke belakang yang digambar di grafik tren. */
     public const BULAN_TREN = 6;
@@ -244,7 +258,7 @@ class AdminDashboard
             // itulah yang menentukan pesanan mana bisa dijanjikan pekan ini.
             'lepas_pekan_ini' => $q()
                 ->whereNotNull('quarantine_until')
-                ->whereDate('quarantine_until', '<=', now()->addDays(self::AMBANG_KARANTINA_LEPAS))
+                ->whereDate('quarantine_until', '<=', now()->addDays(self::ambangKarantinaLepas()))
                 ->count(),
         ];
     }
@@ -255,14 +269,14 @@ class AdminDashboard
         $q = fn () => WarehouseScope::apply(
             InventoryStock::query()
                 ->sellable()
-                ->whereDate('expiry_date', '<=', now()->addDays(self::AMBANG_KEDALUWARSA)),
+                ->whereDate('expiry_date', '<=', now()->addDays(self::ambangKedaluwarsa())),
             $user,
         );
 
         return [
             'batch' => $q()->count(),
             'qty' => (int) $q()->sum('qty_available'),
-            'ambang' => self::AMBANG_KEDALUWARSA,
+            'ambang' => self::ambangKedaluwarsa(),
         ];
     }
 

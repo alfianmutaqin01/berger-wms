@@ -279,13 +279,13 @@ class NotificationTest extends TestCase
         $lama = ActivityLog::create([
             'action' => ActivityLog::ORDER_APPROVE,
             'description' => 'Menerima pesanan lama.',
-            'created_at' => now()->subDays(ActivityLog::UMUR_SIMPAN_HARI + 1),
+            'created_at' => now()->subDays(ActivityLog::umurSimpanHari() + 1),
         ]);
 
         $baru = ActivityLog::create([
             'action' => ActivityLog::ORDER_APPROVE,
             'description' => 'Menerima pesanan baru.',
-            'created_at' => now()->subDays(ActivityLog::UMUR_SIMPAN_HARI - 1),
+            'created_at' => now()->subDays(ActivityLog::umurSimpanHari() - 1),
         ]);
 
         $this->artisan('activity:purge')->assertSuccessful();
@@ -299,7 +299,7 @@ class NotificationTest extends TestCase
         ActivityLog::create([
             'action' => ActivityLog::ORDER_APPROVE,
             'description' => 'Menerima pesanan lama.',
-            'created_at' => now()->subDays(ActivityLog::UMUR_SIMPAN_HARI + 1),
+            'created_at' => now()->subDays(ActivityLog::umurSimpanHari() + 1),
         ]);
 
         $this->artisan('activity:purge --dry-run')->assertSuccessful();

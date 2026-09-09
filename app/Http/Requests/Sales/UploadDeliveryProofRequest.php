@@ -28,7 +28,7 @@ class UploadDeliveryProofRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'photos' => ['required', 'array', 'min:1', 'max:'.DeliveryProof::MAKS_FOTO],
+            'photos' => ['required', 'array', 'min:1', 'max:'.DeliveryProof::maksFoto()],
             'photos.*' => [
                 'required', 'file',
                 'mimes:jpg,jpeg,png',
@@ -50,7 +50,7 @@ class UploadDeliveryProofRequest extends FormRequest
     {
         return [
             'photos.required' => 'Pilih dulu foto Surat Jalan yang mau diunggah.',
-            'photos.max' => 'Paling banyak '.DeliveryProof::MAKS_FOTO.' foto sekali unggah.',
+            'photos.max' => 'Paling banyak '.DeliveryProof::maksFoto().' foto sekali unggah.',
             'photos.*.mimes' => 'Foto harus JPG atau PNG.',
             'photos.*.mimetypes' => 'Berkas ini bukan foto JPG atau PNG.',
             'photos.*.max' => 'Ukuran tiap foto maksimal 5 MB. Potret ulang dengan resolusi lebih kecil.',

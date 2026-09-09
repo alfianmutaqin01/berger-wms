@@ -17,8 +17,18 @@ use Carbon\CarbonInterface;
  */
 class ShelfLife
 {
-    /** Ambang peringatan dini kedaluwarsa (PRD §7.2.1: 90 hari). */
-    public const WARNING_DAYS = 90;
+    /**
+     * Ambang peringatan dini kedaluwarsa — PRD §7.2.1, bawaannya 90 hari.
+     *
+     * METODE, bukan konstanta, sejak Fase 10: nilainya sekarang bisa diubah
+     * Super Admin lewat Pengaturan Sistem. Nilai bawaannya tinggal di
+     * App\Support\Settings — satu tempat, supaya tidak ada dua angka yang
+     * suatu hari berbeda pendapat tentang hal yang sama.
+     */
+    public static function warningDays(): int
+    {
+        return Settings::get(Settings::EXPIRY_WARNING_DAYS);
+    }
 
     /**
      * Sisa umur simpan sebagai teks siap tampil.
@@ -102,9 +112,11 @@ class ShelfLife
 
         $sisaHari = (int) $now->diffInDays($expiry);
 
+        $ambang = self::warningDays();
+
         return match (true) {
-            $sisaHari <= self::WARNING_DAYS => 'critical',
-            $sisaHari <= self::WARNING_DAYS * 2 => 'warning',
+            $sisaHari <= $ambang => 'critical',
+            $sisaHari <= $ambang * 2 => 'warning',
             default => 'safe',
         };
     }

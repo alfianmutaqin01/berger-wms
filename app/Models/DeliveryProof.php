@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Settings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -42,7 +43,16 @@ class DeliveryProof extends Model
     /** PRD F-OUT-05: PNG atau JPG saja, maksimal 5 MB, paling banyak 3 foto. */
     public const MAKS_UKURAN_KB = 5120;
 
-    public const MAKS_FOTO = 3;
+    /**
+     * Kuota foto per pesanan — bawaannya 3 (PRD F-OUT-05).
+     *
+     * METODE, bukan konstanta, sejak Fase 10: Super Admin bisa mengubahnya
+     * lewat Pengaturan Sistem. Bawaannya tinggal di App\Support\Settings.
+     */
+    public static function maksFoto(): int
+    {
+        return Settings::get(Settings::PROOF_MAX_PHOTOS);
+    }
 
     public const MIME_DIIZINKAN = ['image/jpeg', 'image/png'];
 

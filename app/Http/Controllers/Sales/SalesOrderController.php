@@ -262,7 +262,7 @@ class SalesOrderController extends Controller
              * yang ditolak ikut dihitung, Sales yang tiga kali salah foto
              * terkunci selamanya dan pesanannya tidak akan pernah selesai.
              */
-            'sisaKuotaBukti' => DeliveryProof::MAKS_FOTO - $bukti
+            'sisaKuotaBukti' => DeliveryProof::maksFoto() - $bukti
                 ->whereIn('status', [DeliveryProof::STATUS_PENDING, DeliveryProof::STATUS_VERIFIED])
                 ->count(),
             'alasanDitolak' => $bukti->contains('status', DeliveryProof::STATUS_PENDING)

@@ -213,7 +213,7 @@
                     <div class="text-muted small">Bukti bisa diunggah setelah barang berangkat.</div>
                 @elseif($sisaKuotaBukti < 1)
                     <div class="text-muted small">
-                        Sudah ada {{ \App\Models\DeliveryProof::MAKS_FOTO }} foto yang berlaku. Menunggu diperiksa Logistik.
+                        Sudah ada {{ \App\Models\DeliveryProof::maksFoto() }} foto yang berlaku. Menunggu diperiksa Logistik.
                     </div>
                 @else
                 <form method="POST" action="{{ route('sales.proofs.store', $order) }}" enctype="multipart/form-data">

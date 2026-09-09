@@ -167,6 +167,18 @@ class Permission
     public const ADMIN_SEQUENCE = 'admin.sequence';
 
     /**
+     * Pengaturan Sistem — SUPER ADMIN SAJA (Fase 10).
+     *
+     * Manager sengaja tidak ikut, walau ia ikut di ADMIN_USERS dan
+     * ADMIN_SEQUENCE. Alasannya bukan soal kepercayaan melainkan CAKUPAN:
+     * setelan di sini berlaku untuk SELURUH perusahaan, sementara seluruh
+     * kewenangan Manager dibatasi ke gudangnya sendiri. Manager Karawang yang
+     * menggeser jam cutoff akan mengubah jam kerja Sales Pekanbaru yang tidak
+     * pernah ia temui.
+     */
+    public const ADMIN_SETTINGS = 'admin.settings';
+
+    /**
      * Log aktivitas: siapa melakukan apa, kapan — SUPER ADMIN SAJA.
      *
      * Manager sengaja TIDAK ikut, walau ia ikut di hampir semua gate admin
@@ -259,6 +271,7 @@ class Permission
         self::MASTER_LOCATIONS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_USERS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_SEQUENCE => [Role::SUPER_ADMIN, Role::MANAGER],
+        self::ADMIN_SETTINGS => [Role::SUPER_ADMIN],
         self::ADMIN_AUDIT => [Role::SUPER_ADMIN],
     ];
 

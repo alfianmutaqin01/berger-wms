@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Settings;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -117,6 +118,9 @@ class ActivityLog extends Model
 
     public const MASTER_DEACTIVATE = 'master.deactivate';
 
+    /** Pengaturan Sistem diubah (Fase 10). */
+    public const SETTINGS_UPDATE = 'settings.update';
+
     /** Label Indonesia untuk penyaring & tampilan. */
     public const ACTION_LABELS = [
         self::STOCK_ADD => 'Tambah Stok',
@@ -158,6 +162,7 @@ class ActivityLog extends Model
         self::MASTER_CREATE => 'Tambah Master Data',
         self::MASTER_UPDATE => 'Ubah Master Data',
         self::MASTER_DEACTIVATE => 'Nonaktifkan Master Data',
+        self::SETTINGS_UPDATE => 'Ubah Pengaturan Sistem',
     ];
 
     /**
@@ -170,7 +175,10 @@ class ActivityLog extends Model
      * dicegah adalah orang menghilangkan jejak dirinya sendiri, bukan
      * pembersihan yang berjalan menurut umur.
      */
-    public const UMUR_SIMPAN_HARI = 90;
+    public static function umurSimpanHari(): int
+    {
+        return Settings::get(Settings::ACTIVITY_RETENTION_DAYS);
+    }
 
     public $timestamps = false;
 

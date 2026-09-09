@@ -467,8 +467,24 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             Route::patch('/users/{user}/status', [UserController::class, 'toggleStatus'])->name('wms.users.status');
         });
 
+        // BACA-SAJA, dan itu keputusan rancangan. Prefix maupun nomor urut
+        // TIDAK bisa diubah dari layar: mengganti prefix memecah riwayat jadi
+        // dua bentuk yang tidak bisa dicari sekaligus, dan menggeser nomor
+        // mundur menghasilkan nomor kembar yang menghentikan pembuatan
+        // pesanan untuk semua orang. Tidak ada rute POST di sini.
         Route::get('/sequence', [AdminController::class, 'sequence'])
-            ->middleware('can:'.Permission::ADMIN_SEQUENCE);
+            ->middleware('can:'.Permission::ADMIN_SEQUENCE)
+            ->name('wms.admin.sequence');
+
+        // Pengaturan Sistem — SUPER ADMIN SAJA. Setelan di sini berlaku untuk
+        // seluruh perusahaan, sementara kewenangan Manager dibatasi ke
+        // gudangnya sendiri (lihat Permission::ADMIN_SETTINGS).
+        Route::middleware('can:'.Permission::ADMIN_SETTINGS)->group(function () {
+            Route::get('/settings', [AdminController::class, 'settings'])
+                ->name('wms.admin.settings');
+            Route::post('/settings', [AdminController::class, 'updateSettings'])
+                ->name('wms.admin.settings.update');
+        });
 
         // Log aktivitas — SUPER ADMIN SAJA, dan HANYA BACA. Tidak ada rute
         // tulis di sini bukan karena belum dibuat: log yang bisa disunting

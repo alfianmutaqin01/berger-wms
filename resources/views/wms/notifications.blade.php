@@ -75,6 +75,6 @@
      dibuang, bukan bahwa kejadiannya tidak pernah tercatat. --}}
 <p class="text-center text-muted small mt-3 mb-0">
     <i class="bi bi-info-circle me-1"></i>
-    Notifikasi tersimpan {{ \App\Models\ActivityLog::UMUR_SIMPAN_HARI }} hari terakhir.
+    Notifikasi tersimpan {{ \App\Models\ActivityLog::umurSimpanHari() }} hari terakhir.
 </p>
 @endsection

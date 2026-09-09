@@ -69,14 +69,14 @@ class ProofOfDelivery
              * keduanya lolos.
              */
             $terpakai = $terkunci->proofs()->masihBerlaku()->count();
-            $sisa = DeliveryProof::MAKS_FOTO - $terpakai;
+            $sisa = DeliveryProof::maksFoto() - $terpakai;
 
             if (count($berkas) > $sisa) {
                 throw new RuntimeException(sprintf(
                     'Pesanan ini sudah punya %d foto yang berlaku, jadi hanya bisa menambah %s lagi (maksimal %d).',
                     $terpakai,
                     $sisa < 1 ? 'tidak ada' : $sisa.' foto',
-                    DeliveryProof::MAKS_FOTO,
+                    DeliveryProof::maksFoto(),
                 ));
             }
 

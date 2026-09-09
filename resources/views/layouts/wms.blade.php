@@ -235,6 +235,7 @@
                 \App\Support\Permission::MASTER_LOCATIONS,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
+                \App\Support\Permission::ADMIN_SETTINGS,
             ])
                 <li class="nav-section mt-2">Keuangan & Sistem</li>
             @endcanany
@@ -254,6 +255,7 @@
                 \App\Support\Permission::MASTER_LOCATIONS,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
+                \App\Support\Permission::ADMIN_SETTINGS,
             ])
                 @php $systemOpen = request()->is('wms/master*') || request()->is('wms/admin*'); @endphp
                 <li class="nav-item">
@@ -286,6 +288,11 @@
                         @can(\App\Support\Permission::ADMIN_SEQUENCE)
                             <li class="nav-item {{ request()->is('wms/admin/sequence') ? 'active' : '' }}">
                                 <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penomoran Dokumen</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::ADMIN_SETTINGS)
+                            <li class="nav-item {{ request()->is('wms/admin/settings') ? 'active' : '' }}">
+                                <a href="/wms/admin/settings" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Setelan Operasional</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_AUDIT)

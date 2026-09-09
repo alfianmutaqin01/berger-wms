@@ -117,7 +117,7 @@ class InventoryController extends Controller
             ->when($filters['production_date'], fn ($q, $d) => $q->whereDate('production_date', $d))
             ->when($filters['expiring'], fn ($q) => $q
                 ->where('status', InventoryStock::STATUS_ACTIVE)
-                ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::WARNING_DAYS)->toDateString()));
+                ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::warningDays())->toDateString()));
 
         // Paginasi di tingkat SKU. Diurutkan dari SKU yang salah satu
         // batch-nya paling dekat kedaluwarsa: itulah yang harus dijual duluan.
@@ -181,7 +181,7 @@ class InventoryController extends Controller
                 'karantina' => (int) (clone $base)->inQuarantine()->sum('qty_available'),
                 'kritis' => (clone $base)
                     ->where('status', InventoryStock::STATUS_ACTIVE)
-                    ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::WARNING_DAYS)->toDateString())
+                    ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::warningDays())->toDateString())
                     ->count(),
             ],
             'filters' => $filters,
