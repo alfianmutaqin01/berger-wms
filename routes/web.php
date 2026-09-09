@@ -579,6 +579,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.booking.store');
             Route::get('/booking/availability', [BookingController::class, 'availability'])
                 ->name('wms.booking.availability');
+
+            // Customer dan produk dicari sambil mengetik, bukan dikirim
+            // sebagai dropdown berisi ribuan baris.
+            Route::get('/booking/lookup/customers', [BookingController::class, 'lookupCustomers'])
+                ->name('wms.booking.lookup.customers');
+            Route::get('/booking/lookup/products', [BookingController::class, 'lookupProducts'])
+                ->name('wms.booking.lookup.products');
             Route::post('/booking/{booking}/cancel', [BookingController::class, 'cancel'])
                 ->name('wms.booking.cancel');
         });

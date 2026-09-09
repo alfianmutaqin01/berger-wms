@@ -12,6 +12,7 @@ use App\Support\Activity;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\ProductBooking;
 use App\Support\WarehouseScope;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -41,11 +42,18 @@ use RuntimeException;
  * DATA CONTRACT
  * -------------
  * index() : $bookings LengthAwarePaginator<StockBooking>, $warehouses,
- *           $warehouse, $customers, $products,
- *           $filters{search,status,warehouse}, $stats{berlaku,menunggu,tertahan}
+ *           $warehouse, $filters{search,status,warehouse},
+ *           $stats{berlaku,menunggu,tertahan}
+ * lookupCustomers()/lookupProducts() : JSON untuk kolom ketik-lalu-pilih
  */
 class BookingController extends Controller
 {
+    /** Ketikan sependek ini belum menyempitkan apa pun; hasilnya kosong. */
+    private const MIN_CARI = 2;
+
+    /** Saran yang lebih panjang daripada layar mengembalikan masalah gulirnya. */
+    private const MAKS_SARAN = 10;
+
     public function __construct(
         private readonly ProductBooking $booking,
         private readonly FifoAllocator $allocator,
@@ -91,8 +99,11 @@ class BookingController extends Controller
             'bookings' => $bookings,
             'warehouses' => $pilihan,
             'warehouse' => $gudang,
-            'customers' => Customer::where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']),
-            'products' => Product::where('is_active', true)->orderBy('sku')->get(['id', 'sku', 'name', 'uom']),
+            // Customer dan produk TIDAK lagi dikirim sebagai daftar penuh:
+            // keduanya dicari sambil mengetik lewat lookupCustomers() dan
+            // lookupProducts(). Yang dulu ikut halaman ini 1.840 + 1.734
+            // baris, hampir seluruhnya tidak pernah dipakai.
+            'pilihanLama' => $this->pilihanLama(),
             'filters' => $filters,
             'statuses' => StockBooking::STATUS_LABELS,
             'stats' => [
@@ -235,6 +246,122 @@ class BookingController extends Controller
             $booking->reference,
             $dilepas,
         ));
+    }
+
+    /**
+     * Label pilihan yang harus muncul lagi setelah formulir ditolak.
+     *
+     * Kolom ketik-lalu-pilih menyimpan ID di input tersembunyi dan NAMA di
+     * kolom yang terlihat. Saat formulirnya dikembalikan karena validasi
+     * gagal, id-nya ikut kembali lewat old() tetapi namanya tidak — kolomnya
+     * terlihat KOSONG padahal id-nya masih terkirim. Orang lalu mengisi ulang
+     * customer yang sebenarnya sudah benar, atau lebih buruk: mengira ia
+     * belum memilih apa-apa dan menekan simpan lagi.
+     *
+     * @return array{customer: ?string, produk: ?string}
+     */
+    private function pilihanLama(): array
+    {
+        $customer = old('customer_id')
+            ? Customer::find((int) old('customer_id'), ['code', 'name'])
+            : null;
+
+        $produk = old('product_id')
+            ? Product::find((int) old('product_id'), ['sku', 'name'])
+            : null;
+
+        return [
+            'customer' => $customer ? $customer->code.' — '.$customer->name : null,
+            'produk' => $produk ? $produk->sku.' — '.$produk->name : null,
+        ];
+    }
+
+    /**
+     * Cari customer sambil mengetik.
+     *
+     * KENAPA TIDAK LAGI DIKIRIM SEBAGAI DAFTAR PENUH. Dropdown lamanya memuat
+     * SELURUH customer aktif — 1.840 baris saat ini, dan akan terus bertambah.
+     * Dua akibatnya: halaman membawa ratusan kilobita yang hampir seluruhnya
+     * tidak akan dipakai, dan orang harus menggulir mencari nama yang
+     * kebetulan ada di tengah. Yang kedua lebih mahal: menggulir daftar 1.840
+     * nama untuk mencari satu customer bukan pekerjaan, itu hukuman.
+     */
+    public function lookupCustomers(Request $request): JsonResponse
+    {
+        return response()->json($this->cari(
+            $request,
+            Customer::where('is_active', true)->orderBy('name'),
+            fn ($q, string $pola) => $q->where(fn ($w) => $w
+                ->where('name', 'ILIKE', $pola)->orWhere('code', 'ILIKE', $pola)),
+            ['id', 'code', 'name'],
+            fn (Customer $c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name],
+        ));
+    }
+
+    /**
+     * Cari produk sambil mengetik, sekalian dengan stok bebasnya.
+     *
+     * Stoknya ikut supaya pilihan bisa diambil TANPA mencoba satu per satu.
+     * Gudangnya dibaca dari permintaan karena formulir booking memang punya
+     * pemilih gudang — tetapi tetap lewat WarehouseScope::assert, jadi
+     * mengganti angkanya di URL tidak membuka gudang yang bukan wewenangnya.
+     */
+    public function lookupProducts(Request $request): JsonResponse
+    {
+        $gudangId = (int) $request->query('warehouse_id');
+
+        if ($gudangId > 0) {
+            WarehouseScope::assert($gudangId, $request->user());
+        }
+
+        $produk = $this->cari(
+            $request,
+            Product::where('is_active', true)->orderBy('sku'),
+            fn ($q, string $pola) => $q->where(fn ($w) => $w
+                ->where('sku', 'ILIKE', $pola)->orWhere('name', 'ILIKE', $pola)),
+            ['id', 'sku', 'name', 'uom'],
+            fn (Product $p) => ['id' => $p->id, 'sku' => $p->sku, 'name' => $p->name, 'uom' => $p->uom],
+        );
+
+        if ($produk === [] || $gudangId <= 0) {
+            return response()->json($produk);
+        }
+
+        // Sekali untuk seluruh hasil, bukan satu query per produk.
+        $tersedia = $this->allocator->availableFor(array_column($produk, 'id'), $gudangId);
+
+        return response()->json(array_map(
+            fn (array $p) => $p + ['tersedia' => $tersedia[$p['id']] ?? 0],
+            $produk,
+        ));
+    }
+
+    /**
+     * Kerangka pencarian yang sama untuk keduanya.
+     *
+     * Batas hasilnya disengaja: daftar saran yang lebih panjang daripada
+     * layar mengembalikan persis masalah yang sedang diperbaiki — menggulir
+     * mencari yang benar. Yang tidak ketemu dalam sepuluh baris teratas
+     * lebih cepat ditemukan dengan mengetik satu huruf lagi.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function cari(Request $request, $query, callable $saring, array $kolom, callable $bentuk): array
+    {
+        $q = trim((string) $request->query('q'));
+
+        // Dua huruf. Satu huruf mengembalikan hampir seluruh master data dan
+        // tidak menyempitkan apa pun.
+        if (mb_strlen($q) < self::MIN_CARI) {
+            return [];
+        }
+
+        return $saring($query, '%'.$q.'%')
+            ->limit(self::MAKS_SARAN)
+            ->get($kolom)
+            ->map($bentuk)
+            ->values()
+            ->all();
     }
 
     /** Stok bebas satu produk — dipakai formulir untuk menunjukkan sisanya. */

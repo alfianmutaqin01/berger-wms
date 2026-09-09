@@ -73,23 +73,33 @@
                     @endforeach
                 </select>
             </div>
+            {{-- KETIK LALU PILIH, bukan dropdown.
+
+                 Dropdown lamanya memuat seluruh master: 1.840 customer dan
+                 1.734 produk. Customer yang kebetulan ada di tengah harus
+                 dicari dengan menggulir ratusan nama — dan seluruh daftar itu
+                 ikut terkirim ke HP/komputer tiap kali halaman dibuka,
+                 padahal yang dipakai satu. --}}
             <div class="col-12 col-md-3">
                 <label class="form-label small fw-semibold">Customer</label>
-                <select name="customer_id" class="form-select" required>
-                    <option value="">— Pilih customer —</option>
-                    @foreach($customers as $c)
-                        <option value="{{ $c->id }}" @selected(old('customer_id') == $c->id)>{{ $c->name }} ({{ $c->code }})</option>
-                    @endforeach
-                </select>
+                <div class="position-relative" id="cariCustomer">
+                    <input type="text" class="form-control cari-teks" autocomplete="off"
+                           placeholder="Ketik nama atau kode customer..." value="{{ $pilihanLama['customer'] }}">
+                    <input type="hidden" name="customer_id" class="cari-nilai" value="{{ old('customer_id') }}">
+                    <div class="list-group position-absolute w-100 shadow cari-saran d-none"
+                         style="z-index:1050; max-height:260px; overflow-y:auto;"></div>
+                </div>
+                <div class="form-text">Minimal 2 huruf.</div>
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label small fw-semibold">Produk</label>
-                <select name="product_id" id="bookProduk" class="form-select" required>
-                    <option value="">— Pilih produk —</option>
-                    @foreach($products as $p)
-                        <option value="{{ $p->id }}" @selected(old('product_id') == $p->id)>{{ $p->sku }} — {{ $p->name }}</option>
-                    @endforeach
-                </select>
+                <div class="position-relative" id="cariProduk">
+                    <input type="text" class="form-control cari-teks" autocomplete="off"
+                           placeholder="Ketik SKU atau nama produk..." value="{{ $pilihanLama['produk'] }}">
+                    <input type="hidden" name="product_id" class="cari-nilai" value="{{ old('product_id') }}">
+                    <div class="list-group position-absolute w-100 shadow cari-saran d-none"
+                         style="z-index:1050; max-height:260px; overflow-y:auto;"></div>
+                </div>
                 {{-- Sisa stok bebas ditampilkan SEBELUM tombol ditekan. Kalau
                      tidak, orang baru tahu jatahnya cuma sebagian setelah
                      booking terlanjur dibuat. --}}
@@ -276,6 +286,11 @@
     </div>
 </div>
 
+{{-- Kolom ketik-lalu-pilih. Berkas yang sama dipakai formulir Buat Pesanan
+     milik Sales — penundaan ketikan dan penanda permintaan terakhirnya
+     harus diperbaiki di satu tempat, bukan dua. --}}
+@include('partials.pencarian-ketik')
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const form = document.getElementById('formBatalBooking');
@@ -291,9 +306,52 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Sisa stok bebas ditampilkan sambil memilih produk.
-    const produk = document.getElementById('bookProduk');
     const gudang = document.getElementById('bookGudang');
     const kotak = document.getElementById('bookTersedia');
+    const wadahProduk = document.getElementById('cariProduk');
+    const produk = wadahProduk.querySelector('.cari-nilai');
+
+    /* ------------------------------------------- Kolom ketik-lalu-pilih */
+
+    pasangPencarian(document.getElementById('cariCustomer'), {
+        url: (q) => '{{ route('wms.booking.lookup.customers') }}?q=' + encodeURIComponent(q),
+        tampilan: (c) => '<span class="badge bg-light text-dark border font-monospace me-1">'
+            + escapeHtml(c.code) + '</span>' + escapeHtml(c.name),
+        label: (c) => c.code + ' — ' + c.name,
+        kosong: 'Tidak ada customer yang cocok.',
+    });
+
+    pasangPencarian(wadahProduk, {
+        url: (q) => '{{ route('wms.booking.lookup.products') }}?q=' + encodeURIComponent(q)
+            + '&warehouse_id=' + encodeURIComponent(gudang.value),
+        tampilan: function (p) {
+            // Stok bebasnya ikut di daftar saran. Tanpa itu, memilih produk
+            // yang stoknya nol baru ketahuan setelah dipilih — dan orang
+            // mencoba satu per satu.
+            const sisa = Number(p.tersedia || 0);
+            const warna = sisa > 0 ? 'text-success' : 'text-warning';
+
+            return '<span class="fw-semibold small d-block text-truncate">' + escapeHtml(p.name) + '</span>'
+                + '<small class="text-muted font-monospace">' + escapeHtml(p.sku) + '</small>'
+                + '<small class="' + warna + ' ms-2">bebas ' + sisa.toLocaleString('id-ID')
+                + ' ' + escapeHtml(p.uom || '') + '</small>';
+        },
+        label: (p) => p.sku + ' — ' + p.name,
+        kosong: 'Tidak ada produk yang cocok.',
+        // Memilih produk langsung memicu pemeriksaan stok di bawah kolom.
+        setelahPilih: () => periksa(),
+    });
+
+    // Nama produk dan customer datang dari master data yang diketik orang.
+    // Menyisipkannya sebagai HTML mentah membuat satu nama produk yang
+    // mengandung tanda kurung siku bisa merusak — atau menyetir — halaman
+    // ini bagi setiap orang yang membukanya.
+    function escapeHtml(teks) {
+        const d = document.createElement('div');
+        d.textContent = teks == null ? '' : String(teks);
+
+        return d.innerHTML;
+    }
 
     function periksa() {
         if (! produk.value) {
@@ -340,8 +398,15 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
-    produk.addEventListener('change', periksa);
+    // Hanya gudang. Kolom produk sekarang input tersembunyi yang diisi
+    // skrip, dan mengisi .value dari skrip TIDAK memicu event 'change' —
+    // pemeriksaannya dipanggil langsung lewat setelahPilih di atas.
     gudang.addEventListener('change', periksa);
+
+    // Formulir yang ditolak validasi kembali membawa id pilihannya; label
+    // yang terlihat diisi ulang server (lihat $pilihanLama di controller),
+    // jadi tinggal stoknya yang perlu diperiksa lagi.
+    if (produk.value) periksa();
 });
 </script>
 @endsection

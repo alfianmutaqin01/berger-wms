@@ -482,4 +482,106 @@ class ProductBookingTest extends TestCase
         // di sini hanya mutasi booking: -6 lalu +6.
         $this->assertSame(0, (int) $ledger);
     }
+
+    /* ------------------------------------------- Kolom ketik-lalu-pilih */
+
+    /**
+     * Dropdown berisi seluruh master data DIHAPUS.
+     *
+     * Dulu halaman ini mengirim seluruh customer aktif dan seluruh produk
+     * aktif sebagai <option> — ribuan baris yang hampir seluruhnya tidak
+     * pernah dipakai, dan customer yang kebetulan ada di tengah harus dicari
+     * dengan menggulir. Dikunci di sini supaya tidak diam-diam kembali saat
+     * ada yang merasa dropdown "lebih sederhana".
+     */
+    public function test_halaman_tidak_lagi_memuat_seluruh_master_sebagai_dropdown(): void
+    {
+        $this->loginAs();
+
+        // Customer yang TIDAK dicari tidak boleh ikut terkirim ke halaman.
+        Customer::factory()->create(['is_active' => true, 'name' => 'PT Tidak Pernah Dipakai']);
+
+        $halaman = $this->get(route('wms.booking.index'))->assertOk();
+
+        $halaman->assertDontSee('PT Tidak Pernah Dipakai');
+        $halaman->assertDontSee('APKO-001');
+        $halaman->assertSee('Ketik nama atau kode customer...', false);
+        $halaman->assertSee('Ketik SKU atau nama produk...', false);
+    }
+
+    public function test_pencarian_customer_menjawab_yang_cocok_saja(): void
+    {
+        $this->loginAs();
+
+        $hasil = $this->getJson(route('wms.booking.lookup.customers', ['q' => 'Duluan']))
+            ->assertOk()
+            ->json();
+
+        $this->assertCount(1, $hasil);
+        $this->assertSame('PT Duluan', $hasil[0]['name']);
+
+        // Satu huruf tidak menyempitkan apa pun; jawabannya kosong, bukan
+        // seluruh isi master data.
+        $this->getJson(route('wms.booking.lookup.customers', ['q' => 'P']))
+            ->assertOk()
+            ->assertExactJson([]);
+    }
+
+    /**
+     * Hasil pencarian produk membawa stok bebasnya.
+     *
+     * Tanpa itu, produk yang stoknya nol baru ketahuan setelah dipilih — dan
+     * orang mencoba satu per satu sampai ketemu yang ada barangnya.
+     */
+    public function test_pencarian_produk_menyertakan_stok_bebas(): void
+    {
+        $this->loginAs();
+
+        $this->stok(10);
+
+        $hasil = $this->getJson(route('wms.booking.lookup.products', [
+            'q' => 'APKO', 'warehouse_id' => $this->gudang->id,
+        ]))->assertOk()->json();
+
+        $this->assertCount(1, $hasil);
+        $this->assertSame('APKO-001', $hasil[0]['sku']);
+        $this->assertSame(10, $hasil[0]['tersedia']);
+    }
+
+    /** Stok yang sedang dibooking tidak lagi terhitung bebas di daftar saran. */
+    public function test_stok_yang_dibooking_hilang_dari_saran_pencarian(): void
+    {
+        $this->loginAs();
+
+        $this->stok(10);
+        $this->buatBooking(4)->assertSessionHasNoErrors();
+
+        $hasil = $this->getJson(route('wms.booking.lookup.products', [
+            'q' => 'APKO', 'warehouse_id' => $this->gudang->id,
+        ]))->assertOk()->json();
+
+        $this->assertSame(6, $hasil[0]['tersedia'], '10 dikurangi 4 yang sudah ditahan.');
+    }
+
+    /** Gudang di URL tidak bisa dipakai mengintip gudang yang bukan wewenangnya. */
+    public function test_pencarian_produk_gudang_lain_ditolak(): void
+    {
+        $this->loginAs();
+
+        $lain = Warehouse::factory()->create(['code' => 'WH-99', 'name' => 'Pekanbaru']);
+
+        $this->getJson(route('wms.booking.lookup.products', [
+            'q' => 'APKO', 'warehouse_id' => $lain->id,
+        ]))->assertForbidden();
+    }
+
+    public function test_pencarian_hanya_untuk_yang_berhak_membuka_booking(): void
+    {
+        foreach ([Role::SALES, Role::WAREHOUSE_OPERATOR] as $slug) {
+            $this->loginAs($slug);
+
+            $this->getJson(route('wms.booking.lookup.customers', ['q' => 'Duluan']))->assertForbidden();
+            $this->getJson(route('wms.booking.lookup.products', ['q' => 'APKO']))->assertForbidden();
+        }
+    }
 }
