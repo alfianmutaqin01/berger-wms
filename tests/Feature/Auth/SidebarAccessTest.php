@@ -263,6 +263,38 @@ class SidebarAccessTest extends TestCase
         $this->post('/wms/inventory/adjust')->assertForbidden();
     }
 
+    /**
+     * Logistik MELIHAT stok, menunya pun ada.
+     *
+     * Ditulis karena keadaannya sempat diragukan, dan "kelihatannya tidak
+     * ada" adalah dugaan yang cuma bisa dijawab dengan menjalankannya. Halaman
+     * dan menunya terbukti terbuka; yang memang tertutup hanya mengubah angka
+     * stoknya — dan itu diperiksa test di atas.
+     */
+    public function test_logistik_melihat_menu_dan_halaman_data_stok(): void
+    {
+        $this->loginAs(Role::LOGISTICS);
+
+        $html = $this->get('/wms/dashboard/admin')->assertOk()->getContent();
+
+        $this->assertStringContainsString('Data Stok', $html);
+        $this->assertStringContainsString('/wms/inventory', $html);
+
+        $this->get('/wms/inventory')->assertOk();
+    }
+
+    /**
+     * Yang membatasi Logistik BUKAN menunya, melainkan tombol di dalamnya:
+     * menambah baris stok baru sama saja menciptakan angka tanpa dokumen
+     * inbound di belakangnya — sama beratnya dengan koreksi qty.
+     */
+    public function test_logistik_tidak_bisa_menambah_baris_stok_baru(): void
+    {
+        $this->loginAs(Role::LOGISTICS);
+
+        $this->post(route('wms.inventory.store'))->assertForbidden();
+    }
+
     /* -------------------------------------------------- Redirect dashboard */
 
     /** /wms/dashboard harus mengarah ke dashboard milik role, bukan selalu admin. */
