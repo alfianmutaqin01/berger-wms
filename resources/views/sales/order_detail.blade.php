@@ -466,66 +466,58 @@
                      layar — justru angka itu yang paling dicari. --}}
                 <ul class="list-group list-group-flush">
                     @foreach($order->details as $d)
+                        @php
+                            /*
+                             * ANGKA BESAR DI KANAN = YANG BENAR-BENAR BERANGKAT.
+                             * Sesudah barangnya jalan, itulah angka yang dicari
+                             * Sales lebih dulu: berapa yang sungguh sampai ke
+                             * pelanggan. Sebelum berangkat belum ada apa pun untuk
+                             * dilaporkan, jadi yang ditampilkan qty pesanannya.
+                             *
+                             * Istilah "Disetujui" sengaja tidak lagi muncul. Sales
+                             * tidak menagih dengan angka persetujuan, dan dua angka
+                             * berdampingan yang sama-sama bukan "terkirim" justru
+                             * membuat barisnya tidak terbaca.
+                             */
+                            $sudahJalan = $order->shipped_at !== null;
+                            $angkaUtama = $sudahJalan ? (int) $d->qty_shipped : (int) $d->qty_ordered;
+                            $outstanding = (int) $d->outstanding_qty;
+                        @endphp
                         <li class="list-group-item px-3 px-md-4 py-3">
                             <div class="d-flex justify-content-between align-items-start gap-3">
                                 <div style="min-width: 0;">
                                     <div class="fw-semibold text-dark">{{ $d->product?->name }}</div>
                                     <small class="font-monospace text-muted">{{ $d->product?->sku }}</small>
                                 </div>
-                                <span class="badge bg-primary rounded-pill flex-shrink-0">
-                                    {{ number_format($d->qty_ordered) }}
-                                </span>
+                                {{-- Diberi label, karena artinya BERUBAH begitu
+                                     pesanan berangkat. Angka telanjang yang diam-diam
+                                     berganti makna lebih buruk daripada tidak ada. --}}
+                                <div class="text-center flex-shrink-0">
+                                    <span class="badge bg-primary rounded-pill">
+                                        {{ number_format($angkaUtama) }}
+                                    </span>
+                                    <small class="text-muted d-block" style="font-size:.7rem">
+                                        {{ $sudahJalan ? 'terkirim' : 'dipesan' }}
+                                    </small>
+                                </div>
                             </div>
 
-                            @if($order->approved_at)
-                                {{-- Baris ini hanya muncul SESUDAH approval. Sebelum
-                                     itu qty_approved bernilai 0, dan 0 di layar akan
-                                     terbaca "tidak ada yang disetujui" padahal
-                                     artinya "belum dinilai". --}}
-                                @php
-                                    /*
-                                     * Kekurangan punya DUA sebab yang berbeda, dan
-                                     * dahulu keduanya cuma tampil sebagai satu angka
-                                     * "Tidak terpenuhi". Baris yang dipesan 4,
-                                     * disetujui 4, lalu berangkat 3 terbaca seolah
-                                     * angkanya salah hitung — padahal kurangnya
-                                     * terjadi di gudang, bukan di persetujuan.
-                                     *
-                                     * kurangSetuju: ditolak sejak awal oleh Logistik.
-                                     * kurangKirim : disetujui, tapi barangnya tidak
-                                     *               berangkat (stok kurang saat picking).
-                                     */
-                                    $kurangSetuju = max(0, (int) $d->qty_ordered - (int) $d->qty_approved);
-                                    $kurangKirim = $order->shipped_at
-                                        ? max(0, (int) $d->qty_approved - (int) $d->qty_shipped)
-                                        : 0;
-                                @endphp
-                                <div class="d-flex flex-wrap gap-3 mt-2 small">
-                                    <span class="text-muted">
-                                        Disetujui <strong class="text-dark">{{ number_format($d->qty_approved) }}</strong>
+                            @if($outstanding > 0)
+                                {{-- Outstanding, bukan "tidak terpenuhi". Kata itu
+                                     terdengar seperti kasus yang sudah ditutup,
+                                     padahal sisanya masih jadi utang ke pelanggan
+                                     dan sewaktu-waktu dijadwalkan Logistik untuk
+                                     Pengiriman Ulang. --}}
+                                <div class="mt-2 small">
+                                    <span class="text-danger fw-semibold">
+                                        <i class="bi bi-hourglass-split me-1"></i>
+                                        Outstanding {{ number_format($outstanding) }}
                                     </span>
-                                    @if($order->shipped_at)
-                                        <span class="text-muted">
-                                            Terkirim <strong class="text-dark">{{ number_format($d->qty_shipped) }}</strong>
-                                        </span>
-                                    @endif
+                                    <span class="text-muted">
+                                        dari {{ number_format($d->qty_ordered) }} dipesan &mdash;
+                                        menunggu dijadwalkan Logistik untuk pengiriman ulang.
+                                    </span>
                                 </div>
-                                @if($kurangSetuju > 0 || $kurangKirim > 0)
-                                    <div class="d-flex flex-wrap gap-3 mt-1 small">
-                                        @if($kurangSetuju > 0)
-                                            <span class="text-danger">
-                                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
-                                                {{ number_format($kurangSetuju) }} tidak disetujui
-                                            </span>
-                                        @endif
-                                        @if($kurangKirim > 0)
-                                            <span class="text-danger">
-                                                <i class="bi bi-box-seam me-1"></i>
-                                                {{ number_format($kurangKirim) }} belum berangkat
-                                            </span>
-                                        @endif
-                                    </div>
-                                @endif
                             @endif
                         </li>
                     @endforeach

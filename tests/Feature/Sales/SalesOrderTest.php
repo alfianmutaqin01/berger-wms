@@ -736,39 +736,65 @@ class SalesOrderTest extends TestCase
         $this->get('/sales/orders/'.$order->id)->assertOk()->assertDontSee('KALENG');
     }
 
-    /** Sebelum disetujui, qty_approved 0 berarti "belum dinilai", bukan "nol". */
-    public function test_qty_disetujui_belum_ditampilkan_sebelum_approval(): void
+    public function test_istilah_disetujui_tidak_dipakai_di_halaman_sales(): void
     {
         $sales = $this->loginAs();
         $order = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
         SalesOrderDetail::factory()->create(['sales_order_id' => $order->id, 'qty_ordered' => 42]);
 
-        // "Disetujui 0" akan terbaca sebagai "tidak ada yang disetujui",
-        // padahal artinya pesanan ini belum dinilai Logistik.
+        // Sales tidak menagih dengan angka persetujuan. Yang ia butuhkan
+        // adalah berapa yang berangkat dan berapa yang masih terutang.
         $this->get('/sales/orders/'.$order->id)
             ->assertOk()
-            ->assertDontSee('Disetujui')
-            ->assertDontSee('tidak disetujui');
+            ->assertDontSee('Disetujui');
     }
 
-    /** Sesudah approval, qty disetujui dan Outstanding barulah muncul. */
-    public function test_qty_disetujui_muncul_setelah_approval(): void
+    /**
+     * Sisa yang belum berangkat disebut OUTSTANDING, bukan "tidak terpenuhi":
+     * kata itu terdengar seperti kasus yang sudah ditutup, padahal sisanya
+     * masih utang ke pelanggan dan menunggu dijadwalkan Pengiriman Ulang.
+     */
+    public function test_sisa_yang_belum_berangkat_disebut_outstanding(): void
     {
         $sales = $this->loginAs();
         $order = SalesOrder::factory()->submitted()->create([
             'user_id' => $sales->id,
-            'status' => SalesOrder::STATUS_APPROVED,
-            'approved_at' => now(),
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'approved_at' => now()->subDay(),
+            'shipped_at' => now(),
         ]);
         SalesOrderDetail::factory()->create([
             'sales_order_id' => $order->id,
-            'qty_ordered' => 100, 'qty_approved' => 80, 'outstanding_qty' => 20,
+            'qty_ordered' => 5, 'qty_approved' => 5, 'qty_shipped' => 3,
+            'outstanding_qty' => 2,
         ]);
 
         $this->get('/sales/orders/'.$order->id)
             ->assertOk()
-            ->assertSee('Disetujui')
-            ->assertSee('80')
-            ->assertSee('20 tidak disetujui');
+            // Angka besar di kanan adalah yang benar-benar berangkat.
+            ->assertSee('terkirim')
+            ->assertSee('Outstanding 2')
+            ->assertSee('dari 5 dipesan');
+    }
+
+    /** Baris yang berangkat utuh tidak boleh memunculkan baris outstanding. */
+    public function test_baris_yang_berangkat_utuh_tidak_menampilkan_outstanding(): void
+    {
+        $sales = $this->loginAs();
+        $order = SalesOrder::factory()->submitted()->create([
+            'user_id' => $sales->id,
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'approved_at' => now()->subDay(),
+            'shipped_at' => now(),
+        ]);
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'qty_ordered' => 5, 'qty_approved' => 5, 'qty_shipped' => 5,
+            'outstanding_qty' => 0,
+        ]);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertDontSee('Outstanding');
     }
 }

@@ -840,30 +840,4 @@ class CustomerRejectionTest extends TestCase
         $this->assertStringNotContainsString('"sku":"SKU-TIDAK-BERANGKAT"', $html);
         $this->assertStringContainsString('"sku":"'.$this->produk->sku.'"', $html);
     }
-
-    /**
-     * Kekurangan punya dua sebab, dan dahulu keduanya tampil sebagai satu
-     * angka "Tidak terpenuhi". Baris yang disetujui penuh lalu berangkat
-     * kurang terbaca seolah angkanya salah hitung.
-     */
-    public function test_kekurangan_saat_kirim_dibedakan_dari_yang_tidak_disetujui(): void
-    {
-        $order = $this->pesananTerkirim();
-
-        // Rincian disetujui/terkirim memang hanya digambar sesudah approval.
-        $order->forceFill(['approved_at' => now()->subDays(2)])->save();
-
-        $order->details()->first()->forceFill([
-            'qty_shipped' => 9,
-            'outstanding_qty' => 1,
-        ])->save();
-
-        $this->masuk($this->sales);
-
-        $this->get('/sales/orders/'.$order->id)
-            ->assertOk()
-            ->assertSee('Terkirim')
-            ->assertSee('1 belum berangkat')
-            ->assertDontSee('1 tidak disetujui');
-    }
 }
