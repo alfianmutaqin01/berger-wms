@@ -461,6 +461,48 @@
                     @endif
                 </dl>
 
+                {{-- FOTO BUKTI SAMPAI (Fase 12).
+
+                     Dikumpulkan supaya DILIHAT. Bukti yang tersimpan rapi
+                     tetapi tidak pernah muncul di layar mana pun sama saja
+                     dengan tidak dikumpulkan — dan Surat Jalan inilah layar
+                     yang dibuka orang saat sebuah pengiriman dipersoalkan.
+
+                     ASALNYA DITULIS APA ADANYA. 'camera' berarti dijepret di
+                     halaman konfirmasi saat itu juga; 'file' berarti dipilih
+                     dari HP lewat jalur cadangan, dan bisa saja foto lama.
+                     Keduanya tidak sama kuat, jadi tidak ditampilkan sama. --}}
+                @if($note->arrival_photo_path)
+                    @php($dariKamera = $note->arrival_photo_source === \App\Support\Outbound\ArrivalPhoto::SUMBER_KAMERA)
+                    <div class="border rounded-4 overflow-hidden mb-3">
+                        <a href="{{ route('wms.delivery.arrival-photo', $note) }}" target="_blank" rel="noopener">
+                            <img src="{{ route('wms.delivery.arrival-photo', $note) }}"
+                                 class="w-100" style="max-height:220px;object-fit:cover"
+                                 alt="Foto barang di lokasi">
+                        </a>
+                        <div class="px-3 py-2 bg-light d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <span class="badge rounded-pill {{ $dariKamera ? 'bg-success-subtle text-success-emphasis' : 'bg-warning-subtle text-warning-emphasis' }}">
+                                <i class="bi bi-{{ $dariKamera ? 'camera-fill' : 'paperclip' }} me-1"></i>
+                                {{ $dariKamera ? 'Dijepret di lokasi' : 'Dari berkas HP' }}
+                            </span>
+                            <small class="text-muted">
+                                {{ $note->arrival_photo_taken_at?->format('d M Y H:i') }}
+                            </small>
+                        </div>
+                    </div>
+                @elseif($note->delivered_at)
+                    {{-- Pengiriman lama, dikonfirmasi sebelum aturan foto ada.
+                         Dikatakan apa adanya alih-alih dibiarkan kosong: yang
+                         mencari fotonya dan tidak menemukannya akan mengira
+                         sistemnya rusak, padahal fotonya memang tidak pernah
+                         diminta. --}}
+                    <div class="alert alert-secondary border-0 rounded-4 small">
+                        <i class="bi bi-camera-video-off me-1"></i>
+                        Tidak ada foto bukti sampai. Pengiriman ini dikonfirmasi sebelum foto
+                        diwajibkan.
+                    </div>
+                @endif
+
                 @if($note->epod_token)
                 {{-- STATUS PESAN TERPISAH DARI STATUS BARANG. Truk tidak
                      menunggu WhatsApp; tetapi kegagalannya harus terlihat,

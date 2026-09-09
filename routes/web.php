@@ -656,6 +656,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             Route::post('/delivery/{note}/resend', [DeliveryController::class, 'resend'])
                 ->name('wms.delivery.resend');
 
+            // Foto bukti sampai yang dijepret supir (Fase 12). Lewat rute
+            // berizin, BUKAN dari folder publik: fotonya memperlihatkan
+            // alamat dan halaman pelanggan, dan tautan di storage/public bisa
+            // dibuka siapa pun yang menebak namanya.
+            Route::get('/delivery/{note}/foto-sampai', [DeliveryController::class, 'arrivalPhoto'])
+                ->name('wms.delivery.arrival-photo');
+
             // Memasangkan SJ yatim ke pesanannya sekaligus membetulkan nomor
             // SO yang salah ketik (Fase 6 tahap 5).
             Route::post('/delivery/{note}/pair', [DeliveryController::class, 'pair'])

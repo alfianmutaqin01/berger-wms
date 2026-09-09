@@ -9,6 +9,7 @@ use App\Models\ActivityLog;
 use App\Models\DeliveryNote;
 use App\Models\SalesOrder;
 use App\Support\Activity;
+use App\Support\Outbound\ArrivalPhoto;
 use App\Support\Outbound\Shipment;
 use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
@@ -16,6 +17,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Surat Jalan & Pengiriman — PRD §6.5 F-OUT-04, Fase 6 tahap 4.
@@ -100,6 +102,21 @@ class DeliveryController extends Controller
                     ->count(),
             ],
         ]);
+    }
+
+    /**
+     * Foto bukti sampai yang dijepret supir (Fase 12).
+     *
+     * Batas gudang berlaku di sini juga, sama seperti halaman detailnya.
+     * Berkas yang disajikan lewat rute sendiri mudah terlupakan saat
+     * pembatasan ditambahkan ke halamannya — dan gambar isi gudang pelanggan
+     * gudang lain sama bocornya dengan tabelnya.
+     */
+    public function arrivalPhoto(Request $request, DeliveryNote $note, ArrivalPhoto $foto): StreamedResponse
+    {
+        WarehouseScope::assert($note->warehouse_id, $request->user());
+
+        return $foto->tampilkan($note);
     }
 
     /** Rincian satu Surat Jalan: perbandingan qty, data supir, status pesan. */

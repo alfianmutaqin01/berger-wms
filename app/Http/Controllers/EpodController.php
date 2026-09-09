@@ -7,6 +7,7 @@ use App\Models\DeliveryNote;
 use App\Models\Notification;
 use App\Support\Activity;
 use App\Support\Notifier;
+use App\Support\Outbound\ArrivalPhoto;
 use App\Support\Outbound\Shipment;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -33,7 +34,10 @@ use RuntimeException;
  */
 class EpodController extends Controller
 {
-    public function __construct(private readonly Shipment $pengiriman) {}
+    public function __construct(
+        private readonly Shipment $pengiriman,
+        private readonly ArrivalPhoto $foto,
+    ) {}
 
     public function show(string $token): View
     {
@@ -51,11 +55,40 @@ class EpodController extends Controller
             // penerima, dan menahan konfirmasi karenanya berarti pengiriman
             // yang sudah sampai tidak pernah tercatat sampai.
             'received_by_name' => ['nullable', 'string', 'max:100'],
-        ], [], ['received_by_name' => 'nama penerima']);
+
+            // WAJIB, dan inilah perubahan pokok Fase 12. Pesan galatnya
+            // ditulis untuk orang yang sedang berdiri di depan gudang
+            // pelanggan sambil memegang HP — bukan "The photo field is
+            // required".
+            'photo' => [
+                'required', 'file', 'image',
+                'mimetypes:'.implode(',', ArrivalPhoto::MIME_DIIZINKAN),
+                'max:'.(int) (ArrivalPhoto::MAKS_BYTE / 1024),
+            ],
+            'photo_source' => ['nullable', 'string', 'in:camera,file'],
+        ], [
+            'photo.required' => 'Foto barang di lokasi belum diambil. Arahkan kamera ke barang lalu tekan tombol ambil foto.',
+            'photo.image' => 'Berkas yang terkirim bukan gambar. Ulangi pengambilan fotonya.',
+            'photo.mimetypes' => 'Berkas yang terkirim bukan gambar. Ulangi pengambilan fotonya.',
+            'photo.max' => 'Fotonya terlalu besar. Ulangi pengambilan fotonya.',
+        ], ['received_by_name' => 'nama penerima', 'photo' => 'foto barang']);
+
+        // Disimpan DI LUAR transaksi. Kalau transaksinya nanti gagal, yang
+        // tertinggal cuma berkas yatim di disk — jauh lebih murah daripada
+        // baris basis data yang menunjuk berkas yang gagal ditulis.
+        $foto = $this->foto->simpan(
+            $request->file('photo'),
+            $data['photo_source'] ?? ArrivalPhoto::SUMBER_BERKAS,
+        );
 
         try {
-            $this->pengiriman->confirmDelivery($note, $data['received_by_name'] ?? null);
+            $this->pengiriman->confirmDelivery($note, $data['received_by_name'] ?? null, $foto);
         } catch (RuntimeException $e) {
+            // Konfirmasinya batal, jadi fotonya tidak boleh tertinggal:
+            // berkas yatim yang tidak ditunjuk siapa pun akan menumpuk diam-
+            // diam sampai disknya penuh, dan tidak ada yang tahu asalnya.
+            $this->foto->buang($foto['arrival_photo_path']);
+
             return back()->with('error', $e->getMessage());
         }
 
@@ -82,6 +115,11 @@ class EpodController extends Controller
                 'surat_jalan' => $note->document_no,
                 'penerima' => $data['received_by_name'] ?? null,
                 'supir' => $note->driver_name,
+                // Asal fotonya ikut dicatat karena 'camera' dan 'file' TIDAK
+                // sama kuat sebagai bukti — lihat App\Support\Outbound\
+                // ArrivalPhoto. Yang menelusuri sengketa pengiriman perlu
+                // tahu bedanya tanpa harus membuka barisnya sendiri.
+                'foto' => $foto['arrival_photo_source'],
             ],
         );
 

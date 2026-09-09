@@ -61,6 +61,8 @@ class DeliveryNote extends Model
         'driver_name', 'driver_phone', 'vehicle_plate',
         'shipped_at', 'shipped_by', 'epod_token',
         'delivered_at', 'received_by_name',
+        'arrival_photo_path', 'arrival_photo_mime', 'arrival_photo_size',
+        'arrival_photo_source', 'arrival_photo_taken_at',
         'notify_status', 'notify_attempts', 'notified_at', 'notify_error',
         'substitution_confirmed_at', 'substitution_confirmed_by', 'substitution_reason',
     ];
@@ -72,6 +74,8 @@ class DeliveryNote extends Model
             'imported_at' => 'datetime',
             'shipped_at' => 'datetime',
             'delivered_at' => 'datetime',
+            'arrival_photo_taken_at' => 'datetime',
+            'arrival_photo_size' => 'integer',
             'notified_at' => 'datetime',
             'substitution_confirmed_at' => 'datetime',
             'notify_attempts' => 'integer',

@@ -358,10 +358,34 @@ class Shipment
      *
      * @throws RuntimeException
      */
-    public function confirmDelivery(DeliveryNote $note, ?string $penerima): void
+    /**
+     * @param  array<string, mixed>  $foto  kolom foto bukti sampai; WAJIB terisi
+     */
+    public function confirmDelivery(DeliveryNote $note, ?string $penerima, array $foto = []): void
     {
-        DB::transaction(function () use ($note, $penerima) {
+        DB::transaction(function () use ($note, $penerima, $foto) {
             $terkunci = DeliveryNote::query()->lockForUpdate()->findOrFail($note->id);
+
+            /*
+             * FOTO WAJIB — Fase 12.
+             *
+             * Sebelum ini, menekan "Barang Sudah Sampai" sudah cukup untuk
+             * membuat pengiriman tercatat sampai. Tidak ada apa pun yang
+             * membedakan barang yang benar-benar diterima pelanggan dari
+             * barang yang masih ada di bak mobil, selain perkataan supir yang
+             * hari itu mungkin bukan karyawan perusahaan ini.
+             *
+             * Diperiksa DI DALAM transaksi bersama pemeriksaan status, bukan
+             * hanya di controller: halaman supir bukan satu-satunya yang bisa
+             * memanggil metode ini, dan aturan sepenting ini tidak boleh
+             * tinggal di lapisan yang paling mudah dilewati.
+             */
+            if (blank($foto['arrival_photo_path'] ?? null)) {
+                throw new RuntimeException(
+                    'Foto barang di lokasi wajib diambil sebelum pengiriman '
+                    .'bisa dinyatakan sampai.'
+                );
+            }
 
             if ($terkunci->status === DeliveryNote::STATUS_DELIVERED) {
                 // Bukan galat: supir yang menekan dua kali, atau membuka
@@ -374,11 +398,11 @@ class Shipment
                 throw new RuntimeException('Pengiriman ini belum dinyatakan berangkat, jadi belum bisa dikonfirmasi.');
             }
 
-            $terkunci->fill([
+            $terkunci->fill(array_merge([
                 'status' => DeliveryNote::STATUS_DELIVERED,
                 'delivered_at' => now(),
                 'received_by_name' => filled($penerima) ? trim($penerima) : null,
-            ])->save();
+            ], $foto))->save();
 
             $order = SalesOrder::query()->lockForUpdate()->find($terkunci->sales_order_id);
 

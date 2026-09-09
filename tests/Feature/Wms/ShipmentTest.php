@@ -3,6 +3,7 @@
 namespace Tests\Feature\Wms;
 
 use App\Jobs\SendDeliveryNotification;
+use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Models\DeliveryNote;
 use App\Models\DeliveryNoteLine;
@@ -22,10 +23,14 @@ use App\Models\Warehouse;
 use App\Support\Messaging\DispatchResult;
 use App\Support\Messaging\WhatsAppSender;
 use App\Support\Outbound\FifoAllocator;
+use App\Support\Outbound\Shipment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -65,6 +70,10 @@ class ShipmentTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Foto bukti sampai (Fase 12) menulis ke disk 'local'. Tanpa fake,
+        // tiap test meninggalkan berkas sungguhan di storage aplikasi.
+        Storage::fake('local');
 
         $this->karawang = Warehouse::factory()->withProduction()->create(['code' => 'WH-01', 'name' => 'Karawang']);
         $this->pekanbaru = Warehouse::factory()->create(['code' => 'WH-02', 'name' => 'Pekanbaru']);
@@ -737,7 +746,7 @@ class ShipmentTest extends TestCase
 
         try {
             (new SendDeliveryNotification($note->id))->handle(app(WhatsAppSender::class));
-        } catch (\RuntimeException) {
+        } catch (RuntimeException) {
             // Dilempar supaya antrean mencoba lagi; statusnya sudah tersimpan.
         }
 
@@ -864,8 +873,11 @@ class ShipmentTest extends TestCase
         auth()->logout();
         $this->flushSession();
 
-        $this->post(route('epod.confirm', $token), ['received_by_name' => 'Ibu Sari'])
-            ->assertRedirect();
+        $this->post(route('epod.confirm', $token), [
+            'received_by_name' => 'Ibu Sari',
+            'photo_source' => 'camera',
+            'photo' => $this->fotoSampai(),
+        ])->assertRedirect();
 
         $note->refresh();
         $order->refresh();
@@ -873,6 +885,12 @@ class ShipmentTest extends TestCase
         $this->assertSame(DeliveryNote::STATUS_DELIVERED, $note->status);
         $this->assertSame('Ibu Sari', $note->received_by_name);
         $this->assertNotNull($note->delivered_at);
+
+        // Fotonya benar-benar tersimpan, bukan sekadar diterima lalu dibuang.
+        $this->assertNotNull($note->arrival_photo_path);
+        $this->assertSame('camera', $note->arrival_photo_source);
+        $this->assertNotNull($note->arrival_photo_taken_at);
+        Storage::disk('local')->assertExists($note->arrival_photo_path);
 
         // Sampai BUKAN selesai: bukti Surat Jalan bertanda tangan masih
         // harus diunggah dan diverifikasi (F-OUT-05, tahap 5).
@@ -893,14 +911,22 @@ class ShipmentTest extends TestCase
         auth()->logout();
         $this->flushSession();
 
-        $this->post(route('epod.confirm', $token));
+        $this->post(route('epod.confirm', $token), ['photo' => $this->fotoSampai()]);
         $waktuPertama = $note->fresh()->delivered_at;
+        $fotoPertama = $note->fresh()->arrival_photo_path;
 
         $this->travel(5)->minutes();
-        $this->post(route('epod.confirm', $token))->assertSessionHas('error');
+        $this->post(route('epod.confirm', $token), ['photo' => $this->fotoSampai()])
+            ->assertSessionHas('error');
 
         // Menerima konfirmasi kedua diam-diam akan menggeser waktu sampainya.
         $this->assertEquals($waktuPertama, $note->fresh()->delivered_at);
+        $this->assertSame($fotoPertama, $note->fresh()->arrival_photo_path);
+
+        // Foto konfirmasi kedua HARUS ikut dibuang. Berkas yatim yang tidak
+        // ditunjuk baris mana pun menumpuk diam-diam sampai disknya penuh,
+        // dan tidak ada yang tahu asalnya.
+        $this->assertCount(1, Storage::disk('local')->files('arrival-photos'));
     }
 
     public function test_nama_penerima_boleh_dikosongkan(): void
@@ -918,9 +944,178 @@ class ShipmentTest extends TestCase
 
         // Supir sering tidak sempat menanyakan nama penerima; menahan
         // konfirmasi karenanya berarti pengiriman yang sudah sampai tidak
-        // pernah tercatat sampai.
-        $this->post(route('epod.confirm', $token), [])->assertRedirect();
+        // pernah tercatat sampai. FOTONYA yang wajib, bukan namanya.
+        $this->post(route('epod.confirm', $token), ['photo' => $this->fotoSampai()])
+            ->assertRedirect();
 
         $this->assertSame(DeliveryNote::STATUS_DELIVERED, $note->fresh()->status);
+    }
+
+    /* ----------------------------------------- Foto bukti sampai (Fase 12) */
+
+    /**
+     * Sebelum Fase 12, menekan tombolnya saja sudah cukup.
+     *
+     * Tidak ada apa pun yang membedakan barang yang benar-benar diterima
+     * pelanggan dari barang yang masih ada di bak mobil, selain perkataan
+     * supir yang hari itu mungkin bukan karyawan perusahaan ini.
+     */
+    public function test_konfirmasi_tanpa_foto_ditolak(): void
+    {
+        $token = $this->siapDikonfirmasi();
+
+        $this->post(route('epod.confirm', $token), ['received_by_name' => 'Ibu Sari'])
+            ->assertSessionHasErrors('photo');
+
+        $this->assertSame(
+            DeliveryNote::STATUS_SHIPPED,
+            DeliveryNote::where('epod_token', $token)->value('status'),
+            'Tanpa foto, pengiriman tidak boleh berpindah jadi sampai.',
+        );
+    }
+
+    /** Berkas yang bukan gambar ditolak sebelum menyentuh basis data. */
+    public function test_lampiran_bukan_gambar_ditolak(): void
+    {
+        $token = $this->siapDikonfirmasi();
+
+        $this->post(route('epod.confirm', $token), [
+            'photo' => UploadedFile::fake()->create('surat.pdf', 20, 'application/pdf'),
+        ])->assertSessionHasErrors('photo');
+
+        $this->assertSame(
+            DeliveryNote::STATUS_SHIPPED,
+            DeliveryNote::where('epod_token', $token)->value('status'),
+        );
+    }
+
+    /**
+     * Aturannya tinggal di Shipment, bukan hanya di controller.
+     *
+     * Halaman supir bukan satu-satunya yang bisa memanggil confirmDelivery();
+     * aturan sepenting ini tidak boleh tinggal di lapisan yang paling mudah
+     * dilewati.
+     */
+    public function test_lapisan_layanan_menolak_konfirmasi_tanpa_foto(): void
+    {
+        $order = $this->pesananSudahDipicking(10, 10);
+        $note = $this->suratJalan($order, 10);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note);
+
+        $this->expectException(RuntimeException::class);
+
+        app(Shipment::class)->confirmDelivery($note->fresh(), 'Ibu Sari', []);
+    }
+
+    /**
+     * Asal foto disimpan apa adanya.
+     *
+     * 'camera' dan 'file' TIDAK sama kuat sebagai bukti — yang lewat berkas
+     * bisa saja foto lama dari galeri. Menyimpan keduanya tak terbedakan
+     * membuat Logistik menilai keduanya sama.
+     */
+    public function test_asal_foto_dicatat_apa_adanya(): void
+    {
+        $token = $this->siapDikonfirmasi();
+
+        $this->post(route('epod.confirm', $token), [
+            'photo_source' => 'file',
+            'photo' => $this->fotoSampai(),
+        ])->assertRedirect();
+
+        $note = DeliveryNote::where('epod_token', $token)->first();
+
+        $this->assertSame('file', $note->arrival_photo_source);
+
+        // Ikut tercatat di log, supaya sengketa pengiriman bisa ditelusuri
+        // tanpa membuka barisnya sendiri.
+        $log = ActivityLog::where('action', ActivityLog::EPOD_CONFIRM)->latest('id')->first();
+        $this->assertSame('file', $log->properties['foto']);
+    }
+
+    /** Nilai asal yang dikarang lewat form diperlakukan sebagai berkas biasa. */
+    public function test_asal_foto_karangan_tidak_naik_jadi_kamera(): void
+    {
+        $token = $this->siapDikonfirmasi();
+
+        $this->post(route('epod.confirm', $token), [
+            'photo_source' => 'terverifikasi',
+            'photo' => $this->fotoSampai(),
+        ])->assertSessionHasErrors('photo_source');
+    }
+
+    /** Foto hanya bisa dibuka lewat rute berizin, dan tetap dibatasi gudang. */
+    public function test_foto_sampai_dibatasi_gudang(): void
+    {
+        $token = $this->siapDikonfirmasi();
+
+        $this->post(route('epod.confirm', $token), ['photo' => $this->fotoSampai()])
+            ->assertRedirect();
+
+        $note = DeliveryNote::where('epod_token', $token)->first();
+
+        $this->loginAt($this->karawang);
+        $this->get(route('wms.delivery.arrival-photo', $note))->assertOk();
+
+        $this->loginAt($this->pekanbaru);
+        $this->get(route('wms.delivery.arrival-photo', $note))->assertForbidden();
+    }
+
+    /** Surat Jalan yang belum sampai tidak punya foto — 404, bukan galat. */
+    public function test_foto_sampai_belum_ada_menjawab_404(): void
+    {
+        $order = $this->pesananSudahDipicking(10, 10);
+        $note = $this->suratJalan($order, 10);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note);
+
+        $this->get(route('wms.delivery.arrival-photo', $note))->assertNotFound();
+    }
+
+    /**
+     * Halaman supir menawarkan KAMERA, bukan tombol pilih berkas.
+     *
+     * Yang diminta foto keadaan saat itu; pemilih berkas biasa membuka
+     * galeri, dan gambar apa pun dari kapan pun bisa masuk lewat sana.
+     * Jalur berkas tetap ada sebagai cadangan tetapi TERSEMBUNYI — ia hanya
+     * muncul kalau kameranya benar-benar tidak bisa dibuka.
+     */
+    public function test_halaman_supir_menawarkan_kamera_bukan_pilih_berkas(): void
+    {
+        $token = $this->siapDikonfirmasi();
+
+        $halaman = $this->get(route('epod.show', $token))->assertOk();
+
+        $halaman->assertSee('Foto barang di lokasi');
+        $halaman->assertSee('Ambil Foto');
+        $halaman->assertSee('getUserMedia', false);
+        // Kotak cadangan digambar dalam keadaan TERSEMBUNYI (d-none).
+        $halaman->assertSee('<div class="d-none" id="kotakCadangan">', false);
+        $halaman->assertSee('capture="environment"', false);
+    }
+
+    /** Satu Surat Jalan yang sudah berangkat, siap dikonfirmasi supir. */
+    private function siapDikonfirmasi(): string
+    {
+        $order = $this->pesananSudahDipicking(10, 10);
+        $note = $this->suratJalan($order, 10);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note);
+
+        $token = $note->fresh()->epod_token;
+
+        auth()->logout();
+        $this->flushSession();
+
+        return $token;
+    }
+
+    private function fotoSampai(): UploadedFile
+    {
+        return UploadedFile::fake()->image('bukti-sampai.jpg', 800, 600);
     }
 }
