@@ -166,21 +166,50 @@
 
         <div class="card border-0 shadow-sm rounded-4">
             <div class="card-header bg-white border-bottom-0 pt-4 px-4">
-                <h6 class="fw-bold mb-0"><i class="bi bi-list-ul text-primary me-2"></i> Isi Pesanan</h6>
+                <h6 class="fw-bold mb-0"><i class="bi bi-list-ul text-primary me-2"></i> Isi Surat Jalan</h6>
                 <small class="text-muted">Untuk dicocokkan dengan foto di sebelah.</small>
             </div>
             <div class="card-body px-4">
+                {{-- Laporan penolakan ditaruh DI ATAS tabel, bukan di bawah.
+                     Kalau ada barang yang ditolak pelanggan, angka di foto
+                     memang tidak akan cocok dengan yang berangkat; tanpa
+                     keterangan ini lebih dulu, ketidakcocokan itu terbaca
+                     sebagai foto yang salah dan buktinya ditolak padahal
+                     fotonya benar. --}}
+                @if($retur)
+                <div class="alert alert-warning border-0 rounded-3 small py-2">
+                    <i class="bi bi-arrow-return-left me-1"></i>
+                    <strong>Ada penolakan customer dilaporkan Sales</strong>
+                    ({{ $retur->reference }} &middot; {{ $retur->status_label }}).
+                    Angka di foto boleh lebih kecil sebanyak itu.
+                </div>
+                @endif
+
                 <div class="table-responsive">
                     <table class="table table-sm align-middle mb-0">
                         <thead class="table-light">
-                            <tr><th>SKU</th><th>Produk</th><th class="text-end">Qty</th></tr>
+                            {{-- TERKIRIM, bukan qty disetujui. Yang tertulis di
+                                 lembar yang difoto adalah barang yang benar-benar
+                                 naik kendaraan; mencocokkan foto dengan angka
+                                 persetujuan berarti menyuruh Logistik mencari
+                                 kecocokan yang memang tidak ada pada baris yang
+                                 berangkat kurang. --}}
+                            <tr><th>SKU</th><th>Produk</th><th class="text-end">Terkirim</th></tr>
                         </thead>
                         <tbody>
                         @forelse($order->details as $baris)
+                            @php $ditolak = (int) ($ditolakPerBaris[$baris->id] ?? 0); @endphp
                             <tr>
                                 <td class="font-monospace small">{{ $baris->product?->sku }}</td>
-                                <td class="small">{{ $baris->product?->name }}</td>
-                                <td class="text-end">{{ $baris->qty_approved }}</td>
+                                <td class="small">
+                                    {{ $baris->product?->name }}
+                                    @if($ditolak > 0)
+                                        <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill ms-1">
+                                            ditolak {{ number_format($ditolak) }}
+                                        </span>
+                                    @endif
+                                </td>
+                                <td class="text-end">{{ number_format($baris->qty_shipped) }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="3" class="text-center text-muted py-3">Tidak ada rincian.</td></tr>

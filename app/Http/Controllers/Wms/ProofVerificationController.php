@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\RejectDeliveryProofRequest;
 use App\Models\DeliveryProof;
 use App\Models\SalesOrder;
+use App\Models\SalesReturn;
 use App\Support\Outbound\ProofOfDelivery;
 use App\Support\WarehouseScope;
 use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
@@ -95,10 +96,36 @@ class ProofVerificationController extends Controller
             'proofs.uploadedBy:id,full_name', 'proofs.verifiedBy:id,full_name',
         ]);
 
+        /*
+         * PENOLAKAN CUSTOMER YANG SUDAH DILAPORKAN SALES.
+         *
+         * Halaman ini menyuruh Logistik mencocokkan daftar di kanan dengan
+         * foto Surat Jalan di kiri. Kalau ada barang yang ditolak pelanggan,
+         * angka di foto memang TIDAK akan cocok — dan tanpa keterangan ini,
+         * ketidakcocokan itu terbaca sebagai foto yang salah, lalu buktinya
+         * ditolak padahal fotonya benar.
+         *
+         * Laporan yang sudah ditolak Logistik tidak ikut: klaim itu sudah
+         * dinyatakan tidak berlaku, jadi angkanya tidak boleh mengurangi apa
+         * pun di sini.
+         */
+        $retur = SalesReturn::query()
+            ->where('sales_order_id', $order->id)
+            ->where('status', '!=', SalesReturn::STATUS_REJECTED)
+            ->with('details')
+            ->latest('id')
+            ->first();
+
         return view('wms.outbound.verification-detail', [
             'order' => $order,
             'bukti' => $order->proofs->sortByDesc('uploaded_at'),
             'adaMenunggu' => $order->proofs->contains('status', DeliveryProof::STATUS_PENDING),
+            'retur' => $retur,
+            // Qty ditolak per baris pesanan, siap dibaca di dalam @foreach
+            // tanpa query tambahan per baris.
+            'ditolakPerBaris' => $retur
+                ? $retur->details->pluck('qty_rejected', 'sales_order_detail_id')->all()
+                : [],
         ]);
     }
 

@@ -6,8 +6,12 @@ use App\Models\Customer;
 use App\Models\DeliveryNote;
 use App\Models\DeliveryProof;
 use App\Models\PaymentTerm;
+use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderDetail;
+use App\Models\SalesReturn;
+use App\Models\SalesReturnDetail;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
@@ -452,5 +456,126 @@ class ProofOfDeliveryTest extends TestCase
         $this->unggah($order, [$this->foto()])->assertSessionHas('success');
 
         $this->assertNull($order->proofs()->first()->delivery_note_id);
+    }
+
+    /* ------------------------------------- Daftar yang dicocokkan Logistik */
+
+    /**
+     * Yang tertulis di lembar yang difoto adalah barang yang BENAR-BENAR naik
+     * kendaraan. Dahulu halaman ini menampilkan qty disetujui, sehingga baris
+     * yang berangkat kurang menyuruh Logistik mencari kecocokan yang memang
+     * tidak ada — lalu buktinya ditolak padahal fotonya benar.
+     */
+    public function test_daftar_pencocokan_memakai_qty_terkirim(): void
+    {
+        $this->login($this->karawang);
+
+        $order = $this->pesananTerkirim();
+        $produk = Product::factory()->create(['sku' => 'ID1-CEK-001', 'name' => 'Cat Uji 5Ltr']);
+
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $produk->id,
+            'qty_ordered' => 4,
+            'qty_approved' => 4,
+            'qty_shipped' => 3,
+            'outstanding_qty' => 1,
+        ]);
+
+        DeliveryProof::factory()->create([
+            'sales_order_id' => $order->id,
+            'uploaded_by' => User::factory()->withRole(Role::SALES)->create()->id,
+        ]);
+
+        $this->get(route('wms.verification.show', $order))
+            ->assertOk()
+            ->assertSee('Terkirim')
+            ->assertSee('Isi Surat Jalan');
+    }
+
+    /**
+     * Barang yang ditolak pelanggan membuat angka di foto memang tidak cocok.
+     * Tanpa keterangan itu, ketidakcocokannya terbaca sebagai foto yang salah.
+     */
+    public function test_penolakan_customer_disebut_di_halaman_verifikasi(): void
+    {
+        $this->login($this->karawang);
+
+        $order = $this->pesananTerkirim();
+        $produk = Product::factory()->create(['sku' => 'ID1-CEK-002', 'name' => 'Cat Uji 20Ltr']);
+
+        $detail = SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $produk->id,
+            'qty_ordered' => 4,
+            'qty_approved' => 4,
+            'qty_shipped' => 4,
+            'outstanding_qty' => 0,
+        ]);
+
+        $retur = SalesReturn::create([
+            'reference' => 'RJ260909001',
+            'sales_order_id' => $order->id,
+            'customer_id' => $order->customer_id,
+            'warehouse_id' => $order->warehouse_id,
+            'status' => SalesReturn::STATUS_REPORTED,
+            'reason' => 'Warna tidak sesuai contoh, customer menolak satu pail.',
+            'reported_by' => $order->user_id,
+            'reported_at' => now(),
+        ]);
+
+        SalesReturnDetail::create([
+            'sales_return_id' => $retur->id,
+            'sales_order_detail_id' => $detail->id,
+            'product_id' => $produk->id,
+            'batch_no' => 'BT-001',
+            'production_date' => now()->subMonths(2)->toDateString(),
+            'qty_rejected' => 1,
+        ]);
+
+        DeliveryProof::factory()->create([
+            'sales_order_id' => $order->id,
+            'uploaded_by' => User::factory()->withRole(Role::SALES)->create()->id,
+        ]);
+
+        $this->get(route('wms.verification.show', $order))
+            ->assertOk()
+            ->assertSee('RJ260909001')
+            ->assertSee('ditolak 1')
+            ->assertSee('Angka di foto boleh lebih kecil');
+    }
+
+    /**
+     * Laporan yang sudah ditolak Logistik tidak boleh mengurangi apa pun di
+     * sini: klaimnya sudah dinyatakan tidak berlaku.
+     */
+    public function test_laporan_penolakan_yang_ditolak_tidak_disebut(): void
+    {
+        $logistik = $this->login($this->karawang);
+
+        $order = $this->pesananTerkirim();
+
+        SalesReturn::create([
+            'reference' => 'RJ260909002',
+            'sales_order_id' => $order->id,
+            'customer_id' => $order->customer_id,
+            'warehouse_id' => $order->warehouse_id,
+            'status' => SalesReturn::STATUS_REJECTED,
+            'reason' => 'Warna tidak sesuai contoh, customer menolak satu pail.',
+            'reported_by' => $order->user_id,
+            'reported_at' => now()->subHour(),
+            'approved_by' => $logistik->id,
+            'approved_at' => now(),
+            'approval_note' => 'Foto tidak menunjukkan kerusakan yang diklaim.',
+        ]);
+
+        DeliveryProof::factory()->create([
+            'sales_order_id' => $order->id,
+            'uploaded_by' => User::factory()->withRole(Role::SALES)->create()->id,
+        ]);
+
+        $this->get(route('wms.verification.show', $order))
+            ->assertOk()
+            ->assertDontSee('RJ260909002');
     }
 }
