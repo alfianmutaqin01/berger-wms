@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\Notification;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnDetail;
 use App\Support\Activity;
+use App\Support\Notifier;
 use App\Support\Permission;
 use App\Support\Returns\CustomerRejection;
 use App\Support\WarehouseScope;
@@ -205,6 +207,23 @@ class CustomerRejectionController extends Controller
             );
         }
 
+        // Inilah saat antrean Operator terisi — dan sebelum ini ia memang
+        // tidak melihat apa pun (lihat penjagaan status di index()).
+        Notifier::toPermission(
+            Permission::RETURN_PUTAWAY,
+            $retur->warehouse_id,
+            Notification::RETURN_APPROVED,
+            'Barang tolakan siap dinaikkan ke rak',
+            sprintf(
+                '%s dari %s sudah disetujui — %d baris menunggu dinaikkan.',
+                $retur->reference,
+                $retur->customer?->name ?? 'pelanggan',
+                $retur->details()->where('qty_approved', '>', 0)->count(),
+            ),
+            route('wms.returns.show', $retur),
+            $retur,
+        );
+
         return back()->with('success',
             'Laporan disetujui. Barangnya sekarang masuk antrean put-away Operator, '.
             'dan stok baru bertambah setelah Anda memverifikasinya di rak.'
@@ -288,6 +307,24 @@ class CustomerRejectionController extends Controller
                 'ddp' => (int) $data['qty_ddp'],
             ],
         );
+
+        // Hanya saat SELURUH barisnya sudah naik. Lonceng per baris akan
+        // berbunyi berkali-kali untuk satu laporan, dan Logistik tetap tidak
+        // bisa berbuat apa-apa sampai yang terakhir selesai.
+        if ($retur->fresh()?->status === SalesReturn::STATUS_VERIFICATION_PENDING) {
+            Notifier::toPermission(
+                Permission::RETURN_APPROVE,
+                $retur->warehouse_id,
+                Notification::RETURN_VERIFY_READY,
+                'Barang tolakan menunggu verifikasi',
+                sprintf(
+                    '%s sudah dinaikkan seluruhnya ke rak. Stok belum bertambah sampai Anda memverifikasinya.',
+                    $retur->reference,
+                ),
+                route('wms.returns.show', $retur),
+                $retur,
+            );
+        }
 
         return back()->with('success',
             'Tercatat. Stok belum bertambah — Logistik memverifikasi dulu barangnya di rak.'

@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreProductRequest;
 use App\Http\Requests\Wms\UpdateProductRequest;
+use App\Models\ActivityLog;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Support\Activity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -69,6 +71,14 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
+        Activity::record(
+            ActivityLog::MASTER_CREATE,
+            sprintf('Menambah produk %s — %s.', $product->sku, $product->name),
+            $product,
+            null,
+            ['sku' => $product->sku],
+        );
+
         return redirect()->route('wms.products.index')
             ->with('success', $this->savedMessage($product, 'ditambahkan'));
     }
@@ -76,6 +86,14 @@ class ProductController extends Controller
     public function update(UpdateProductRequest $request, Product $product): RedirectResponse
     {
         $product->update($request->productData());
+
+        Activity::record(
+            ActivityLog::MASTER_UPDATE,
+            sprintf('Mengubah produk %s — %s.', $product->sku, $product->name),
+            $product,
+            null,
+            ['sku' => $product->sku, 'kolom_berubah' => array_keys($product->getChanges())],
+        );
 
         return redirect()->route('wms.products.index')
             ->with('success', $this->savedMessage($product, 'diperbarui'));
@@ -90,6 +108,18 @@ class ProductController extends Controller
     public function toggleStatus(Product $product): RedirectResponse
     {
         $product->update(['is_active' => ! $product->is_active]);
+
+        Activity::record(
+            ActivityLog::MASTER_DEACTIVATE,
+            sprintf(
+                'Produk %s %s.',
+                $product->sku,
+                $product->is_active ? 'diaktifkan' : 'dinonaktifkan',
+            ),
+            $product,
+            null,
+            ['sku' => $product->sku, 'aktif' => $product->is_active],
+        );
 
         return back()->with('success', sprintf(
             'Produk %s berhasil %s.',

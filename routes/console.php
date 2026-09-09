@@ -84,3 +84,21 @@ Schedule::command('wms:bersihkan')
     ->timezone('Asia/Jakarta')
     ->withoutOverlapping()
     ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
+| Buang log aktivitas yang umurnya sudah lewat 90 hari
+|--------------------------------------------------------------------------
+|
+| Keputusan pemilik produk: log hilang sendiri setelah 90 hari. Angkanya ada
+| di ActivityLog::UMUR_SIMPAN_HARI, bukan di sini — halaman log memakai nilai
+| yang sama untuk memberitahu pembacanya sampai kapan riwayatnya tersimpan.
+|
+| Pukul 00:25, diselisihkan dari tiga sweep stok di atas. Bukan karena berat,
+| melainkan supaya pekerjaan yang gagal mudah dikenali dari jamnya saja.
+*/
+Schedule::command('activity:purge')
+    ->dailyAt('00:25')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping()
+    ->onOneServer();

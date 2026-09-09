@@ -3,15 +3,20 @@
 namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\Location;
+use App\Models\Notification;
 use App\Models\Warehouse;
+use App\Support\Activity;
 use App\Support\DocumentNumber;
 use App\Support\Inbound\BinAllocator;
 use App\Support\Inbound\ProductionSheet;
 use App\Support\Inventory\StockActivator;
+use App\Support\Notifier;
 use App\Support\Outbound\PendingAllocationFiller;
+use App\Support\Permission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -336,6 +341,38 @@ class InboundController extends Controller
             $message .= sprintf(' %d baris dilewati karena datanya bermasalah.', $plan['summary']['gagal']);
         }
 
+        Activity::record(
+            ActivityLog::INBOUND_CREATE,
+            sprintf(
+                'Input produksi %s — %d baris menjadi %d palet.',
+                $header->document_number,
+                $ready->count(),
+                $header->details()->count(),
+            ),
+            $header,
+            $header->warehouse_id,
+            [
+                'dokumen' => $header->document_number,
+                'baris' => $ready->count(),
+                'palet' => $header->details()->count(),
+                'dilewati' => $plan['summary']['gagal'],
+            ],
+        );
+
+        Notifier::toPermission(
+            Permission::INBOUND_PUTAWAY,
+            $header->warehouse_id,
+            Notification::PUTAWAY_READY,
+            'Barang produksi menunggu naik rak',
+            sprintf(
+                'Dokumen %s — %d palet siap dinaikkan.',
+                $header->document_number,
+                $header->details()->count(),
+            ),
+            route('wms.inbound.putaway'),
+            $header,
+        );
+
         return redirect()->route('wms.inbound.history')->with('success', $message);
     }
 
@@ -587,6 +624,32 @@ class InboundController extends Controller
                 )
             );
         }
+
+        Activity::record(
+            ActivityLog::INBOUND_PUTAWAY,
+            sprintf(
+                'Menaikkan dokumen %s ke rak — %d palet ditempatkan.',
+                $header->document_number,
+                $header->details()->count(),
+            ),
+            $header,
+            $header->warehouse_id,
+            ['dokumen' => $header->document_number, 'palet' => $header->details()->count()],
+        );
+
+        Notifier::toPermission(
+            Permission::INBOUND_VERIFY,
+            $header->warehouse_id,
+            Notification::INBOUND_VERIFY_READY,
+            'Barang masuk menunggu verifikasi',
+            sprintf(
+                'Dokumen %s sudah naik rak — %d palet menunggu diperiksa. Stok belum aktif sebelum diverifikasi.',
+                $header->document_number,
+                $header->details()->count(),
+            ),
+            route('wms.inbound.verify'),
+            $header,
+        );
 
         return redirect()->route('wms.inbound.putaway')->with('success', sprintf(
             'Put-away dokumen %s selesai: %d palet ditempatkan, kini menunggu verifikasi Logistik.',
@@ -892,6 +955,40 @@ class InboundController extends Controller
         // operator: kalau tidak, ia melihat 10 unit naik rak lalu heran
         // kenapa yang bisa dijual cuma 5.
         $catatan = $this->pengisi->ringkasan($susulan);
+
+        /*
+         * Dicatat SEKALI PER PENEKANAN, bukan per palet. Verifikasi bisa
+         * dicicil, dan satu baris log per palet akan menenggelamkan seluruh
+         * log hari itu oleh satu dokumen berisi ratusan palet.
+         *
+         * Yang berselisih disebut terpisah: di situlah angka stok final
+         * diputuskan, dan itu justru bagian yang paling perlu bisa
+         * ditelusuri kembali.
+         */
+        Activity::record(
+            ActivityLog::INBOUND_VERIFY,
+            sprintf(
+                'Verifikasi dokumen %s — %d palet disahkan, %d belum.',
+                $header->document_number,
+                count($perubahan),
+                $tersisa,
+            ),
+            $header,
+            $header->warehouse_id,
+            [
+                'dokumen' => $header->document_number,
+                'disahkan' => count($perubahan),
+                'tersisa' => $tersisa,
+                // Dibaca dari baris yang barusan disahkan, bukan dari
+                // $perubahan — larik itu tidak memuat pallet_qty, jadi
+                // membandingkannya di sana akan menghitung SEMUANYA sebagai
+                // selisih tanpa ada yang menyadarinya.
+                'berselisih' => InboundDetail::query()
+                    ->whereIn('id', array_keys($perubahan))
+                    ->whereColumn('qty_actual', '!=', 'pallet_qty')
+                    ->count(),
+            ],
+        );
 
         if ($tersisa > 0) {
             return redirect()->route('wms.inbound.verify.process', $header->document_number)->with(

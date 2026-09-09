@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreLocationRequest;
 use App\Http\Requests\Wms\UpdateLocationRequest;
+use App\Models\ActivityLog;
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Support\Activity;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -254,6 +256,14 @@ class LocationController extends Controller
 
         $location = Location::create($request->locationData());
 
+        Activity::record(
+            ActivityLog::MASTER_CREATE,
+            sprintf('Menambah lokasi rak %s.', $location->code),
+            $location,
+            $location->warehouse_id,
+            ['kode' => $location->code],
+        );
+
         return redirect()->route('wms.locations.index')
             ->with('success', "Lokasi {$location->code} berhasil ditambahkan.");
     }
@@ -266,6 +276,14 @@ class LocationController extends Controller
         WarehouseScope::assert((int) $request->input('warehouse_id'), $request->user());
 
         $location->update($request->locationData());
+
+        Activity::record(
+            ActivityLog::MASTER_UPDATE,
+            sprintf('Mengubah lokasi rak %s.', $location->code),
+            $location,
+            $location->warehouse_id,
+            ['kode' => $location->code, 'kolom_berubah' => array_keys($location->getChanges())],
+        );
 
         return redirect()->route('wms.locations.index')
             ->with('success', "Lokasi {$location->code} berhasil diperbarui.");
@@ -283,6 +301,18 @@ class LocationController extends Controller
         WarehouseScope::assert($location->warehouse_id, $request->user());
 
         $location->update(['is_active' => ! $location->is_active]);
+
+        Activity::record(
+            ActivityLog::MASTER_DEACTIVATE,
+            sprintf(
+                'Lokasi rak %s %s.',
+                $location->code,
+                $location->is_active ? 'diaktifkan' : 'dinonaktifkan',
+            ),
+            $location,
+            $location->warehouse_id,
+            ['kode' => $location->code, 'aktif' => $location->is_active],
+        );
 
         return back()->with('success', sprintf(
             'Lokasi %s berhasil %s.',

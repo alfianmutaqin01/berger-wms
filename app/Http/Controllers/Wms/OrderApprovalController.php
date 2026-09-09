@@ -5,17 +5,22 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\AcceptSalesOrderRequest;
 use App\Http\Requests\Wms\RejectSalesOrderRequest;
+use App\Models\ActivityLog;
+use App\Models\Notification;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
 use App\Models\SalesOrderOutstanding;
 use App\Models\SalesOrderRejection;
+use App\Support\Activity;
+use App\Support\Notifier;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
 use App\Support\Outbound\OutstandingRecorder;
 use App\Support\Outbound\ProductBooking;
 use App\Support\Outbound\SoNumberFixer;
+use App\Support\Permission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -337,6 +342,60 @@ class OrderApprovalController extends Controller
             return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::ORDER_APPROVE,
+            sprintf(
+                'Menerima pesanan %s dari %s — %d unit dicadangkan, %d menunggu stok.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $ringkasan['dialokasikan'],
+                $ringkasan['menunggu'],
+            ),
+            $order,
+            $order->warehouse_id,
+            [
+                'nomor_so_bc' => $order->fresh()->bc_so_number,
+                'dialokasikan' => $ringkasan['dialokasikan'],
+                'menunggu_stok' => $ringkasan['menunggu'],
+                'dari_booking' => $ringkasan['dari_booking'],
+            ],
+        );
+
+        /*
+         * DUA LONCENG, DUA PENERIMA, karena yang harus bergerak berikutnya
+         * memang dua orang berbeda: Sales perlu tahu pesanannya lolos, dan
+         * gudang perlu tahu ada yang siap dipicking. Menggabungkannya jadi
+         * satu berarti salah satunya tidak pernah diberi tahu.
+         */
+        Notifier::toUser(
+            $order->user_id,
+            Notification::ORDER_APPROVED,
+            'Pesanan Anda diterima',
+            sprintf(
+                '%s untuk %s sudah diterima Logistik dan masuk antrean gudang.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+            ),
+            url('/sales/orders/'.$order->id),
+            $order->warehouse_id,
+            $order,
+        );
+
+        Notifier::toPermission(
+            Permission::OUTBOUND_PICKING_LIST,
+            $order->warehouse_id,
+            Notification::PICKING_READY,
+            'Pesanan siap dipicking',
+            sprintf(
+                '%s untuk %s — %d unit sudah dicadangkan.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $ringkasan['dialokasikan'],
+            ),
+            route('wms.picking.queue'),
+            $order,
+        );
+
         $pesan = "Pesanan {$order->order_number} diterima. {$ringkasan['dialokasikan']} unit dicadangkan dari stok.";
 
         // Disebut TERPISAH. Jatah yang datang dari booking bukan stok yang
@@ -396,6 +455,33 @@ class OrderApprovalController extends Controller
         } catch (RuntimeException $e) {
             return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::ORDER_REJECT,
+            sprintf(
+                'Menolak pesanan %s dari %s — %s',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $request->validated('rejection_reason'),
+            ),
+            $order,
+            $order->warehouse_id,
+            ['alasan' => $request->validated('rejection_reason')],
+        );
+
+        Notifier::toUser(
+            $order->user_id,
+            Notification::ORDER_REJECTED,
+            'Pesanan Anda ditolak',
+            sprintf(
+                '%s ditolak Logistik — %s Pesanan ini masih bisa diperbaiki lalu diajukan ulang.',
+                $order->order_number,
+                $request->validated('rejection_reason'),
+            ),
+            url('/sales/orders/'.$order->id),
+            $order->warehouse_id,
+            $order,
+        );
 
         return redirect()->route('wms.approval.index')
             ->with('success', "Pesanan {$order->order_number} ditolak.");
@@ -477,6 +563,24 @@ class OrderApprovalController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::ORDER_CANCEL,
+            sprintf(
+                'Membatalkan pesanan %s (%s) — %s',
+                $order->order_number,
+                SalesOrderCancellation::SOURCE_LABELS[$data['cancellation_source']] ?? $data['cancellation_source'],
+                $data['cancellation_reason'],
+            ),
+            $order,
+            $order->warehouse_id,
+            [
+                'sumber' => $data['cancellation_source'],
+                'alasan' => $data['cancellation_reason'],
+                'qty_dilepas' => $hasil['qty_dilepas'],
+                'nomor_so_dibebaskan' => $hasil['nomor_so'],
+            ],
+        );
 
         return redirect()->route('wms.approval.history')->with('warning', sprintf(
             'Pesanan %s dibatalkan. %d unit dikembalikan ke stok%s, dan pesanannya kembali ke antrean — '.

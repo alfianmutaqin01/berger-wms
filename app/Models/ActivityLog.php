@@ -55,6 +55,68 @@ class ActivityLog extends Model
 
     public const ORDER_RESHIP = 'order.reship';
 
+    /* ---------------------------------------------- Alur pesanan (Fase 9) */
+
+    public const ORDER_SUBMIT = 'order.submit';
+
+    public const ORDER_APPROVE = 'order.approve';
+
+    public const ORDER_REJECT = 'order.reject';
+
+    public const ORDER_CANCEL = 'order.cancel';
+
+    /* --------------------------------------------- Barang masuk (Fase 9) */
+
+    public const INBOUND_CREATE = 'inbound.create';
+
+    public const INBOUND_PUTAWAY = 'inbound.putaway';
+
+    public const INBOUND_VERIFY = 'inbound.verify';
+
+    /* ----------------------------------------------- Pengiriman (Fase 9) */
+
+    public const DELIVERY_SHIP = 'delivery.ship';
+
+    public const DELIVERY_SUBSTITUTION = 'delivery.substitution';
+
+    public const EPOD_CONFIRM = 'epod.confirm';
+
+    public const PROOF_UPLOAD = 'proof.upload';
+
+    public const PROOF_VERIFY = 'proof.verify';
+
+    public const PROOF_REJECT = 'proof.reject';
+
+    /** Sales melapor; empat tindakan retur lainnya sudah ada di atas. */
+    public const RETURN_REPORT = 'return.report';
+
+    /* ------------------------------------------------- Transfer (Fase 9) */
+
+    public const TRANSFER_CREATE = 'transfer.create';
+
+    public const TRANSFER_RECEIVE = 'transfer.receive';
+
+    /* -------------------------------------- Pengguna & master data (Fase 9) */
+
+    public const USER_CREATE = 'user.create';
+
+    public const USER_UPDATE = 'user.update';
+
+    public const USER_DEACTIVATE = 'user.deactivate';
+
+    /**
+     * Produk, pelanggan, dan lokasi rak dipakai bersama-sama.
+     *
+     * Satu nama tindakan untuk ketiganya, bukan sembilan: yang membedakan
+     * sudah tercatat di subject_type, dan penyaring yang isinya sembilan
+     * baris hampir sama justru lebih susah dipakai.
+     */
+    public const MASTER_CREATE = 'master.create';
+
+    public const MASTER_UPDATE = 'master.update';
+
+    public const MASTER_DEACTIVATE = 'master.deactivate';
+
     /** Label Indonesia untuk penyaring & tampilan. */
     public const ACTION_LABELS = [
         self::STOCK_ADD => 'Tambah Stok',
@@ -74,7 +136,41 @@ class ActivityLog extends Model
         self::RETURN_PUTAWAY => 'Naikkan Barang Tolakan',
         self::RETURN_VERIFY => 'Verifikasi Barang Tolakan',
         self::ORDER_RESHIP => 'Kirim Ulang Outstanding',
+        self::ORDER_SUBMIT => 'Kirim Pesanan',
+        self::ORDER_APPROVE => 'Setujui Pesanan',
+        self::ORDER_REJECT => 'Tolak Pesanan',
+        self::ORDER_CANCEL => 'Batalkan Pesanan',
+        self::INBOUND_CREATE => 'Input Produksi',
+        self::INBOUND_PUTAWAY => 'Naikkan ke Rak',
+        self::INBOUND_VERIFY => 'Verifikasi Barang Masuk',
+        self::DELIVERY_SHIP => 'Nyatakan Berangkat',
+        self::DELIVERY_SUBSTITUTION => 'Konfirmasi Barang Beda SKU',
+        self::EPOD_CONFIRM => 'Konfirmasi Sampai (Supir)',
+        self::PROOF_UPLOAD => 'Unggah Bukti Surat Jalan',
+        self::PROOF_VERIFY => 'Sahkan Bukti Surat Jalan',
+        self::PROOF_REJECT => 'Tolak Bukti Surat Jalan',
+        self::RETURN_REPORT => 'Lapor Penolakan Customer',
+        self::TRANSFER_CREATE => 'Buat Transfer Gudang',
+        self::TRANSFER_RECEIVE => 'Terima Transfer Gudang',
+        self::USER_CREATE => 'Tambah Pengguna',
+        self::USER_UPDATE => 'Ubah Pengguna',
+        self::USER_DEACTIVATE => 'Aktifkan / Nonaktifkan Pengguna',
+        self::MASTER_CREATE => 'Tambah Master Data',
+        self::MASTER_UPDATE => 'Ubah Master Data',
+        self::MASTER_DEACTIVATE => 'Nonaktifkan Master Data',
     ];
+
+    /**
+     * Umur simpan log — keputusan pemilik produk.
+     *
+     * Baris yang lebih tua dihapus otomatis oleh App\Console\Commands\
+     * PurgeActivityLogs. Penghapusan MASSAL ini satu-satunya pengecualian
+     * dari aturan append-only di booted(), dan sengaja tidak lewat model
+     * supaya tidak ada jalan menghapus satu baris tertentu — yang mau
+     * dicegah adalah orang menghilangkan jejak dirinya sendiri, bukan
+     * pembersihan yang berjalan menurut umur.
+     */
+    public const UMUR_SIMPAN_HARI = 90;
 
     public $timestamps = false;
 

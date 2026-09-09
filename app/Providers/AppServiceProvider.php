@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Notification;
 use App\Models\User;
 use App\Support\Messaging\CloudApiWhatsAppSender;
 use App\Support\Messaging\LogWhatsAppSender;
@@ -9,7 +10,9 @@ use App\Support\Messaging\ManualWhatsAppSender;
 use App\Support\Messaging\WhatsAppSender;
 use App\Support\Permission;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -63,6 +66,40 @@ class AppServiceProvider extends ServiceProvider
     {
         Paginator::useBootstrapFive();
         $this->registerPermissionGates();
+        $this->registerNotificationBell();
+    }
+
+    /**
+     * Mengisi lonceng notifikasi di kedua layout.
+     *
+     * VIEW COMPOSER, bukan dikirim dari tiap controller. Loncengnya muncul di
+     * SETIAP halaman kedua portal; menitipkannya ke controller berarti puluhan
+     * tempat yang harus ingat mengirim dua variabel yang sama, dan halaman
+     * yang lupa akan meledak saat merender navbar — bukan saat fiturnya
+     * dipakai.
+     *
+     * Dibatasi pada partial navbar-nya saja, supaya query ini tidak ikut jalan
+     * pada view yang dirender di luar permintaan HTTP (mis. e-mail atau
+     * perintah baris perintah).
+     */
+    private function registerNotificationBell(): void
+    {
+        View::composer('partials.navbar-top', function ($view) {
+            $userId = Auth::id();
+
+            $view->with([
+                'loncengBelumDibaca' => $userId === null ? 0 : Notification::query()
+                    ->milik($userId)
+                    ->belumDibaca()
+                    ->count(),
+                'loncengTerbaru' => $userId === null ? collect() : Notification::query()
+                    ->milik($userId)
+                    ->latest('created_at')
+                    ->latest('id')
+                    ->limit(Notification::JUMLAH_DI_LONCENG)
+                    ->get(),
+            ]);
+        });
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\Notification;
 use App\Models\PaymentTerm;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
@@ -324,6 +325,24 @@ class SmokeRouteTest extends TestCase
             'reported_at' => now(),
         ]);
 
+        /*
+         * Notifikasi contoh TANPA user_id yang dipakai siapa pun di uji ini.
+         * Rute membukanya menjawab 404 untuk orang lain — dan 404 memang
+         * jawaban yang benar, bukan halaman yang meledak. Uji asap ini
+         * memeriksa tidak ada 500, jadi itu sudah cukup.
+         */
+        $notifikasi = Notification::create([
+            'user_id' => User::factory()->withRole(Role::LOGISTICS)->create([
+                'warehouse_id' => $this->warehouse->id,
+            ])->id,
+            'type' => Notification::ORDER_PENDING,
+            'title' => 'Contoh notifikasi uji asap',
+            'body' => 'Baris ini hanya dipakai untuk mengisi parameter rute.',
+            'url' => '/wms/dashboard/admin',
+            'warehouse_id' => $this->warehouse->id,
+            'created_at' => now(),
+        ]);
+
         $this->parameter = [
             'proof' => $bukti->id,
             'retur' => $retur->id,
@@ -336,6 +355,7 @@ class SmokeRouteTest extends TestCase
             'list' => $daftarPicking->id,
             'note' => $suratJalan->id,
             'token' => $suratJalan->epod_token,
+            'notification' => $notifikasi->id,
         ];
     }
 

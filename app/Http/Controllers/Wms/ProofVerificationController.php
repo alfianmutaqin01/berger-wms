@@ -4,9 +4,13 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\RejectDeliveryProofRequest;
+use App\Models\ActivityLog;
 use App\Models\DeliveryProof;
+use App\Models\Notification;
 use App\Models\SalesOrder;
 use App\Models\SalesReturn;
+use App\Support\Activity;
+use App\Support\Notifier;
 use App\Support\Outbound\ProofOfDelivery;
 use App\Support\WarehouseScope;
 use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
@@ -140,6 +144,18 @@ class ProofVerificationController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::PROOF_VERIFY,
+            sprintf(
+                'Mengesahkan bukti Surat Jalan pesanan %s — pesanan dinyatakan %s.',
+                $order->order_number,
+                SalesOrder::STATUS_LABELS[$status] ?? $status,
+            ),
+            $order,
+            $order->warehouse_id,
+            ['status_akhir' => $status],
+        );
+
         return redirect()
             ->route('wms.verification.index')
             ->with('success', sprintf(
@@ -157,6 +173,33 @@ class ProofVerificationController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::PROOF_REJECT,
+            sprintf(
+                'Menolak %d foto Surat Jalan pesanan %s — %s',
+                $jumlah,
+                $order->order_number,
+                $request->validated('reason'),
+            ),
+            $order,
+            $order->warehouse_id,
+            ['jumlah_foto' => $jumlah, 'alasan' => $request->validated('reason')],
+        );
+
+        Notifier::toUser(
+            $order->user_id,
+            Notification::PROOF_REJECTED,
+            'Foto Surat Jalan ditolak',
+            sprintf(
+                'Bukti pesanan %s ditolak Logistik — %s',
+                $order->order_number,
+                $request->validated('reason'),
+            ),
+            url('/sales/orders/'.$order->id),
+            $order->warehouse_id,
+            $order,
+        );
 
         return back()->with('warning', sprintf(
             '%d foto ditolak. Sales akan melihat alasannya dan bisa mengunggah ulang.',

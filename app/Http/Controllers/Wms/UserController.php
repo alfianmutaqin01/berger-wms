@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreUserRequest;
 use App\Http\Requests\Wms\UpdateUserRequest;
+use App\Models\ActivityLog;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\Activity;
 use App\Support\CurrentActor;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
@@ -103,6 +105,19 @@ class UserController extends Controller
 
         $user = User::create($data);
 
+        Activity::record(
+            ActivityLog::USER_CREATE,
+            sprintf(
+                'Membuat akun %s (%s) sebagai %s.',
+                $user->full_name,
+                $user->employee_id,
+                $user->role?->name ?? 'tanpa peran',
+            ),
+            $user,
+            $user->warehouse_id,
+            ['employee_id' => $user->employee_id, 'peran' => $user->role?->slug],
+        );
+
         return redirect()
             ->route('wms.users.index')
             ->with('success', "Akun {$user->full_name} ({$user->employee_id}) berhasil dibuat.");
@@ -132,7 +147,40 @@ class UserController extends Controller
         }
         unset($data['avatar']);
 
+        /*
+         * Kolom mana yang BERUBAH dicatat, isinya tidak. Cukup untuk
+         * menjawab "siapa yang memindahkan akun ini ke gudang lain" atau
+         * "siapa yang menaikkan perannya", tanpa menyalin data pribadi
+         * karyawan ke tabel yang dibaca Super Admin sehari-hari.
+         *
+         * Kata sandi disebut sebagai FAKTA bahwa ia diganti, tidak pernah
+         * isinya — dan `password` sudah dikeluarkan dari $data di atas kalau
+         * memang tidak diganti.
+         */
+        $berubah = array_keys(array_filter(
+            $data,
+            fn ($nilai, $kolom) => $kolom !== 'password' && $user->getOriginal($kolom) != $nilai,
+            ARRAY_FILTER_USE_BOTH,
+        ));
+
+        if (array_key_exists('password', $data)) {
+            $berubah[] = 'password';
+        }
+
         $user->update($data);
+
+        Activity::record(
+            ActivityLog::USER_UPDATE,
+            sprintf(
+                'Mengubah akun %s (%s)%s.',
+                $user->full_name,
+                $user->employee_id,
+                $berubah === [] ? '' : ' — '.implode(', ', $berubah),
+            ),
+            $user,
+            $user->warehouse_id,
+            ['employee_id' => $user->employee_id, 'kolom_berubah' => $berubah],
+        );
 
         return redirect()
             ->route('wms.users.index')
@@ -165,6 +213,14 @@ class UserController extends Controller
         $user->update(['is_active' => ! $user->is_active]);
 
         $state = $user->is_active ? 'diaktifkan' : 'dinonaktifkan';
+
+        Activity::record(
+            ActivityLog::USER_DEACTIVATE,
+            sprintf('Akun %s (%s) %s.', $user->full_name, $user->employee_id, $state),
+            $user,
+            $user->warehouse_id,
+            ['employee_id' => $user->employee_id, 'aktif' => $user->is_active],
+        );
 
         return back()->with('success', "Akun {$user->full_name} berhasil {$state}.");
     }

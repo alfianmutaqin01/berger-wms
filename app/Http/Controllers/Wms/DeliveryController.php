@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ShipDeliveryNoteRequest;
 use App\Jobs\SendDeliveryNotification;
+use App\Models\ActivityLog;
 use App\Models\DeliveryNote;
 use App\Models\SalesOrder;
+use App\Support\Activity;
 use App\Support\Outbound\Shipment;
 use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
@@ -149,6 +151,28 @@ class DeliveryController extends Controller
         // dokumen yang belum punya token.
         SendDeliveryNotification::dispatch($note->id);
 
+        Activity::record(
+            ActivityLog::DELIVERY_SHIP,
+            sprintf(
+                'Menyatakan Surat Jalan %s berangkat — %d unit, supir %s (%s).',
+                $note->document_no,
+                $hasil['dikirim'],
+                $request->validated('driver_name'),
+                $request->validated('vehicle_plate'),
+            ),
+            $note,
+            $note->warehouse_id,
+            [
+                'surat_jalan' => $note->document_no,
+                'dikirim' => $hasil['dikirim'],
+                'dikembalikan' => $hasil['dikembalikan'],
+                'kurang_di_rak' => $hasil['kurang_di_rak'],
+                'substitusi' => $hasil['substitusi'],
+                'supir' => $request->validated('driver_name'),
+                'plat' => $request->validated('vehicle_plate'),
+            ],
+        );
+
         $pesan = sprintf(
             'Surat Jalan %s dinyatakan berangkat: %d unit.',
             $note->document_no,
@@ -235,6 +259,18 @@ class DeliveryController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::DELIVERY_SUBSTITUTION,
+            sprintf(
+                'Menyatakan barang di Surat Jalan %s memang yang naik (beda SKU) — %s',
+                $note->document_no,
+                $data['substitution_reason'],
+            ),
+            $note,
+            $note->warehouse_id,
+            ['surat_jalan' => $note->document_no, 'alasan' => $data['substitution_reason']],
+        );
 
         return back()->with('warning', sprintf(
             'Penggantian barang pada Surat Jalan %s dikonfirmasi atas nama Anda. '.

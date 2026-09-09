@@ -5,11 +5,16 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ReceiveStockTransferRequest;
 use App\Http\Requests\Wms\StoreStockTransferRequest;
+use App\Models\ActivityLog;
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\Notification;
 use App\Models\StockTransfer;
 use App\Models\Warehouse;
+use App\Support\Activity;
 use App\Support\Inventory\WarehouseTransfer;
+use App\Support\Notifier;
+use App\Support\Permission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -152,6 +157,43 @@ class StockTransferController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::TRANSFER_CREATE,
+            sprintf(
+                'Mengirim transfer %s ke gudang %s — %d baris.',
+                $transfer->transfer_number,
+                $transfer->toWarehouse?->name ?? 'tujuan',
+                $transfer->details()->count(),
+            ),
+            $transfer,
+            // Dicatat atas nama gudang ASAL: dari sanalah stoknya keluar,
+            // dan orang yang menelusuri kekurangan stok mencarinya di sana.
+            $asalId,
+            [
+                'nomor' => $transfer->transfer_number,
+                'ke_gudang' => $transfer->toWarehouse?->code,
+                'baris' => $transfer->details()->count(),
+            ],
+        );
+
+        // Dikirim ke gudang TUJUAN, bukan gudang asal. Yang perlu bersiap
+        // menerima ada di ujung sana, dan tanpa lonceng ini satu-satunya cara
+        // mereka tahu adalah ditelepon.
+        Notifier::toPermission(
+            Permission::TRANSFER_RECEIVE,
+            $transfer->to_warehouse_id,
+            Notification::TRANSFER_INCOMING,
+            'Kiriman antar gudang dalam perjalanan',
+            sprintf(
+                'Transfer %s dari gudang %s — %d baris menunggu diterima.',
+                $transfer->transfer_number,
+                $transfer->fromWarehouse?->name ?? 'asal',
+                $transfer->details()->count(),
+            ),
+            route('wms.transfers.show', $transfer),
+            $transfer,
+        );
+
         return redirect()->route('wms.transfers.show', $transfer)->with('success', sprintf(
             'Transfer %s dikirim ke gudang %s. Stoknya sudah keluar dari gudang Anda dan tercatat DALAM PERJALANAN sampai diterima di sana.',
             $transfer->transfer_number,
@@ -222,6 +264,26 @@ class StockTransferController extends Controller
         if ($hasil['susulan'] !== []) {
             $pesan .= ' '.implode(' ', $hasil['susulan']);
         }
+
+        Activity::record(
+            ActivityLog::TRANSFER_RECEIVE,
+            sprintf(
+                'Menerima transfer %s dari gudang %s — %d unit masuk%s.',
+                $transfer->transfer_number,
+                $transfer->fromWarehouse?->name ?? 'asal',
+                $hasil['diterima'],
+                $hasil['hilang'] > 0 ? sprintf(', %d unit tidak sampai', $hasil['hilang']) : '',
+            ),
+            $transfer,
+            // Gudang TUJUAN: di sinilah angka stoknya bertambah.
+            $transfer->to_warehouse_id,
+            [
+                'nomor' => $transfer->transfer_number,
+                'dari_gudang' => $transfer->fromWarehouse?->code,
+                'diterima' => $hasil['diterima'],
+                'hilang' => $hasil['hilang'],
+            ],
+        );
 
         return redirect()->route('wms.transfers.show', $transfer)->with(
             $hasil['hilang'] > 0 ? 'warning' : 'success',

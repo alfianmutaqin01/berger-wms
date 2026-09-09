@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Sales;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\UploadDeliveryProofRequest;
+use App\Models\ActivityLog;
 use App\Models\DeliveryProof;
 use App\Models\SalesOrder;
+use App\Support\Activity;
 use App\Support\Outbound\ProofOfDelivery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -40,6 +42,18 @@ class DeliveryProofController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::PROOF_UPLOAD,
+            sprintf(
+                'Mengunggah %d foto Surat Jalan untuk pesanan %s.',
+                $jumlah,
+                $order->order_number,
+            ),
+            $order,
+            $order->warehouse_id,
+            ['jumlah_foto' => $jumlah],
+        );
 
         return back()->with('success', sprintf(
             '%d foto Surat Jalan terkirim. Logistik akan memeriksanya.',

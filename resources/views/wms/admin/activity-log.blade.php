@@ -143,4 +143,15 @@
         <div class="card-footer bg-white border-0 py-3">{{ $logs->links() }}</div>
     @endif
 </div>
+
+{{-- BATAS SIMPANNYA DIKATAKAN, bukan dibiarkan disimpulkan sendiri.
+     Yang mencari kejadian empat bulan lalu dan tidak menemukannya akan
+     menyimpulkan kejadiannya tidak pernah tercatat — kesimpulan yang salah,
+     dan justru pada halaman yang dipakai saat ada sesuatu yang perlu
+     dipertanggungjawabkan. --}}
+<p class="text-center text-muted small mt-3 mb-0">
+    <i class="bi bi-clock-history me-1"></i>
+    Riwayat disimpan {{ \App\Models\ActivityLog::UMUR_SIMPAN_HARI }} hari terakhir, lalu dibuang otomatis.
+    Log tidak bisa diubah maupun dihapus satu per satu.
+</p>
 @endsection

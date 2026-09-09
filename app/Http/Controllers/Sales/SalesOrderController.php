@@ -4,14 +4,19 @@ namespace App\Http\Controllers\Sales;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\SalesOrderRequest;
+use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Models\DeliveryProof;
+use App\Models\Notification;
 use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesReturn;
+use App\Support\Activity;
 use App\Support\DocumentNumber;
+use App\Support\Notifier;
 use App\Support\OrderCutoff;
+use App\Support\Permission;
 use App\Support\Returns\CustomerRejection;
 use App\Support\StockIndicator;
 use App\Support\WarehouseScope;
@@ -340,6 +345,36 @@ class SalesOrderController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::RETURN_REPORT,
+            sprintf(
+                'Melaporkan penolakan %s pada pesanan %s (%d baris) — %s',
+                $retur->reference,
+                $order->order_number,
+                count($baris),
+                $data['reason'],
+            ),
+            $retur,
+            $order->warehouse_id,
+            ['pesanan' => $order->order_number, 'baris' => $baris, 'alasan' => $data['reason']],
+        );
+
+        Notifier::toPermission(
+            Permission::RETURN_APPROVE,
+            $order->warehouse_id,
+            Notification::RETURN_REPORTED,
+            'Laporan penolakan customer baru',
+            sprintf(
+                '%s pada pesanan %s (%s) — %s',
+                $retur->reference,
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $data['reason'],
+            ),
+            route('wms.returns.show', $retur),
+            $retur,
+        );
+
         return back()->with('success', sprintf(
             'Laporan penolakan %s terkirim. Logistik akan memeriksanya bersama foto Surat Jalan Anda.',
             $retur->reference,
@@ -600,6 +635,46 @@ class SalesOrderController extends Controller
             'rejected_by' => null,
             'rejection_reason' => null,
         ])->save();
+
+        /*
+         * Dicatat DI SINI, bukan di submit(), karena pesanan juga bisa
+         * berangkat langsung dari store() lewat tombol "Submit Order".
+         * Menempelkannya di kedua pemanggil berarti dua salinan aturan yang
+         * sama, dan yang terlupa nanti pasti salah satunya.
+         *
+         * Percobaan ke berapa ikut dicatat: pesanan yang bolak-balik ditolak
+         * lalu diajukan lagi adalah pola yang justru paling perlu terbaca,
+         * dan kolom di pesanannya sendiri sudah dibersihkan di atas.
+         */
+        Activity::record(
+            ActivityLog::ORDER_SUBMIT,
+            sprintf(
+                'Mengirim pesanan %s untuk %s ke Logistik.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+            ),
+            $order,
+            $order->warehouse_id,
+            [
+                'nomor_po_customer' => $order->customer_po_number,
+                'pengajuan_ke' => $order->rejections()->count() + 1,
+            ],
+        );
+
+        Notifier::toPermission(
+            Permission::OUTBOUND_APPROVAL,
+            $order->warehouse_id,
+            Notification::ORDER_PENDING,
+            'Pesanan baru menunggu diterima',
+            sprintf(
+                '%s dari %s diajukan %s.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $order->user?->full_name ?? 'Sales',
+            ),
+            route('wms.approval.index'),
+            $order,
+        );
     }
 
     /**

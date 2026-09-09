@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\DeliveryNote;
+use App\Models\Notification;
+use App\Support\Activity;
+use App\Support\Notifier;
 use App\Support\Outbound\Shipment;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -54,6 +58,50 @@ class EpodController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        /*
+         * SATU-SATUNYA LOG YANG PELAKUNYA BUKAN PENGGUNA SISTEM. Supir tidak
+         * punya akun, jadi user_id/user_name/user_role-nya kosong dan yang
+         * tersisa hanyalah IP serta nama penerima yang ia tulis. Tetap
+         * dicatat: inilah titik di mana pesanan berpindah dari "di jalan"
+         * menjadi "sampai", dan ketiadaan pelaku bernama justru alasan
+         * tambahan untuk meninggalkan jejaknya.
+         */
+        Activity::record(
+            ActivityLog::EPOD_CONFIRM,
+            sprintf(
+                'Supir mengonfirmasi Surat Jalan %s sampai di tujuan%s.',
+                $note->document_no,
+                filled($data['received_by_name'] ?? null)
+                    ? ', diterima '.trim($data['received_by_name'])
+                    : '',
+            ),
+            $note,
+            $note->warehouse_id,
+            [
+                'surat_jalan' => $note->document_no,
+                'penerima' => $data['received_by_name'] ?? null,
+                'supir' => $note->driver_name,
+            ],
+        );
+
+        // Barang sampai, tapi pesanannya BELUM selesai: fotonya masih harus
+        // diunggah. Inilah titik yang paling mudah terlupakan Sales, karena
+        // tidak ada apa pun di layarnya yang berubah saat supir menekan
+        // tombol di tempat lain.
+        Notifier::toUser(
+            $note->salesOrder?->user_id,
+            Notification::PROOF_NEEDED,
+            'Barang sampai — unggah bukti Surat Jalan',
+            sprintf(
+                'Surat Jalan %s sudah dikonfirmasi sampai. Pesanan %s belum bisa ditutup sebelum foto Surat Jalan bertanda tangan diunggah.',
+                $note->document_no,
+                $note->salesOrder?->order_number ?? '',
+            ),
+            $note->sales_order_id ? url('/sales/orders/'.$note->sales_order_id) : null,
+            $note->warehouse_id,
+            $note,
+        );
 
         return redirect()
             ->route('epod.show', $token)

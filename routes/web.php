@@ -113,6 +113,24 @@ Route::middleware(['auth', 'session.track'])->group(function () {
         ->name('profile.sessions.revoke-others');
     Route::delete('/profile/sessions/{session}', [ProfileController::class, 'revokeSession'])
         ->name('profile.sessions.revoke');
+
+    /*
+     * Lonceng notifikasi — DI SINI, dengan alasan yang persis sama dengan
+     * profil di atas. Sebelumnya rutenya di dalam prefix /wms, sehingga Tim
+     * Sales tidak akan pernah bisa membuka loncengnya sendiri — padahal
+     * merekalah yang paling butuh diberi tahu pesanannya sudah disetujui atau
+     * ditolak.
+     *
+     * Tidak ada `can:` di sini dan itu disengaja: yang menentukan siapa
+     * menerima apa sudah diputuskan App\Support\Notifier saat mengirimnya.
+     * Menambahkan gate di sini justru memblokir orang dari suratnya sendiri.
+     */
+    Route::get('/notifications', [NotificationController::class, 'index'])
+        ->name('wms.notifications.index');
+    Route::get('/notifications/{notification}', [NotificationController::class, 'open'])
+        ->name('wms.notifications.open');
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
+        ->name('wms.notifications.read-all');
 });
 
 // SALES PORTAL ROUTES
@@ -191,7 +209,10 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         ->middleware('can:'.Permission::DASHBOARD_OPERATOR);
 
     // Notifikasi & profil: milik pribadi tiap user, tidak dibatasi role.
-    Route::get('/notifications', [NotificationController::class, 'index']);
+    // Keduanya kini tinggal di luar prefix ini supaya Tim Sales ikut
+    // kebagian; alamat lamanya dipertahankan sebagai pengalihan karena sudah
+    // tersebar di bookmark dan tautan lama.
+    Route::get('/notifications', fn () => redirect()->route('wms.notifications.index'));
     // Profil PINDAH ke /profile supaya Tim Sales ikut kebagian (lihat blok
     // di atas grup ini). Alamat lama dipertahankan sebagai pengalihan: ia
     // sudah tersebar di bookmark dan tautan lama.
