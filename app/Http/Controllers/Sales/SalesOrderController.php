@@ -13,9 +13,9 @@ use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesReturn;
 use App\Support\Activity;
-use App\Support\DocumentNumber;
 use App\Support\Notifier;
 use App\Support\OrderCutoff;
+use App\Support\Outbound\OrderComposer;
 use App\Support\Permission;
 use App\Support\Returns\CustomerRejection;
 use App\Support\StockIndicator;
@@ -23,7 +23,6 @@ use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -48,15 +47,24 @@ use RuntimeException;
  */
 class SalesOrderController extends Controller
 {
-    private const DISK = 'local';
-
-    private const FOLDER = 'sales-orders';
+    /** Disk berkas dokumen PO — pemiliknya OrderComposer, bukan layar ini. */
+    private const DISK = OrderComposer::DISK;
 
     /** Panjang minimal kata kunci sebelum pencarian dijalankan. */
     private const MIN_CARI = 2;
 
     /** Batas saran yang ditampilkan; cukup untuk dibaca sekali lihat di HP. */
     private const MAKS_SARAN = 20;
+
+    /**
+     * Cara pesanan dibentuk tinggal di OrderComposer, bukan di sini.
+     *
+     * Sejak Admin/Manager boleh membuat pesanan atas nama Sales, ada DUA
+     * pintu masuk ke pembentukan pesanan. Menyalin caranya ke masing-masing
+     * berarti dua tempat yang suatu hari berbeda pendapat tentang kapan SLA
+     * mulai dihitung dan siapa yang diberi tahu.
+     */
+    public function __construct(private readonly OrderComposer $komposer) {}
 
     /* ------------------------------------------------------- Buat pesanan */
 
@@ -75,22 +83,17 @@ class SalesOrderController extends Controller
         }
 
         $order = DB::transaction(function () use ($request, $data): SalesOrder {
-            $order = new SalesOrder([
-                // Nomor internal SELALU dibuat, termasuk untuk pesanan
-                // bermetode dokumen — nomor PO customer tidak dijamin unik
-                // antar pelanggan, jadi tidak bisa jadi identitas sistem.
-                'order_number' => DocumentNumber::forSalesOrder(),
-                'user_id' => $request->user()->id,
-                'status' => SalesOrder::STATUS_DRAFT,
-            ]);
+            // Sales membuat pesanannya SENDIRI, jadi tidak ada yang mewakili:
+            // placed_by dibiarkan NULL oleh komposer.
+            $order = $this->komposer->baru($request->user()->id);
 
-            $this->isiDari($order, $data, $request->file('document'));
+            $this->komposer->isi($order, $data, $request->file('document'));
             $order->save();
 
-            $this->tulisRincian($order, $data);
+            $this->komposer->tulisRincian($order, $data);
 
             if ($request->wantsSubmit()) {
-                $this->tandaiTerkirim($order);
+                $this->komposer->kirimKeLogistik($order);
             }
 
             return $order;
@@ -140,17 +143,17 @@ class SalesOrderController extends Controller
         }
 
         DB::transaction(function () use ($request, $order, $data): void {
-            $this->isiDari($order, $data, $request->file('document'));
+            $this->komposer->isi($order, $data, $request->file('document'));
             $order->save();
 
             // Rincian ditulis ulang seluruhnya, bukan disamakan baris per
             // baris: form mengirim keadaan akhir yang dikehendaki Sales, dan
             // menyamakan selisihnya hanya menambah jalan untuk keliru.
             $order->details()->delete();
-            $this->tulisRincian($order, $data);
+            $this->komposer->tulisRincian($order, $data);
 
             if ($request->wantsSubmit()) {
-                $this->tandaiTerkirim($order);
+                $this->komposer->kirimKeLogistik($order);
             }
         });
 
@@ -172,7 +175,7 @@ class SalesOrderController extends Controller
         $nomor = $order->order_number;
 
         DB::transaction(function () use ($order): void {
-            $this->hapusDokumen($order->document_path);
+            $this->komposer->hapusDokumen($order->document_path);
             $order->details()->delete();
             $order->delete();
         });
@@ -199,7 +202,7 @@ class SalesOrderController extends Controller
             return back()->with('error', 'Draft ini belum punya item pesanan. Lengkapi dulu sebelum dikirim.');
         }
 
-        $this->tandaiTerkirim($order);
+        $this->komposer->kirimKeLogistik($order);
 
         return back()->with('success', 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.');
     }
@@ -561,122 +564,6 @@ class SalesOrderController extends Controller
             ->all();
     }
 
-    /** Menyalin isian form ke model, termasuk mengganti berkas bila ada. */
-    private function isiDari(SalesOrder $order, array $data, ?UploadedFile $berkas): void
-    {
-        $order->fill([
-            'customer_id' => $data['customer_id'],
-            'warehouse_id' => $data['warehouse_id'],
-            'payment_term_id' => $data['payment_term_id'],
-            'order_source' => $data['order_source'],
-            'notes' => $data['notes'] ?? null,
-            'customer_po_number' => $data['order_source'] === SalesOrder::SOURCE_DOCUMENT
-                ? $data['customer_po_number']
-                : null,
-        ]);
-
-        if ($berkas !== null) {
-            // Berkas lama dihapus SETELAH yang baru tersimpan, supaya
-            // kegagalan penyimpanan tidak meninggalkan pesanan tanpa dokumen.
-            $lama = $order->document_path;
-
-            $order->fill([
-                'document_path' => $berkas->store(self::FOLDER, self::DISK),
-                'document_name' => $berkas->getClientOriginalName(),
-                'document_size' => $berkas->getSize(),
-                'document_mime' => $berkas->getMimeType(),
-            ]);
-
-            $this->hapusDokumen($lama);
-        }
-
-        // Berpindah ke metode rincian: dokumen lamanya tidak lagi berarti.
-        if ($data['order_source'] === SalesOrder::SOURCE_MANUAL && filled($order->document_path)) {
-            $this->hapusDokumen($order->document_path);
-            $order->fill([
-                'document_path' => null, 'document_name' => null,
-                'document_size' => null, 'document_mime' => null,
-            ]);
-        }
-    }
-
-    /**
-     * Menulis baris item.
-     *
-     * Pesanan bermetode dokumen sengaja TIDAK punya baris item di Fase 5 —
-     * rinciannya diisi Logistik saat approval sambil membaca dokumennya.
-     */
-    private function tulisRincian(SalesOrder $order, array $data): void
-    {
-        if ($data['order_source'] === SalesOrder::SOURCE_DOCUMENT) {
-            return;
-        }
-
-        foreach ($data['items'] ?? [] as $item) {
-            $order->details()->create([
-                'product_id' => $item['product_id'],
-                'qty_ordered' => $item['qty'],
-            ]);
-        }
-    }
-
-    /** Submit: status berpindah dan SLA (§7.6) mulai dihitung dari sini. */
-    private function tandaiTerkirim(SalesOrder $order): void
-    {
-        $order->forceFill([
-            'status' => SalesOrder::STATUS_PENDING,
-            'submitted_at' => now(),
-            // Pesanan yang pernah ditolak lalu diperbaiki: penanda
-            // penolakannya dibersihkan supaya keadaan SEKARANG-nya jujur —
-            // ia sedang menunggu dinilai, bukan sedang ditolak. Riwayatnya
-            // tetap utuh di sales_order_rejections, dan dari sanalah catatan
-            // "pernah ditolak" tetap terbaca sampai akhir.
-            'rejected_at' => null,
-            'rejected_by' => null,
-            'rejection_reason' => null,
-        ])->save();
-
-        /*
-         * Dicatat DI SINI, bukan di submit(), karena pesanan juga bisa
-         * berangkat langsung dari store() lewat tombol "Submit Order".
-         * Menempelkannya di kedua pemanggil berarti dua salinan aturan yang
-         * sama, dan yang terlupa nanti pasti salah satunya.
-         *
-         * Percobaan ke berapa ikut dicatat: pesanan yang bolak-balik ditolak
-         * lalu diajukan lagi adalah pola yang justru paling perlu terbaca,
-         * dan kolom di pesanannya sendiri sudah dibersihkan di atas.
-         */
-        Activity::record(
-            ActivityLog::ORDER_SUBMIT,
-            sprintf(
-                'Mengirim pesanan %s untuk %s ke Logistik.',
-                $order->order_number,
-                $order->customer?->name ?? 'pelanggan',
-            ),
-            $order,
-            $order->warehouse_id,
-            [
-                'nomor_po_customer' => $order->customer_po_number,
-                'pengajuan_ke' => $order->rejections()->count() + 1,
-            ],
-        );
-
-        Notifier::toPermission(
-            Permission::OUTBOUND_APPROVAL,
-            $order->warehouse_id,
-            Notification::ORDER_PENDING,
-            'Pesanan baru menunggu diterima',
-            sprintf(
-                '%s dari %s diajukan %s.',
-                $order->order_number,
-                $order->customer?->name ?? 'pelanggan',
-                $order->user?->full_name ?? 'Sales',
-            ),
-            route('wms.approval.index'),
-            $order,
-        );
-    }
-
     /**
      * Memeriksa keberadaan dokumen pada metode dokumen.
      *
@@ -695,13 +582,6 @@ class SalesOrderController extends Controller
         }
 
         return 'Unggah dokumen PO customer — pesanan bermetode dokumen tidak bisa diproses Logistik tanpa berkasnya.';
-    }
-
-    private function hapusDokumen(?string $path): void
-    {
-        if (filled($path) && Storage::disk(self::DISK)->exists($path)) {
-            Storage::disk(self::DISK)->delete($path);
-        }
     }
 
     /**

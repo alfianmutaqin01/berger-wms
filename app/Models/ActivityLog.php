@@ -60,6 +60,16 @@ class ActivityLog extends Model
 
     public const ORDER_SUBMIT = 'order.submit';
 
+    /**
+     * Pesanan dibuat Admin/Manager ATAS NAMA seorang Sales.
+     *
+     * Jenis tersendiri, bukan digabung ke ORDER_SUBMIT. Yang perlu terbaca
+     * bukan "pesanan dikirim" (terjadi ribuan kali) melainkan "dibuat atas
+     * nama orang lain" (seharusnya jarang). Digabung, yang jarang tenggelam
+     * di antara yang biasa dan penyaring log tidak bisa memisahkannya lagi.
+     */
+    public const ORDER_PLACED_INTERNAL = 'order.placed_internal';
+
     public const ORDER_APPROVE = 'order.approve';
 
     public const ORDER_REJECT = 'order.reject';
@@ -151,6 +161,7 @@ class ActivityLog extends Model
         self::RETURN_VERIFY => 'Verifikasi Barang Tolakan',
         self::ORDER_RESHIP => 'Kirim Ulang Outstanding',
         self::ORDER_SUBMIT => 'Kirim Pesanan',
+        self::ORDER_PLACED_INTERNAL => 'Buat Pesanan Atas Nama Sales',
         self::ORDER_APPROVE => 'Setujui Pesanan',
         self::ORDER_REJECT => 'Tolak Pesanan',
         self::ORDER_CANCEL => 'Batalkan Pesanan',

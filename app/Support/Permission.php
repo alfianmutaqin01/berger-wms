@@ -132,6 +132,21 @@ class Permission
 
     public const OUTBOUND_APPROVAL = 'outbound.approval';
 
+    /**
+     * Membuat pesanan dari sisi WMS, atas nama seorang Sales.
+     *
+     * SENGAJA IZIN TERSENDIRI, bukan menumpang OUTBOUND_APPROVAL. Kalau
+     * menumpang, Logistik ikut mendapatkannya — dan Logistik adalah pihak
+     * yang menilai pesanan. Yang membuat sekaligus menilai tanpa seorang pun
+     * di luar rantai itu adalah keadaan yang justru dihindari.
+     *
+     * Pemilik produk memutuskan pembuat BOLEH menyetujui pesanannya sendiri,
+     * jadi pemisahan itu memang sudah dilepas untuk Admin dan Manager. Yang
+     * tersisa sebagai kontrol adalah jejaknya (sales_orders.placed_by) dan
+     * kabar ke Sales yang namanya dipakai — keduanya wajib, dan keduanya ada.
+     */
+    public const OUTBOUND_ORDER_INTERNAL = 'outbound.order_internal';
+
     public const OUTBOUND_PICKING_LIST = 'outbound.picking.list';
 
     public const OUTBOUND_PICKING_PROCESS = 'outbound.picking.process';
@@ -252,6 +267,8 @@ class Permission
 
         // Outbound: proses picking di tangan Operator; sisanya Logistik.
         self::OUTBOUND_APPROVAL => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        // Logistik TIDAK ikut — lihat alasannya di konstantanya.
+        self::OUTBOUND_ORDER_INTERNAL => [Role::SUPER_ADMIN, Role::MANAGER],
         self::OUTBOUND_PICKING_LIST => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_PICKING_PROCESS => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
         self::OUTBOUND_PICKING_VIEW => [

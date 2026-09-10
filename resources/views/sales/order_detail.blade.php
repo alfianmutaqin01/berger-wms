@@ -467,6 +467,29 @@
         @endif
         @endif
 
+        {{-- DIBUATKAN ORANG LAIN — dan Sales harus tahu.
+
+             Tanpa kotak ini, pesanan muncul di daftarnya tanpa penjelasan apa
+             pun dan Sales menyimpulkan sendiri: entah ia lupa membuatnya,
+             entah sistemnya kacau. Keduanya salah, dan keduanya membuatnya
+             diam. Padahal sejak pembuat pesanan boleh menyetujui pesanannya
+             sendiri, Sales inilah satu-satunya orang di luar rantai itu yang
+             bisa menyadari kalau ada yang tidak beres. --}}
+        @if($order->dibuatkanOrangLain())
+            <div class="alert alert-warning border-0 rounded-4 d-flex gap-3 align-items-start mb-3">
+                <i class="bi bi-person-badge fs-4 mt-1"></i>
+                <div class="small">
+                    <strong class="d-block mb-1">
+                        Pesanan ini dibuat {{ $order->placedBy?->full_name ?? 'tim internal' }}, bukan oleh Anda.
+                    </strong>
+                    <div class="mb-1">Alasan: {{ $order->placed_reason }}</div>
+                    Pesanannya tetap tercatat atas nama Anda — termasuk unggah foto Surat Jalan
+                    bertanda tangan nanti. Kalau menurut Anda ada yang keliru, hubungi
+                    {{ $order->placedBy?->full_name ?? 'pembuatnya' }} atau Manager Anda.
+                </div>
+            </div>
+        @endif
+
         <!-- ============ Item pesanan ============ -->
         <div class="card border-0 shadow-sm rounded-4 mb-3">
             <div class="card-header bg-white border-bottom-0 pt-3 px-3 px-md-4">

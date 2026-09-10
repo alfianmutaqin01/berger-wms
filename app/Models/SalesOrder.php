@@ -68,7 +68,7 @@ class SalesOrder extends Model
 
     protected $fillable = [
         'order_number', 'customer_po_number', 'bc_so_number',
-        'customer_id', 'user_id', 'warehouse_id', 'payment_term_id',
+        'customer_id', 'user_id', 'placed_by', 'placed_reason', 'warehouse_id', 'payment_term_id',
         'status', 'order_source',
         'document_path', 'document_name', 'document_size', 'document_mime',
         'submitted_at', 'approved_at', 'approved_by', 'approval_note',
@@ -121,6 +121,26 @@ class SalesOrder extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Siapa yang MENGETIK pesanan ini, kalau bukan Sales-nya sendiri.
+     *
+     * NULL berarti Sales membuatnya sendiri — keadaan normal. Artinya dijaga
+     * tetap beda dari `user()`: yang itu menjawab "pesanan ini milik siapa",
+     * yang ini "siapa yang duduk di depan layarnya". Meleburnya berarti
+     * catatan yang menyebut Sales membuat pesanan yang tidak pernah ia
+     * sentuh.
+     */
+    public function placedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'placed_by');
+    }
+
+    /** Dibuat lewat jalur internal Admin/Manager, bukan oleh Sales-nya. */
+    public function dibuatkanOrangLain(): bool
+    {
+        return $this->placed_by !== null;
     }
 
     public function approvedBy(): BelongsTo

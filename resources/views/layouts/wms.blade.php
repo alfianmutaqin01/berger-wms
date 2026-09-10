@@ -166,6 +166,7 @@
             <!-- OUTBOUND -->
             @canany([
                 \App\Support\Permission::OUTBOUND_APPROVAL,
+                \App\Support\Permission::OUTBOUND_ORDER_INTERNAL,
                 \App\Support\Permission::BOOKING,
                 \App\Support\Permission::OUTBOUND_PICKING_LIST,
                 \App\Support\Permission::OUTBOUND_PICKING_PROCESS,
@@ -180,6 +181,16 @@
                         <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $outboundOpen ? 'show' : '' }}" id="outboundMenu" data-bs-parent=".sidebar-nav">
+                        {{-- Ditaruh PALING ATAS karena inilah awal alurnya:
+                             pesanan dibuat dulu, baru diterima. Hanya Admin &
+                             Manager — Logistik sengaja tidak, karena merekalah
+                             yang menilai pesanan. --}}
+                        @can(\App\Support\Permission::OUTBOUND_ORDER_INTERNAL)
+                            <li class="nav-item {{ request()->is('wms/outbound/new-order') ? 'active' : '' }}">
+                                <a href="/wms/outbound/new-order" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Buat Pesanan</span></a>
+                            </li>
+                        @endcan
+
                         @can(\App\Support\Permission::OUTBOUND_APPROVAL)
                             {{-- is() dengan pola eksplisit, BUKAN 'wms/outbound/approval*':
                                  pola berbintang membuat kedua menu ini menyala

@@ -97,7 +97,18 @@
                     <dd class="col-7 font-monospace">{{ $order->customer?->phone_label ?? '—' }}</dd>
 
                     <dt class="col-5 text-muted fw-normal">Sales</dt>
-                    <dd class="col-7">{{ $order->user?->full_name ?? '—' }}</dd>
+                    <dd class="col-7">
+                        {{ $order->user?->full_name ?? '—' }}
+                        @if($order->dibuatkanOrangLain())
+                            {{-- Ditandai DI SEBELAH nama Sales, bukan di kotak
+                                 terpisah di bawah: yang membaca baris ini sedang
+                                 menyimpulkan "ini pesanan si A", dan kesimpulan
+                                 itu harus dikoreksi di detik yang sama. --}}
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1">
+                                <i class="bi bi-person-badge me-1"></i>dibuatkan
+                            </span>
+                        @endif
+                    </dd>
 
                     <dt class="col-5 text-muted fw-normal">Gudang</dt>
                     <dd class="col-7">{{ $order->warehouse?->name ?? '—' }}</dd>
@@ -108,6 +119,24 @@
                     <dt class="col-5 text-muted fw-normal">Disubmit</dt>
                     <dd class="col-7">{{ $order->submitted_at?->format('d M Y H:i') ?? '—' }}</dd>
                 </dl>
+
+                {{-- JALUR INTERNAL DIKATAKAN LENGKAP DI SINI.
+
+                     Pemilik produk memutuskan pembuat pesanan boleh menyetujui
+                     pesanannya sendiri, jadi tidak ada mata kedua di rantai
+                     ini. Yang tersisa sebagai kontrol adalah orang yang sedang
+                     membaca layar ini — dan ia hanya bisa menjalankan perannya
+                     kalau tahu pesanan ini tidak datang dari Sales-nya. --}}
+                @if($order->dibuatkanOrangLain())
+                    <div class="alert alert-warning border-0 rounded-3 mt-3 mb-0 small">
+                        <div class="fw-semibold mb-1">
+                            <i class="bi bi-person-badge me-1"></i>
+                            Dibuat {{ $order->placedBy?->full_name ?? 'pengguna internal' }},
+                            bukan oleh {{ $order->user?->full_name ?? 'Sales' }}
+                        </div>
+                        <div class="text-muted">Alasan: {{ $order->placed_reason }}</div>
+                    </div>
+                @endif
 
                 @if(filled($order->notes))
                     <div class="alert alert-light border mt-3 mb-0 small">

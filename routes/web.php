@@ -15,6 +15,7 @@ use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Controllers\Wms\DeliveryController;
 use App\Http\Controllers\Wms\ImportController;
 use App\Http\Controllers\Wms\InboundController;
+use App\Http\Controllers\Wms\InternalOrderController;
 use App\Http\Controllers\Wms\InventoryController;
 use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\NotificationController;
@@ -511,6 +512,28 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     // OUTBOUND — proses picking di tangan Operator; sisanya alur Logistik.
     Route::prefix('outbound')->group(function () {
+        /*
+        | BUAT PESANAN JALUR INTERNAL — Admin & Manager saja.
+        |
+        | Portal Sales tetap tertutup rapat untuk peran Warehouse/Admin
+        | (PRD §5.2, ditegakkan middleware portal:sales). Ini BUKAN celah ke
+        | portal itu melainkan pintu terpisah di sisi WMS: pesanannya tetap
+        | tercatat MILIK seorang Sales, dan siapa yang mengetiknya disimpan
+        | terpisah di sales_orders.placed_by.
+        |
+        | Logistik sengaja tidak dapat — merekalah yang menilai pesanan.
+        */
+        Route::middleware('can:'.Permission::OUTBOUND_ORDER_INTERNAL)->group(function () {
+            Route::get('/new-order', [InternalOrderController::class, 'create'])
+                ->name('wms.internal-order.create');
+            Route::post('/new-order', [InternalOrderController::class, 'store'])
+                ->name('wms.internal-order.store');
+            Route::get('/new-order/lookup/customers', [InternalOrderController::class, 'lookupCustomers'])
+                ->name('wms.internal-order.lookup.customers');
+            Route::get('/new-order/lookup/products', [InternalOrderController::class, 'lookupProducts'])
+                ->name('wms.internal-order.lookup.products');
+        });
+
         // PENERIMAAN PESANAN (Fase 6 tahap 1). URUTAN PENTING: '/approval/history'
         // harus didaftarkan SEBELUM '/approval/{order}', kalau tidak kata
         // "history" akan tertangkap sebagai id pesanan dan halamannya 404.
