@@ -43,7 +43,7 @@
     <i class="bi bi-person-exclamation fs-4 me-3"></i>
     <div class="small">
         <strong>Pemisahan tugas gugur pada {{ $paletSendiri->count() }} palet.</strong>
-        Anda sendiri yang melakukan put-away palet tersebut, sehingga <em>maker</em> dan <em>checker</em>-nya orang yang sama.
+        Anda sendiri yang melakukan PDN palet tersebut, sehingga <em>maker</em> dan <em>checker</em>-nya orang yang sama.
         Verifikasi tetap diizinkan (PRD §5.2), tetapi sebaiknya diserahkan ke petugas lain bila memungkinkan.
     </div>
 </div>
@@ -143,7 +143,7 @@
                                             <small class="d-block text-muted font-monospace" style="font-size: 0.7rem;">
                                                 {{ $awalKelompok ? $detail->production_order_no : '' }}
                                             </small>
-                                            <small class="d-block text-muted" style="font-size: 0.65rem;" title="Operator put-away">
+                                            <small class="d-block text-muted" style="font-size: 0.65rem;" title="Operator PDN">
                                                 <i class="bi bi-person-badge"></i> {{ $detail->putawayBy?->full_name ?? '—' }}
                                             </small>
                                         </td>

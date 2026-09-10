@@ -82,6 +82,8 @@ class ActivityLog extends Model
 
     public const INBOUND_PUTAWAY = 'inbound.putaway';
 
+    public const INBOUND_QTY_ADJUST = 'inbound.qty_adjust';
+
     public const INBOUND_VERIFY = 'inbound.verify';
 
     /* ----------------------------------------------- Pengiriman (Fase 9) */
@@ -167,6 +169,7 @@ class ActivityLog extends Model
         self::ORDER_CANCEL => 'Batalkan Pesanan',
         self::INBOUND_CREATE => 'Input Produksi',
         self::INBOUND_PUTAWAY => 'Naikkan ke Rak',
+        self::INBOUND_QTY_ADJUST => 'Sesuaikan Qty Produksi',
         self::INBOUND_VERIFY => 'Verifikasi Barang Masuk',
         self::DELIVERY_SHIP => 'Nyatakan Berangkat',
         self::DELIVERY_SUBSTITUTION => 'Konfirmasi Barang Beda SKU',

@@ -344,7 +344,7 @@ class DashboardPeranTest extends TestCase
 
         $this->get('/wms/dashboard/operator')
             ->assertOk()
-            ->assertSee('Tugas Put-away')
+            ->assertSee('Tugas PDN')
             ->assertSee('Antrean Picking Tersedia')
             ->assertSee('Antrean kosong')
             // Angka dummy lama yang harus benar-benar hilang.

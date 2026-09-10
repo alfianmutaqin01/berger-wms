@@ -53,7 +53,7 @@ class SidebarAccessTest extends TestCase
     private const MENU_LABELS = [
         Permission::INBOUND_CREATE => 'Input Produksi',
         Permission::INBOUND_HISTORY => 'Riwayat Produksi',
-        Permission::INBOUND_PUTAWAY => 'Put-away',
+        Permission::INBOUND_PUTAWAY => 'PDN',
         Permission::RETURN_VIEW => 'Penolakan Customer',
         Permission::INBOUND_VERIFY => 'Verifikasi Logistik',
         Permission::INVENTORY_VIEW => 'Data Stok',
@@ -167,7 +167,7 @@ class SidebarAccessTest extends TestCase
         $this->assertStringContainsString('Data Stok', $html);
 
         // Bukan wewenangnya: put-away, picking, retur, billing, master data.
-        $this->assertStringNotContainsString('Put-away', $html);
+        $this->assertStringNotContainsString('>PDN<', $html);
         $this->assertStringNotContainsString('Proses Picking', $html);
         $this->assertStringNotContainsString('Penolakan Customer', $html);
         $this->assertStringNotContainsString('Billing & Piutang', $html);
@@ -180,7 +180,7 @@ class SidebarAccessTest extends TestCase
 
         $html = $this->get('/wms/dashboard/operator')->assertOk()->getContent();
 
-        $this->assertStringContainsString('Put-away', $html);
+        $this->assertStringContainsString('>PDN<', $html);
         $this->assertStringContainsString('Proses Picking', $html);
         $this->assertStringContainsString('Penolakan Customer', $html);
         $this->assertStringContainsString('Data Stok', $html);

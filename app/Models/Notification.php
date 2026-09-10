@@ -43,6 +43,8 @@ class Notification extends Model
 
     public const INBOUND_VERIFY_READY = 'inbound.verify_ready';
 
+    public const INBOUND_QTY_VARIANCE = 'inbound.qty_variance';
+
     public const PROOF_NEEDED = 'proof.needed';
 
     public const PROOF_REJECTED = 'proof.rejected';
@@ -69,6 +71,7 @@ class Notification extends Model
         self::PICKING_READY => ['bi-list-check', 'primary'],
         self::PUTAWAY_READY => ['bi-box-arrow-in-down', 'primary'],
         self::INBOUND_VERIFY_READY => ['bi-clipboard-check', 'info'],
+        self::INBOUND_QTY_VARIANCE => ['bi-exclamation-diamond-fill', 'warning'],
         self::PROOF_NEEDED => ['bi-camera-fill', 'warning'],
         self::PROOF_REJECTED => ['bi-exclamation-triangle-fill', 'danger'],
         self::RETURN_REPORTED => ['bi-arrow-return-left', 'warning'],

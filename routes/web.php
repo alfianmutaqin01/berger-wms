@@ -222,8 +222,25 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::prefix('inbound')->group(function () {
         Route::middleware('can:'.Permission::INBOUND_HISTORY)->group(function () {
             Route::get('/history', [InboundController::class, 'historyIndex'])->name('wms.inbound.history');
-            Route::get('/history/{doc_no}', [InboundController::class, 'historyDetail']);
+            // Diberi nama karena lonceng selisih qty menautkan ke sini.
+            Route::get('/history/{doc_no}', [InboundController::class, 'historyDetail'])
+                ->name('wms.inbound.history.detail');
         });
+
+        /*
+        | Tim Produksi menyesuaikan qty dokumennya ke hitungan fisik Operator.
+        |
+        | Dipagari INBOUND_CREATE, bukan INBOUND_HISTORY: yang boleh membetulkan
+        | angka adalah yang berwenang menulisnya sejak awal. Manager memegang
+        | INBOUND_HISTORY dan bisa MELIHAT selisihnya — itu memang tugasnya —
+        | tetapi membetulkan berkas produksi bukan wewenangnya.
+        |
+        | Selisihnya TIDAK hilang dari layar verifikasi Logistik setelah
+        | disesuaikan; lihat InboundDetail::scopeBerselisih().
+        */
+        Route::post('/history/{doc_no}/adjust-qty', [InboundController::class, 'adjustQty'])
+            ->middleware('can:'.Permission::INBOUND_CREATE)
+            ->name('wms.inbound.history.adjust');
 
         // Input Produksi (PRD §6.3 F-INB-01) — sudah terhubung ke database.
         // Alur tiga langkah: form -> pratinjau (tanpa menyentuh DB) -> simpan.

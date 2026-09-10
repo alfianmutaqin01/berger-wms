@@ -31,7 +31,7 @@
     <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-warning border-4">
             <div class="card-body">
-                <h6 class="text-muted fw-normal mb-2">Menunggu Put-away</h6>
+                <h6 class="text-muted fw-normal mb-2">Menunggu PDN</h6>
                 <h3 class="mb-0 fw-bold text-warning">{{ number_format($stats['putaway']) }}</h3>
             </div>
         </div>

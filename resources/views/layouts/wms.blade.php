@@ -92,7 +92,7 @@
                     // Produksi hanya ada di Karawang. Bagi staff Pekanbaru dan
                     // Surabaya, dua menu produksi di bawah ini tidak pernah
                     // bisa dipakai — barang sampai ke sana lewat transfer,
-                    // bukan lini produksi. Put-away dan verifikasi TETAP ada:
+                    // bukan lini produksi. PDN dan verifikasi TETAP ada:
                     // barang kiriman pun harus dinaikkan ke rak.
                     //
                     // Akun tanpa gudang (Super Admin) melihat semuanya.
@@ -122,7 +122,7 @@
                         @endcan
                         @can(\App\Support\Permission::INBOUND_PUTAWAY)
                             <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Put-away</span></a>
+                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>PDN</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::RETURN_VIEW)

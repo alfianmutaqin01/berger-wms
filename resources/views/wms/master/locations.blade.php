@@ -252,14 +252,14 @@
                                 <option value="{{ $zone }}">{{ $zone }}</option>
                             @endforeach
                         </select>
-                        <div class="form-text">Menentukan strategi put-away: barang cepat laku ditempatkan di zona terdekat jalur keluar.</div>
+                        <div class="form-text">Menentukan strategi PDN: barang cepat laku ditempatkan di zona terdekat jalur keluar.</div>
                     </div>
 
                     <div class="form-check">
                         <input type="hidden" name="is_active" value="0">
                         <input class="form-check-input" type="checkbox" name="is_active" id="inpActive" value="1" checked>
                         <label class="form-check-label" for="inpActive">Lokasi aktif</label>
-                        <div class="form-text">Rak non-aktif tidak akan dipilih proses put-away.</div>
+                        <div class="form-text">Rak non-aktif tidak akan dipilih proses PDN.</div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-top-0 rounded-bottom-4">

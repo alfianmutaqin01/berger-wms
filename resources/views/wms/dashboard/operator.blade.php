@@ -216,7 +216,7 @@
             <div class="card-body p-4 d-flex flex-column justify-content-between">
                 <div>
                     <div class="stat-icon-badge mb-3"><i class="bi bi-box-arrow-in-down"></i></div>
-                    <h6 class="text-muted fw-normal mb-1">Tugas Put-away</h6>
+                    <h6 class="text-muted fw-normal mb-1">Tugas PDN</h6>
                     <div class="d-flex align-items-baseline gap-2">
                         <h2 class="mb-0 fw-bold text-dark">{{ $m['putaway']['dokumen'] }}</h2>
                         <span class="text-muted small">dokumen &middot; {{ $m['putaway']['palet'] }} palet</span>
