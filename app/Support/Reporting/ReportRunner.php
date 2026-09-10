@@ -131,7 +131,7 @@ class ReportRunner
         return ['kolom' => $kolom, 'baris' => $baris, 'total' => $total, 'angka' => $angka];
     }
 
-    /* ================================================== 1. Penjualan Selesai */
+    /* ======================================================= 1. Finish Order */
 
     private function penjualanSelesai(?User $user, array $filter, int $batas): array
     {

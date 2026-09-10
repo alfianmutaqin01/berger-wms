@@ -36,18 +36,36 @@
 </div>
 @endif
 
-@can('inventory.adjust')
-{{-- Dua pintu memasukkan stok tanpa dokumen inbound. Keduanya hanya untuk
-     Manager & Super Admin, dan keduanya WAJIB mencatat alasan ke ledger. --}}
+@canany(['reports.view', 'inventory.adjust'])
 <div class="d-flex justify-content-end gap-2 mb-3 flex-wrap">
+    @can('reports.view')
+    {{-- request()->query() diteruskan apa adanya: berkasnya harus berisi
+         persis yang sedang tampil, bukan seluruh gudang. Tanpa ini, orang
+         yang sudah menyaring satu kategori mengunduh dan mendapat 4.000
+         baris — lalu mengira penyaringnya tidak bekerja.
+
+         Gate-nya reports.view, BUKAN inventory.view seperti halamannya:
+         Produksi & Operator boleh melihat stok di layar, tetapi membawa
+         keluar seluruh isi gudang dalam satu berkas adalah hal lain. --}}
+    <a href="{{ route('wms.inventory.export', request()->query()) }}"
+       class="btn btn-outline-success rounded-3"
+       title="Unduh stok yang sedang tampil sebagai berkas Excel — satu baris per batch">
+        <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
+    </a>
+    @endcan
+
+    @can('inventory.adjust')
+    {{-- Dua pintu memasukkan stok tanpa dokumen inbound. Keduanya hanya untuk
+         Manager & Super Admin, dan keduanya WAJIB mencatat alasan ke ledger. --}}
     <button type="button" class="btn btn-outline-primary rounded-3" data-bs-toggle="modal" data-bs-target="#modalImporStok">
         <i class="bi bi-upload me-1"></i> Impor Stok Awal
     </button>
     <button type="button" class="btn btn-primary rounded-3" data-bs-toggle="modal" data-bs-target="#modalTambahStok">
         <i class="bi bi-plus-lg me-1"></i> Tambah Stok
     </button>
+    @endcan
 </div>
-@endcan
+@endcanany
 
 <!-- Ringkasan -->
 <div class="row g-3 mb-4">

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Wms;
 
+use App\Models\ActivityLog;
 use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\InventoryStock;
@@ -14,6 +15,8 @@ use App\Models\UserSession;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -746,5 +749,206 @@ class InventoryTest extends TestCase
 
         $this->assertTrue($terlihat->contains('BT-DICADANGKAN'),
             'Barangnya masih berdiri di rak. Menyembunyikannya membuat operator picking mencari barang yang menurut layar tidak ada.');
+    }
+
+    /* ----------------------------------------------- Export Excel (F-INV-01) */
+
+    /**
+     * Membaca berkas unduhan menjadi teks + lembar kerja.
+     *
+     * @return array{teks: string, sheet: Worksheet, nama: string}
+     */
+    private function unduhStok(array $filter = []): array
+    {
+        $respons = $this->get(route('wms.inventory.export', $filter));
+
+        $respons->assertOk();
+
+        $berkas = tempnam(sys_get_temp_dir(), 'stok').'.xlsx';
+        file_put_contents($berkas, $respons->streamedContent());
+
+        $sheet = IOFactory::load($berkas)->getActiveSheet();
+
+        $teks = '';
+
+        foreach ($sheet->toArray() as $baris) {
+            $teks .= implode('|', array_map(fn ($n) => (string) $n, $baris))."\n";
+        }
+
+        @unlink($berkas);
+
+        return [
+            'teks' => $teks,
+            'sheet' => $sheet,
+            'nama' => $respons->headers->get('content-disposition') ?? '',
+        ];
+    }
+
+    /**
+     * Melihat di layar dan membawa keluar satu berkas adalah dua hal berbeda.
+     *
+     * Produksi dan Operator Gudang memang harus bisa membuka halaman ini —
+     * mereka mengecek lokasi saat put-away dan picking. Tetapi tombol yang
+     * memuntahkan seluruh isi gudang dalam satu berkas yang bisa diteruskan
+     * ke mana saja dipagari gate yang sama dengan laporan Posisi Stok.
+     */
+    public function test_produksi_dan_operator_boleh_melihat_stok_tetapi_tidak_mengunduhnya(): void
+    {
+        $this->stock(['batch_no' => 'BT-RAHASIA']);
+
+        foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
+            $this->loginAs($slug);
+
+            $this->get('/wms/inventory')->assertOk();
+            $this->get(route('wms.inventory.export'))->assertForbidden();
+        }
+    }
+
+    public function test_manager_logistik_dan_super_admin_boleh_mengunduh(): void
+    {
+        $this->stock(['batch_no' => 'BT-01']);
+
+        foreach ([Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS] as $slug) {
+            $this->loginAs($slug);
+            $this->get(route('wms.inventory.export'))->assertOk();
+        }
+    }
+
+    /**
+     * Satu baris per BATCH, bukan per SKU.
+     *
+     * Berkas Excel tidak punya accordion. Meleburnya jadi satu angka per SKU
+     * membuang justru alasan orang mengunduhnya: batch mana yang paling dekat
+     * kedaluwarsa, dan ada di rak yang mana.
+     */
+    public function test_berkas_memuat_tiap_batch_sebagai_barisnya_sendiri(): void
+    {
+        $this->loginAs();
+
+        $produk = Product::factory()->create(['sku' => 'SKU-SATU', 'name' => 'Apko 5 Liter', 'uom' => 'TIN']);
+
+        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BT-LAMA', 'qty_available' => 40]);
+        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BT-BARU', 'qty_available' => 60]);
+
+        $isi = $this->unduhStok();
+
+        $this->assertSame('Data Stok', $isi['sheet']->getCell('A1')->getValue());
+        $this->assertSame('Gudang', $isi['sheet']->getCell('A4')->getValue());
+
+        $this->assertStringContainsString('BT-LAMA', $isi['teks']);
+        $this->assertStringContainsString('BT-BARU', $isi['teks']);
+        $this->assertStringContainsString('Apko 5 Liter', $isi['teks']);
+    }
+
+    /**
+     * Angka HARUS mendarat sebagai bilangan.
+     *
+     * Kalau ia jadi teks, SUM() di Excel mengembalikan nol tanpa keluhan apa
+     * pun — dan tidak ada yang curiga sampai angkanya terlanjur dipakai.
+     */
+    public function test_kolom_qty_ditulis_sebagai_bilangan_bukan_teks(): void
+    {
+        $this->loginAs();
+        $this->stock(['batch_no' => 'BT-ANGKA', 'qty_available' => 40, 'qty_allocated' => 15]);
+
+        $ws = $this->unduhStok()['sheet'];
+
+        $this->assertSame(40, $ws->getCell('K5')->getValue());
+        $this->assertSame(15, $ws->getCell('L5')->getValue());
+        $this->assertSame(55, $ws->getCell('M5')->getValue(), 'Kolom Total = tersedia + dialokasi.');
+        $this->assertSame('n', $ws->getCell('K5')->getDataType());
+    }
+
+    /**
+     * Yang tampil di layar, itu yang terunduh.
+     *
+     * Ini janji tombolnya. Kalau penyaringnya diabaikan, orang yang sudah
+     * mempersempit ke satu batch mengunduh dan mendapat seluruh gudang — lalu
+     * mengira penyaringnya yang rusak, bukan berkasnya.
+     */
+    public function test_penyaring_layar_ikut_ke_dalam_berkas(): void
+    {
+        $this->loginAs();
+
+        $this->stock(['batch_no' => 'BT-IKUT']);
+        $this->stock(['batch_no' => 'BT-TERSARING']);
+
+        $isi = $this->unduhStok(['batch' => 'BT-IKUT']);
+
+        $this->assertStringContainsString('BT-IKUT', $isi['teks']);
+        $this->assertStringNotContainsString('BT-TERSARING', $isi['teks']);
+    }
+
+    /** Penyaring yang dipakai ikut tertulis di kepala berkas. */
+    public function test_penyaring_disebutkan_di_dalam_berkasnya_sendiri(): void
+    {
+        $this->loginAs();
+        $this->stock(['batch_no' => 'BT-KET']);
+
+        $polos = $this->unduhStok();
+        $this->assertStringContainsString('Semua stok (tanpa penyaring)', $polos['teks']);
+
+        // Keterangan ditulis pada satu baris di bawah judul, bukan satu baris
+        // per penyaring — jadi yang diperiksa isi barisnya, bukan selnya.
+        $tersaring = $this->unduhStok(['batch' => 'BT-KET']);
+        $this->assertStringContainsString('Penyaring:', (string) $tersaring['sheet']->getCell('A2')->getValue());
+        $this->assertStringContainsString('Batch "BT-KET"', (string) $tersaring['sheet']->getCell('A2')->getValue());
+    }
+
+    /** Baris nol disembunyikan di layar — berkasnya harus sepakat. */
+    public function test_baris_kosong_tidak_ikut_terunduh(): void
+    {
+        $this->loginAs();
+
+        $this->stock(['batch_no' => 'BT-ADA', 'qty_available' => 5, 'qty_allocated' => 0]);
+        $this->stock(['batch_no' => 'BT-NOL', 'qty_available' => 0, 'qty_allocated' => 0]);
+
+        $isi = $this->unduhStok();
+
+        $this->assertStringContainsString('BT-ADA', $isi['teks']);
+        $this->assertStringNotContainsString('BT-NOL', $isi['teks']);
+    }
+
+    /** Batas gudang berlaku di berkas, bukan hanya di layar. */
+    public function test_gudang_lain_tidak_ikut_terunduh(): void
+    {
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+
+        InventoryStock::factory()->create([
+            'warehouse_id' => $lain->id,
+            'location_id' => Location::factory()->create(['warehouse_id' => $lain->id])->id,
+            'product_id' => Product::factory()->create()->id,
+            'batch_no' => 'BT-GUDANG-LAIN',
+        ]);
+
+        $this->stock(['batch_no' => 'BT-GUDANG-SAYA']);
+
+        $manager = $this->loginAs(Role::MANAGER);
+        $manager->forceFill(['warehouse_id' => $this->warehouse->id])->save();
+
+        $isi = $this->unduhStok();
+
+        $this->assertStringContainsString('BT-GUDANG-SAYA', $isi['teks']);
+        $this->assertStringNotContainsString('BT-GUDANG-LAIN', $isi['teks']);
+    }
+
+    /**
+     * Berkas berisi seluruh isi gudang beredar sama jauhnya dari mana pun
+     * tombolnya ditekan, jadi jejaknya tidak boleh berbeda dengan unduhan
+     * di menu Laporan.
+     */
+    public function test_unduhan_stok_tercatat_di_log_aktivitas(): void
+    {
+        $user = $this->loginAs();
+        $this->stock(['batch_no' => 'BT-LOG']);
+
+        $this->unduhStok();
+
+        $log = ActivityLog::where('action', ActivityLog::REPORT_EXPORT)->latest('id')->first();
+
+        $this->assertNotNull($log, 'Unduhan data stok wajib meninggalkan jejak.');
+        $this->assertSame($user->id, $log->user_id);
+        $this->assertStringContainsString('Data Stok', $log->description);
+        $this->assertSame('data-stok', $log->properties['laporan']);
     }
 }

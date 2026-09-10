@@ -73,8 +73,13 @@ class ReportCatalog
     public static function daftar(): array
     {
         return [
+            // Kunci 'penjualan-selesai' SENGAJA tidak ikut diganti meski
+            // namanya sekarang "Finish Order". Kunci itu hidup di URL yang
+            // sudah di-bookmark orang dan di properties activity_logs milik
+            // unduhan lama; menggantinya mematikan tautan lama dan memecah
+            // riwayat unduhan menjadi dua nama untuk laporan yang sama.
             'penjualan-selesai' => [
-                'nama' => 'Penjualan Selesai',
+                'nama' => 'Finish Order',
                 'ringkas' => 'Pesanan yang sudah tuntas, dirinci per baris produk.',
                 'ikon' => 'bi-check2-circle',
                 'warna' => 'success',

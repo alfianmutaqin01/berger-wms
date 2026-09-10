@@ -293,6 +293,14 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::get('/inventory', [InventoryController::class, 'index'])
         ->middleware('can:'.Permission::INVENTORY_VIEW)
         ->name('wms.inventory.index');
+    // Unduhan dipagari REPORTS_VIEW, bukan INVENTORY_VIEW seperti halamannya.
+    // Produksi & Operator boleh MELIHAT stok di layar, tetapi membawa keluar
+    // seluruh isi gudang dalam satu berkas adalah hal yang berbeda — dan
+    // gate-nya sengaja sama dengan laporan Posisi Stok, supaya tidak ada
+    // seorang pun yang mendadak bisa mengunduh data yang tadinya tidak boleh.
+    Route::get('/inventory/export', [InventoryController::class, 'export'])
+        ->middleware('can:'.Permission::REPORTS_VIEW)
+        ->name('wms.inventory.export');
     Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])
         ->middleware('can:'.Permission::INVENTORY_ADJUST);
     // Menambah baris stok yang belum pernah tercatat — gate yang SAMA dengan

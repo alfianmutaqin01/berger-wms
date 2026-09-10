@@ -321,7 +321,7 @@ class ReportTest extends TestCase
         $ws = $isi['sheet'];
 
         // Judul, keterangan periode, lalu kepala tabel di baris 4.
-        $this->assertSame('Penjualan Selesai', $ws->getCell('A1')->getValue());
+        $this->assertSame('Finish Order', $ws->getCell('A1')->getValue());
         $this->assertStringContainsString('Periode:', (string) $ws->getCell('A2')->getValue());
         $this->assertSame('No Pesanan', $ws->getCell('A4')->getValue());
 
@@ -374,7 +374,7 @@ class ReportTest extends TestCase
 
         $this->assertNotNull($log, 'Data yang keluar dari sistem wajib meninggalkan jejak.');
         $this->assertSame($super->id, $log->user_id);
-        $this->assertStringContainsString('Penjualan Selesai', $log->description);
+        $this->assertStringContainsString('Finish Order', $log->description);
         $this->assertSame('penjualan-selesai', $log->properties['laporan']);
         $this->assertFalse($log->properties['terpotong']);
     }
