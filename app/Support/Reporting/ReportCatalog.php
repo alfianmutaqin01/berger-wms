@@ -73,12 +73,17 @@ class ReportCatalog
     public static function daftar(): array
     {
         return [
-            // Kunci 'penjualan-selesai' SENGAJA tidak ikut diganti meski
-            // namanya sekarang "Finish Order". Kunci itu hidup di URL yang
-            // sudah di-bookmark orang dan di properties activity_logs milik
-            // unduhan lama; menggantinya mematikan tautan lama dan memecah
-            // riwayat unduhan menjadi dua nama untuk laporan yang sama.
-            'penjualan-selesai' => [
+            // Dahulu 'penjualan-selesai'. Kuncinya ikut diganti atas keputusan
+            // pemilik produk, bukan hanya nama tampilannya — dan konsekuensinya
+            // dipikul sadar: tautan lama /wms/reports/penjualan-selesai kini
+            // menjawab 404, dan baris activity_logs milik unduhan sebelum
+            // perubahan ini menyimpan kunci lama di properties-nya. Riwayat
+            // unduhan laporan ini karena itu terbaca di bawah dua kunci.
+            //
+            // Ditukar sekarang justru karena sistemnya belum go-live: makin
+            // lama ditunda, makin banyak baris log dan tautan yang terlanjur
+            // memakai kunci lama.
+            'finish-order' => [
                 'nama' => 'Finish Order',
                 'ringkas' => 'Pesanan yang sudah tuntas, dirinci per baris produk.',
                 'ikon' => 'bi-check2-circle',

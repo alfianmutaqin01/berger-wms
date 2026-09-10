@@ -39,19 +39,44 @@
 @canany(['reports.view', 'inventory.adjust'])
 <div class="d-flex justify-content-end gap-2 mb-3 flex-wrap">
     @can('reports.view')
-    {{-- request()->query() diteruskan apa adanya: berkasnya harus berisi
-         persis yang sedang tampil, bukan seluruh gudang. Tanpa ini, orang
-         yang sudah menyaring satu kategori mengunduh dan mendapat 4.000
-         baris — lalu mengira penyaringnya tidak bekerja.
+    {{-- TIDAK ADA logika unduhan sendiri di halaman ini. Kedua tautan
+         mengarah ke PRATINJAU laporan yang sudah ada, persis seperti kartu
+         Pergerakan Stok di menu Laporan & Analisis: lihat dulu 25 baris
+         pertama beserta jumlah baris sebenarnya, baru tekan unduh.
 
-         Gate-nya reports.view, BUKAN inventory.view seperti halamannya:
+         Kalau halaman ini menulis query-nya sendiri, akan ada dua definisi
+         "stok" — dan suatu hari salah satunya berubah tanpa yang lain ikut.
+
+         Hanya gudang yang diteruskan. Penyaring lain (kategori, batch, rak)
+         SENGAJA tidak ikut: halaman laporan tidak punya isian itu, jadi
+         meneruskannya hanya membuat penyaring yang tak terlihat dan tak bisa
+         dibatalkan siapa pun yang membuka pratinjaunya.
+
+         Gate-nya reports.view, BUKAN inventory.view seperti halaman ini:
          Produksi & Operator boleh melihat stok di layar, tetapi membawa
          keluar seluruh isi gudang dalam satu berkas adalah hal lain. --}}
-    <a href="{{ route('wms.inventory.export', request()->query()) }}"
-       class="btn btn-outline-success rounded-3"
-       title="Unduh stok yang sedang tampil sebagai berkas Excel — satu baris per batch">
-        <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
-    </a>
+    @php
+        $gudangKini = request()->query('warehouse_id');
+    @endphp
+    <div class="btn-group">
+        <button type="button" class="btn btn-outline-success rounded-3 dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li>
+                <a class="dropdown-item py-2" href="{{ route('wms.reports.show', array_filter(['key' => 'posisi-stok', 'warehouse_id' => $gudangKini])) }}">
+                    <i class="bi bi-boxes me-2 text-primary"></i>Posisi Stok
+                    <small class="d-block text-muted ms-4">Isi rak saat ini, satu baris per batch</small>
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item py-2" href="{{ route('wms.reports.show', array_filter(['key' => 'pergerakan-stok', 'warehouse_id' => $gudangKini])) }}">
+                    <i class="bi bi-arrow-left-right me-2 text-danger"></i>Pergerakan Stok
+                    <small class="d-block text-muted ms-4">Kartu stok: tiap tambah &amp; kurang beserta pelakunya</small>
+                </a>
+            </li>
+        </ul>
+    </div>
     @endcan
 
     @can('inventory.adjust')

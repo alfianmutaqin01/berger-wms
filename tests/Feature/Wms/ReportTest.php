@@ -126,8 +126,8 @@ class ReportTest extends TestCase
         foreach ([Role::WAREHOUSE_OPERATOR, Role::PRODUCTION] as $slug) {
             $this->login($slug);
             $this->get(route('wms.reports.index'))->assertForbidden();
-            $this->get(route('wms.reports.show', 'penjualan-selesai'))->assertForbidden();
-            $this->get(route('wms.reports.download', 'penjualan-selesai'))->assertForbidden();
+            $this->get(route('wms.reports.show', 'finish-order'))->assertForbidden();
+            $this->get(route('wms.reports.download', 'finish-order'))->assertForbidden();
         }
 
         foreach ([Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS] as $slug) {
@@ -193,7 +193,7 @@ class ReportTest extends TestCase
             'outstanding_qty' => 7,
         ]);
 
-        $tabel = (new ReportRunner)->jalankan('penjualan-selesai', $this->user(), $this->periode(), 100);
+        $tabel = (new ReportRunner)->jalankan('finish-order', $this->user(), $this->periode(), 100);
 
         $this->assertSame(1, $tabel['total'], 'Hanya pesanan selesai yang boleh masuk.');
     }
@@ -254,13 +254,13 @@ class ReportTest extends TestCase
 
         $runner = new ReportRunner;
 
-        $tabel = $runner->jalankan('penjualan-selesai', $this->user(), [
+        $tabel = $runner->jalankan('finish-order', $this->user(), [
             'dari' => '2026-09-01', 'sampai' => '2026-09-30', 'warehouse_id' => null,
         ], 100);
 
         $this->assertSame(1, $tabel['total'], 'Kejadian pukul 16:45 di hari terakhir wajib ikut.');
 
-        $this->assertSame(0, $runner->jalankan('penjualan-selesai', $this->user(), [
+        $this->assertSame(0, $runner->jalankan('finish-order', $this->user(), [
             'dari' => '2026-09-01', 'sampai' => '2026-09-29', 'warehouse_id' => null,
         ], 100)['total']);
     }
@@ -272,7 +272,7 @@ class ReportTest extends TestCase
 
         $this->pesananSelesai($this->karawang, $sales, selesai: '2026-09-15 09:00:00');
 
-        $this->get(route('wms.reports.show', ['key' => 'penjualan-selesai', 'dari' => '2026-09-30', 'sampai' => '2026-09-01']))
+        $this->get(route('wms.reports.show', ['key' => 'finish-order', 'dari' => '2026-09-30', 'sampai' => '2026-09-01']))
             ->assertOk()
             ->assertSee('PO', false)
             ->assertSee('Apko 5 Liter');
@@ -287,7 +287,7 @@ class ReportTest extends TestCase
 
         $manager = $this->login(Role::MANAGER, $this->pekanbaru);
 
-        $tabel = (new ReportRunner)->jalankan('penjualan-selesai', $manager, $this->periode(), 100);
+        $tabel = (new ReportRunner)->jalankan('finish-order', $manager, $this->periode(), 100);
 
         $this->assertSame(0, $tabel['total'], 'Manager Pekanbaru tidak boleh melihat penjualan Karawang.');
     }
@@ -300,7 +300,7 @@ class ReportTest extends TestCase
 
         $this->login(Role::MANAGER, $this->pekanbaru);
 
-        $isi = $this->unduh('penjualan-selesai');
+        $isi = $this->unduh('finish-order');
 
         $this->assertStringNotContainsString('Apko 5 Liter', $isi['teks']);
         $this->assertStringNotContainsString('Toko Melati', $isi['teks']);
@@ -314,7 +314,7 @@ class ReportTest extends TestCase
 
         $this->pesananSelesai($this->karawang, $sales, dipesan: 12, terkirim: 9);
 
-        $isi = $this->unduh('penjualan-selesai');
+        $isi = $this->unduh('finish-order');
 
         $this->assertStringContainsString('.xlsx', $isi['nama']);
 
@@ -350,11 +350,11 @@ class ReportTest extends TestCase
             $this->pesananSelesai($this->karawang, $sales);
         }
 
-        $this->get(route('wms.reports.show', 'penjualan-selesai'))
+        $this->get(route('wms.reports.show', 'finish-order'))
             ->assertOk()
             ->assertSee(number_format($jumlah).' baris ditemukan');
 
-        $ws = $this->unduh('penjualan-selesai')['sheet'];
+        $ws = $this->unduh('finish-order')['sheet'];
 
         // Baris 1-3 keterangan, baris 4 kepala, data mulai baris 5.
         $this->assertSame($jumlah + 4, $ws->getHighestDataRow());
@@ -368,14 +368,14 @@ class ReportTest extends TestCase
 
         $this->pesananSelesai($this->karawang, $super);
 
-        $this->unduh('penjualan-selesai');
+        $this->unduh('finish-order');
 
         $log = ActivityLog::query()->where('action', ActivityLog::REPORT_EXPORT)->first();
 
         $this->assertNotNull($log, 'Data yang keluar dari sistem wajib meninggalkan jejak.');
         $this->assertSame($super->id, $log->user_id);
         $this->assertStringContainsString('Finish Order', $log->description);
-        $this->assertSame('penjualan-selesai', $log->properties['laporan']);
+        $this->assertSame('finish-order', $log->properties['laporan']);
         $this->assertFalse($log->properties['terpotong']);
     }
 

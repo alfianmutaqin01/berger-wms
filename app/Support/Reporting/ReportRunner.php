@@ -50,7 +50,7 @@ class ReportRunner
     public function jalankan(string $key, ?User $user, array $filter, int $batas): array
     {
         return match ($key) {
-            'penjualan-selesai' => $this->penjualanSelesai($user, $filter, $batas),
+            'finish-order' => $this->finishOrder($user, $filter, $batas),
             'pesanan-outstanding' => $this->pesananOutstanding($user, $filter, $batas),
             'produk-terlaris' => $this->produkTerlaris($user, $filter, $batas),
             'pelanggan-teratas' => $this->pelangganTeratas($user, $filter, $batas),
@@ -133,9 +133,9 @@ class ReportRunner
 
     /* ======================================================= 1. Finish Order */
 
-    private function penjualanSelesai(?User $user, array $filter, int $batas): array
+    private function finishOrder(?User $user, array $filter, int $batas): array
     {
-        $q = $this->dasarPenjualanSelesai($user, $filter);
+        $q = $this->dasarFinishOrder($user, $filter);
 
         $total = (clone $q)->count();
 
@@ -176,7 +176,7 @@ class ReportRunner
         ], $baris, $total, [4, 12, 13, 14]);
     }
 
-    private function dasarPenjualanSelesai(?User $user, array $filter): BuilderContract
+    private function dasarFinishOrder(?User $user, array $filter): BuilderContract
     {
         return SalesOrderDetail::query()->whereHas('salesOrder', function ($o) use ($user, $filter) {
             // Dua status, bukan satu. `completed_billing` adalah pesanan yang
@@ -565,7 +565,7 @@ class ReportRunner
         };
 
         return match ($key) {
-            'penjualan-selesai' => [
+            'finish-order' => [
                 'Baris produk' => number_format($tabel['total']),
                 'Qty terkirim (halaman ini)' => number_format($jumlahKolom(13)),
             ],

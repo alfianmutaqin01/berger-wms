@@ -293,14 +293,11 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::get('/inventory', [InventoryController::class, 'index'])
         ->middleware('can:'.Permission::INVENTORY_VIEW)
         ->name('wms.inventory.index');
-    // Unduhan dipagari REPORTS_VIEW, bukan INVENTORY_VIEW seperti halamannya.
-    // Produksi & Operator boleh MELIHAT stok di layar, tetapi membawa keluar
-    // seluruh isi gudang dalam satu berkas adalah hal yang berbeda — dan
-    // gate-nya sengaja sama dengan laporan Posisi Stok, supaya tidak ada
-    // seorang pun yang mendadak bisa mengunduh data yang tadinya tidak boleh.
-    Route::get('/inventory/export', [InventoryController::class, 'export'])
-        ->middleware('can:'.Permission::REPORTS_VIEW)
-        ->name('wms.inventory.export');
+    // TIDAK ADA rute unduhan tersendiri di sini. Tombol Export Excel pada
+    // halaman Data Stok mengarah ke pratinjau laporan Posisi Stok /
+    // Pergerakan Stok yang sudah ada — alur, tampilan, batas baris, dan
+    // pencatatan log-nya jadi persis sama dengan menu Laporan, dan tidak ada
+    // definisi "stok" kedua yang suatu hari menyimpang dari yang pertama.
     Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])
         ->middleware('can:'.Permission::INVENTORY_ADJUST);
     // Menambah baris stok yang belum pernah tercatat — gate yang SAMA dengan
@@ -413,7 +410,7 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.reports.index');
 
         // Unduhan didaftarkan LEBIH DULU. Kalau '/reports/{key}' menang
-        // duluan, '/reports/penjualan-selesai/unduh' tidak akan pernah
+        // duluan, '/reports/finish-order/unduh' tidak akan pernah
         // tercapai — dan yang menekan tombol unduh hanya melihat halaman
         // pratinjau terbuka lagi tanpa penjelasan apa pun.
         Route::get('/reports/{key}/unduh', [ReportController::class, 'download'])

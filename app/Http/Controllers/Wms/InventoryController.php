@@ -9,12 +9,9 @@ use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\ProductCategory;
 use App\Models\StockMovement;
-use App\Models\Warehouse;
 use App\Support\Activity;
-use App\Support\Export\XlsxWriter;
 use App\Support\Inventory\StockQuarantine;
 use App\Support\Outbound\PendingAllocationFiller;
-use App\Support\Reporting\ReportCatalog;
 use App\Support\ShelfLife;
 use App\Support\WarehouseScope;
 use Carbon\Carbon;
@@ -24,7 +21,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use RuntimeException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Modul Inventory / Stok — PRD §6.4.
@@ -147,17 +143,14 @@ class InventoryController extends Controller
     }
 
     /**
-     * Penyaring halaman Data Stok, dipakai bersama oleh layar dan unduhan.
+     * Penyaring halaman Data Stok — daftar SKU maupun batch di dalamnya.
      *
-     * KENAPA DIPISAH KE SINI
-     * ----------------------
-     * Tombol Export Excel di halaman ini menjanjikan "yang saya lihat, itu
-     * yang saya unduh". Janji itu hanya bisa ditepati kalau kedua jalur
-     * memakai query yang SAMA PERSIS — bukan dua query mirip yang ditulis
-     * terpisah. Kalau ditulis terpisah, suatu hari salah satunya diberi
-     * penyaring baru dan yang lain tidak, lalu berkasnya berisi baris yang
-     * tidak ada di layar. Tidak ada yang akan menyadarinya, karena berkasnya
-     * tetap terbuka dan angkanya tetap masuk akal.
+     * Dipisah dari index() supaya kriterianya berdiri sebagai satu blok yang
+     * terbaca sekaligus. Unduhan Excel TIDAK memakainya: tombol Export di
+     * halaman ini mengarah ke pratinjau laporan Posisi Stok / Pergerakan
+     * Stok, yang punya query-nya sendiri di ReportRunner. Menyalin logika
+     * penyaring ke sana hanya akan melahirkan dua definisi "stok" yang suatu
+     * hari berbeda.
      *
      * @return array{filters: array<string, mixed>, base: Builder, terpilih: \Closure}
      */
@@ -215,156 +208,6 @@ class InventoryController extends Controller
                 ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::warningDays())->toDateString()));
 
         return ['filters' => $filters, 'base' => $base, 'terpilih' => $terpilih];
-    }
-
-    /**
-     * Export Excel dari halaman Data Stok.
-     *
-     * SATU BARIS = SATU BATCH, BUKAN SATU SKU
-     * ---------------------------------------
-     * Di layar, satu baris adalah satu SKU dan batch-nya bersembunyi di dalam
-     * accordion. Berkas Excel tidak punya accordion, jadi yang ditulis adalah
-     * isi accordion-nya — baris terdalam, satu per batch. Meleburnya menjadi
-     * satu angka per SKU justru membuang alasan orang mengunduhnya: batch
-     * mana yang paling dekat kedaluwarsa dan ada di rak yang mana.
-     *
-     * Angkanya tetap bisa dijumlahkan sendiri di Excel; sebaliknya tidak bisa.
-     *
-     * KENAPA IZINNYA reports.view, BUKAN inventory.view
-     * -------------------------------------------------
-     * Halaman ini terbuka untuk Produksi dan Operator Gudang — mereka perlu
-     * mengecek lokasi saat put-away dan picking. Melihat stok di layar satu
-     * per satu berbeda dengan membawa keluar seluruh isi gudang dalam satu
-     * berkas yang bisa diteruskan ke mana saja. Tombolnya karena itu dipagari
-     * gate yang sama dengan Posisi Stok di menu Laporan: Super Admin,
-     * Manager, Logistik. Tidak ada seorang pun yang jadi bisa mengunduh data
-     * yang sebelumnya tidak boleh ia unduh.
-     */
-    public function export(Request $request): StreamedResponse
-    {
-        ['filters' => $filters, 'terpilih' => $terpilih] = $this->saringan($request);
-
-        $q = $terpilih();
-        $total = (clone $q)->count();
-
-        $baris = $q
-            ->with(['product', 'location', 'warehouse'])
-            ->orderBy('warehouse_id')
-            ->orderBy('expiry_date')   // paling dekat kedaluwarsa di atas
-            ->orderBy('id')
-            ->limit(ReportCatalog::MAKS_BARIS)
-            ->get()
-            ->map(fn (InventoryStock $s) => [
-                $s->warehouse?->code,
-                $s->location?->code,
-                $s->product?->sku,
-                $s->product?->name,
-                $s->product?->uom,
-                $s->batch_no,
-                $s->production_date ? Carbon::parse($s->production_date)->format('d/m/Y') : null,
-                $s->expiry_date ? Carbon::parse($s->expiry_date)->format('d/m/Y') : null,
-                ShelfLife::remainingLabel($s->expiry_date),
-                InventoryStock::STATUS_LABELS[$s->status] ?? $s->status,
-                (int) $s->qty_available,
-                (int) $s->qty_allocated,
-                (int) $s->qty_available + (int) $s->qty_allocated,
-                $s->has_quality_issue ? 'Ya' : '',
-                $s->prioritize_out ? 'Ya' : '',
-                $s->quarantine_until ? Carbon::parse($s->quarantine_until)->format('d/m/Y') : null,
-            ])
-            ->all();
-
-        $keterangan = $this->keteranganExport($filters, count($baris), $total);
-
-        // Dicatat dengan jenis yang sama dengan unduhan di menu Laporan.
-        // Berkas berisi seluruh isi gudang beredar sama jauhnya dari mana pun
-        // tombolnya ditekan, jadi jejaknya tidak boleh berbeda.
-        Activity::record(
-            ActivityLog::REPORT_EXPORT,
-            'Mengunduh Data Stok ('.$keterangan['Penyaring'].') — '
-                .number_format(count($baris)).' baris.',
-            warehouseId: $filters['warehouse_id'],
-            properties: [
-                'laporan' => 'data-stok',
-                'penyaring' => array_filter($filters),
-                'baris' => count($baris),
-                'terpotong' => $total > count($baris),
-            ],
-        );
-
-        return XlsxWriter::unduh(
-            'data-stok-'.now()->format('Ymd-Hi').'.xlsx',
-            'Data Stok',
-            [
-                'Gudang', 'Lokasi', 'SKU', 'Produk', 'Satuan', 'Batch',
-                'Tgl Produksi', 'Kedaluwarsa', 'Sisa Umur', 'Status',
-                'Qty Tersedia', 'Qty Dialokasi', 'Total', 'Masalah Kualitas',
-                'Dahulukan Keluar', 'Karantina s/d',
-            ],
-            $baris,
-            [10, 11, 12],
-            $keterangan,
-        );
-    }
-
-    /**
-     * Baris keterangan di kepala berkas.
-     *
-     * PENYARING IKUT DITULIS. Berkas hasil "Data Stok" yang disaring gudang
-     * BJM + kategori tertentu terlihat persis sama dengan berkas seluruh
-     * gudang — sampai seseorang menjumlahkannya dan bingung kenapa totalnya
-     * jauh dari angka di dashboard. Yang menerima berkasnya berbulan-bulan
-     * kemudian tidak pernah melihat penyaring yang dipakai saat mengunduh.
-     *
-     * @param  array<string, mixed>  $filters
-     * @return array<string, string>
-     */
-    private function keteranganExport(array $filters, int $ditulis, int $total): array
-    {
-        $sebut = [];
-
-        if ($filters['warehouse_id']) {
-            $sebut[] = 'Gudang '.(Warehouse::find($filters['warehouse_id'])?->code ?? '—');
-        }
-        if ($filters['category_id']) {
-            $sebut[] = 'Kategori '.(ProductCategory::find($filters['category_id'])?->name ?? '—');
-        }
-        if ($filters['location_id']) {
-            $sebut[] = 'Lokasi '.(Location::find($filters['location_id'])?->code ?? '—');
-        }
-        if (filled($filters['search'])) {
-            $sebut[] = 'Cari "'.$filters['search'].'"';
-        }
-        if (filled($filters['batch'])) {
-            $sebut[] = 'Batch "'.$filters['batch'].'"';
-        }
-        if (filled($filters['status'])) {
-            $sebut[] = 'Status '.(InventoryStock::STATUS_LABELS[$filters['status']] ?? $filters['status']);
-        }
-        if (filled($filters['production_date'])) {
-            $sebut[] = 'Tgl produksi '.Carbon::parse($filters['production_date'])->format('d/m/Y');
-        }
-        if ($filters['expiring']) {
-            $sebut[] = 'Hampir kedaluwarsa (≤ '.ShelfLife::warningDays().' hari)';
-        }
-
-        $ket = [
-            // POTRET, bukan periode. Data Stok menjawab "sekarang bagaimana",
-            // dan mengunduhnya lagi besok menghasilkan angka lain.
-            'Keadaan per' => now()->format('d/m/Y H:i').' WIB',
-            'Penyaring' => $sebut === [] ? 'Semua stok (tanpa penyaring)' : implode(' · ', $sebut),
-            'Isi' => 'Satu baris per batch. Baris dengan tersedia dan dialokasi '
-                .'sama-sama nol tidak ikut, sama seperti di layar.',
-            'Jumlah baris' => number_format($ditulis),
-        ];
-
-        if ($total > $ditulis) {
-            $ket['PERHATIAN'] = 'Terpotong pada '.number_format(ReportCatalog::MAKS_BARIS)
-                .' baris dari total '.number_format($total)
-                .'. Persempit penyaringnya agar lengkap.';
-        }
-
-        return $ket;
     }
 
     /**
