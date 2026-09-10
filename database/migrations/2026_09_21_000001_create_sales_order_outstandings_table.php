@@ -87,6 +87,17 @@ return new class extends Migration
          * "tidak ada yang kurang" — persis salah paham yang paling mahal.
          * Waktunya diambil dari approved_at, bukan sekarang, supaya baris
          * lama tidak menumpuk di puncak riwayat seolah baru terjadi hari ini.
+         *
+         * CACAT YANG DIPERBAIKI BELAKANGAN — lihat migrasi
+         * 2026_10_08_000001_fix_outstanding_qty_fulfilled.
+         *
+         * `qty_fulfilled` di bawah diisi `d.qty_approved`, dan "disetujui"
+         * BUKAN "terpenuhi". Pesanan yang disetujui penuh tetapi hanya
+         * sebagian yang berangkat menghasilkan baris yang tidak menjumlah
+         * (pesan 2, terpenuhi 2, kurang 1) dan berlabel sebab yang salah.
+         * SQL di bawah SENGAJA dibiarkan apa adanya sebagai catatan apa yang
+         * benar-benar pernah dijalankan; perbaikannya beserta CHECK
+         * penjaganya ada di migrasi tersebut.
          */
         DB::statement("
             INSERT INTO sales_order_outstandings

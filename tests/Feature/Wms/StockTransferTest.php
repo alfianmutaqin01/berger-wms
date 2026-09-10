@@ -577,4 +577,73 @@ class StockTransferTest extends TestCase
 
         $this->assertSame(StockTransfer::STATUS_RECEIVED, $transfer->fresh()->status);
     }
+
+    /* ============================ Gudang tujuan tanpa master rak */
+
+    /**
+     * Kiriman ke gudang tanpa rak DITAHAN DI KEBERANGKATAN.
+     *
+     * Stok wajib tinggal di sebuah rak, jadi gudang tanpa master rak tidak
+     * punya tempat menaruh barangnya. Sebelum pemeriksaan ini kiriman tetap
+     * berangkat: stoknya keluar dari gudang asal, tercatat DALAM PERJALANAN,
+     * lalu tersangkut selamanya — persis yang terjadi pada TF260910003 ke
+     * Sidoarjo/Surabaya.
+     */
+    public function test_kiriman_ke_gudang_tanpa_rak_ditolak(): void
+    {
+        $this->loginAt($this->karawang);
+
+        $tanpaRak = Warehouse::factory()->create(['code' => 'WH-09', 'name' => 'Sidoarjo']);
+        $stok = $this->stok(50);
+
+        $this->post(route('wms.transfers.store'), [
+            'to_warehouse_id' => $tanpaRak->id,
+            'item' => [['stock_id' => $stok->id, 'qty' => 10]],
+        ])->assertSessionHas('error');
+
+        $this->assertSame(0, StockTransfer::count(), 'Tidak boleh ada kiriman yang terlanjur berangkat.');
+        $this->assertSame(50, $stok->fresh()->qty_available, 'Stoknya harus tetap utuh di rak asal.');
+    }
+
+    /** Rak yang ada tetapi seluruhnya nonaktif sama saja dengan tidak ada. */
+    public function test_kiriman_ke_gudang_yang_seluruh_raknya_nonaktif_ditolak(): void
+    {
+        $this->loginAt($this->karawang);
+
+        $tanpaRak = Warehouse::factory()->create(['code' => 'WH-09', 'name' => 'Sidoarjo']);
+        Location::factory()->create([
+            'warehouse_id' => $tanpaRak->id, 'code' => 'S-01-01', 'is_active' => false,
+        ]);
+
+        $stok = $this->stok(50);
+
+        $this->post(route('wms.transfers.store'), [
+            'to_warehouse_id' => $tanpaRak->id,
+            'item' => [['stock_id' => $stok->id, 'qty' => 10]],
+        ])->assertSessionHas('error');
+
+        $this->assertSame(0, StockTransfer::count());
+    }
+
+    /**
+     * Kiriman lama yang terlanjur berangkat tidak menyodorkan dropdown kosong.
+     *
+     * Yang membukanya dulu menyimpulkan tombolnya rusak. Sekarang layarnya
+     * mengatakan apa yang harus dikerjakan.
+     */
+    public function test_layar_penerimaan_menjelaskan_bila_gudangnya_belum_punya_rak(): void
+    {
+        $this->loginAt($this->karawang);
+        $transfer = $this->kirim($this->stok(50), 10);
+
+        // Raknya dinonaktifkan SETELAH kiriman berangkat — meniru kiriman lama
+        // yang lolos sebelum pemeriksaan keberangkatan dipasang.
+        $this->rakPekanbaru->forceFill(['is_active' => false])->save();
+
+        $this->loginAt($this->pekanbaru);
+
+        $this->get(route('wms.transfers.receive.form', $transfer))
+            ->assertRedirect(route('wms.transfers.show', $transfer))
+            ->assertSessionHas('error');
+    }
 }

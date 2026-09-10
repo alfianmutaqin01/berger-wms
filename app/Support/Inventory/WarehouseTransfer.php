@@ -7,6 +7,7 @@ use App\Models\Location;
 use App\Models\StockMovement;
 use App\Models\StockTransfer;
 use App\Models\StockTransferDetail;
+use App\Models\Warehouse;
 use App\Support\DocumentNumber;
 use App\Support\Outbound\PendingAllocationFiller;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +64,8 @@ class WarehouseTransfer
             throw new RuntimeException('Tidak ada batch yang dipilih untuk dikirim.');
         }
 
+        $this->pastikanTujuanPunyaRak($toWarehouseId);
+
         return DB::transaction(function () use ($fromWarehouseId, $toWarehouseId, $baris, $catatan, $userId) {
             $transfer = StockTransfer::create([
                 'transfer_number' => DocumentNumber::forStockTransfer(),
@@ -80,6 +83,41 @@ class WarehouseTransfer
 
             return $transfer;
         });
+    }
+
+    /**
+     * Menolak kiriman ke gudang yang belum punya satu rak pun.
+     *
+     * KENAPA DITAHAN DI KEBERANGKATAN, BUKAN DI PENERIMAAN
+     * ----------------------------------------------------
+     * Stok WAJIB tinggal di sebuah rak — inventory_stocks.location_id NOT
+     * NULL — jadi gudang tanpa master rak tidak punya tempat menaruh
+     * barangnya. Sebelum pemeriksaan ini, kiriman tetap berangkat: stoknya
+     * keluar dari gudang asal, tercatat DALAM PERJALANAN, lalu tersangkut di
+     * sana selamanya karena layar penerimaannya hanya menyodorkan daftar rak
+     * yang kosong tanpa menjelaskan apa-apa.
+     *
+     * Itulah yang terjadi pada TF260910003 ke Sidoarjo/Surabaya. Barangnya
+     * bukan hilang, tetapi tidak ada di gudang mana pun — dan tidak ada satu
+     * layar pun yang mengatakan kenapa.
+     *
+     * Ditahan di keberangkatan, barangnya masih di rak asalnya dan yang perlu
+     * dikerjakan jelas: isi dulu master rak gudang tujuan.
+     *
+     * @throws RuntimeException
+     */
+    private function pastikanTujuanPunyaRak(int $toWarehouseId): void
+    {
+        if (Location::where('warehouse_id', $toWarehouseId)->active()->exists()) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'Gudang %s belum punya satu rak aktif pun, sehingga tidak ada tempat menaruh barangnya saat tiba. '
+                .'Isi dulu Master Rak gudang itu lewat menu Master Data → Rak, baru kirimannya bisa berangkat. '
+                .'Kalau tetap dikirim, stoknya keluar dari gudang Anda dan tersangkut dalam perjalanan tanpa bisa diterima siapa pun.',
+            Warehouse::find($toWarehouseId)?->name ?? 'tujuan',
+        ));
     }
 
     private function kirimSatuBatch(StockTransfer $transfer, int $stockId, int $qty, ?int $userId): void

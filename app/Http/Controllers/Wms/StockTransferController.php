@@ -232,13 +232,27 @@ class StockTransferController extends Controller
             'details.product:id,sku,name,uom',
         ]);
 
+        $rak = Location::where('warehouse_id', $transfer->to_warehouse_id)
+            ->active()->inStorageOrder()->get(['id', 'code', 'zone']);
+
+        // Kiriman lama yang berangkat SEBELUM pemeriksaan rak dipasang di
+        // WarehouseTransfer::ship() bisa sudah tersangkut di sini. Layarnya
+        // dulu hanya menyodorkan dropdown rak yang kosong tanpa mengatakan
+        // apa-apa, dan yang membukanya menyimpulkan tombolnya rusak.
+        if ($rak->isEmpty()) {
+            return redirect()->route('wms.transfers.show', $transfer)->with('error', sprintf(
+                'Gudang %s belum punya satu rak aktif pun, jadi barangnya tidak bisa diterima — tidak ada tempat menaruhnya. '
+                    .'Isi dulu Master Rak gudang ini lewat Master Data → Rak, lalu buka lagi layar penerimaan ini.',
+                $transfer->toWarehouse?->name ?? 'ini',
+            ));
+        }
+
         return view('wms.inventory.transfer-receive', [
             'transfer' => $transfer,
             // Kode rak GUDANG TUJUAN, bukan gudang asal. Penomoran rak tiap
             // gudang berbeda, dan inilah kesalahan yang paling mudah terjadi
             // di layar ini.
-            'rak' => Location::where('warehouse_id', $transfer->to_warehouse_id)
-                ->active()->inStorageOrder()->get(['id', 'code', 'zone']),
+            'rak' => $rak,
         ]);
     }
 

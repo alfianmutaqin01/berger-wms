@@ -170,7 +170,7 @@
                                         data-nomor="{{ $b->salesOrder?->order_number }}"
                                         data-customer="{{ $b->salesOrder?->customer?->name }}"
                                         data-kurang="{{ $b->sisa_sekarang }}">
-                                    <i class="bi bi-truck me-1"></i> Kirim Ulang
+                                    <i class="bi bi-truck me-1"></i> Kirim Outstanding
                                 </button>
                             @elseif(($b->sisa_sekarang ?? 0) > 0)
                                 {{-- Masih kurang, tapi belum boleh dibuka. Alasannya
@@ -179,7 +179,7 @@
                                      dan "tombolnya tidak ada" tanpa keterangan terbaca
                                      sebagai sistem yang rusak. --}}
                                 <span class="text-muted small d-inline-block lh-sm" style="max-width:160px"
-                                      title="Pesanan ini masih berstatus {{ $b->salesOrder?->status_label }} — putaran pengirimannya belum berangkat. Tombol Kirim Ulang muncul setelah barangnya benar-benar jalan, supaya stok yang sama tidak dicadangkan dua kali untuk kekurangan yang sama.">
+                                      title="Pesanan ini masih berstatus {{ $b->salesOrder?->status_label }} — putaran pengirimannya belum berangkat. Tombol Kirim Outstanding muncul setelah barangnya benar-benar jalan, supaya stok yang sama tidak dicadangkan dua kali untuk kekurangan yang sama.">
                                     <i class="bi bi-hourglass-split me-1"></i>Menunggu putaran ini berangkat
                                 </span>
                             @else
@@ -214,7 +214,7 @@
             @csrf
             <div class="modal-header border-bottom-0">
                 <h5 class="modal-title fw-bold">
-                    <i class="bi bi-truck text-primary me-2"></i>Kirim Ulang Kekurangan
+                    <i class="bi bi-truck text-primary me-2"></i>Kirim Outstanding
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
