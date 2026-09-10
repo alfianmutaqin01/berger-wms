@@ -42,6 +42,8 @@ class ActivityLog extends Model
 
     public const BOOKING_CANCEL = 'booking.cancel';
 
+    public const STOCKTAKE_FOUND = 'stocktake.found';
+
     public const STOCKTAKE_FINALIZE = 'stocktake.finalize';
 
     public const PICKING_RELEASE = 'picking.release';
@@ -155,6 +157,7 @@ class ActivityLog extends Model
         self::PRIORITIZE_RELEASE => 'Lepas Dahulukan Keluar',
         self::BOOKING_CREATE => 'Buat Booking',
         self::BOOKING_CANCEL => 'Batal Booking',
+        self::STOCKTAKE_FOUND => 'Temuan Stocktake',
         self::STOCKTAKE_FINALIZE => 'Sahkan Stocktake',
         self::PICKING_RELEASE => 'Lepas Tugas Picking',
         self::RETURN_APPROVE => 'Setujui Penolakan Customer',

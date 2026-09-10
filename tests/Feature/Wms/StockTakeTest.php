@@ -577,4 +577,356 @@ class StockTakeTest extends TestCase
         $this->get(route('wms.stocktake.show', $sesiLain))->assertForbidden();
         $this->post(route('wms.stocktake.finalize', $sesiLain))->assertForbidden();
     }
+
+    /* =========================================== Penyaring deret & cari SKU */
+
+    private function rakDi(string $kode, string $deret, int $level = 1, int $cell = 1): Location
+    {
+        return Location::factory()->create([
+            'warehouse_id' => $this->gudang->id,
+            'code' => $kode, 'rack' => $deret, 'level' => $level, 'cell' => $cell,
+            'zone' => Location::ZONE_FAST,
+        ]);
+    }
+
+    /**
+     * Tiga orang membagi deret. Yang kebagian deret C tidak perlu menggulir
+     * melewati pekerjaan orang lain — di situ baris orang lain gampang terisi
+     * tanpa sengaja.
+     */
+    public function test_penyaring_deret_hanya_menampilkan_deret_itu(): void
+    {
+        $this->loginAs();
+
+        $this->stok(10, lokasi: $this->rakDi('B-02-01', 'B-02'));
+        $this->stok(20, lokasi: $this->rakDi('C-01-01', 'C-01'));
+
+        $this->bukaSesi();
+        $sesi = StockTake::first();
+
+        $deret = $this->get(route('wms.stocktake.show', $sesi).'?rak=C-01')
+            ->assertOk()
+            ->viewData('deret');
+
+        $this->assertSame(['C-01'], $deret->keys()->all());
+    }
+
+    /** Satu SKU bisa tersebar di banyak palet dan banyak rak. */
+    public function test_pencarian_sku_menyaring_lintas_deret(): void
+    {
+        $this->loginAs();
+
+        $lain = Product::factory()->create(['sku' => 'ZZZ-999', 'name' => 'Produk Lain', 'uom' => 'TIN']);
+
+        $this->stok(10, lokasi: $this->rakDi('B-02-01', 'B-02'));
+
+        InventoryStock::factory()->create([
+            'product_id' => $lain->id,
+            'warehouse_id' => $this->gudang->id,
+            'location_id' => $this->rakDi('C-01-01', 'C-01')->id,
+            'batch_no' => 'BT-LAIN',
+            'production_date' => now()->subMonth()->toDateString(),
+            'expiry_date' => now()->addYears(2)->toDateString(),
+            'qty_available' => 5,
+            'qty_allocated' => 0,
+            'status' => InventoryStock::STATUS_ACTIVE,
+        ]);
+
+        $this->bukaSesi();
+        $sesi = StockTake::first();
+
+        $deret = $this->get(route('wms.stocktake.show', $sesi).'?q=ZZZ')
+            ->assertOk()
+            ->viewData('deret');
+
+        $this->assertSame(['C-01'], $deret->keys()->all());
+    }
+
+    /**
+     * Angka ringkas SELALU untuk seluruh sesi.
+     *
+     * "3 dari 3 baris dihitung" yang diam-diam berarti "3 dari 3 di deret B"
+     * akan membuat orang menutup sesi yang belum selesai.
+     */
+    public function test_ringkasan_tidak_ikut_tersaring(): void
+    {
+        $this->loginAs();
+
+        $this->stok(10, lokasi: $this->rakDi('B-02-01', 'B-02'));
+        $this->stok(20, lokasi: $this->rakDi('C-01-01', 'C-01'));
+
+        $this->bukaSesi();
+        $sesi = StockTake::first();
+
+        $ringkasan = $this->get(route('wms.stocktake.show', $sesi).'?rak=C-01')
+            ->viewData('ringkasan');
+
+        $this->assertSame(2, $ringkasan['baris'], 'Ringkasan menghitung seluruh sesi, bukan yang tampil.');
+    }
+
+    /** Pilihan deret dibaca dari seluruh sesi, bukan dari hasil yang tersaring. */
+    public function test_daftar_deret_tidak_menyusut_saat_disaring(): void
+    {
+        $this->loginAs();
+
+        $this->stok(10, lokasi: $this->rakDi('B-02-01', 'B-02'));
+        $this->stok(20, lokasi: $this->rakDi('C-01-01', 'C-01'));
+
+        $this->bukaSesi();
+        $sesi = StockTake::first();
+
+        $daftar = $this->get(route('wms.stocktake.show', $sesi).'?rak=C-01')
+            ->viewData('daftarDeret');
+
+        $this->assertEqualsCanonicalizing(['B-02', 'C-01'], $daftar->all());
+    }
+
+    /* ================================================ Baris nol & temuan */
+
+    /**
+     * Baris nol tidak menghabiskan waktu orang.
+     *
+     * Sisa batch yang sudah habis bukan stok. Menyuruh orang berjalan ke rak
+     * untuk memastikan nol memang nol memakai waktu yang seharusnya dipakai
+     * menghitung barang sungguhan.
+     */
+    public function test_baris_stok_nol_tidak_ikut_dibekukan(): void
+    {
+        $this->loginAs();
+
+        $this->stok(0, 0);
+        $this->stok(25);
+
+        $this->bukaSesi();
+
+        $this->assertSame(1, StockTakeItem::count());
+        $this->assertSame(25, StockTakeItem::first()->qty_system);
+    }
+
+    /** Baris yang habis dicadangkan tetap dihitung — barangnya masih di rak. */
+    public function test_baris_yang_habis_dicadangkan_tetap_dibekukan(): void
+    {
+        $this->loginAs();
+        $this->stok(0, 12);
+
+        $this->bukaSesi();
+
+        $this->assertSame(1, StockTakeItem::count());
+        $this->assertSame(12, StockTakeItem::first()->qty_system);
+    }
+
+    private function catatTemuan(StockTake $sesi, array $ubah = [])
+    {
+        return $this->post(route('wms.stocktake.found', $sesi), array_merge([
+            'location_id' => $this->rak->id,
+            'product_id' => $this->produk->id,
+            'batch_no' => 'BT-TEMUAN',
+            'production_date' => now()->subMonths(2)->toDateString(),
+            'qty' => 40,
+            'note' => 'palet terselip di belakang',
+        ], $ubah));
+    }
+
+    public function test_temuan_tercatat_sebagai_baris_sesi(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+
+        $this->catatTemuan($sesi)->assertSessionHas('success');
+
+        $temuan = StockTakeItem::where('is_found', true)->firstOrFail();
+
+        $this->assertSame(0, $temuan->qty_system);
+        $this->assertSame(40, $temuan->qty_physical);
+        $this->assertNull($temuan->inventory_stock_id);
+        $this->assertSame('BT-TEMUAN', $temuan->batch_no);
+    }
+
+    /** Mencatat temuan BELUM mengubah stok, sama seperti hitungan lain. */
+    public function test_temuan_belum_mengubah_stok_sebelum_disahkan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $this->catatTemuan(StockTake::first());
+
+        $this->assertSame(1, InventoryStock::count(), 'Belum ada baris stok baru sebelum pengesahan.');
+    }
+
+    /**
+     * Pengesahan MELAHIRKAN baris stoknya.
+     *
+     * Tanpa ini formulir temuan cuma hiasan: barangnya tercatat di laporan
+     * tetapi tidak pernah masuk gudang.
+     */
+    public function test_pengesahan_mewujudkan_temuan_menjadi_stok(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->catatTemuan($sesi);
+        $this->hitung(StockTakeItem::where('is_found', false)->first(), 10);
+
+        $this->post(route('wms.stocktake.finalize', $sesi))->assertSessionHasNoErrors();
+
+        $baru = InventoryStock::where('batch_no', 'BT-TEMUAN')->firstOrFail();
+
+        $this->assertSame(40, $baru->qty_available);
+        $this->assertSame($this->rak->id, $baru->location_id);
+        $this->assertSame(InventoryStock::STATUS_ACTIVE, $baru->status);
+        // Kedaluwarsa dihitung dari tanggal produksi yang dibaca dari palet,
+        // bukan dari hari ini — kalau tidak, palet lama justru dijual terakhir.
+        $this->assertSame(
+            now()->subMonths(2)->toDateString(),
+            $baru->production_date->toDateString(),
+        );
+    }
+
+    /** Temuan meninggalkan jejak di ledger seperti pergerakan stok lainnya. */
+    public function test_temuan_tercatat_di_ledger(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->catatTemuan($sesi);
+        $this->post(route('wms.stocktake.finalize', $sesi));
+
+        $gerak = StockMovement::where('batch_no', 'BT-TEMUAN')->firstOrFail();
+
+        $this->assertSame(40, $gerak->qty_change);
+        $this->assertSame(0, $gerak->qty_before);
+        $this->assertSame(40, $gerak->qty_after);
+        $this->assertStringContainsString('TEMUAN', $gerak->notes);
+    }
+
+    /**
+     * Batch yang sudah ada di daftar BUKAN temuan.
+     *
+     * Membiarkan keduanya berdiri berdampingan akan menjumlahkan barang yang
+     * sama dua kali saat pengesahan.
+     */
+    public function test_batch_yang_sudah_ada_di_daftar_ditolak_sebagai_temuan(): void
+    {
+        $this->loginAs();
+        $stok = $this->stok(10);
+        $this->bukaSesi();
+
+        $this->catatTemuan(StockTake::first(), ['batch_no' => $stok->batch_no])
+            ->assertSessionHas('error');
+
+        $this->assertSame(0, StockTakeItem::where('is_found', true)->count());
+    }
+
+    /** Rak di luar cakupan sesi ditolak. */
+    public function test_temuan_di_luar_cakupan_sesi_ditolak(): void
+    {
+        $this->loginAs();
+
+        $this->stok(10, lokasi: $this->rakDi('B-02-01', 'B-02'));
+        $luar = $this->rakDi('C-09-01', 'C-09');
+
+        $this->bukaSesi(['scope_type' => StockTake::SCOPE_RACK, 'scope_value' => 'B-02']);
+
+        $this->catatTemuan(StockTake::first(), ['location_id' => $luar->id])
+            ->assertSessionHas('error');
+
+        $this->assertSame(0, StockTakeItem::where('is_found', true)->count());
+    }
+
+    /** Tanggal produksi di masa depan memberi umur simpan yang tidak pernah ada. */
+    public function test_tanggal_produksi_temuan_tidak_boleh_di_masa_depan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $this->catatTemuan(StockTake::first(), ['production_date' => now()->addDay()->toDateString()])
+            ->assertSessionHasErrors('production_date');
+    }
+
+    /**
+     * Batch yang sama muncul lewat inbound di tengah sesi digabung, tidak
+     * diduplikasi — satu tumpukan fisik tidak boleh jadi dua baris sistem.
+     */
+    public function test_temuan_digabung_bila_batchnya_muncul_sebelum_pengesahan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->catatTemuan($sesi);
+
+        // Inbound menaruh batch yang sama di rak itu setelah sesinya dibuka.
+        InventoryStock::factory()->create([
+            'product_id' => $this->produk->id,
+            'warehouse_id' => $this->gudang->id,
+            'location_id' => $this->rak->id,
+            'batch_no' => 'BT-TEMUAN',
+            'production_date' => now()->subMonths(2)->toDateString(),
+            'expiry_date' => now()->addYears(2)->toDateString(),
+            'qty_available' => 5,
+            'qty_allocated' => 0,
+            'status' => InventoryStock::STATUS_ACTIVE,
+        ]);
+
+        $this->post(route('wms.stocktake.finalize', $sesi));
+
+        $this->assertSame(1, InventoryStock::where('batch_no', 'BT-TEMUAN')->count());
+        $this->assertSame(45, InventoryStock::where('batch_no', 'BT-TEMUAN')->first()->qty_available);
+    }
+
+    /** Sesi yang dibatalkan tidak melahirkan stok apa pun. */
+    public function test_temuan_pada_sesi_yang_dibatalkan_tidak_menjadi_stok(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->catatTemuan($sesi);
+        $this->post(route('wms.stocktake.cancel', $sesi));
+
+        $this->assertSame(0, InventoryStock::where('batch_no', 'BT-TEMUAN')->count());
+    }
+
+    /** Operator boleh mencatat temuan — sama dengan mengisi hitungan biasa. */
+    public function test_operator_boleh_mencatat_temuan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+
+        $this->loginAs(Role::WAREHOUSE_OPERATOR);
+
+        $this->catatTemuan($sesi)->assertSessionHas('success');
+    }
+
+    /** Temuan masuk laporan sesi, bukan menghilang setelah disahkan. */
+    public function test_temuan_muncul_di_laporan_sesi(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->catatTemuan($sesi);
+        $this->hitung(StockTakeItem::where('is_found', false)->first(), 10);
+        $this->post(route('wms.stocktake.finalize', $sesi));
+
+        $baris = collect($this->get(route('wms.stocktake.report', $sesi))->viewData('baris'));
+
+        $this->assertSame(50, $baris->firstWhere('sku', 'APKO-001')['sesudah']);
+        $this->assertSame(40, $baris->firstWhere('sku', 'APKO-001')['selisih']);
+    }
 }

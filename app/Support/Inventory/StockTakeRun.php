@@ -4,6 +4,7 @@ namespace App\Support\Inventory;
 
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\StockTake;
 use App\Models\StockTakeItem;
@@ -121,6 +122,91 @@ class StockTakeRun
     }
 
     /**
+     * Mencatat barang yang DITEMUKAN di rak tetapi tidak ada di sistem.
+     *
+     * Kebalikan dari menghitung 0 — dan sampai sekarang satu-satunya arah yang
+     * tidak punya jalur sama sekali. Operator yang menemukan palet di luar
+     * daftar mencatatnya di kertas, lalu kertasnya hilang.
+     *
+     * BARIS INI TIDAK ISTIMEWA. Ia masuk ke tabel yang sama, muncul di layar
+     * yang sama, ikut ke laporan yang sama, dan baru menyentuh stok saat
+     * laporannya disahkan seperti baris lain. Yang membedakan hanya angka
+     * sistemnya nol dan penandanya `is_found`.
+     *
+     * @param  array{location_id:int, product_id:int, batch_no:string, production_date:string, qty:int, note:?string}  $data
+     *
+     * @throws RuntimeException
+     */
+    public function catatTemuan(StockTake $sesi, array $data, ?int $userId): StockTakeItem
+    {
+        return DB::transaction(function () use ($sesi, $data, $userId) {
+            $terkunci = StockTake::query()->lockForUpdate()->findOrFail($sesi->id);
+
+            if (! $terkunci->sedangDihitung()) {
+                throw new RuntimeException(sprintf(
+                    'Sesi %s sudah %s, temuan baru tidak bisa ditambahkan.',
+                    $terkunci->reference,
+                    strtolower($terkunci->status_label),
+                ));
+            }
+
+            $lokasi = Location::find($data['location_id']);
+
+            if ($lokasi === null || $lokasi->warehouse_id !== $terkunci->warehouse_id) {
+                throw new RuntimeException('Rak itu bukan milik gudang sesi ini.');
+            }
+
+            // Rak di LUAR cakupan sesi ditolak. Sesi "deret B" yang memuat
+            // temuan dari deret C akan menerbitkan laporan yang menyentuh rak
+            // yang tidak pernah diperiksa siapa pun dalam sesi itu.
+            if (! in_array($lokasi->id, $this->lokasiDalamCakupan(
+                $terkunci->warehouse, $terkunci->scope_type, $terkunci->scope_value,
+            ), true)) {
+                throw new RuntimeException(sprintf(
+                    'Rak %s di luar cakupan sesi ini (%s). Buka sesi yang mencakup rak itu untuk mencatatnya.',
+                    $lokasi->code,
+                    $terkunci->scope_label,
+                ));
+            }
+
+            $batch = trim($data['batch_no']);
+
+            // Kalau batch itu SUDAH ada di daftar hitungan, ini bukan temuan —
+            // barisnya tinggal diisi. Membiarkan keduanya berdiri berdampingan
+            // akan menjumlahkan barang yang sama dua kali saat pengesahan.
+            $sudahAda = $terkunci->items()
+                ->where('location_id', $lokasi->id)
+                ->where('product_id', $data['product_id'])
+                ->where('batch_no', $batch)
+                ->first();
+
+            if ($sudahAda !== null) {
+                throw new RuntimeException(sprintf(
+                    'Batch %s untuk produk itu sudah ada di daftar rak %s. Isi hitungannya di baris tersebut, '.
+                    'jangan ditambahkan sebagai temuan — kalau ditambahkan, barang yang sama terhitung dua kali.',
+                    $batch,
+                    $lokasi->code,
+                ));
+            }
+
+            return StockTakeItem::create([
+                'stock_take_id' => $terkunci->id,
+                'inventory_stock_id' => null,
+                'is_found' => true,
+                'found_production_date' => $data['production_date'],
+                'location_id' => $lokasi->id,
+                'product_id' => $data['product_id'],
+                'batch_no' => $batch,
+                'qty_system' => 0,
+                'qty_physical' => $data['qty'],
+                'count_note' => $data['note'] ?? null,
+                'counted_at' => now(),
+                'counted_by' => $userId,
+            ]);
+        });
+    }
+
+    /**
      * Mengesahkan laporan: seluruh selisih diterapkan ke stok.
      *
      * SATU-SATUNYA titik di mana stocktake menyentuh angka stok.
@@ -215,6 +301,15 @@ class StockTakeRun
     private function terapkanSelisih(StockTakeItem $item, StockTake $sesi, ?int $userId): int
     {
         $selisih = (int) $item->selisih;
+
+        // TEMUAN diperiksa lebih dulu, sebelum cabang "baris stoknya hilang"
+        // di bawah. Keduanya sama-sama ber-inventory_stock_id NULL tetapi
+        // berlawanan artinya: yang ini melahirkan baris stok, yang itu tidak
+        // menghasilkan apa pun.
+        if ($item->is_found) {
+            return $this->wujudkanTemuan($item, $sesi, $userId);
+        }
+
         $stok = $item->inventory_stock_id === null
             ? null
             : InventoryStock::query()->lockForUpdate()->find($item->inventory_stock_id);
@@ -271,6 +366,100 @@ class StockTakeRun
     }
 
     /**
+     * Menjadikan baris temuan sebagai stok sungguhan.
+     *
+     * BARU DI SINI barangnya masuk sistem — bukan saat dicatat di rak. Sampai
+     * laporannya disahkan, temuan tidak berbeda dengan hitungan lain: catatan
+     * yang belum mengubah apa pun. Kalau sesinya dibatalkan, temuannya ikut
+     * tidak jadi, dan itu memang benar.
+     *
+     * BATCH YANG SAMA DIGABUNG, TIDAK DIDUPLIKASI. Antara sesi dibuka dan
+     * laporannya disahkan bisa saja ada inbound yang memasukkan batch itu ke
+     * rak yang sama. Membuat baris kedua akan memecah satu tumpukan fisik
+     * menjadi dua baris sistem yang diambil FIFO secara terpisah.
+     *
+     * @return int qty yang benar-benar masuk
+     */
+    private function wujudkanTemuan(StockTakeItem $item, StockTake $sesi, ?int $userId): int
+    {
+        $qty = (int) $item->qty_physical;
+
+        if ($qty <= 0) {
+            // Temuan yang akhirnya dihitung nol. Tidak ada yang perlu
+            // dilahirkan, dan barisnya tetap tinggal di laporan sebagai
+            // keterangan bahwa rak itu sudah diperiksa.
+            $item->forceFill(['applied_delta' => 0, 'qty_after' => 0])->save();
+
+            return 0;
+        }
+
+        $stok = InventoryStock::query()
+            ->lockForUpdate()
+            ->where('location_id', $item->location_id)
+            ->where('product_id', $item->product_id)
+            ->where('batch_no', $item->batch_no)
+            ->first();
+
+        $sebelum = (int) ($stok?->qty_available ?? 0);
+
+        if ($stok === null) {
+            $produk = Product::find($item->product_id);
+
+            $stok = InventoryStock::create([
+                'product_id' => $item->product_id,
+                'location_id' => $item->location_id,
+                'warehouse_id' => $sesi->warehouse_id,
+                'batch_no' => $item->batch_no,
+                'qty_available' => $qty,
+                'qty_allocated' => 0,
+                'production_date' => $item->found_production_date->toDateString(),
+                'expiry_date' => InventoryStock::calculateExpiry(
+                    $item->found_production_date,
+                    $produk?->shelf_life_months,
+                )->toDateString(),
+                'status' => InventoryStock::STATUS_ACTIVE,
+                // Pengesahan laporan stocktake ADALAH verifikasinya. Yang
+                // menekan tombolnya cuma Super Admin & Manager, dan tanda
+                // tangannya tercatat di sini — bukan dibiarkan kosong seolah
+                // barang ini muncul tanpa ada yang bertanggung jawab.
+                'verified_by' => $userId,
+                'verified_at' => now(),
+            ]);
+        } else {
+            $stok->qty_available = $sebelum + $qty;
+            $stok->save();
+        }
+
+        StockMovement::create([
+            'product_id' => $item->product_id,
+            'location_id' => $item->location_id,
+            'warehouse_id' => $sesi->warehouse_id,
+            'movement_type' => StockMovement::TYPE_ADJUSTMENT,
+            'qty_change' => $qty,
+            'qty_before' => $sebelum,
+            'qty_after' => $sebelum + $qty,
+            'reference_type' => StockMovement::REF_ADJUSTMENT,
+            'reference_id' => $sesi->id,
+            'batch_no' => $item->batch_no,
+            'notes' => sprintf(
+                'Stocktake %s: TEMUAN di rak — %d unit batch %s tidak ada di sistem sebelumnya.',
+                $sesi->reference,
+                $qty,
+                $item->batch_no ?? '—',
+            ),
+            'user_id' => $userId,
+        ]);
+
+        $item->forceFill([
+            'inventory_stock_id' => $stok->id,
+            'applied_delta' => $qty,
+            'qty_after' => (int) $stok->qty_available + (int) $stok->qty_allocated,
+        ])->save();
+
+        return $qty;
+    }
+
+    /**
      * Menolak hitungan di bawah jumlah yang sudah dicadangkan untuk pesanan.
      *
      * Kekurangan sebanyak itu menyentuh barang yang SUDAH DIJANJIKAN ke
@@ -308,6 +497,18 @@ class StockTakeRun
     {
         InventoryStock::query()
             ->whereIn('location_id', $lokasiIds)
+            // BARIS NOL TIDAK IKUT DIBEKUKAN. Baris dengan tersedia DAN
+            // teralokasi sama-sama nol bukan stok — ia sisa batch yang sudah
+            // habis atau seluruhnya dipindah ke rak lain. Menyuruh orang
+            // berjalan ke rak untuk memastikan nol memang nol menghabiskan
+            // waktu yang seharusnya dipakai menghitung barang sungguhan, dan
+            // pada gudang yang sudah lama berjalan baris semacam ini menumpuk
+            // sampai menenggelamkan yang perlu dihitung.
+            //
+            // Kalau ternyata di rak itu ADA barangnya, jalurnya bukan baris
+            // ini melainkan catatTemuan() — dan hasilnya sama-sama masuk
+            // laporan sesi ini.
+            ->whereRaw('(qty_available + qty_allocated) > 0')
             ->orderBy('id')
             ->chunkById(500, function ($baris) use ($sesi) {
                 $sekarang = now();

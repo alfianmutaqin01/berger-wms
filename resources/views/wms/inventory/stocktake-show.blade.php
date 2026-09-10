@@ -88,6 +88,132 @@
     </div>
 </div>
 
+{{-- PENYARING DERET & PENCARIAN SKU.
+     Stocktake lazim dikerjakan beberapa orang dengan pembagian deret. Tanpa
+     penyaring, orang yang kebagian deret C harus menggulir melewati deret A
+     dan B yang sedang dikerjakan orang lain — dan di situ baris orang lain
+     gampang terisi tanpa sengaja.
+
+     Ini MENYEMBUNYIKAN, bukan membagi kepemilikan. Baris yang tersaring tetap
+     milik sesi yang sama dan tetap ikut ke laporan; sistem ini tidak
+     menugaskan deret kepada orang tertentu, dan layar ini tidak berpura-pura
+     melakukannya. --}}
+<div class="card border-0 shadow-sm rounded-4 mb-3">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="filterDeret">Deret</label>
+                <select name="rak" id="filterDeret" class="form-select form-select-sm">
+                    <option value="">Semua deret</option>
+                    @foreach($daftarDeret as $namaRak)
+                        <option value="{{ $namaRak }}" @selected($filter['rak'] === (string) $namaRak)>Deret {{ $namaRak }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-6 col-md-5">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="filterSku">Cari SKU / nama produk</label>
+                <input type="search" name="q" id="filterSku" class="form-control form-control-sm"
+                       value="{{ $filter['q'] }}" placeholder="mis. ID11 atau Apko">
+            </div>
+            <div class="col-12 col-md-4 d-flex gap-2">
+                <button class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Terapkan</button>
+                @if($filter['rak'] !== '' || $filter['q'] !== '')
+                    <a href="{{ route('wms.stocktake.show', $sesi) }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+                @endif
+            </div>
+        </form>
+
+        @if($filter['rak'] !== '' || $filter['q'] !== '')
+            <div class="small text-muted mt-2">
+                <i class="bi bi-info-circle me-1"></i>
+                Layar sedang disaring. Angka ringkas di atas tetap menghitung <strong>seluruh sesi</strong>,
+                bukan hanya yang tampil — supaya tidak ada yang menutup sesi karena mengira sudah selesai.
+            </div>
+        @endif
+    </div>
+</div>
+
+@if($sesi->sedangDihitung())
+@can(\App\Support\Permission::STOCKTAKE_COUNT)
+{{-- TEMUAN. Kebalikan dari menghitung 0, dan sampai sekarang satu-satunya arah
+     yang tidak punya jalur sama sekali: operator yang menemukan palet di luar
+     daftar mencatatnya di kertas, lalu kertasnya hilang. --}}
+<div class="card border-0 shadow-sm rounded-4 mb-3">
+    <div class="card-body py-3">
+        <button class="btn btn-sm btn-outline-warning fw-semibold" type="button"
+                data-bs-toggle="collapse" data-bs-target="#formTemuan">
+            <i class="bi bi-plus-circle me-1"></i> Ada barang di rak yang tidak ada di daftar
+        </button>
+
+        <div class="collapse mt-3 @if($errors->any() || old('batch_no')) show @endif" id="formTemuan">
+            <form method="POST" action="{{ route('wms.stocktake.found', $sesi) }}" class="row g-2">
+                @csrf
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanRak">Rak <span class="text-danger">*</span></label>
+                    <select name="location_id" id="temuanRak" class="form-select form-select-sm" required>
+                        <option value="">Pilih rak…</option>
+                        @foreach($rakPilihan as $rak)
+                            <option value="{{ $rak->id }}" @selected(old('location_id') == $rak->id)>{{ $rak->code }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                {{-- Master produk ribuan baris; dropdown penuh berarti operator
+                     di depan rak menggulir ribuan pilihan lewat HP. --}}
+                <div class="col-12 col-md-4 cari-produk position-relative">
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanProduk">Produk <span class="text-danger">*</span></label>
+                    <input type="text" id="temuanProduk" class="form-control form-control-sm cari-teks"
+                           placeholder="ketik SKU atau nama…" autocomplete="off" required>
+                    <input type="hidden" name="product_id" class="cari-nilai" value="{{ old('product_id') }}">
+                    <div class="list-group position-absolute w-100 shadow-sm cari-saran d-none" style="z-index:20"></div>
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanBatch">Batch <span class="text-danger">*</span></label>
+                    <input type="text" name="batch_no" id="temuanBatch" maxlength="50" required
+                           value="{{ old('batch_no') }}" class="form-control form-control-sm font-monospace">
+                </div>
+
+                <div class="col-6 col-md-3">
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanTanggal">Tgl produksi <span class="text-danger">*</span></label>
+                    <input type="date" name="production_date" id="temuanTanggal" required
+                           value="{{ old('production_date') }}" max="{{ now()->toDateString() }}"
+                           class="form-control form-control-sm">
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanQty">Jumlah <span class="text-danger">*</span></label>
+                    <input type="number" name="qty" id="temuanQty" min="1" required
+                           value="{{ old('qty') }}" class="form-control form-control-sm">
+                </div>
+
+                <div class="col-12 col-md-7">
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanCatatan">Catatan</label>
+                    <input type="text" name="note" id="temuanCatatan" maxlength="500"
+                           value="{{ old('note') }}" class="form-control form-control-sm"
+                           placeholder="mis. palet terselip di belakang, label sobek">
+                </div>
+
+                <div class="col-12 col-md-3 d-flex align-items-end">
+                    <button class="btn btn-sm btn-warning fw-bold w-100">
+                        <i class="bi bi-check-lg me-1"></i> Catat Temuan
+                    </button>
+                </div>
+
+                <div class="col-12">
+                    <p class="small text-muted mb-0 mt-1">
+                        <strong>Tanggal produksi dibaca dari palet</strong>, bukan hari ini — kedaluwarsanya
+                        dihitung dari situ, dan salah isi membuat barang lama justru dijual paling akhir.
+                        Stok belum bertambah sampai laporan sesi ini disahkan.
+                    </p>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endcan
+@endif
+
 @forelse($deret as $namaDeret => $perRak)
     <div class="card shadow-sm border-0 rounded-4 mb-3">
         <div class="card-body p-4">
@@ -120,7 +246,18 @@
                                         <div class="fw-semibold font-monospace small">{{ $item->product?->sku ?? '—' }}</div>
                                         <div class="text-muted" style="font-size:.72rem">{{ $item->product?->name }}</div>
                                     </td>
-                                    <td class="font-monospace small">{{ $item->batch_no ?? '—' }}</td>
+                                    <td class="font-monospace small">
+                                        {{ $item->batch_no ?? '—' }}
+                                        @if($item->is_found)
+                                            {{-- Baris temuan dibedakan terang-terangan. Angka
+                                                 sistemnya nol BUKAN karena raknya kosong, tetapi
+                                                 karena batchnya memang belum pernah ada di
+                                                 sistem — dan itu dua hal yang sangat berbeda
+                                                 bagi siapa pun yang membaca laporannya nanti. --}}
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning d-block mt-1"
+                                                  title="Ditemukan di rak, tidak ada di sistem">Temuan</span>
+                                        @endif
+                                    </td>
                                     <td class="text-end fw-semibold">{{ number_format($item->qty_system) }}</td>
                                     <td>
                                         @if($sesi->sedangDihitung())
@@ -181,7 +318,16 @@
     <div class="card shadow-sm border-0 rounded-4">
         <div class="card-body text-center py-5 text-muted">
             <i class="bi bi-inbox display-6 d-block mb-2 opacity-50"></i>
-            Tidak ada baris stok dalam cakupan sesi ini.
+            @if($filter['rak'] !== '' || $filter['q'] !== '')
+                {{-- Dibedakan dari sesi yang memang kosong. "Tidak ada baris"
+                     pada layar yang sedang disaring terbaca seperti raknya
+                     memang kosong, dan orang menutup pekerjaan yang belum
+                     tersentuh. --}}
+                Tidak ada baris yang cocok dengan penyaring ini.
+                <a href="{{ route('wms.stocktake.show', $sesi) }}" class="d-block mt-2">Tampilkan semua</a>
+            @else
+                Tidak ada baris stok dalam cakupan sesi ini.
+            @endif
         </div>
     </div>
 @endforelse
@@ -231,6 +377,23 @@
 @endcan
 
 @if($sesi->sedangDihitung())
+@can(\App\Support\Permission::STOCKTAKE_COUNT)
+@include('partials.pencarian-ketik')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    window.pasangPencarian(document.querySelector('.cari-produk'), {
+        url: function (q) { return '{{ route('wms.stocktake.lookup.products') }}?q=' + encodeURIComponent(q); },
+        tampilan: function (p) {
+            return '<div class="fw-semibold small">' + p.teks + '</div>' +
+                   '<div class="text-muted" style="font-size:.7rem">' + (p.ket || '') + '</div>';
+        },
+        label: function (p) { return p.teks; },
+        kosong: 'SKU tidak terdaftar di Master Produk.',
+    });
+});
+</script>
+@endcan
+
 <script>
 /*
  * Menyimpan hitungan TANPA memuat ulang halaman.

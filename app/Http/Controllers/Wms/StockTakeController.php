@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Location;
+use App\Models\Product;
 use App\Models\StockTake;
 use App\Models\StockTakeItem;
 use App\Models\Warehouse;
@@ -44,6 +45,12 @@ use RuntimeException;
  */
 class StockTakeController extends Controller
 {
+    /** Huruf minimal sebelum pencarian produk dijalankan. */
+    private const MIN_CARI = 2;
+
+    /** Batas saran yang dikirim ke layar. */
+    private const MAKS_SARAN = 10;
+
     public function __construct(private readonly StockTakeRun $stocktake) {}
 
     public function index(Request $request): View
@@ -119,13 +126,44 @@ class StockTakeController extends Controller
         ));
     }
 
-    /** Layar penghitungan, disusun deret -> rak seperti denah. */
+    /**
+     * Layar penghitungan, disusun deret -> rak seperti denah.
+     *
+     * KENAPA ADA PENYARING DERET
+     * --------------------------
+     * Stocktake lazim dikerjakan beberapa orang sekaligus dengan pembagian
+     * deret. Tanpa penyaring, orang yang kebagian deret C harus menggulir
+     * melewati deret A dan B yang sedang dikerjakan orang lain — dan di situ
+     * baris orang lain gampang terisi tanpa sengaja. Menyaring ke deretnya
+     * sendiri membuat layarnya hanya memuat pekerjaan miliknya.
+     *
+     * Penyaringnya hanya MENYEMBUNYIKAN, tidak membagi kepemilikan: baris yang
+     * tersaring tetap milik sesi yang sama dan tetap ikut ke laporan. Sistem
+     * ini tidak menugaskan deret kepada orang tertentu, dan layar ini tidak
+     * berpura-pura melakukannya.
+     *
+     * Pencarian SKU untuk kebalikannya: satu SKU bisa tersebar di banyak palet
+     * dan banyak rak, dan kadang yang dicari justru "di mana saja barang ini".
+     */
     public function show(Request $request, StockTake $stocktake): View
     {
         WarehouseScope::assert($stocktake->warehouse_id, $request->user());
 
+        $filter = [
+            'rak' => trim((string) $request->query('rak')),
+            'q' => trim((string) $request->query('q')),
+        ];
+
         $items = $stocktake->items()
             ->with(['location:id,code,rack,level,cell', 'product:id,sku,name,uom', 'countedBy:id,full_name'])
+            ->when($filter['rak'] !== '', fn ($q, $ada) => $q->whereHas(
+                'location', fn ($l) => $l->where('rack', $filter['rak']),
+            ))
+            ->when($filter['q'] !== '', fn ($q) => $q->whereHas(
+                'product',
+                fn ($p) => $p->where('sku', 'ILIKE', '%'.$filter['q'].'%')
+                    ->orWhere('name', 'ILIKE', '%'.$filter['q'].'%'),
+            ))
             ->get()
             ->sortBy([
                 fn (StockTakeItem $i) => $i->location?->rack ?? '',
@@ -137,8 +175,132 @@ class StockTakeController extends Controller
             'sesi' => $stocktake->load(['warehouse', 'openedBy:id,full_name']),
             'deret' => $items->groupBy(fn (StockTakeItem $i) => $i->location?->rack ?? '—')
                 ->map(fn ($baris) => $baris->groupBy(fn (StockTakeItem $i) => $i->location?->code ?? '—')),
+            // Daftar deret diambil dari SELURUH sesi, bukan dari hasil yang
+            // sudah tersaring — kalau tidak, memilih satu deret akan membuang
+            // pilihan deret lainnya dan tidak ada jalan kembali selain
+            // menyunting URL.
+            'daftarDeret' => $stocktake->items()
+                ->join('locations', 'locations.id', '=', 'stock_take_items.location_id')
+                ->distinct()->orderBy('locations.rack')->pluck('locations.rack'),
+            'filter' => $filter,
+            // Angka ringkas SELALU untuk seluruh sesi, tidak ikut tersaring.
+            // "3 dari 5 baris dihitung" yang diam-diam berarti "3 dari 5 di
+            // deret B" akan membuat orang menutup sesi yang belum selesai.
             'ringkasan' => $this->ringkasan($stocktake),
+            'rakPilihan' => $stocktake->sedangDihitung()
+                ? Location::where('warehouse_id', $stocktake->warehouse_id)
+                    ->where('is_active', true)
+                    ->orderBy('code')->get(['id', 'code'])
+                : collect(),
         ]);
+    }
+
+    /**
+     * Mencatat barang yang ditemukan di rak tetapi tidak ada di sistem.
+     *
+     * Kebalikan dari menghitung 0, dan sampai sekarang satu-satunya arah yang
+     * tidak punya jalur sama sekali di layar mana pun.
+     *
+     * Izinnya STOCKTAKE_COUNT, sama dengan mengisi hitungan biasa. Terlihat
+     * lebih berbahaya karena "menciptakan stok" — padahal menghitung 50 pada
+     * baris yang sistemnya 0 melakukan hal yang persis sama, dan itu sudah
+     * boleh sejak awal. Keduanya sama-sama baru menyentuh stok saat laporan
+     * disahkan Manager.
+     */
+    public function found(Request $request, StockTake $stocktake): RedirectResponse
+    {
+        WarehouseScope::assert($stocktake->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'location_id' => ['required', 'integer', 'exists:locations,id'],
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'batch_no' => ['required', 'string', 'max:50'],
+            // Tidak boleh di masa depan: kedaluwarsa dihitung dari tanggal
+            // ini, dan tanggal maju memberi umur simpan yang tidak pernah
+            // dimiliki palet itu.
+            'production_date' => ['required', 'date', 'before_or_equal:'.now()->toDateString()],
+            'qty' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ], [], [
+            'location_id' => 'rak',
+            'product_id' => 'produk',
+            'batch_no' => 'batch',
+            'production_date' => 'tanggal produksi',
+            'qty' => 'jumlah',
+        ]);
+
+        try {
+            $item = $this->stocktake->catatTemuan($stocktake, [
+                'location_id' => (int) $data['location_id'],
+                'product_id' => (int) $data['product_id'],
+                'batch_no' => $data['batch_no'],
+                'production_date' => $data['production_date'],
+                'qty' => (int) $data['qty'],
+                'note' => $data['note'] ?? null,
+            ], $request->user()?->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        }
+
+        Activity::record(
+            ActivityLog::STOCKTAKE_FOUND,
+            sprintf(
+                'Temuan stocktake %s: %d unit %s batch %s di rak %s.',
+                $stocktake->reference,
+                $item->qty_physical,
+                $item->product?->sku ?? '—',
+                $item->batch_no,
+                $item->location?->code ?? '—',
+            ),
+            $stocktake,
+            $stocktake->warehouse_id,
+            [
+                'referensi' => $stocktake->reference,
+                'rak' => $item->location?->code,
+                'sku' => $item->product?->sku,
+                'batch' => $item->batch_no,
+                'qty' => $item->qty_physical,
+            ],
+        );
+
+        return back()->with('success', sprintf(
+            'Temuan tercatat: %d unit batch %s di rak %s. Stok BELUM bertambah — barang ini baru masuk sistem '.
+            'saat laporan sesi ini disahkan, sama seperti hitungan lainnya.',
+            $item->qty_physical,
+            $item->batch_no,
+            $item->location?->code ?? '—',
+        ));
+    }
+
+    /**
+     * Pencarian produk sambil mengetik untuk formulir temuan.
+     *
+     * Master produk berisi ribuan baris. Menyodorkan seluruhnya sebagai
+     * dropdown berarti operator yang berdiri di depan rak dengan HP harus
+     * menggulir ribuan pilihan.
+     */
+    public function lookupProducts(Request $request): JsonResponse
+    {
+        $cari = trim((string) $request->query('q'));
+
+        if (mb_strlen($cari) < self::MIN_CARI) {
+            return response()->json([]);
+        }
+
+        return response()->json(
+            Product::query()
+                ->where('is_active', true)
+                ->where(fn ($q) => $q->where('sku', 'ILIKE', '%'.$cari.'%')
+                    ->orWhere('name', 'ILIKE', '%'.$cari.'%'))
+                ->orderBy('sku')
+                ->limit(self::MAKS_SARAN)
+                ->get(['id', 'sku', 'name', 'uom'])
+                ->map(fn (Product $p) => [
+                    'id' => $p->id,
+                    'teks' => $p->sku.' — '.$p->name,
+                    'ket' => $p->uom,
+                ]),
+        );
     }
 
     /**

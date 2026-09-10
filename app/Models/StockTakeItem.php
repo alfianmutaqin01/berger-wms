@@ -23,7 +23,7 @@ class StockTakeItem extends Model
     protected $fillable = [
         'stock_take_id', 'inventory_stock_id', 'location_id', 'product_id', 'batch_no',
         'qty_system', 'qty_physical', 'count_note', 'counted_at', 'counted_by',
-        'applied_delta', 'qty_after',
+        'applied_delta', 'qty_after', 'is_found', 'found_production_date',
     ];
 
     protected function casts(): array
@@ -34,6 +34,8 @@ class StockTakeItem extends Model
             'applied_delta' => 'integer',
             'qty_after' => 'integer',
             'counted_at' => 'datetime',
+            'is_found' => 'boolean',
+            'found_production_date' => 'date',
         ];
     }
 

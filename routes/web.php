@@ -362,6 +362,21 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.stocktake.index');
         Route::post('/stocktake/items/{item}/count', [StockTakeController::class, 'count'])
             ->name('wms.stocktake.count');
+        /*
+        | Barang yang DITEMUKAN di rak tetapi tidak ada di sistem.
+        |
+        | Izinnya sama dengan mengisi hitungan biasa, dan itu disengaja:
+        | menghitung 50 pada baris yang sistemnya 0 sudah melakukan hal yang
+        | persis sama sejak awal. Keduanya baru menyentuh stok saat laporannya
+        | disahkan Manager.
+        |
+        | Didaftarkan SEBELUM '/stocktake/{stocktake}' seperti tetangganya di
+        | atas — kalau tidak, "lookup" tertangkap sebagai id sesi.
+        */
+        Route::get('/stocktake/lookup/products', [StockTakeController::class, 'lookupProducts'])
+            ->name('wms.stocktake.lookup.products');
+        Route::post('/stocktake/{stocktake}/found', [StockTakeController::class, 'found'])
+            ->name('wms.stocktake.found');
         Route::get('/stocktake/{stocktake}', [StockTakeController::class, 'show'])
             ->name('wms.stocktake.show');
         Route::get('/stocktake/{stocktake}/report', [StockTakeController::class, 'report'])
