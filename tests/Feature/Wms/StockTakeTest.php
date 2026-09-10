@@ -929,4 +929,75 @@ class StockTakeTest extends TestCase
         $this->assertSame(50, $baris->firstWhere('sku', 'APKO-001')['sesudah']);
         $this->assertSame(40, $baris->firstWhere('sku', 'APKO-001')['selisih']);
     }
+
+    /* ================================ Dua langkah: periksa lalu sahkan */
+
+    /**
+     * Layar penghitungan TIDAK lagi punya tombol pengesahan.
+     *
+     * Dulu satu tombol mengesahkan sekaligus mencetak, sehingga yang
+     * menekannya mengesahkan angka yang belum pernah ia lihat berjejer.
+     * Stocktake lazim dikerjakan beberapa orang, dan kesalahan satu orang baru
+     * kelihatan saat seluruh SKU berbaris dalam satu halaman.
+     */
+    public function test_layar_penghitungan_mengarah_ke_laporan_bukan_pengesahan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+
+        $html = $this->get(route('wms.stocktake.show', $sesi))->assertOk()->getContent();
+
+        $this->assertStringContainsString(route('wms.stocktake.report', $sesi), $html);
+        $this->assertStringNotContainsString(route('wms.stocktake.finalize', $sesi), $html);
+    }
+
+    /** Pengesahannya pindah ke kaki laporan, setelah angkanya bisa diperiksa. */
+    public function test_tombol_pengesahan_ada_di_laporan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+
+        $this->get(route('wms.stocktake.report', $sesi))
+            ->assertOk()
+            ->assertSee(route('wms.stocktake.finalize', $sesi), false)
+            ->assertSee('Sudah diperiksa?');
+    }
+
+    /** Yang hanya boleh menghitung tidak melihat tombol pengesahan di laporan. */
+    public function test_operator_tidak_melihat_tombol_pengesahan_di_laporan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+
+        $this->loginAs(Role::WAREHOUSE_OPERATOR);
+
+        $html = $this->get(route('wms.stocktake.report', $sesi))->assertOk()->getContent();
+
+        $this->assertStringNotContainsString(route('wms.stocktake.finalize', $sesi), $html);
+    }
+
+    /** Laporan yang sudah disahkan tidak menawarkan pengesahan lagi. */
+    public function test_laporan_yang_sudah_disahkan_tidak_menawarkan_pengesahan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->hitung(StockTakeItem::first(), 10);
+        $this->post(route('wms.stocktake.finalize', $sesi));
+
+        $html = $this->get(route('wms.stocktake.report', $sesi))->assertOk()->getContent();
+
+        $this->assertStringNotContainsString('Sudah diperiksa?', $html);
+    }
 }

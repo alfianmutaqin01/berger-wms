@@ -812,4 +812,53 @@ class InventoryTest extends TestCase
             $html,
         );
     }
+
+    /* ------------------------------------------- Angka lintas gudang */
+
+    /**
+     * Satu baris = satu SKU, dan bagi akun lintas gudang itu berarti angkanya
+     * MENJUMLAHKAN GUDANG YANG BERBEDA.
+     *
+     * Pernah terbaca sebagai selisih stocktake: layar ini menunjukkan 234
+     * sementara laporan stocktake Karawang menyebut 55 — padahal 180 di
+     * antaranya sudah dipindah ke gudang lain berbulan-bulan sebelumnya dan
+     * stocktake-nya benar. Kode gudangnya sendiri nyaris kembar, jadi label
+     * kecil di tiap baris batch tidak cukup: yang dibaca lebih dulu adalah
+     * angka besar di kepala baris.
+     */
+    public function test_total_sku_menyebutkan_rinciannya_saat_lintas_gudang(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $produk = Product::factory()->create(['sku' => 'SKU-LINTAS', 'uom' => 'TIN']);
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+
+        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BT-SINI', 'qty_available' => 54]);
+
+        InventoryStock::factory()->create([
+            'warehouse_id' => $lain->id,
+            'location_id' => Location::factory()->create(['warehouse_id' => $lain->id])->id,
+            'product_id' => $produk->id,
+            'batch_no' => 'BT-SANA',
+            'qty_available' => 180,
+        ]);
+
+        $baris = $this->get('/wms/inventory')->viewData('barisSku')->first();
+
+        $this->assertSame(234, $baris['total_good'], 'Totalnya memang gabungan — itu tidak diubah.');
+        $this->assertSame(['WH-01' => 54, 'WH-99' => 180], $baris['per_gudang']->all());
+    }
+
+    /** Satu gudang saja tidak perlu rincian — lencananya cuma jadi kebisingan. */
+    public function test_sku_satu_gudang_tidak_perlu_rincian(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $produk = Product::factory()->create(['sku' => 'SKU-SATU-GUDANG', 'uom' => 'TIN']);
+        $this->stock(['product_id' => $produk->id, 'qty_available' => 54]);
+
+        $baris = $this->get('/wms/inventory')->viewData('barisSku')->first();
+
+        $this->assertCount(1, $baris['per_gudang']);
+    }
 }

@@ -224,6 +224,20 @@
                         <span class="text-muted">Good Stock:</span>
                         <strong class="text-success">{{ number_format($baris['total_good']) }}</strong>
                     </span>
+                    @if($baris['per_gudang']->count() > 1)
+                        {{-- Angka di atas MENJUMLAHKAN GUDANG YANG BERBEDA.
+                             Tanpa rincian ini ia pernah terbaca sebagai selisih
+                             stocktake — 234 di layar melawan 55 di laporan
+                             Karawang, padahal 180 di antaranya sudah lama
+                             dipindah ke Pekanbaru dan stocktake-nya benar. --}}
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning text-wrap"
+                              title="Angka Good Stock di atas adalah gabungan seluruh gudang">
+                            <i class="bi bi-diagram-3 me-1"></i>{{ $baris['per_gudang']->count() }} gudang:
+                            @foreach($baris['per_gudang'] as $kodeGudang => $qty)
+                                <span class="font-monospace">{{ $kodeGudang }}</span> {{ number_format($qty) }}@if(! $loop->last) &middot; @endif
+                            @endforeach
+                        </span>
+                    @endif
                     @if($baris['total_karantina'] > 0)
                     <span class="text-muted">·</span>
                     <span class="small text-nowrap">

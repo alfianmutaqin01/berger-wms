@@ -45,10 +45,18 @@
                         @csrf
                         <button class="btn btn-outline-secondary rounded-3">Batalkan Sesi</button>
                     </form>
-                    <button type="button" class="btn btn-success fw-bold rounded-3"
-                            data-bs-toggle="modal" data-bs-target="#modalSahkan">
-                        <i class="bi bi-printer me-1"></i> Sahkan &amp; Cetak Laporan
-                    </button>
+                    {{-- DUA LANGKAH, bukan satu.
+                         Dulu tombol ini langsung mengesahkan sekaligus mencetak,
+                         sehingga yang menekannya mengesahkan angka yang belum
+                         pernah ia lihat berjejer. Stocktake lazim dikerjakan
+                         beberapa orang, dan kesalahan satu orang baru kelihatan
+                         saat seluruh SKU berbaris dalam satu halaman.
+
+                         Sekarang: periksa laporannya dulu, pengesahannya ada di
+                         kaki halaman itu. --}}
+                    <a href="{{ route('wms.stocktake.report', $sesi) }}" class="btn btn-success fw-bold rounded-3">
+                        <i class="bi bi-clipboard-check me-1"></i> Periksa Laporan
+                    </a>
                 </div>
                 @endcan
             @else
@@ -332,49 +340,6 @@
     </div>
 @endforelse
 
-@can(\App\Support\Permission::STOCKTAKE_MANAGE)
-<div class="modal fade" id="modalSahkan" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <form method="POST" action="{{ route('wms.stocktake.finalize', $sesi) }}" class="modal-content rounded-4 border-0">
-            @csrf
-            <div class="modal-header border-0">
-                <h5 class="modal-title fw-bold">Sahkan Laporan Stocktake</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted small">
-                    Seluruh selisih akan <strong>diterapkan ke stok</strong> dan tercatat di ledger sebagai
-                    koreksi stocktake. Sesudah ini hitungannya tidak bisa diubah lagi.
-                </p>
-                @if($ringkasan['belum'] > 0)
-                    <div class="alert alert-warning border-0 rounded-3 small">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        <strong>{{ number_format($ringkasan['belum']) }} baris belum dihitung.</strong>
-                        Baris itu <strong>tidak akan disentuh</strong> — stoknya tetap seperti sekarang, dan
-                        laporannya akan menyebutkan bahwa cakupan stocktake ini belum penuh.
-                    </div>
-                @endif
-                <div class="border rounded-3 p-3 small">
-                    <div class="d-flex justify-content-between">
-                        <span class="text-muted">Baris cocok</span>
-                        <span class="fw-semibold">{{ number_format($ringkasan['cocok']) }}</span>
-                    </div>
-                    <div class="d-flex justify-content-between">
-                        <span class="text-muted">Baris berselisih</span>
-                        <span class="fw-semibold text-danger">{{ number_format($ringkasan['selisih']) }}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer border-0">
-                <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Tutup</button>
-                <button type="submit" class="btn btn-success rounded-3 fw-bold">
-                    <i class="bi bi-printer me-1"></i> Sahkan &amp; Cetak
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-@endcan
 
 @if($sesi->sedangDihitung())
 @can(\App\Support\Permission::STOCKTAKE_COUNT)

@@ -158,6 +158,63 @@
     </div>
 </div>
 
+{{-- PENGESAHAN DIPINDAH KE SINI, di kaki laporan.
+     Sebelumnya tombolnya ada di layar penghitungan, dan yang menekannya
+     mengesahkan angka yang belum pernah ia lihat berjejer. Stocktake lazim
+     dikerjakan beberapa orang; kesalahan satu orang baru kelihatan saat
+     seluruh SKU berbaris dalam satu halaman seperti ini.
+
+     Urutannya sekarang: hitung -> periksa laporan ini -> baru sahkan.
+     d-print-none karena ini bagian layar, bukan bagian dokumen. --}}
+@unless($sesi->sudahDisahkan())
+    @if($sesi->sedangDihitung())
+        @can(\App\Support\Permission::STOCKTAKE_MANAGE)
+        <div class="card border-0 shadow-sm rounded-4 mt-3 d-print-none">
+            <div class="card-body p-4">
+                <h6 class="fw-bold text-dark mb-2">
+                    <i class="bi bi-clipboard-check text-success me-2"></i>Sudah diperiksa?
+                </h6>
+                <p class="small text-muted mb-3">
+                    Periksa dulu tiap baris di atas. Setelah disahkan, seluruh selisih
+                    <strong>diterapkan ke stok</strong> dan tercatat di ledger — dan tidak ada tombol
+                    untuk menariknya kembali. Kalau ada angka yang meleset,
+                    <a href="{{ route('wms.stocktake.show', $sesi) }}">kembali ke layar penghitungan</a>
+                    dan perbaiki dulu.
+                </p>
+
+                @if($ringkasan['belum'] > 0)
+                    <div class="alert alert-warning border-0 rounded-3 small">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        Masih ada <strong>{{ number_format($ringkasan['belum']) }} baris yang belum dihitung</strong>.
+                        Mengesahkan sekarang membuat baris itu tidak disentuh sama sekali — angkanya tetap
+                        seperti sebelumnya, dan itu ikut tertulis di laporan.
+                    </div>
+                @endif
+
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ route('wms.stocktake.show', $sesi) }}" class="btn btn-outline-secondary rounded-3">
+                        <i class="bi bi-arrow-left me-1"></i> Kembali Menghitung
+                    </a>
+                    <form method="POST" action="{{ route('wms.stocktake.finalize', $sesi) }}"
+                          onsubmit="return confirm('Sahkan laporan {{ $sesi->reference }}? Seluruh selisih akan diterapkan ke stok dan tidak bisa ditarik kembali.');">
+                        @csrf
+                        <button class="btn btn-success fw-bold rounded-3">
+                            <i class="bi bi-check2-circle me-1"></i> Sahkan &amp; Cetak Laporan
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        @else
+        <div class="alert alert-secondary border-0 rounded-3 mt-3 d-print-none small">
+            <i class="bi bi-info-circle me-1"></i>
+            Laporan ini masih pratinjau. Pengesahannya wewenang Manager atau Super Admin —
+            beritahu mereka setelah seluruh rak selesai dihitung.
+        </div>
+        @endcan
+    @endif
+@endunless
+
 @if($cetakOtomatis && $sesi->sudahDisahkan())
 <script>
     // Dibuka langsung setelah pengesahan: menurut pemilik produk, stok

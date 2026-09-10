@@ -115,6 +115,24 @@ class InventoryController extends Controller
                     'total_good' => (int) $good->sum('qty_available'),
                     'total_ddp' => (int) $ddp->sum('qty_available'),
                     'total_karantina' => (int) $karantina->sum('qty_available'),
+                    // RINCIAN PER GUDANG.
+                    //
+                    // Satu baris = satu SKU, dan bagi akun lintas gudang itu
+                    // berarti angkanya MENJUMLAHKAN GUDANG YANG BERBEDA tanpa
+                    // mengatakannya. Pernah terbaca sebagai selisih stocktake:
+                    // layar ini menunjukkan 234 sementara laporan stocktake
+                    // Karawang menyebut 55 — padahal 180 di antaranya sudah
+                    // dipindah ke Pekanbaru berbulan-bulan sebelumnya dan
+                    // stocktake-nya benar.
+                    //
+                    // Kode gudangnya sendiri nyaris kembar (ID11_1001 vs
+                    // ID1I_1001), jadi menyandarkan pembacanya pada label kecil
+                    // di tiap baris batch tidak cukup — yang dibaca lebih dulu
+                    // adalah angka besar di kepala baris.
+                    'per_gudang' => $isi
+                        ->groupBy(fn ($s) => $s->warehouse?->code ?? '—')
+                        ->map(fn ($g) => (int) $g->sum('qty_available'))
+                        ->sortKeys(),
                     // Menandai baris tertutup: ada batch yang harus segera dijual.
                     'kritis' => $good->contains(fn ($s) => in_array($s->shelf_life_urgency, ['critical', 'expired'], true)),
                 ];
