@@ -38,6 +38,38 @@ PHP="${UJI_PHP:-docker compose exec -T -u www-data php-fpm}"
 warna() { printf '\033[1;36m%s\033[0m\n' "$1"; }
 pucat() { printf '\033[0;90m%s\033[0m\n' "$1"; }
 
+# PARALEL TIDAK SELALU LEBIH CEPAT, dan ini mengejutkan sampai diukur.
+#
+# Tiap proses paralel menjalankan 59 migrasi untuk dirinya sendiri sebelum test
+# pertamanya jalan. Untuk seluruh suite ongkos itu terbayar berkali lipat
+# (13m07s -> 3m42s), tetapi untuk satu modul berisi 16 test ia justru
+# MEMPERLAMBAT: 1m10s paralel, ~25 detik satu proses.
+#
+# Jadi ambangnya jumlah kelas test yang akan dijalankan, bukan selera.
+AMBANG_PARALEL=4
+
+jalankan() {
+    local filter="${1:-}"
+    local jumlah=1
+
+    if [ -n "$filter" ]; then
+        jumlah=$(printf '%s' "$filter" | awk -F'|' '{print NF}')
+    else
+        jumlah=99
+    fi
+
+    if [ "$jumlah" -ge "$AMBANG_PARALEL" ]; then
+        if [ -n "$filter" ]; then
+            $PHP php artisan test --parallel --filter="$filter"
+        else
+            $PHP php artisan test --parallel
+        fi
+    else
+        pucat "(satu proses — untuk test sesedikit ini, paralel malah lebih lambat)"
+        $PHP php artisan test --filter="$filter"
+    fi
+}
+
 pakai() {
     cat <<'HELP'
 Pemakaian:
@@ -197,7 +229,7 @@ jalankan_ubah() {
 
     [ "$hanya_lihat" = "lihat" ] && return 0
 
-    $PHP php artisan test --parallel --filter="$filter"
+    jalankan "$filter"
 }
 
 perintah="${1:-ubah}"
@@ -222,6 +254,6 @@ case "$perintah" in
 
     *)
         warna "Test yang namanya cocok dengan \"$perintah\"."
-        $PHP php artisan test --parallel --filter="$perintah"
+        jalankan "$perintah"
         ;;
 esac
