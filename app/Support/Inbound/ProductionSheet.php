@@ -138,16 +138,22 @@ class ProductionSheet
 
         $base['product_id'] = $product->id;
         $base['description'] = $product->name;
-        $base['capacity'] = $product->max_qty_per_pallet;
+        $kapasitas = $product->kapasitasPalet();
+        $base['capacity'] = $kapasitas;
 
-        if (! $product->max_qty_per_pallet) {
+        if (! $kapasitas) {
             return [
-                'message' => 'Kapasitas palet produk ini belum diisi di Master Produk.',
+                // Dua jalan keluarnya disebut sekaligus, karena yang membaca
+                // pesan ini sering tidak tahu bahwa aturan ukuran itu ada:
+                // satu angka di Setelan Operasional menutup SELURUH produk
+                // seukuran, bukan cuma yang satu ini.
+                'message' => 'Kapasitas palet belum diketahui. Tambahkan aturan ukurannya di '
+                    .'Pengaturan → Kapasitas Palet, atau isi manual di Master Produk.',
             ] + $base;
         }
 
         return [
-            'pallets' => PalletCapacity::split($qty, $product->max_qty_per_pallet),
+            'pallets' => PalletCapacity::split($qty, $kapasitas),
             'status' => 'siap',
         ] + $base;
     }

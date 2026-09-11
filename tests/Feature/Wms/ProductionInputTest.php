@@ -115,7 +115,10 @@ class ProductionInputTest extends TestCase
             'name' => $name,
             'pack_size' => $size,
             'pack_unit' => $unit,
-            'max_qty_per_pallet' => PalletCapacity::resolve($unit, $size),
+            // Kapasitasnya sengaja TIDAK disalin ke kolom produk: yang diuji
+            // berkas produksi ini justru apakah aturan ukuran benar-benar
+            // dipakai saat palet dibentuk.
+            'max_qty_per_pallet' => null,
         ]);
     }
 
@@ -244,7 +247,7 @@ class ProductionInputTest extends TestCase
         $this->loginAs();
         $product = $this->makeProduct('ID1-FHR161000705', 'LUXATHERM 1600 BINDER 5Ltr', PalletCapacity::UNIT_LITER, 5);
 
-        $this->assertSame(180, $product->max_qty_per_pallet);
+        $this->assertSame(180, $product->kapasitasPalet());
 
         $preview = $this->preview($this->sheet([
             $this->row('RMO26080300', $product->sku, $product->name, 95, 'I126080056'),

@@ -123,7 +123,7 @@
                                     @endphp
                                     <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }} {{ $terkunci ? 'opacity-75' : '' }}"
                                         data-product-id="{{ $detail->product_id }}"
-                                        data-capacity="{{ $detail->product?->max_qty_per_pallet }}"
+                                        data-capacity="{{ $detail->product?->kapasitasPalet() }}"
                                         data-uom="{{ $detail->product?->uom }}"
                                         data-terkunci="{{ $terkunci ? '1' : '0' }}">
                                         <td class="text-center">

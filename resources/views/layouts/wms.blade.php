@@ -305,6 +305,9 @@
                             <li class="nav-item {{ request()->is('wms/admin/settings') ? 'active' : '' }}">
                                 <a href="/wms/admin/settings" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Setelan Operasional</span></a>
                             </li>
+                            <li class="nav-item {{ request()->is('wms/admin/pallet-capacity') ? 'active' : '' }}">
+                                <a href="/wms/admin/pallet-capacity" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kapasitas Palet</span></a>
+                            </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_AUDIT)
                             <li class="nav-item {{ request()->is('wms/admin/activity-log') ? 'active' : '' }}">

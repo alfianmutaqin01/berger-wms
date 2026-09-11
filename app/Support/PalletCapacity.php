@@ -2,17 +2,36 @@
 
 namespace App\Support;
 
+use App\Models\PalletCapacityRule;
+use Illuminate\Support\Facades\Cache;
+use Throwable;
+
 /**
  * Kapasitas maksimal satu palet, menurut ukuran & satuan kemasan.
  *
- * Aturan berasal dari operasional gudang PT Berger Paints (PRD §7.1). Angkanya
- * TIDAK bisa diturunkan dari rumus volume/berat — perhatikan bahwa 20 Liter
- * memuat 27 pcs sementara 20 Kg memuat 36 pcs. Karena itu satuan (`L` vs `KG`)
- * ikut menentukan hasilnya, bukan cuma angkanya.
+ * ANGKANYA TIDAK BISA DITURUNKAN DARI RUMUS volume/berat — perhatikan bahwa
+ * 20 Liter memuat 27 pcs sementara 20 Kg memuat 36 pcs. Karena itu satuan
+ * (`L` vs `KG`) ikut menentukan hasilnya, bukan cuma angkanya.
  *
- * Ukuran di luar daftar ini sengaja mengembalikan NULL, bukan menebak angka
+ * ATURANNYA SEKARANG DATA, BUKAN KODE. Dulu daftarnya tertanam di kelas ini,
+ * sehingga ukuran baru berarti menunggu rilis kode — dan 316 produk yang
+ * ukurannya tidak tercakup berdiri tanpa kapasitas palet sama sekali. Sekarang
+ * ia tinggal di `pallet_capacity_rules` dan diatur Super Admin lewat Setelan
+ * Operasional.
+ *
+ * DUA TINGKAT PENCOCOKAN. Aturan yang menyebut wadah (`uom`) menang atas yang
+ * tidak. "20 L PAIL" bisa berbeda dari "20 L TIN" — dua wadah yang tidak
+ * menumpuk sama di atas palet — tanpa memaksa siapa pun mengetik ulang angka
+ * yang sama untuk setiap wadah yang pernah dipakai.
+ *
+ * UKURAN DI LUAR DAFTAR TETAP MENGEMBALIKAN NULL, bukan menebak angka
  * terdekat: salah menghitung kapasitas palet berarti salah membentuk palet di
- * lantai gudang. Produk semacam itu ditandai agar Manager mengisi manual.
+ * lantai gudang. Produk semacam itu ditandai agar dilengkapi.
+ *
+ * DIBACA DI SETIAP PEMBENTUKAN PALET, jadi di-cache selamanya dan dibuang saat
+ * aturannya berubah. Kalau cache-nya atau tabelnya bermasalah, yang
+ * dikembalikan NULL — bukan galat: aturan yang gagal dibaca tidak boleh
+ * menjatuhkan layar penerimaan barang.
  */
 class PalletCapacity
 {
@@ -22,67 +41,61 @@ class PalletCapacity
 
     public const UNITS = [self::UNIT_LITER, self::UNIT_KILOGRAM];
 
-    /**
-     * Satuan => [ukuran kemasan => maksimal pcs per palet].
-     *
-     * Ukuran disimpan sebagai string 2 desimal agar perbandingan tidak
-     * terpengaruh ketidakakuratan pembulatan float (0.1 + 0.2 !== 0.3).
-     *
-     * @var array<string, array<string, int>>
-     */
-    private const RULES = [
-        self::UNIT_LITER => [
-            '0.90' => 720,
-            '2.50' => 180,
-            '3.60' => 180,
-            // 5 Liter menyamai 5 Kg (180) — wadahnya sebesar itu juga secara
-            // fisik. Ditambahkan setelah data produksi nyata memuat kemasan
-            // 5 Ltr (LUXATHERM, LUXOL) yang belum tercakup aturan awal.
-            '5.00' => 180,
-            '15.00' => 40,
-            '18.00' => 27,
-            '20.00' => 27,
-        ],
-        self::UNIT_KILOGRAM => [
-            '0.90' => 720,
-            '1.00' => 720,
-            '4.00' => 180,
-            '5.00' => 180,
-            '18.00' => 36,
-            '20.00' => 36,
-            '25.00' => 36,
-        ],
-    ];
+    private const CACHE_KEY = 'wms.pallet_capacity_rules';
 
     /**
-     * Kapasitas palet untuk satu kombinasi satuan + ukuran.
+     * Kapasitas palet untuk satu kombinasi satuan + ukuran (+ wadah).
      *
+     * @param  string|null  $uom  wadahnya (PAIL/TIN/...). Bila diisi dan ada
+     *                            aturan khusus untuknya, aturan itu yang dipakai.
      * @return int|null NULL bila kombinasinya tidak ada dalam aturan gudang
      */
-    public static function resolve(?string $unit, int|float|string|null $size): ?int
+    public static function resolve(?string $unit, int|float|string|null $size, ?string $uom = null): ?int
     {
         if ($unit === null || $size === null || $size === '') {
             return null;
         }
 
-        $unit = strtoupper(trim($unit));
+        $aturan = self::aturan();
 
-        if (! isset(self::RULES[$unit])) {
-            return null;
+        $unit = mb_strtoupper(trim($unit));
+        $ukuran = self::kunciUkuran($size);
+
+        // Yang menyebut wadah lebih dulu: aturan khusus mengalahkan yang umum.
+        if ($uom !== null && $uom !== '') {
+            $khusus = $aturan[$unit.'|'.$ukuran.'|'.mb_strtoupper(trim($uom))] ?? null;
+
+            if ($khusus !== null) {
+                return $khusus;
+            }
         }
 
-        return self::RULES[$unit][number_format((float) $size, 2, '.', '')] ?? null;
+        return $aturan[$unit.'|'.$ukuran.'|'] ?? null;
     }
 
     /**
      * Daftar ukuran yang dikenal untuk satu satuan — dipakai pesan bantuan di
-     * form agar Manager tahu ukuran apa saja yang terhitung otomatis.
+     * form agar yang mengisi tahu ukuran apa saja yang terhitung otomatis.
      *
      * @return list<string>
      */
     public static function knownSizes(string $unit): array
     {
-        return array_keys(self::RULES[strtoupper($unit)] ?? []);
+        $unit = mb_strtoupper(trim($unit));
+        $hasil = [];
+
+        foreach (array_keys(self::aturan()) as $kunci) {
+            [$satuan, $ukuran] = explode('|', $kunci);
+
+            if ($satuan === $unit) {
+                $hasil[$ukuran] = true;
+            }
+        }
+
+        $hasil = array_keys($hasil);
+        sort($hasil, SORT_NATURAL);
+
+        return $hasil;
     }
 
     /**
@@ -106,5 +119,49 @@ class PalletCapacity
         }
 
         return $pallets;
+    }
+
+    public static function lupakan(): void
+    {
+        Cache::forget(self::CACHE_KEY);
+    }
+
+    /** Ukuran dijadikan string 3 desimal supaya 20 dan 20.000 dianggap sama. */
+    public static function kunciUkuran(int|float|string $size): string
+    {
+        return number_format((float) $size, 3, '.', '');
+    }
+
+    /* -------------------------------------------------------------- Dalam */
+
+    /**
+     * Seluruh aturan, berkunci "SATUAN|UKURAN|WADAH".
+     *
+     * Wadah kosong berarti aturan umum, jadi kuncinya berakhir dengan "|".
+     *
+     * @return array<string, int>
+     */
+    private static function aturan(): array
+    {
+        try {
+            return Cache::rememberForever(self::CACHE_KEY, function (): array {
+                $hasil = [];
+
+                foreach (PalletCapacityRule::query()->get() as $baris) {
+                    $kunci = $baris->pack_unit
+                        .'|'.self::kunciUkuran($baris->pack_size)
+                        .'|'.($baris->uom === null ? '' : mb_strtoupper($baris->uom));
+
+                    $hasil[$kunci] = (int) $baris->max_qty_per_pallet;
+                }
+
+                return $hasil;
+            });
+        } catch (Throwable) {
+            // Tabelnya belum ada (migrasi baru), atau basis datanya sedang
+            // bermasalah. Kapasitas yang gagal dibaca terbaca sebagai "belum
+            // diketahui" — dan itu memang keadaan yang sudah ditangani layar.
+            return [];
+        }
     }
 }

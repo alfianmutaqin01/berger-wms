@@ -220,8 +220,8 @@
                                     // sebagai satu kesatuan.
                                     $awalKelompok = $detail->production_order_no !== $nomorProduksiSebelumnya;
                                     $nomorProduksiSebelumnya = $detail->production_order_no;
-                                    $penuh = $detail->product?->max_qty_per_pallet
-                                        && $detail->pallet_qty === $detail->product->max_qty_per_pallet;
+                                    $kapasitas = $detail->product?->kapasitasPalet();
+                                    $penuh = $kapasitas && $detail->pallet_qty === $kapasitas;
                                 @endphp
                                 <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }}">
                                     <td class="font-monospace small text-muted text-nowrap">
@@ -239,7 +239,7 @@
                                         {{-- Palet penuh vs palet sisa dibedakan agar
                                              terlihat mana yang belum terisi penuh. --}}
                                         <span class="badge border px-2 py-1 {{ $penuh ? 'bg-primary-subtle text-primary border-primary' : 'bg-warning-subtle text-warning-emphasis border-warning' }}">
-                                            {{ number_format($detail->pallet_qty) }} / {{ number_format($detail->product?->max_qty_per_pallet ?? 0) }}
+                                            {{ number_format($detail->pallet_qty) }} / {{ number_format($kapasitas ?? 0) }}
                                         </span>
                                     </td>
                                     <td class="text-nowrap">

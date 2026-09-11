@@ -205,11 +205,26 @@
                                     <td class="text-end font-monospace text-muted">{{ $product->net_weight !== null ? number_format((float) $product->net_weight, 2) : '—' }}</td>
                                     <td class="text-end font-monospace text-muted">{{ $product->gross_weight !== null ? number_format((float) $product->gross_weight, 2) : '—' }}</td>
                                     <td class="text-center">
+                                        {{-- DARI MANA ANGKANYA IKUT DISEBUT. Angka yang
+                                             sama bisa berasal dari aturan ukuran (berlaku
+                                             untuk semua produk seukuran) atau dari
+                                             pengecualian yang diketik untuk produk ini
+                                             saja — dan yang mau mengubahnya perlu tahu
+                                             yang mana, karena tempat mengubahnya berbeda. --}}
+                                        @php($kapasitas = $product->kapasitasPalet())
                                         @if($product->max_qty_per_pallet)
                                             <span class="fw-bold text-dark">{{ number_format($product->max_qty_per_pallet) }}</span>
+                                            <div class="small text-muted" title="Diketik khusus untuk produk ini, mengalahkan aturan ukurannya.">
+                                                khusus
+                                            </div>
+                                        @elseif($kapasitas)
+                                            <span class="fw-bold text-dark">{{ number_format($kapasitas) }}</span>
+                                            <div class="small text-muted" title="Mengikuti aturan ukuran di Pengaturan → Kapasitas Palet.">
+                                                aturan
+                                            </div>
                                         @else
                                             <span class="badge bg-warning-subtle text-warning-emphasis border border-warning text-nowrap"
-                                                  title="Ukuran kemasan tidak ada di aturan palet gudang. Mohon isi manual.">
+                                                  title="Ukuran kemasan ini belum ada aturannya. Tambahkan di Pengaturan → Kapasitas Palet agar seluruh produk seukuran ikut terisi, atau isi manual di sini untuk produk ini saja.">
                                                 <i class="bi bi-exclamation-triangle"></i> Belum diisi
                                             </span>
                                         @endif
@@ -406,8 +421,12 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold text-secondary">Maks per Palet</label>
-                            <input type="number" name="max_qty_per_pallet" id="inpPallet" class="form-control" placeholder="otomatis" min="1">
-                            <div class="form-text">Kosongkan agar dihitung otomatis.</div>
+                            <input type="number" name="max_qty_per_pallet" id="inpPallet" class="form-control" placeholder="ikut aturan ukuran" min="1">
+                            <div class="form-text">
+                                Kosongkan agar mengikuti <strong>aturan ukuran</strong>. Isi hanya bila produk
+                                ini memang berbeda dari produk lain seukurannya — angka di sini mengalahkan
+                                aturannya dan tidak ikut berubah saat aturan diperbarui.
+                            </div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold text-secondary">Masa Simpan (bulan) *</label>

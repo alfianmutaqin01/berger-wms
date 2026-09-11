@@ -103,18 +103,37 @@ class Product extends Model
      */
     public function resolvePalletCapacity(): ?int
     {
-        return PalletCapacity::resolve($this->pack_unit, $this->pack_size);
+        return PalletCapacity::resolve($this->pack_unit, $this->pack_size, $this->uom);
     }
 
     /**
-     * Produk yang kapasitas paletnya belum diketahui.
+     * Kapasitas palet yang BERLAKU untuk produk ini.
      *
-     * Ditandai di layar agar Manager melengkapinya, karena aturan pemecahan
-     * palet otomatis (PRD §7.1) tidak bisa jalan tanpa angka ini.
+     * SATU-SATUNYA angka yang boleh dipakai menghitung palet. Urutannya:
+     * nilai yang diketik orang di Master Produk menang, sisanya mengikuti
+     * aturan di Setelan Operasional.
+     *
+     * `max_qty_per_pallet` dulu berisi SALINAN hasil aturan yang diambil saat
+     * produk disimpan. Artinya sudah berubah: sekarang ia PENGECUALIAN — diisi
+     * hanya kalau produk ini memang berbeda dari aturan ukurannya. Salinan
+     * lama yang identik sudah dikosongkan (lihat migrasi
+     * 2026_10_10_000001), supaya mengubah aturan benar-benar sampai ke
+     * produknya alih-alih berhenti di seribu salinan.
+     */
+    public function kapasitasPalet(): ?int
+    {
+        return $this->max_qty_per_pallet ?? $this->resolvePalletCapacity();
+    }
+
+    /**
+     * Produk yang kapasitas paletnya belum diketahui — dari mana pun.
+     *
+     * Ditandai di layar agar dilengkapi, karena aturan pemecahan palet
+     * otomatis (PRD §7.1) tidak bisa jalan tanpa angka ini.
      */
     public function needsPalletCapacity(): bool
     {
-        return $this->max_qty_per_pallet === null;
+        return $this->kapasitasPalet() === null;
     }
 
     /*
@@ -126,6 +145,25 @@ class Product extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Produk yang kapasitas paletnya tidak bisa dijawab siapa pun.
+     *
+     * Pasangan query dari needsPalletCapacity(). Ditulis sebagai satu query
+     * alih-alih memuat seluruh produk lalu menyaringnya di PHP: layar Master
+     * Produk menghitungnya untuk ribuan baris sekaligus.
+     */
+    public function scopeTanpaKapasitasPalet(Builder $query): Builder
+    {
+        return $query
+            ->whereNull('max_qty_per_pallet')
+            ->whereNotExists(fn ($q) => $q
+                ->selectRaw('1')
+                ->from('pallet_capacity_rules as r')
+                ->whereColumn('r.pack_size', 'products.pack_size')
+                ->whereRaw('r.pack_unit = UPPER(TRIM(products.pack_unit))')
+                ->whereRaw('(r.uom IS NULL OR r.uom = UPPER(TRIM(products.uom)))'));
     }
 
     /** Pencarian bebas pada SKU dan nama produk (ILIKE = tidak peka huruf besar/kecil). */

@@ -144,7 +144,7 @@ class InboundController extends Controller
 
         $details = $header->details()
             ->with([
-                'product:id,sku,name,uom,max_qty_per_pallet',
+                'product:id,sku,name,uom,pack_unit,pack_size,max_qty_per_pallet',
                 'location:id,code',
                 'qtyAdjustedBy:id,full_name',
                 'putawayBy:id,full_name',
@@ -862,7 +862,7 @@ class InboundController extends Controller
         WarehouseScope::assert($header->warehouse_id, $request->user());
 
         $details = $header->details()
-            ->with(['product:id,sku,name,uom,max_qty_per_pallet', 'location:id,code'])
+            ->with(['product:id,sku,name,uom,pack_unit,pack_size,max_qty_per_pallet', 'location:id,code'])
             ->orderBy('production_order_no')
             ->orderBy('pallet_no')
             ->get();
@@ -920,7 +920,7 @@ class InboundController extends Controller
             'pallets.*.qty_actual' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
-        $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
+        $details = $header->details()->with('product:id,uom,pack_unit,pack_size,max_qty_per_pallet')->get()->keyBy('id');
         $allocator = BinAllocator::forWarehouse($header->warehouse_id, $header->warehouse?->code);
 
         $errors = [];
@@ -1146,7 +1146,7 @@ class InboundController extends Controller
 
         $details = $header->details()
             ->with([
-                'product:id,sku,name,uom,max_qty_per_pallet',
+                'product:id,sku,name,uom,pack_unit,pack_size,max_qty_per_pallet',
                 'location:id,code',
                 'putawayBy:id,full_name',
                 'verifiedBy:id,full_name',
@@ -1219,7 +1219,7 @@ class InboundController extends Controller
             'pallets.*.qty_actual' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
-        $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
+        $details = $header->details()->with('product:id,uom,pack_unit,pack_size,max_qty_per_pallet')->get()->keyBy('id');
         $allocator = BinAllocator::forWarehouse($header->warehouse_id, $header->warehouse?->code);
 
         $errors = [];

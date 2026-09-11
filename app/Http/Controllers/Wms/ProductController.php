@@ -58,7 +58,7 @@ class ProductController extends Controller
                 'total' => Product::count(),
                 'active' => Product::where('is_active', true)->count(),
                 'inactive' => Product::where('is_active', false)->count(),
-                'no_pallet' => Product::whereNull('max_qty_per_pallet')->count(),
+                'no_pallet' => Product::tanpaKapasitasPalet()->count(),
             ],
             'filters' => $filters,
         ]);

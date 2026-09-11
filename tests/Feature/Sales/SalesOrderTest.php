@@ -183,17 +183,39 @@ class SalesOrderTest extends TestCase
     public function test_form_tidak_pernah_mengirim_angka_stok(): void
     {
         $this->loginAs();
-        $produk = $this->produk();
-        $this->stok($produk, 137);
 
-        $this->get('/sales/new-order')->assertOk()->assertDontSee('137');
+        /*
+         * ANGKA STOKNYA SENGAJA DIBUAT TIDAK MUNGKIN TERTUKAR.
+         *
+         * Dulu angkanya 137 dan SKU-nya dari factory — yang berbentuk
+         * ID1-F00##3###2## dengan digit acak. "137" bisa muncul di dalam SKU
+         * itu, atau di dalam `id` produk yang ikut terkirim di JSON, murni
+         * kebetulan: test-nya gagal bukan karena angka stok bocor, melainkan
+         * karena tiga digit yang kebetulan sama muncul di tempat lain. Nomor
+         * urut produk memang merangkak naik sepanjang suite (rollback
+         * transaksi tidak mengembalikan sequence Postgres), jadi kelas test
+         * baru saja sudah cukup memindahkannya ke kisaran yang bertabrakan.
+         *
+         * SKU dipatok dan angka stoknya dibuat enam digit yang tidak akan
+         * pernah jadi id maupun bagian SKU, sehingga yang tersisa hanya satu
+         * kemungkinan: angka itu memang bocor ke layar.
+         */
+        $produk = $this->produk(['sku' => 'ID1-F00990099009', 'name' => 'Royale Semi Blind Putih']);
+        $this->stok($produk, 987654);
+
+        $this->get('/sales/new-order')->assertOk()->assertDontSee('987654');
 
         // Endpoint pencarian adalah SATU-SATUNYA tempat Sales melihat
         // ketersediaan, jadi aturan Semi-Blind ditegakkan di sana juga.
         $hasil = $this->getJson('/sales/lookup/products?q='.$produk->sku.'&warehouse_id='.$this->warehouse->id);
 
-        $hasil->assertOk()->assertDontSee('137');
+        $hasil->assertOk()->assertDontSee('987654');
         $this->assertSame('available', $hasil->json('0.indicator'));
+
+        // Dan tidak ada satu pun kunci yang membawa angkanya, apa pun namanya.
+        foreach (['qty', 'qty_available', 'available', 'stock', 'qty_on_hand'] as $kunci) {
+            $this->assertArrayNotHasKey($kunci, $hasil->json('0'));
+        }
     }
 
     /* -------------------------------------------------------- Pencarian */

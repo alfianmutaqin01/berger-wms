@@ -119,14 +119,14 @@ return new class extends Migration
         // TEPAT SATU JENIS PER BARIS. Baris yang menunjuk keduanya akan
         // dikurangi dua kali dari rak; baris yang tidak menunjuk apa pun
         // mengambil barang yang tidak dituntut siapa pun.
-        DB::statement("
+        DB::statement('
             ALTER TABLE picking_list_items
             ADD CONSTRAINT picking_list_items_satu_jenis_pekerjaan
             CHECK (
                 (sales_order_id IS NOT NULL AND sales_order_detail_id IS NOT NULL AND stock_transfer_detail_id IS NULL)
                 OR (sales_order_id IS NULL AND sales_order_detail_id IS NULL AND stock_transfer_detail_id IS NOT NULL)
             )
-        ");
+        ');
 
         DB::statement('CREATE INDEX picking_list_items_stock_transfer_detail_id_index
             ON picking_list_items (stock_transfer_detail_id)');

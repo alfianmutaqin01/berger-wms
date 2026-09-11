@@ -86,7 +86,7 @@
                                     @endphp
                                     <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }}"
                                         data-product-id="{{ $detail->product_id }}"
-                                        data-capacity="{{ $detail->product?->max_qty_per_pallet }}"
+                                        data-capacity="{{ $detail->product?->kapasitasPalet() }}"
                                         data-uom="{{ $detail->product?->uom }}">
                                         <td class="text-center text-nowrap">
                                             <span class="fw-bold">#{{ $detail->pallet_no }}</span>

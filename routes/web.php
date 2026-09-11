@@ -21,6 +21,7 @@ use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OrderApprovalController;
 use App\Http\Controllers\Wms\OutstandingController;
+use App\Http\Controllers\Wms\PalletCapacityController;
 use App\Http\Controllers\Wms\PickingController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProfileController;
@@ -542,6 +543,20 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.admin.settings');
             Route::post('/settings', [AdminController::class, 'updateSettings'])
                 ->name('wms.admin.settings.update');
+
+            // Kapasitas palet: berapa muat di satu palet, menurut ukurannya.
+            // Halaman sendiri karena bentuknya DAFTAR yang bisa bertambah,
+            // bukan angka tunggal seperti setelan lain — memaksanya masuk ke
+            // formulir setelan berarti satu formulir yang isiannya berubah
+            // jumlah tiap kali ada ukuran baru.
+            Route::get('/pallet-capacity', [PalletCapacityController::class, 'index'])
+                ->name('wms.admin.pallet-capacity');
+            Route::post('/pallet-capacity', [PalletCapacityController::class, 'store'])
+                ->name('wms.admin.pallet-capacity.store');
+            Route::put('/pallet-capacity/{rule}', [PalletCapacityController::class, 'update'])
+                ->name('wms.admin.pallet-capacity.update');
+            Route::delete('/pallet-capacity/{rule}', [PalletCapacityController::class, 'destroy'])
+                ->name('wms.admin.pallet-capacity.destroy');
         });
 
         // Log aktivitas — SUPER ADMIN SAJA, dan HANYA BACA. Tidak ada rute

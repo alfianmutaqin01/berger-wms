@@ -87,6 +87,27 @@
     </div>
 </form>
 
+{{-- Setelan yang bentuknya DAFTAR, bukan angka tunggal, punya halamannya
+     sendiri — memaksanya masuk ke formulir di atas berarti satu formulir yang
+     jumlah isiannya berubah tiap kali ada ukuran baru. --}}
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body p-3 p-md-4 d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div>
+            <h6 class="fw-bold text-dark mb-1">
+                <i class="bi bi-stack text-primary me-2"></i>Kapasitas Palet
+            </h6>
+            <p class="text-muted small mb-0">
+                Berapa banyak muat di satu palet, menurut ukuran kemasannya — mis. <strong>20 L PAIL = 36</strong>.
+                Satu angka berlaku untuk seluruh produk seukuran, termasuk produk yang belum dibuat.
+                Angka ini yang dipakai memecah hasil produksi jadi palet dan membaca isi rak.
+            </p>
+        </div>
+        <a href="{{ route('wms.admin.pallet-capacity') }}" class="btn btn-outline-primary rounded-3 text-nowrap">
+            Atur Kapasitas Palet <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+    </div>
+</div>
+
 {{-- Dikatakan apa adanya, supaya tidak ada yang mencari tombol yang memang
      sengaja tidak dibuat. --}}
 <div class="card border-0 shadow-sm rounded-4">
