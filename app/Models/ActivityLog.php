@@ -107,6 +107,27 @@ class ActivityLog extends Model
 
     /* ------------------------------------------------- Transfer (Fase 9) */
 
+    /*
+     | MRF — permintaan material Produksi. Enam jenis, karena enam keputusan
+     | berbeda yang masing-masing punya pelakunya sendiri. MRF_APPROVER_DECIDE
+     | adalah satu-satunya selain EPOD_CONFIRM yang pelakunya BUKAN pengguna
+     | sistem: atasan yang menyetujui lewat tautan WhatsApp tidak punya akun,
+     | jadi yang tersisa sebagai jejak hanyalah nama, nomor, dan IP-nya.
+     */
+    public const MRF_CREATE = 'mrf.create';
+
+    public const MRF_APPROVER_DECIDE = 'mrf.approver_decide';
+
+    public const MRF_LOGISTICS_APPROVE = 'mrf.logistics_approve';
+
+    public const MRF_LOGISTICS_REJECT = 'mrf.logistics_reject';
+
+    public const MRF_RECEIVE = 'mrf.receive';
+
+    public const MRF_CONSUME = 'mrf.consume';
+
+    public const MRF_CANCEL = 'mrf.cancel';
+
     public const TRANSFER_CREATE = 'transfer.create';
 
     public const TRANSFER_RECEIVE = 'transfer.receive';
@@ -181,6 +202,13 @@ class ActivityLog extends Model
         self::PROOF_VERIFY => 'Sahkan Bukti Surat Jalan',
         self::PROOF_REJECT => 'Tolak Bukti Surat Jalan',
         self::RETURN_REPORT => 'Lapor Penolakan Customer',
+        self::MRF_CREATE => 'Buat Permintaan Material',
+        self::MRF_APPROVER_DECIDE => 'Keputusan Atasan atas MRF (WhatsApp)',
+        self::MRF_LOGISTICS_APPROVE => 'Setujui Permintaan Material',
+        self::MRF_LOGISTICS_REJECT => 'Tolak Permintaan Material',
+        self::MRF_RECEIVE => 'Terima Material di Produksi',
+        self::MRF_CONSUME => 'Catat Pemakaian Material',
+        self::MRF_CANCEL => 'Batalkan Permintaan Material',
         self::TRANSFER_CREATE => 'Buat Transfer Gudang',
         self::TRANSFER_RECEIVE => 'Terima Transfer Gudang',
         self::USER_CREATE => 'Tambah Pengguna',

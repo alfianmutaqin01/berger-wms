@@ -88,6 +88,21 @@ class PickingList extends Model
         return $this->hasOne(StockTransfer::class);
     }
 
+    /**
+     * Permintaan material Produksi (MRF) yang dikerjakan daftar ini.
+     *
+     * Jenis pekerjaan KETIGA, sesudah pesanan pelanggan dan transfer antar
+     * gudang — dan sama seperti keduanya, satu daftar hanya mengerjakan satu
+     * jenis. Alasannya tetap alasan dermaga: barang MRF tidak naik kendaraan
+     * mana pun, ia ditaruh di rak serah terima untuk diambil Produksi.
+     * Mencampurnya dengan barang yang menunggu truk membuat material produksi
+     * ikut berangkat ke pelanggan, dan itu baru ketahuan setelah truknya jauh.
+     */
+    public function requisition(): HasOne
+    {
+        return $this->hasOne(MaterialRequisition::class, 'picking_list_id');
+    }
+
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

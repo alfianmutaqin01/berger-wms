@@ -1,0 +1,200 @@
+@extends('layouts.wms')
+
+@section('title', 'Material di Tangan Produksi')
+@section('page_title', 'Material di Tangan Produksi')
+
+@section('content')
+{{-- LAYAR YANG MENJAWAB PERTANYAAN YANG SELAMA INI TIDAK PUNYA JAWABAN.
+
+     Dari 300 pcs yang diminta untuk direproses, baru 150 yang dikerjakan —
+     dan sisa 150 itu hanya diingat, sampai ingatannya habis. Di sini sisa itu
+     punya baris, punya umur, dan punya tanggal.
+
+     YANG PALING LAMA DI ATAS, bukan yang terbaru. Yang berbahaya justru yang
+     tua; daftar yang menaruh yang terbaru di atas akan menenggelamkannya
+     persis saat ia paling perlu dilihat. --}}
+
+@foreach(['success' => 'check-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
+    @if(session($jenis))
+    <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} alert-dismissible fade show border-0 shadow-sm rounded-3">
+        <i class="bi bi-{{ $ikon }} me-2"></i>{{ session($jenis) }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    @endif
+@endforeach
+
+<div class="row g-3 mb-3">
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body">
+                <div class="fs-3 fw-bold">{{ number_format($stats['baris_berjalan']) }}</div>
+                <small class="text-muted">Batch yang masih ada sisanya</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body">
+                <div class="fs-3 fw-bold text-primary">{{ number_format($stats['unit_sisa']) }}</div>
+                <small class="text-muted">Unit belum dipakai</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100 {{ $stats['menunggak'] > 0 ? 'border border-2 border-danger' : '' }}">
+            <div class="card-body">
+                <div class="fs-3 fw-bold {{ $stats['menunggak'] > 0 ? 'text-danger' : '' }}">
+                    {{ number_format($stats['menunggak']) }}
+                </div>
+                <small class="text-muted">Lebih dari {{ $ambangMenunggak }} hari belum habis</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-4">
+    <div class="card-body">
+        <form method="GET" class="row g-2 mb-3">
+            <div class="col-12 col-md-5">
+                <input type="search" name="search" value="{{ $filters['search'] }}" class="form-control form-control-sm rounded-3"
+                       placeholder="Cari SKU, batch, nomor MRF, atau lokasi…">
+            </div>
+            <div class="col-6 col-md-3">
+                <select name="keadaan" class="form-select form-select-sm rounded-3">
+                    <option value="berjalan" @selected($filters['keadaan'] === 'berjalan')>Masih ada sisa</option>
+                    <option value="habis" @selected($filters['keadaan'] === 'habis')>Sudah habis</option>
+                    <option value="semua" @selected($filters['keadaan'] === 'semua')>Semua</option>
+                </select>
+            </div>
+            @if($gudangOptions->count() > 1)
+            <div class="col-6 col-md-2">
+                <select name="warehouse_id" class="form-select form-select-sm rounded-3">
+                    <option value="">Semua gudang</option>
+                    @foreach($gudangOptions as $g)
+                        <option value="{{ $g->id }}" @selected($filters['warehouse_id'] == $g->id)>{{ $g->code }}</option>
+                    @endforeach
+                </select>
+            </div>
+            @endif
+            <div class="col-12 col-md-auto d-flex gap-2">
+                <button class="btn btn-sm btn-outline-secondary rounded-3">Terapkan</button>
+                <a href="{{ route('wms.material-produksi.index') }}" class="btn btn-sm btn-link text-decoration-none">Reset</a>
+            </div>
+        </form>
+
+        @forelse($halaman as $holding)
+        @php($menunggak = ! $holding->sudahHabis() && $holding->umur_hari >= $ambangMenunggak)
+        <div class="border rounded-4 p-3 mb-3 {{ $menunggak ? 'border-danger border-2' : '' }}">
+            <div class="row g-3 align-items-start">
+                <div class="col-12 col-lg-5">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="font-monospace fw-semibold">{{ $holding->product?->sku }}</span>
+                        @if($holding->sudahHabis())
+                            <span class="badge bg-success-subtle text-success-emphasis">Habis</span>
+                        @elseif($menunggak)
+                            <span class="badge bg-danger">{{ $holding->umur_hari }} hari belum habis</span>
+                        @endif
+                    </div>
+                    <div class="small text-muted">{{ $holding->product?->name }}</div>
+                    <div class="small text-muted mt-1">
+                        Batch <span class="font-monospace">{{ $holding->batch_no ?? '—' }}</span>
+                        · di <strong>{{ $holding->production_area }}</strong>
+                    </div>
+                    <div class="small text-muted">
+                        Dari <a href="{{ route('wms.mrf.show', $holding->material_requisition_id) }}" class="font-monospace">{{ $holding->requisition?->mrf_number }}</a>
+                        ({{ $holding->requisition?->requestedBy?->full_name ?? '—' }})
+                    </div>
+                </div>
+
+                <div class="col-6 col-lg-3">
+                    <div class="d-flex justify-content-between small text-muted">
+                        <span>Diterima</span><span>{{ number_format($holding->qty_received) }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between small text-muted">
+                        <span>Dipakai</span><span>{{ number_format($holding->qty_consumed) }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between fw-bold border-top pt-1 mt-1">
+                        <span>Sisa</span>
+                        <span class="{{ $holding->qty_sisa > 0 ? 'text-primary' : 'text-success' }}">
+                            {{ number_format($holding->qty_sisa) }}
+                        </span>
+                    </div>
+                    <div class="progress mt-2" style="height:6px">
+                        <div class="progress-bar bg-success"
+                             style="width: {{ $holding->qty_received > 0 ? round($holding->qty_consumed / $holding->qty_received * 100) : 0 }}%"></div>
+                    </div>
+                </div>
+
+                <div class="col-6 col-lg-4">
+                    @if(! $holding->sudahHabis())
+                    <form method="POST" action="{{ route('wms.material-produksi.consume', $holding) }}" class="d-flex gap-2 align-items-start">
+                        @csrf
+                        <div class="flex-grow-1">
+                            <input type="number" name="qty" class="form-control form-control-sm rounded-3 mb-1"
+                                   min="1" max="{{ $holding->qty_sisa }}" required
+                                   placeholder="Berapa yang dipakai?">
+                            <input type="text" name="note" class="form-control form-control-sm rounded-3" maxlength="500"
+                                   placeholder="Keterangan (opsional)">
+                        </div>
+                        <div class="d-grid gap-1">
+                            <button class="btn btn-sm btn-primary rounded-3 text-nowrap">Catat</button>
+                            <button class="btn btn-sm btn-outline-primary rounded-3 text-nowrap pakaiSemua"
+                                    data-sisa="{{ $holding->qty_sisa }}" type="button">
+                                Pakai Semua Sisa
+                            </button>
+                        </div>
+                    </form>
+                    @else
+                    <div class="small text-muted">
+                        Habis pada {{ $holding->finished_at?->format('d/m/Y') }}.
+                    </div>
+                    @endif
+
+                    @if($holding->consumptions->isNotEmpty())
+                    <details class="mt-2">
+                        <summary class="small text-muted" style="cursor:pointer">
+                            Riwayat pemakaian ({{ $holding->consumptions->count() }}&times;)
+                        </summary>
+                        <ul class="list-unstyled small mt-2 mb-0">
+                            <li class="text-muted">
+                                <i class="bi bi-dot"></i>
+                                {{ $holding->received_at->format('d/m/Y') }} — masuk Produksi
+                                <strong>{{ number_format($holding->qty_received) }}</strong>
+                            </li>
+                            @foreach($holding->consumptions as $pakai)
+                            <li class="text-muted">
+                                <i class="bi bi-dot"></i>
+                                {{ $pakai->consumed_at->format('d/m/Y') }} — dipakai
+                                <strong>{{ number_format($pakai->qty) }}</strong>
+                                @if(filled($pakai->note)) · {{ $pakai->note }} @endif
+                            </li>
+                            @endforeach
+                        </ul>
+                    </details>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @empty
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-inboxes fs-1 d-block mb-2 opacity-25"></i>
+            Tidak ada material yang cocok dengan penyaring ini.
+        </div>
+        @endforelse
+
+        <div class="mt-3">{{ $halaman->links() }}</div>
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<script>
+document.querySelectorAll('.pakaiSemua').forEach(function (tombol) {
+    tombol.addEventListener('click', function () {
+        const form = tombol.closest('form');
+        form.querySelector('input[name=qty]').value = tombol.dataset.sisa;
+        form.submit();
+    });
+});
+</script>
+@endpush

@@ -128,6 +128,24 @@ class PickingListBuilder
                 ));
             }
 
+            /*
+             * DAFTAR MRF JUGA TIDAK, dan alasannya sama persis. Barangnya
+             * tercadang untuk Produksi; membubarkan daftarnya dari sini
+             * meninggalkan permintaan yang "menunggu picking" tanpa ada yang
+             * bisa mengerjakannya, dan stok yang terkunci tanpa keterangan.
+             */
+            $mrf = $terkunci->requisition()->first();
+
+            if ($mrf !== null) {
+                throw new RuntimeException(sprintf(
+                    'Daftar %s adalah tugas permintaan material Produksi %s, bukan daftar pesanan. '.
+                    'Membubarkannya dari sini akan meninggalkan barangnya tercadang di rak tanpa ada yang bisa mengambilnya. '.
+                    'Batalkan permintaannya lewat menu MRF — cadangannya dilepas dan daftar ini ikut bubar.',
+                    $terkunci->list_number,
+                    $mrf->mrf_number,
+                ));
+            }
+
             // Barisnya dihapus, bukan disimpan sebagai riwayat: tidak ada
             // kejadian fisik apa pun yang perlu ditelusuri — belum ada satu
             // barang pun yang turun dari rak. Yang tersisa hanyalah rencana

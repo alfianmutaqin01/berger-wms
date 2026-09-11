@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ReportPickingShortageRequest;
 use App\Http\Requests\Wms\StorePickingListRequest;
 use App\Models\ActivityLog;
+use App\Models\Location;
+use App\Models\MaterialRequisition;
 use App\Models\Notification;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
@@ -21,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use RuntimeException;
 
@@ -82,7 +85,8 @@ class PickingController extends Controller
             ->when($gudang, fn ($q, $id) => $q->where('warehouse_id', $id))
             ->with(['warehouse:id,code,name', 'createdBy:id,full_name', 'claimedBy:id,full_name',
                 'transfer:id,picking_list_id,transfer_number,to_warehouse_id',
-                'transfer.toWarehouse:id,code,name'])
+                'transfer.toWarehouse:id,code,name',
+                'requisition:id,picking_list_id,mrf_number,request_type'])
             ->withCount(['orders', 'items'])
             // Yang masih perlu dikerjakan selalu di atas.
             ->orderByRaw("CASE WHEN status IN ('open', 'picking') THEN 0 ELSE 1 END")
@@ -162,7 +166,8 @@ class PickingController extends Controller
             // berakhir di kendaraan yang berbeda.
             ->with(['warehouse:id,code,name', 'claimedBy:id,full_name',
                 'transfer:id,picking_list_id,transfer_number,to_warehouse_id',
-                'transfer.toWarehouse:id,code,name'])
+                'transfer.toWarehouse:id,code,name',
+                'requisition:id,picking_list_id,mrf_number,request_type'])
             ->withCount(['orders', 'items'])
             ->orderBy('created_at')
             ->get();
@@ -185,6 +190,7 @@ class PickingController extends Controller
             // ia bawa, bukan cuma tersimpan di layar Logistik.
             ->with(['product:id,sku,name,uom', 'location:id,code', 'salesOrder.customer:id,code,name',
                 'transferDetail:id,stock_transfer_id,qty_requested',
+                'allocation:id,material_requisition_id,qty_allocated',
                 'stock:id,prioritize_out,prioritize_reason'])
             // Urutan berjalan operator: menurut kode rak, dari A ke belakang
             // (F-OUT-03 #3). Diurutkan lewat join supaya yang menentukan
@@ -199,7 +205,8 @@ class PickingController extends Controller
             'list' => $list->load(['warehouse:id,code,name', 'createdBy:id,full_name',
                 'claimedBy:id,full_name', 'completedBy:id,full_name',
                 'orders.customer:id,code,name',
-                'transfer.toWarehouse:id,code,name', 'transfer.fromWarehouse:id,code,name']),
+                'transfer.toWarehouse:id,code,name', 'transfer.fromWarehouse:id,code,name',
+                'requisition.requestedBy:id,full_name']),
             'baris' => $baris,
             'ringkas' => [
                 'total' => $baris->count(),
@@ -215,6 +222,16 @@ class PickingController extends Controller
             'bolehMelepasTugas' => $list->status === PickingList::STATUS_PICKING
                 && $list->claimed_by !== $request->user()?->id
                 && Gate::allows(Permission::OUTBOUND_PICKING_LIST),
+            /*
+             | Rak yang boleh dipilih sebagai tempat serah terima MRF.
+             |
+             | Hanya dimuat untuk daftar MRF: pada daftar pesanan dan transfer
+             | barangnya naik kendaraan, dan daftar rak yang tidak pernah
+             | dipakai cuma memperberat halaman yang dibuka dari HP gudang.
+             */
+            'rakSerah' => $list->requisition()->exists()
+                ? Location::where('warehouse_id', $list->warehouse_id)->active()->orderBy('code')->get(['id', 'code'])
+                : collect(),
         ]);
     }
 
@@ -360,10 +377,47 @@ class PickingController extends Controller
     {
         WarehouseScope::assert($list->warehouse_id, $request->user());
 
+        $mrf = $list->requisition()->first();
+
+        /*
+         | DAFTAR MRF MENUNTUT SATU ISIAN LAGI: rak tempat barangnya ditaruh.
+         |
+         | Barang permintaan Produksi tidak naik kendaraan mana pun — ia
+         | berdiri di sebuah rak sampai Produksi datang mengambilnya. Tanpa rak
+         | yang disebut, Produksi harus menelepon Logistik untuk bertanya, dan
+         | kebiasaan itulah yang membuat material sering hilang dari ingatan
+         | berbulan-bulan. Divalidasi di sini supaya pesan galatnya muncul di
+         | layar operator, bukan sebagai kesalahan basis data.
+         */
+        $rakSerah = null;
+        $catatanSerah = null;
+
+        if ($mrf !== null) {
+            $data = $request->validate([
+                'handover_location_id' => [
+                    'required', 'integer',
+                    Rule::exists('locations', 'id')
+                        ->where('warehouse_id', $list->warehouse_id)
+                        ->where('is_active', true),
+                ],
+                'handover_note' => ['nullable', 'string', 'max:500'],
+            ], [
+                'handover_location_id.required' => 'Pilih dulu rak tempat barang ini ditaruh — Produksi perlu tahu harus mengambilnya ke mana.',
+                'handover_location_id.exists' => 'Rak yang dipilih tidak ada atau tidak aktif di gudang ini.',
+            ], ['handover_location_id' => 'rak serah terima']);
+
+            $rakSerah = (int) $data['handover_location_id'];
+            $catatanSerah = $data['handover_note'] ?? null;
+        }
+
         try {
-            $hasil = $this->picking->complete($list, $request->user());
+            $hasil = $this->picking->complete($list, $request->user(), $rakSerah, $catatanSerah);
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
+        }
+
+        if ($mrf !== null) {
+            return $this->selesaiMrf($mrf->refresh(), $list, $hasil);
         }
 
         // DAFTAR TRANSFER PUNYA AKHIR YANG BERBEDA. Barangnya tidak menunggu
@@ -389,6 +443,76 @@ class PickingController extends Controller
             return redirect()->route('wms.picking.queue')->with('warning', $pesan.sprintf(
                 ' %d unit TIDAK ditemukan di rak dan sudah dicatat sebagai koreksi stok — periksa di Riwayat Mutasi.',
                 $hasil['kurang']
+            ));
+        }
+
+        return redirect()->route('wms.picking.queue')->with('success', $pesan);
+    }
+
+    /**
+     * Akhir daftar picking MRF: barangnya menunggu Produksi di rak serah terima.
+     *
+     * BUKAN "selesai" dari sudut pandang siapa pun kecuali operator. Barang
+     * sudah turun dari rak dan hilang dari stok gudang, tetapi belum ada yang
+     * bertanggung jawab atasnya sampai Produksi menekan Diterima — dan justru
+     * celah itulah yang dulu menelan barang berbulan-bulan. Karena itu
+     * loncengnya dikirim sekarang juga, bukan menunggu ditanyakan.
+     *
+     * @param  array{diambil:int, kurang:int}  $hasil
+     */
+    private function selesaiMrf(MaterialRequisition $mrf, PickingList $list, array $hasil): RedirectResponse
+    {
+        $mrf->load('handoverLocation:id,code');
+        $rak = $mrf->handoverLocation?->code ?? '—';
+
+        Activity::record(
+            ActivityLog::PICKING_RELEASE,
+            sprintf(
+                'Daftar %s untuk permintaan material %s selesai: %d unit turun dari rak dan ditaruh di %s.',
+                $list->list_number,
+                $mrf->mrf_number,
+                $hasil['diambil'],
+                $rak,
+            ),
+            $mrf,
+            $mrf->warehouse_id,
+            [
+                'mrf' => $mrf->mrf_number,
+                'daftar_picking' => $list->list_number,
+                'diambil' => $hasil['diambil'],
+                'kurang' => $hasil['kurang'],
+                'rak_serah' => $rak,
+            ],
+        );
+
+        Notifier::toUser(
+            $mrf->requested_by,
+            Notification::MRF_READY_FOR_PICKUP,
+            'Material Anda siap diambil',
+            sprintf(
+                '%s: %d unit sudah turun dari rak dan menunggu di %s. Ambil lalu tekan Diterima supaya sisanya ikut terpantau.',
+                $mrf->mrf_number,
+                $hasil['diambil'],
+                $rak,
+            ),
+            route('wms.mrf.show', $mrf),
+            $mrf->warehouse_id,
+            $mrf,
+        );
+
+        $pesan = sprintf(
+            'Daftar %s selesai. %d unit untuk permintaan material %s sudah ditaruh di %s dan Produksi sudah dikabari.',
+            $list->list_number,
+            $hasil['diambil'],
+            $mrf->mrf_number,
+            $rak,
+        );
+
+        if ($hasil['kurang'] > 0) {
+            return redirect()->route('wms.picking.queue')->with('warning', $pesan.sprintf(
+                ' %d unit TIDAK ditemukan di rak, jadi Produksi menerima kurang dari yang disetujui — '.
+                'selisihnya sudah dicatat sebagai koreksi stok dan terbaca di dokumen MRF.',
+                $hasil['kurang'],
             ));
         }
 

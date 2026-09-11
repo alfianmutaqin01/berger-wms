@@ -54,6 +54,11 @@
                             <i class="bi bi-arrow-left-right me-1"></i>
                             Transfer → {{ $daftar->transfer->toWarehouse?->name ?? 'gudang lain' }}
                         </span>
+                    @elseif($daftar->requisition)
+                        <span class="badge bg-primary-subtle text-primary-emphasis border border-primary">
+                            <i class="bi bi-clipboard2-check me-1"></i>
+                            Permintaan Produksi
+                        </span>
                     @else
                         <span class="badge bg-light text-dark border">
                             <i class="bi bi-receipt text-primary me-1"></i> {{ $daftar->orders_count }} pesanan
@@ -69,6 +74,12 @@
                         <i class="bi bi-box-seam me-1"></i>
                         Kiriman <span class="font-monospace">{{ $daftar->transfer->transfer_number }}</span>.
                         Setelah Anda menekan Loading, barangnya berangkat ke gudang tujuan.
+                    </div>
+                @elseif($daftar->requisition)
+                    <div class="small text-muted mb-3">
+                        <i class="bi bi-box-seam me-1"></i>
+                        MRF <span class="font-monospace">{{ $daftar->requisition->mrf_number }}</span>.
+                        Barangnya tidak naik truk — taruh di rak serah terima, lalu sebutkan raknya saat menekan Loading.
                     </div>
                 @endif
 

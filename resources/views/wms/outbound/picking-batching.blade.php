@@ -151,6 +151,8 @@
                                     @if($daftar->transfer)
                                         Transfer {{ $daftar->transfer->transfer_number }} →
                                         {{ $daftar->transfer->toWarehouse?->code ?? 'gudang lain' }}
+                                    @elseif($daftar->requisition)
+                                        MRF {{ $daftar->requisition->mrf_number }} → Produksi
                                     @else
                                         {{ $daftar->orders_count }} pesanan
                                     @endif
@@ -171,12 +173,13 @@
                             </div>
                         </div>
 
-                        {{-- Daftar transfer TIDAK punya tombol ini. Membubarkannya
-                             dari sini meninggalkan barangnya tercadang di rak tanpa
-                             ada yang bisa mengambilnya; pintunya ada di dokumen
-                             transfernya. Ditegakkan juga di PickingListBuilder,
+                        {{-- Daftar transfer dan MRF TIDAK punya tombol ini.
+                             Membubarkannya dari sini meninggalkan barangnya
+                             tercadang di rak tanpa ada yang bisa mengambilnya;
+                             pintunya ada di dokumen transfer atau MRF-nya
+                             masing-masing. Ditegakkan juga di PickingListBuilder,
                              bukan hanya disembunyikan di layar. --}}
-                        @if($daftar->bolehDibatalkan() && ! $daftar->transfer)
+                        @if($daftar->bolehDibatalkan() && ! $daftar->transfer && ! $daftar->requisition)
                         <button type="button" class="btn btn-sm btn-outline-danger rounded-3 mt-2 tombol-batal"
                                 data-bs-toggle="modal" data-bs-target="#modalBatal"
                                 data-aksi="{{ route('wms.picking.cancel', $daftar) }}"

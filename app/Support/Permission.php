@@ -165,6 +165,37 @@ class Permission
 
     public const OUTBOUND_VERIFICATION = 'outbound.verification';
 
+    /* ------------------------------------------------------------------ MRF */
+
+    /*
+     | PERMINTAAN MATERIAL PRODUKSI (MRF) — empat izin, empat pekerjaan.
+     |
+     | Dipecah sebanyak ini bukan karena senang memecah, melainkan karena
+     | empat orang yang berbeda mengerjakan empat hal yang berbeda pada satu
+     | dokumen: Produksi meminta, Logistik memutuskan, Operator mengambilkan,
+     | Produksi menerima dan memakainya. Menyatukan MRF_CREATE dengan
+     | MRF_APPROVE berarti Produksi menyetujui permintaannya sendiri — dan
+     | seluruh gunanya persetujuan hilang di baris itu juga.
+     */
+
+    /** Menyusun dan mengirim permintaan material. */
+    public const MRF_CREATE = 'mrf.create';
+
+    /** Membaca daftar dan rincian MRF. */
+    public const MRF_VIEW = 'mrf.view';
+
+    /** Menyetujui/menolak dari sisi gudang DAN memilih batch sungguhannya. */
+    public const MRF_APPROVE = 'mrf.approve';
+
+    /**
+     * Menerima barangnya dan mencatat pemakaiannya.
+     *
+     * Milik Produksi, bukan Logistik. Sesudah diterima, barang itu ada di
+     * lantai produksi dan hanya orang di sana yang tahu berapa yang benar-
+     * benar masuk mixer hari ini.
+     */
+    public const MRF_RECEIVE = 'mrf.receive';
+
     /* -------------------------------------------------------------- Billing */
 
     public const BILLING_VIEW = 'billing.view';
@@ -276,6 +307,20 @@ class Permission
         ],
         self::OUTBOUND_DELIVERY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_VERIFICATION => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+
+        /*
+         | MRF. Operator ikut MELIHAT: daftar picking yang ia kerjakan bisa
+         | berisi permintaan material, dan tanpa akses membaca dokumennya ia
+         | mengambil barang tanpa tahu untuk siapa dan ke rak mana harus
+         | ditaruh. Yang dipisah adalah tindakannya, bukan bacaannya.
+         */
+        self::MRF_CREATE => [Role::SUPER_ADMIN, Role::PRODUCTION],
+        self::MRF_VIEW => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS,
+            Role::PRODUCTION, Role::WAREHOUSE_OPERATOR,
+        ],
+        self::MRF_APPROVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::MRF_RECEIVE => [Role::SUPER_ADMIN, Role::PRODUCTION],
 
         self::BILLING_VIEW => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 

@@ -37,7 +37,7 @@ class PickingListItem extends Model
 
     protected $fillable = [
         'picking_list_id', 'sales_order_id', 'sales_order_detail_id',
-        'stock_transfer_detail_id', 'product_id',
+        'stock_transfer_detail_id', 'material_requisition_allocation_id', 'product_id',
         'inventory_stock_id', 'location_id', 'batch_no', 'production_date',
         'qty_to_pick', 'qty_picked', 'status', 'discrepancy_reason',
         'picked_at', 'picked_by',
@@ -81,6 +81,17 @@ class PickingListItem extends Model
     public function transferDetail(): BelongsTo
     {
         return $this->belongsTo(StockTransferDetail::class, 'stock_transfer_detail_id');
+    }
+
+    /**
+     * Batch MRF yang dikerjakan baris ini — terisi HANYA pada baris MRF.
+     *
+     * Tepat satu dari tiga penunjuk pekerjaan wajib terisi (pesanan, transfer,
+     * atau MRF); ditegakkan CHECK picking_list_items_satu_jenis_pekerjaan.
+     */
+    public function allocation(): BelongsTo
+    {
+        return $this->belongsTo(MaterialRequisitionAllocation::class, 'material_requisition_allocation_id');
     }
 
     public function product(): BelongsTo

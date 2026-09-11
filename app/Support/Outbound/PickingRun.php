@@ -11,6 +11,7 @@ use App\Models\SalesOrderAllocation;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Support\Inventory\WarehouseTransfer;
+use App\Support\Production\MaterialRequisitionRun;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -218,13 +219,23 @@ class PickingRun
     /**
      * "Siap Loading" — seluruh baris sudah ditandai, stok dikurangi.
      *
+     * $rakSerah dan $catatanSerah HANYA dipakai daftar MRF, dan wajib di
+     * sana: barang permintaan Produksi tidak naik kendaraan mana pun, ia
+     * ditaruh di sebuah rak untuk diambil Produksi sendiri. Tanpa rak yang
+     * disebut, barangnya berdiri tanpa alamat — dan itulah persis kebiasaan
+     * lama yang membuat material produksi hilang dari ingatan berbulan-bulan.
+     *
      * @return array{diambil:int, kurang:int}
      *
      * @throws RuntimeException
      */
-    public function complete(PickingList $list, User $operator): array
-    {
-        return DB::transaction(function () use ($list, $operator) {
+    public function complete(
+        PickingList $list,
+        User $operator,
+        ?int $rakSerah = null,
+        ?string $catatanSerah = null,
+    ): array {
+        return DB::transaction(function () use ($list, $operator, $rakSerah, $catatanSerah) {
             $daftar = PickingList::query()->lockForUpdate()->findOrFail($list->id);
 
             $this->pastikanSedangDikerjakan($daftar, $operator);
@@ -253,7 +264,7 @@ class PickingRun
                 $kurang += $hasil['kurang'];
             }
 
-            $this->selesaikanPesanan($daftar, $operator->id);
+            $this->selesaikanPesanan($daftar, $operator->id, $rakSerah, $catatanSerah);
 
             $daftar->fill([
                 'status' => PickingList::STATUS_COMPLETED,
@@ -427,9 +438,10 @@ class PickingRun
         $dijanjikan = (int) $item->qty_to_pick;
 
         /*
-         * SATU GERAKAN, DUA DOKUMEN. Baris yang sama bisa milik pesanan
-         * pelanggan atau transfer antar gudang; yang berbeda hanya dokumen
-         * yang dirujuk dan ke mana barangnya menuju.
+         * SATU GERAKAN, TIGA DOKUMEN. Baris yang sama bisa milik pesanan
+         * pelanggan, transfer antar gudang, atau permintaan material Produksi
+         * (MRF); yang berbeda hanya dokumen yang dirujuk dan ke mana barangnya
+         * menuju.
          *
          * Rujukan mutasinya WAJIB ikut berbeda. Baris transfer yang menulis
          * reference_type 'sales_order' menunjuk pesanan yang tidak ada, dan
@@ -438,13 +450,14 @@ class PickingRun
         $transferDetail = $item->stock_transfer_detail_id === null ? null : $item->transferDetail;
         $transfer = $transferDetail?->transfer;
 
-        $refType = $transferDetail === null
-            ? StockMovement::REF_SALES_ORDER
-            : StockMovement::REF_STOCK_TRANSFER;
+        $alokasiMrf = $item->material_requisition_allocation_id === null ? null : $item->allocation;
+        $mrf = $alokasiMrf?->requisition;
 
-        $refId = $transferDetail === null
-            ? $item->sales_order_id
-            : $transferDetail->stock_transfer_id;
+        [$refType, $refId] = match (true) {
+            $transferDetail !== null => [StockMovement::REF_STOCK_TRANSFER, $transferDetail->stock_transfer_id],
+            $alokasiMrf !== null => [StockMovement::REF_MATERIAL_REQUISITION, $alokasiMrf->material_requisition_id],
+            default => [StockMovement::REF_SALES_ORDER, $item->sales_order_id],
+        };
 
         $stok = $item->inventory_stock_id === null
             ? null
@@ -487,10 +500,12 @@ class PickingRun
             'user_id' => $userId,
         ]);
 
-        // 2. Yang benar-benar keluar — menuju customer, atau menuju gudang
-        //    lain. TRANSFER_OUT bukan sekadar label yang lebih rapi: laporan
-        //    penjualan menjumlahkan OUT, dan barang yang cuma berpindah gudang
-        //    terhitung sebagai penjualan kalau ditulis dengan jenis yang sama.
+        // 2. Yang benar-benar keluar — menuju customer, menuju gudang lain,
+        //    atau menuju Produksi. JENISNYA IKUT BERBEDA, dan itu bukan
+        //    sekadar label yang lebih rapi: laporan penjualan menjumlahkan
+        //    OUT, dan barang yang cuma berpindah gudang atau diambil Produksi
+        //    untuk direproses akan terhitung sebagai penjualan kalau ditulis
+        //    dengan jenis yang sama.
         if ($diambil > 0) {
             $sebelum = $stok->qty_available;
             $stok->qty_available = $sebelum - $diambil;
@@ -500,9 +515,11 @@ class PickingRun
                 'product_id' => $item->product_id,
                 'location_id' => $stok->location_id,
                 'warehouse_id' => $stok->warehouse_id,
-                'movement_type' => $transferDetail === null
-                    ? StockMovement::TYPE_OUT
-                    : StockMovement::TYPE_TRANSFER_OUT,
+                'movement_type' => match (true) {
+                    $transferDetail !== null => StockMovement::TYPE_TRANSFER_OUT,
+                    $alokasiMrf !== null => StockMovement::TYPE_PRODUCTION_OUT,
+                    default => StockMovement::TYPE_OUT,
+                },
                 'qty_change' => -$diambil,
                 'qty_before' => $sebelum,
                 'qty_after' => $stok->qty_available,
@@ -514,11 +531,15 @@ class PickingRun
                     $daftar->list_number,
                     $diambil,
                     $item->location?->code ?? '—',
-                    $transferDetail === null
-                        ? 'loading dock'
-                        : sprintf('gudang %s (%s)',
+                    match (true) {
+                        $transferDetail !== null => sprintf('gudang %s (%s)',
                             $transfer?->toWarehouse?->name ?? 'tujuan',
                             $transfer?->transfer_number ?? '—'),
+                        $alokasiMrf !== null => sprintf('Produksi (%s, %s)',
+                            $mrf?->mrf_number ?? '—',
+                            $mrf?->jenis_label ?? 'permintaan material'),
+                        default => 'loading dock',
+                    },
                 ),
                 'user_id' => $userId,
             ]);
@@ -561,9 +582,10 @@ class PickingRun
         // baris yang tersisa membuat pesanan yang barangnya sudah di dock
         // terbaca seolah masih memegang cadangan di rak.
         //
-        // Transfer tidak punya baris alokasi tersendiri — cadangannya tercatat
-        // langsung di qty_allocated baris stok dan sudah dilepas di langkah 1.
-        if ($transferDetail === null) {
+        // Transfer dan MRF tidak punya baris alokasi tersendiri — cadangannya
+        // tercatat langsung di qty_allocated baris stok dan sudah dilepas di
+        // langkah 1.
+        if ($transferDetail === null && $alokasiMrf === null) {
             SalesOrderAllocation::query()
                 ->where('sales_order_detail_id', $item->sales_order_detail_id)
                 ->where('inventory_stock_id', $stok->id)
@@ -595,17 +617,33 @@ class PickingRun
     /**
      * Pesanan dalam daftar berpindah ke "Siap Kirim" (F-OUT-03 #6).
      *
-     * Pada daftar TRANSFER tidak ada satu pesanan pun di dalamnya, dan yang
-     * berpindah keadaan adalah transfernya: dari menunggu picking menjadi
-     * dalam perjalanan. Itulah arti tombol Loading bagi operator — sama
-     * gerakannya, dokumen yang berbeda.
+     * TIGA AKHIR YANG BERBEDA untuk satu gerakan operator yang sama:
+     *
+     *   pesanan  pesanannya jadi Siap Kirim, menunggu Surat Jalan
+     *   transfer transfernya berangkat ke gudang lain (Dalam Perjalanan)
+     *   MRF      barangnya ditaruh di rak serah terima, menunggu Produksi
+     *
+     * Itulah arti tombol Loading bagi operator — sama gerakannya, dokumen yang
+     * berbeda, dan dokumen itulah yang menentukan ke mana barangnya menuju.
      */
-    private function selesaikanPesanan(PickingList $daftar, ?int $userId): void
-    {
+    private function selesaikanPesanan(
+        PickingList $daftar,
+        ?int $userId,
+        ?int $rakSerah = null,
+        ?string $catatanSerah = null,
+    ): void {
         $transfer = $daftar->transfer()->first();
 
         if ($transfer !== null) {
             app(WarehouseTransfer::class)->loading($transfer, $daftar, $userId);
+
+            return;
+        }
+
+        $mrf = $daftar->requisition()->first();
+
+        if ($mrf !== null) {
+            app(MaterialRequisitionRun::class)->siapDiambil($mrf, $daftar, $rakSerah, $catatanSerah, $userId);
 
             return;
         }

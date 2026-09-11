@@ -163,6 +163,43 @@
                 </li>
             @endcanany
 
+            <!-- MRF — permintaan material Produksi ke Logistik -->
+            @canany([
+                \App\Support\Permission::MRF_VIEW,
+                \App\Support\Permission::MRF_RECEIVE,
+            ])
+                @php $mrfOpen = request()->is('wms/mrf*') || request()->is('wms/material-produksi*'); @endphp
+                <li class="nav-section mt-2">Produksi</li>
+                <li class="nav-item">
+                    <a class="nav-link {{ $mrfOpen ? '' : 'collapsed' }}" href="#mrfMenu" data-bs-toggle="collapse" aria-expanded="{{ $mrfOpen ? 'true' : 'false' }}">
+                        <i class="bi bi-clipboard2-check"></i>
+                        <span>Permintaan Material</span>
+                        <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
+                    </a>
+                    <ul class="collapse list-unstyled ps-4 {{ $mrfOpen ? 'show' : '' }}" id="mrfMenu" data-bs-parent=".sidebar-nav">
+                        @can(\App\Support\Permission::MRF_VIEW)
+                            {{-- Satu pintu untuk semua peran: Produksi memantau
+                                 permintaannya, Logistik mencari yang menunggu
+                                 keputusannya, Operator memastikan tugas yang ia
+                                 pegang milik siapa. Memisahnya per peran berarti
+                                 tiga layar yang isinya tabel yang sama. --}}
+                            <li class="nav-item {{ request()->is('wms/mrf') || request()->is('wms/mrf/*') ? 'active' : '' }}">
+                                <a href="/wms/mrf" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>MRF</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::MRF_RECEIVE)
+                            {{-- Milik Produksi saja. Barang di sini sudah KELUAR
+                                 dari stok gudang; yang tahu berapa yang benar-
+                                 benar masuk mixer hari ini cuma orang di lantai
+                                 produksi. --}}
+                            <li class="nav-item {{ request()->is('wms/material-produksi*') ? 'active' : '' }}">
+                                <a href="/wms/material-produksi" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Material di Tangan Produksi</span></a>
+                            </li>
+                        @endcan
+                    </ul>
+                </li>
+            @endcanany
+
             <!-- OUTBOUND -->
             @canany([
                 \App\Support\Permission::OUTBOUND_APPROVAL,

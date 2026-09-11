@@ -119,8 +119,12 @@ menyeluruh() {
 # ke suite penuh, bukan diam-diam terlewat.
 peta() {
     case "$1" in
+        # MRF didahulukan: ProductionMaterialController.php juga cocok dengan
+        # pola *Product* di bawah, dan yang pertama cocok yang menang.
+        *MaterialRequisition*|*Mrf*|*mrf*|*ProductionMaterial*|*views/wms/produksi*)
+            echo 'MaterialRequisitionTest|PickingTest|SmokeRouteTest' ;;
         *Inbound*|*inbound*)        echo 'ProductionInputTest|ProductionHistoryTest|PutawayTest|VerificationTest|BatchPriorityTest' ;;
-        *Picking*|*picking*)        echo 'PickingTest|RepeatPickingTest|StockTransferTest' ;;
+        *Picking*|*picking*)        echo 'PickingTest|RepeatPickingTest|StockTransferTest|MaterialRequisitionTest' ;;
         *Shipment*|*Delivery*|*delivery*|*Proof*) echo 'ShipmentTest|ProofOfDeliveryTest|DeliveryNoteImportTest' ;;
         *Outstanding*|*Reshipment*|*outstanding*) echo 'OutstandingHistoryTest|OutstandingReshipmentTest' ;;
         *Approval*|*Cancel*|*Rejection*|*approval*) echo 'OrderApprovalTest|OrderCancellationTest|CustomerRejectionTest' ;;

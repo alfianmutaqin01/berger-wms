@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EpodController;
+use App\Http\Controllers\MrfApprovalController;
 use App\Http\Controllers\Sales\DashboardController as SalesDashboardController;
 use App\Http\Controllers\Sales\DeliveryProofController;
 use App\Http\Controllers\Sales\SalesOrderController;
@@ -18,12 +19,14 @@ use App\Http\Controllers\Wms\InboundController;
 use App\Http\Controllers\Wms\InternalOrderController;
 use App\Http\Controllers\Wms\InventoryController;
 use App\Http\Controllers\Wms\LocationController;
+use App\Http\Controllers\Wms\MaterialRequisitionController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OrderApprovalController;
 use App\Http\Controllers\Wms\OutstandingController;
 use App\Http\Controllers\Wms\PalletCapacityController;
 use App\Http\Controllers\Wms\PickingController;
 use App\Http\Controllers\Wms\ProductController;
+use App\Http\Controllers\Wms\ProductionMaterialController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ProofVerificationController;
 use App\Http\Controllers\Wms\ReportController;
@@ -409,6 +412,74 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::post('/inventory/import/cancel', [ImportController::class, 'cancel'])
         ->defaults('type', 'opening-stock')->middleware('can:'.Permission::INVENTORY_ADJUST)
         ->name('wms.inventory.import.cancel');
+
+    /*
+    | MRF — permintaan material Produksi ke Logistik.
+    |
+    | Empat izin yang berbeda dipakai di dalam satu prefix, dan itu memang
+    | maksudnya: satu dokumen dikerjakan empat orang yang berlainan. Yang
+    | membuat tidak boleh memutus, yang memutus tidak boleh menerima.
+    |
+    | '/mrf/create' dan '/mrf/lookup/products' WAJIB didaftarkan SEBELUM
+    | '/mrf/{mrf}', kalau tidak keduanya tertangkap sebagai id permintaan.
+    */
+    Route::prefix('mrf')->group(function () {
+        Route::get('/', [MaterialRequisitionController::class, 'index'])
+            ->middleware('can:'.Permission::MRF_VIEW)
+            ->name('wms.mrf.index');
+
+        Route::get('/create', [MaterialRequisitionController::class, 'create'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.create');
+        Route::post('/', [MaterialRequisitionController::class, 'store'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.store');
+        Route::get('/lookup/products', [MaterialRequisitionController::class, 'lookupProducts'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.lookup.products');
+        Route::delete('/contacts/{contact}', [MaterialRequisitionController::class, 'destroyContact'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.contacts.destroy');
+
+        Route::get('/{mrf}', [MaterialRequisitionController::class, 'show'])
+            ->middleware('can:'.Permission::MRF_VIEW)
+            ->name('wms.mrf.show');
+        Route::post('/{mrf}/resend', [MaterialRequisitionController::class, 'resend'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.resend');
+
+        Route::get('/{mrf}/approve', [MaterialRequisitionController::class, 'approveForm'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.approve.form');
+        Route::post('/{mrf}/approve', [MaterialRequisitionController::class, 'approve'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.approve');
+        Route::post('/{mrf}/reject', [MaterialRequisitionController::class, 'reject'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.reject');
+
+        Route::post('/{mrf}/receive', [MaterialRequisitionController::class, 'receive'])
+            ->middleware('can:'.Permission::MRF_RECEIVE)
+            ->name('wms.mrf.receive');
+
+        /*
+        | Pembatalan dibuka untuk DUA izin sekaligus — Produksi yang salah
+        | meminta, dan Logistik yang sudah telanjur menyetujui lalu menemukan
+        | barangnya ternyata dibutuhkan pesanan pelanggan. Batas sebenarnya
+        | ada di keadaan dokumennya (bolehDibatalkan), bukan di peran.
+        */
+        Route::post('/{mrf}/cancel', [MaterialRequisitionController::class, 'cancel'])
+            ->middleware('can:'.Permission::MRF_VIEW)
+            ->name('wms.mrf.cancel');
+    });
+
+    // Buku material yang sudah di tangan Produksi, berikut pemakaiannya.
+    Route::prefix('material-produksi')->middleware('can:'.Permission::MRF_RECEIVE)->group(function () {
+        Route::get('/', [ProductionMaterialController::class, 'index'])
+            ->name('wms.material-produksi.index');
+        Route::post('/{holding}/pakai', [ProductionMaterialController::class, 'consume'])
+            ->name('wms.material-produksi.consume');
+    });
 
     // Transfer antar gudang (F-INV-05). Rutenya ditaruh SEBELUM
     // /transfers/{transfer} tidak diperlukan di sini karena "create" bukan
@@ -812,4 +883,22 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 Route::middleware('throttle:30,1')->group(function () {
     Route::get('/epod/{token}', [EpodController::class, 'show'])->name('epod.show');
     Route::post('/epod/{token}/confirm', [EpodController::class, 'confirm'])->name('epod.confirm');
+});
+
+/*
+| MRF — persetujuan atasan lewat tautan WhatsApp.
+|
+| PUBLIK, DI LUAR SELURUH MIDDLEWARE, dengan alasan yang sama persis seperti
+| E-POD: yang menekannya tidak punya akun WMS dan tidak akan dibuatkan. Ia
+| atasan di lantai produksi yang dimintai persetujuan lewat HP — satu kata
+| sandi lagi yang tidak pernah dipakai hanya akan berakhir di kertas yang
+| ditempel di meja.
+|
+| Dibatasi kecepatan aksesnya: halaman ini terbuka ke internet, dan token 64
+| karakter tidak boleh bisa dicari dengan mencoba satu per satu.
+*/
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get('/mrf/{token}', [MrfApprovalController::class, 'show'])->name('mrf.approval.show');
+    Route::post('/mrf/{token}/approve', [MrfApprovalController::class, 'approve'])->name('mrf.approval.approve');
+    Route::post('/mrf/{token}/reject', [MrfApprovalController::class, 'reject'])->name('mrf.approval.reject');
 });

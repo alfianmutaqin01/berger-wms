@@ -57,6 +57,15 @@ class Notification extends Model
 
     public const TRANSFER_INCOMING = 'transfer.incoming';
 
+    /** MRF sudah disetujui atasan; Logistik yang ditunggu sekarang. */
+    public const MRF_NEEDS_LOGISTICS = 'mrf.needs_logistics';
+
+    /** Barang MRF sudah turun dari rak dan menunggu diambil Produksi. */
+    public const MRF_READY_FOR_PICKUP = 'mrf.ready_for_pickup';
+
+    /** Keputusan Logistik atas permintaan Produksi — disetujui atau ditolak. */
+    public const MRF_DECIDED = 'mrf.decided';
+
     /**
      * Ikon & warna per jenis.
      *
@@ -78,6 +87,9 @@ class Notification extends Model
         self::RETURN_APPROVED => ['bi-check2-square', 'success'],
         self::RETURN_VERIFY_READY => ['bi-clipboard-check', 'info'],
         self::TRANSFER_INCOMING => ['bi-truck', 'info'],
+        self::MRF_NEEDS_LOGISTICS => ['bi-clipboard2-plus', 'warning'],
+        self::MRF_READY_FOR_PICKUP => ['bi-box-seam', 'primary'],
+        self::MRF_DECIDED => ['bi-clipboard2-check', 'info'],
     ];
 
     /** Yang ditampilkan di dalam lonceng sebelum "Lihat Semua". */

@@ -91,6 +91,21 @@
             </div>
         @endif
 
+        {{-- Daftar MRF: barangnya tidak naik kendaraan apa pun. Ia ditaruh di
+             sebuah rak dan Produksi yang menjemputnya — dan rak itu WAJIB
+             disebutkan operator saat menekan Loading, kalau tidak barangnya
+             berdiri tanpa alamat. --}}
+        @if($list->requisition)
+            <div class="alert alert-primary border-0 rounded-3 mt-3 mb-0 small">
+                <i class="bi bi-clipboard2-check me-1"></i>
+                <strong>Permintaan material {{ $list->requisition->mrf_number }}</strong> —
+                untuk {{ $list->requisition->requestedBy?->full_name ?? 'Produksi' }}
+                ({{ $list->requisition->jenis_label }}).
+                Barang ini <strong>tidak menuju pelanggan dan tidak naik truk</strong>: taruh di rak serah
+                terima, lalu sebutkan raknya saat menekan Loading supaya Produksi tahu harus mengambil ke mana.
+            </div>
+        @endif
+
         {{-- Pesanan yang ikut dalam daftar ini. Operator perlu tahu barang
              ini untuk siapa saat memisahkannya di loading dock. --}}
         <div class="d-flex flex-wrap gap-2 mt-3">
@@ -134,14 +149,47 @@
                 <i class="bi bi-arrow-counterclockwise me-1"></i> Batal Ambil Tugas
             </button>
 
-            <form method="POST" action="{{ route('wms.picking.complete', $list) }}" id="formSelesai"
-                  onsubmit="return confirm('Selesaikan daftar ini? Stok di rak akan berkurang dan pesanannya berpindah ke Siap Kirim.');">
-                @csrf
-                <button class="btn btn-success btn-lg rounded-3 px-4" id="tombolSiapLoading"
-                        @disabled($ringkas['selesai'] < $ringkas['total'])>
-                    <i class="bi bi-box-seam me-1"></i> Siap Loading
-                </button>
-            </form>
+            @if($list->requisition)
+                {{-- DAFTAR MRF: satu isian lagi sebelum tombolnya bisa ditekan.
+
+                     Rak serah terima bukan pelengkap. Barang permintaan Produksi
+                     tidak naik kendaraan mana pun; kalau tidak ada rak yang
+                     disebut, ia berdiri di suatu tempat yang cuma diingat
+                     operator yang menaruhnya — dan kebiasaan itulah yang membuat
+                     material produksi hilang berbulan-bulan. --}}
+                <form method="POST" action="{{ route('wms.picking.complete', $list) }}" id="formSelesai"
+                      class="d-flex flex-wrap gap-2 align-items-end"
+                      onsubmit="return confirm('Selesaikan daftar ini? Stok di rak akan berkurang dan Produksi dikabari bahwa barangnya siap diambil.');">
+                    @csrf
+                    <div>
+                        <label class="form-label small text-muted mb-1">Ditaruh di rak</label>
+                        <select name="handover_location_id" class="form-select rounded-3" required style="min-width:160px">
+                            <option value="">Pilih rak…</option>
+                            @foreach($rakSerah as $rak)
+                                <option value="{{ $rak->id }}">{{ $rak->code }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="flex-grow-1" style="min-width:180px">
+                        <label class="form-label small text-muted mb-1">Catatan untuk Produksi (opsional)</label>
+                        <input type="text" name="handover_note" class="form-control rounded-3" maxlength="500"
+                               placeholder="Mis. 3 palet, ditumpuk di sisi kiri">
+                    </div>
+                    <button class="btn btn-success btn-lg rounded-3 px-4" id="tombolSiapLoading"
+                            @disabled($ringkas['selesai'] < $ringkas['total'])>
+                        <i class="bi bi-box-seam me-1"></i> Siap Loading
+                    </button>
+                </form>
+            @else
+                <form method="POST" action="{{ route('wms.picking.complete', $list) }}" id="formSelesai"
+                      onsubmit="return confirm('Selesaikan daftar ini? Stok di rak akan berkurang dan pesanannya berpindah ke Siap Kirim.');">
+                    @csrf
+                    <button class="btn btn-success btn-lg rounded-3 px-4" id="tombolSiapLoading"
+                            @disabled($ringkas['selesai'] < $ringkas['total'])>
+                        <i class="bi bi-box-seam me-1"></i> Siap Loading
+                    </button>
+                </form>
+            @endif
         </div>
         @elseif($bolehMelepasTugas)
         {{-- Logistik/Manager: melepas tugas milik operator lain. Satu-satunya
@@ -209,6 +257,11 @@
                                 <div class="small">{{ $list->transfer?->toWarehouse?->name ?? 'Gudang tujuan' }}</div>
                                 <small class="text-muted font-monospace">
                                     {{ $list->transfer?->transfer_number ?? '—' }}
+                                </small>
+                            @elseif($item->material_requisition_allocation_id)
+                                <div class="small">Produksi — {{ $list->requisition?->requestedBy?->full_name ?? '—' }}</div>
+                                <small class="text-muted font-monospace">
+                                    {{ $list->requisition?->mrf_number ?? '—' }}
                                 </small>
                             @else
                                 <div class="small">{{ $item->salesOrder?->customer?->name ?? '—' }}</div>

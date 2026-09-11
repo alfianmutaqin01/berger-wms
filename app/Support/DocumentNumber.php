@@ -44,6 +44,33 @@ class DocumentNumber
 
     public const TYPE_SALES_RETURN = 'sales_return';
 
+    public const TYPE_MATERIAL_REQUISITION = 'material_requisition';
+
+    /**
+     * Nomor MRF: MR{YYMMDD}{urut 3 digit}.
+     *
+     * LINTAS GUDANG, sama alasannya dengan PL, TF, dan RJ. MRF dibaca
+     * Produksi, Logistik, Operator, dan atasan yang menyetujui lewat WhatsApp
+     * — sebagian di antaranya tidak melihat layar WMS sama sekali dan hanya
+     * menyebut nomornya. Nomor yang berulang di tiap gudang membuat
+     * "MR261011001" berarti tiga permintaan berbeda tergantung siapa yang
+     * menyebutnya.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forMaterialRequisition(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_MATERIAL_REQUISITION,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'MR'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
     /**
      * Nomor daftar picking: PL{YYMMDD}{urut 3 digit}.
      *

@@ -10,11 +10,16 @@ use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\MaterialRequisition;
+use App\Models\MaterialRequisitionAllocation;
+use App\Models\MaterialRequisitionItem;
 use App\Models\Notification;
 use App\Models\PaymentTerm;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
 use App\Models\Product;
+use App\Models\ProductionMaterialConsumption;
+use App\Models\ProductionMaterialHolding;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
@@ -344,7 +349,76 @@ class SmokeRouteTest extends TestCase
             'created_at' => now(),
         ]);
 
+        /*
+         * MRF — DUA baris, dan keduanya memang perlu.
+         *
+         * Yang pertama berhenti di "menunggu Logistik": hanya dalam keadaan
+         * itulah layar pemilihan batch mau merender dirinya, dan layar itulah
+         * yang paling banyak mengulang baris stok berikut accessor-nya.
+         *
+         * Yang kedua sudah DITERIMA dan punya baris di buku Produksi. Ia tidak
+         * pernah ditembak lewat parameter {mrf}, tetapi halaman "Material di
+         * Tangan Produksi" merender barisnya — beserta riwayat pemakaian dan
+         * hitungan umurnya, yang semuanya accessor.
+         */
+        $mrfMenunggu = MaterialRequisition::factory()->menungguLogistik()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'requested_by' => $sales->id,
+            'mrf_number' => 'MR260901001',
+        ]);
+        MaterialRequisitionItem::factory()->create([
+            'material_requisition_id' => $mrfMenunggu->id,
+            'product_id' => $produk->id,
+            'qty_requested' => 50,
+        ]);
+
+        $mrfDiterima = MaterialRequisition::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'requested_by' => $sales->id,
+            'mrf_number' => 'MR260901002',
+            'status' => MaterialRequisition::STATUS_RECEIVED,
+            'approved_at' => now(),
+            'received_at' => now(),
+        ]);
+        $itemDiterima = MaterialRequisitionItem::factory()->create([
+            'material_requisition_id' => $mrfDiterima->id,
+            'product_id' => $produk->id,
+            'qty_requested' => 300,
+        ]);
+        $alokasi = MaterialRequisitionAllocation::create([
+            'material_requisition_id' => $mrfDiterima->id,
+            'material_requisition_item_id' => $itemDiterima->id,
+            'product_id' => $produk->id,
+            'batch_no' => 'BT-SMOKE',
+            'production_date' => now()->subMonths(2)->toDateString(),
+            'expiry_date' => now()->addYears(2)->toDateString(),
+            'status' => InventoryStock::STATUS_ACTIVE,
+            'qty_allocated' => 300,
+            'qty_picked' => 300,
+            'qty_received' => 300,
+        ]);
+        $holding = ProductionMaterialHolding::create([
+            'material_requisition_id' => $mrfDiterima->id,
+            'material_requisition_allocation_id' => $alokasi->id,
+            'product_id' => $produk->id,
+            'warehouse_id' => $this->warehouse->id,
+            'batch_no' => 'BT-SMOKE',
+            'production_date' => now()->subMonths(2)->toDateString(),
+            'expiry_date' => now()->addYears(2)->toDateString(),
+            'production_area' => 'I-01-01',
+            'qty_received' => 300,
+            'qty_consumed' => 150,
+            'received_at' => now()->subDays(40),
+        ]);
+        ProductionMaterialConsumption::create([
+            'production_material_holding_id' => $holding->id,
+            'qty' => 150,
+            'note' => 'Batch pertama reproses.',
+            'consumed_at' => now()->subDays(10),
+        ]);
+
         $this->parameter = [
+            'mrf' => $mrfMenunggu->id,
             'proof' => $bukti->id,
             'retur' => $retur->id,
             'order' => $order->id,

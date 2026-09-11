@@ -39,6 +39,18 @@ class StockMovement extends Model
 
     public const TYPE_RETURN_IN = 'RETURN_IN';
 
+    /**
+     * Keluar ke PRODUKSI lewat MRF — bukan penjualan, bukan pemindahan gudang.
+     *
+     * JENIS TERSENDIRI, dan alasannya sama persis dengan TRANSFER_OUT: OUT
+     * adalah barang yang menuju pelanggan, dan laporan penjualan
+     * menjumlahkannya. Material yang diambil Produksi untuk direproses tidak
+     * pernah sampai ke pelanggan mana pun; menulisnya sebagai OUT membuat
+     * angka penjualan lebih besar daripada yang benar-benar terjual, dan
+     * selisihnya tidak akan pernah bisa dijelaskan.
+     */
+    public const TYPE_PRODUCTION_OUT = 'PRODUCTION_OUT';
+
     public const TYPE_LABELS = [
         self::TYPE_IN => 'Masuk',
         self::TYPE_OUT => 'Keluar',
@@ -48,6 +60,7 @@ class StockMovement extends Model
         self::TYPE_TRANSFER_OUT => 'Transfer Keluar',
         self::TYPE_TRANSFER_IN => 'Transfer Masuk',
         self::TYPE_RETURN_IN => 'Retur Masuk',
+        self::TYPE_PRODUCTION_OUT => 'Keluar ke Produksi',
     ];
 
     /** Tipe yang WAJIB menyertakan alasan (PRD §6.4 F-INV-02, docs/2 §3.4). */
@@ -76,6 +89,13 @@ class StockMovement extends Model
      * berujung ke booking-nya, bukan ke pesanan yang tidak ada.
      */
     public const REF_BOOKING = 'booking';
+
+    /**
+     * Permintaan material Produksi (MRF). Menelusuri "kenapa stok ini
+     * berkurang" harus berujung ke formulir permintaannya — lengkap dengan
+     * siapa yang meminta, siapa yang menyetujui, dan untuk keperluan apa.
+     */
+    public const REF_MATERIAL_REQUISITION = 'material_requisition';
 
     /** Alasan DDP yang dikenal (docs/2 §3.4 inventory_stocks.ddp_reason). */
     public const REASON_EXPIRED = 'EXPIRED';
