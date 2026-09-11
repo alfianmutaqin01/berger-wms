@@ -349,6 +349,147 @@ class OutstandingHistoryTest extends TestCase
                 && $s['qty_berjalan'] === 0);
     }
 
+    /* ==================================== Daftar dikelompokkan per nomor SO */
+
+    /**
+     * Menambahkan SKU lain yang juga kurang pada pesanan yang SAMA.
+     *
+     * Barisnya ditulis langsung, bukan lewat layar penerimaan: yang diuji di
+     * sini adalah pengelompokan tampilan, dan menempuh alur penerimaan
+     * berisi-banyak-SKU membuat kegagalannya menunjuk ke modul lain.
+     */
+    private function kekuranganSkuLain(SalesOrder $order, string $sku, int $dipesan, int $terpenuhi): SalesOrderDetail
+    {
+        $produk = Product::factory()->create(['sku' => $sku, 'uom' => 'PAIL', 'is_active' => true]);
+
+        $detail = SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $produk->id,
+            'qty_ordered' => $dipesan,
+            'qty_approved' => $terpenuhi,
+            'qty_shipped' => $terpenuhi,
+            'outstanding_qty' => $dipesan - $terpenuhi,
+        ]);
+
+        SalesOrderOutstanding::create([
+            'sales_order_id' => $order->id,
+            'sales_order_detail_id' => $detail->id,
+            'product_id' => $produk->id,
+            'warehouse_id' => $order->warehouse_id,
+            'cause' => SalesOrderOutstanding::CAUSE_SHIPMENT,
+            'qty_ordered' => $dipesan,
+            'qty_fulfilled' => $terpenuhi,
+            'qty_outstanding' => $dipesan - $terpenuhi,
+        ]);
+
+        return $detail;
+    }
+
+    /**
+     * SATU PESANAN = SATU BARIS, berapa pun SKU yang kurang di dalamnya.
+     *
+     * Dulu tiap SKU berdiri sebagai barisnya sendiri, sehingga satu pesanan
+     * berisi dua belas SKU memenuhi seluruh halaman dan pesanan lain yang juga
+     * terutang terdorong ke halaman berikutnya.
+     */
+    public function test_daftar_dikelompokkan_per_nomor_so(): void
+    {
+        $this->loginAs();
+        $this->stok(5);
+
+        $order = $this->pesanan(10);
+        $this->terima($order, 5, 10, 'SO-0011')->assertSessionHasNoErrors();
+
+        $this->kekuranganSkuLain($order, 'APKO-002', 8, 3);
+        $this->kekuranganSkuLain($order, 'APKO-003', 4, 1);
+
+        $kelompok = $this->get(route('wms.outstanding.index'))->assertOk()->viewData('kelompok');
+
+        $this->assertCount(1, $kelompok, 'Tiga SKU yang kurang tetap satu nomor SO.');
+        $this->assertSame($order->id, $kelompok[0]['order']->id);
+        $this->assertCount(3, $kelompok[0]['sku']);
+        $this->assertSame(3, $kelompok[0]['sku_kurang']);
+
+        // Ringkasan barisnya dibaca dari pesanan — keadaan HARI INI.
+        $this->assertSame(22, $kelompok[0]['dipesan'], '10 + 8 + 4.');
+        $this->assertSame(13, $kelompok[0]['sisa'], '5 + 5 + 3.');
+    }
+
+    /** Rincian SKU-nya benar-benar ada di halaman, bukan cuma di data. */
+    public function test_rincian_sku_ikut_terender_di_halaman(): void
+    {
+        $this->loginAs();
+        $this->stok(5);
+
+        $order = $this->pesanan(10);
+        $this->terima($order, 5, 10, 'SO-0012')->assertSessionHasNoErrors();
+        $this->kekuranganSkuLain($order, 'APKO-002', 8, 3);
+
+        $this->get(route('wms.outstanding.index'))
+            ->assertOk()
+            ->assertSee($order->order_number)
+            ->assertSee('APKO-002')
+            ->assertSee('Rincian SKU');
+    }
+
+    /**
+     * DUA PERISTIWA PADA SKU YANG SAMA BERDIRI DI BAWAH SATU BARIS SKU.
+     *
+     * Disetujui sebagian saat penerimaan, lalu kurang lagi saat Surat Jalan
+     * berangkat: dua peristiwa yang berbeda, satu SKU. Menjadikannya dua baris
+     * sejajar membuat pembacanya mengira ada dua SKU yang bermasalah.
+     */
+    public function test_dua_peristiwa_pada_satu_sku_tetap_satu_baris_rincian(): void
+    {
+        $this->loginAs();
+        $this->stok(5);
+
+        $order = $this->pesanan(10);
+        $this->terima($order, 5, 10, 'SO-0013')->assertSessionHasNoErrors();
+
+        $detail = $order->details()->firstOrFail();
+
+        // Putaran pengirimannya berangkat 3 dari 5 yang disetujui.
+        $detail->forceFill(['qty_shipped' => 3, 'outstanding_qty' => 7])->save();
+
+        SalesOrderOutstanding::create([
+            'sales_order_id' => $order->id,
+            'sales_order_detail_id' => $detail->id,
+            'product_id' => $this->produk->id,
+            'warehouse_id' => $order->warehouse_id,
+            'cause' => SalesOrderOutstanding::CAUSE_SHIPMENT,
+            'qty_ordered' => 10,
+            'qty_fulfilled' => 3,
+            'qty_outstanding' => 7,
+        ]);
+
+        $kelompok = $this->get(route('wms.outstanding.index'))->assertOk()->viewData('kelompok');
+
+        $this->assertCount(1, $kelompok[0]['sku'], 'Satu SKU, meski dua kali kurang.');
+        $this->assertCount(2, $kelompok[0]['sku'][0]['peristiwa']);
+        $this->assertSame(2, $kelompok[0]['peristiwa']);
+        $this->assertSame(7, $kelompok[0]['sku'][0]['sisa'], 'Angka hidup, bukan cuplikan peristiwa pertama.');
+    }
+
+    /** Halamannya menghitung PESANAN, bukan baris SKU. */
+    public function test_yang_dihalamani_adalah_pesanan_bukan_baris_sku(): void
+    {
+        $this->loginAs();
+        $this->stok(5);
+
+        $order = $this->pesanan(10);
+        $this->terima($order, 5, 10, 'SO-0014')->assertSessionHasNoErrors();
+
+        for ($i = 1; $i <= 25; $i++) {
+            $this->kekuranganSkuLain($order, sprintf('APKO-1%02d', $i), 5, 2);
+        }
+
+        $halaman = $this->get(route('wms.outstanding.index'))->assertOk()->viewData('halaman');
+
+        $this->assertSame(1, $halaman->total(),
+            'Dua puluh enam baris SKU milik satu pesanan tidak boleh jadi dua halaman.');
+    }
+
     public function test_riwayat_outstanding_tidak_boleh_diubah_maupun_dihapus(): void
     {
         $this->loginAs();

@@ -3,9 +3,13 @@
 namespace Tests\Feature\Wms;
 
 use App\Models\Customer;
+use App\Models\DeliveryNote;
+use App\Models\DeliveryNoteLine;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\PaymentTerm;
+use App\Models\PickingList;
+use App\Models\PickingListItem;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
@@ -15,6 +19,7 @@ use App\Models\SalesOrderReshipment;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Outbound\Shipment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -156,6 +161,82 @@ class OutstandingReshipmentTest extends TestCase
     private function kirimUlang(SalesOrder $order, array $isi = [])
     {
         return $this->post(route('wms.outstanding.reship', $order), $isi);
+    }
+
+    /**
+     * Memberangkatkan putaran yang SEDANG dibuka, sebanyak $qty.
+     *
+     * Menempuh mesin pengiriman yang sungguhan — App\Support\Outbound\Shipment
+     * — bukan menulis langsung ke kolomnya. Yang diuji di sini justru apakah
+     * kekurangan sisa masuk kembali ke outstanding, dan itu efek samping dari
+     * Surat Jalan yang berangkat; meniru efeknya dengan tangan akan membuat
+     * test-nya hijau untuk sesuatu yang tidak pernah dijalankan sistem.
+     */
+    private function berangkatkanPutaran(SalesOrder $order, int $qty): DeliveryNote
+    {
+        $detail = $order->details()->firstOrFail();
+
+        $daftar = PickingList::factory()->create([
+            'warehouse_id' => $this->gudang->id,
+            'status' => PickingList::STATUS_COMPLETED,
+            'completed_at' => now(),
+        ]);
+
+        // Efek Siap Loading pada stok: cadangan berakhir karena barangnya
+        // benar-benar turun dari rak.
+        foreach ($detail->allocations as $alokasi) {
+            $stok = InventoryStock::findOrFail($alokasi->inventory_stock_id);
+            $stok->forceFill([
+                'qty_allocated' => max(0, $stok->qty_allocated - $alokasi->qty_allocated),
+            ])->save();
+
+            PickingListItem::factory()->create([
+                'picking_list_id' => $daftar->id,
+                'sales_order_id' => $order->id,
+                'sales_order_detail_id' => $detail->id,
+                'product_id' => $this->produk->id,
+                'inventory_stock_id' => $stok->id,
+                'location_id' => $this->lokasi->id,
+                'batch_no' => $stok->batch_no,
+                'production_date' => $stok->production_date,
+                'qty_to_pick' => $alokasi->qty_allocated,
+                'qty_picked' => $alokasi->qty_allocated,
+                'status' => PickingListItem::STATUS_PICKED,
+            ]);
+        }
+
+        $detail->allocations()->delete();
+
+        $order->forceFill([
+            'status' => SalesOrder::STATUS_READY_TO_SHIP,
+            'picking_list_id' => $daftar->id,
+            'picking_completed_at' => now(),
+        ])->save();
+
+        $note = DeliveryNote::factory()->create([
+            'document_no' => 'SJ-'.Str::upper(Str::random(5)),
+            // Pesanan pada helper ini dibuat tanpa nomor SO BC; Surat Jalannya
+            // tetap wajib punya satu karena itu kolom yang tidak boleh kosong.
+            'bc_so_number' => $order->bc_so_number ?: 'SO0987010',
+            'sales_order_id' => $order->id,
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $order->warehouse_id,
+        ]);
+
+        DeliveryNoteLine::factory()->create([
+            'delivery_note_id' => $note->id,
+            'sku' => $this->produk->sku,
+            'product_id' => $this->produk->id,
+            'qty' => $qty,
+        ]);
+
+        app(Shipment::class)->ship($note->refresh(), [
+            'driver_name' => 'Budi Santoso',
+            'driver_phone' => '081234567890',
+            'vehicle_plate' => 'B 1234 XYZ',
+        ], null);
+
+        return $note->refresh();
     }
 
     /* ------------------------------------------------------------- Inti */
@@ -312,6 +393,72 @@ class OutstandingReshipmentTest extends TestCase
         $this->loginAs(Role::SALES);
 
         $this->kirimUlang($order)->assertForbidden();
+    }
+
+    /* ------------------------------------- Sisa kurang masuk lagi ke daftar */
+
+    /**
+     * KEKURANGAN YANG BELUM TERTUTUP MASUK LAGI KE OUTSTANDING.
+     *
+     * Permintaan pemilik produk, dan satu-satunya hal yang membuat tombol
+     * Kirim Outstanding layak dipercaya: pesanan 10 yang baru terkirim 6 lalu
+     * dikirim outstanding 3 masih menyisakan 1, dan 1 itu harus punya barisnya
+     * sendiri di daftar — bukan diam-diam hilang karena kekurangannya "sudah
+     * pernah dicatat" pada peristiwa sebelumnya.
+     */
+    public function test_sisa_yang_masih_kurang_masuk_lagi_ke_outstanding(): void
+    {
+        $this->loginAs();
+
+        $order = $this->pesananBerangkatSebagian(10, 6);
+
+        // Stok susulan hanya cukup 3 dari 4 yang kurang.
+        $this->stok(3);
+
+        $this->kirimUlang($order)->assertSessionHas('warning');
+
+        $this->berangkatkanPutaran($order->refresh(), 3);
+
+        $detail = $order->details()->firstOrFail()->refresh();
+
+        $this->assertSame(9, $detail->qty_shipped, 'qty_shipped menumpuk antar putaran: 6 + 3.');
+        $this->assertSame(1, $detail->outstanding_qty);
+
+        $terakhir = SalesOrderOutstanding::query()
+            ->where('sales_order_detail_id', $detail->id)
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame(1, $terakhir->qty_outstanding, 'Sisa 1 wajib punya barisnya sendiri.');
+        $this->assertSame(9, $terakhir->qty_fulfilled);
+        $this->assertSame(SalesOrderOutstanding::CAUSE_SHIPMENT, $terakhir->cause);
+
+        $this->assertSame(2, SalesOrderOutstanding::where('sales_order_detail_id', $detail->id)->count(),
+            'Dua peristiwa yang berbeda: kurang 4 saat putaran pertama, kurang 1 saat putaran kedua.');
+    }
+
+    /** Dan pesanannya boleh dikirim outstanding SEKALI LAGI untuk sisa itu. */
+    public function test_sisa_itu_bisa_dikirim_outstanding_sekali_lagi(): void
+    {
+        $this->loginAs();
+
+        $order = $this->pesananBerangkatSebagian(10, 6);
+        $this->stok(3);
+        $this->kirimUlang($order);
+        $this->berangkatkanPutaran($order->refresh(), 3);
+
+        $boleh = $this->get(route('wms.outstanding.index'))->assertOk()->viewData('bolehKirimUlang');
+
+        $this->assertTrue($boleh->has($order->id),
+            'Sisa 1 masih kewajiban yang belum dipenuhi — tombolnya harus muncul lagi.');
+
+        // Stok susulan terakhir, lalu putaran ketiga menutup semuanya.
+        $this->stok(1);
+        $this->kirimUlang($order->refresh())->assertSessionHas('success');
+
+        $this->assertSame(2, SalesOrderReshipment::where('sales_order_id', $order->id)->count(),
+            'Dua kali kirim outstanding di atas putaran pertama.');
+        $this->assertSame(2, (int) SalesOrderReshipment::where('sales_order_id', $order->id)->max('round_no'));
     }
 
     /* ---------------------------------------------------------- Tampilan */
