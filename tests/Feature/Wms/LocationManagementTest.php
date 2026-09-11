@@ -225,7 +225,7 @@ class LocationManagementTest extends TestCase
 
     /* --------------------------------------------------------- Denah gudang */
 
-    public function test_denah_dapat_dibuka_dan_menyusun_bin_per_rak_per_level(): void
+    public function test_denah_dapat_dibuka_dan_menyusun_rak_per_deret_per_level(): void
     {
         $this->loginAs();
 
@@ -243,7 +243,7 @@ class LocationManagementTest extends TestCase
         $racks = $response->viewData('racks');
 
         $this->assertTrue($racks->has('B'));
-        // Struktur: rak => level => daftar bin.
+        // Struktur: rak => level => daftar rak.
         $this->assertCount(2, $racks['B']);
         $this->assertCount(3, $racks['B'][1]);
     }
@@ -289,8 +289,8 @@ class LocationManagementTest extends TestCase
         $this->assertFalse($racks->has('B'));
     }
 
-    /** Pelacakan bin: kode yang dicari ditandai agar mudah ditemukan. */
-    public function test_denah_menandai_bin_yang_dilacak(): void
+    /** Pelacakan rak: kode yang dicari ditandai agar mudah ditemukan. */
+    public function test_denah_menandai_rak_yang_dilacak(): void
     {
         $this->loginAs();
 
@@ -299,13 +299,13 @@ class LocationManagementTest extends TestCase
 
         $html = $this->get('/wms/master/locations/map?highlight=B-01-01')->assertOk()->getContent();
 
-        $this->assertStringContainsString('bin-highlight', $html);
+        $this->assertStringContainsString('rak-highlight', $html);
     }
 
     /* --------------------------------------------------------------- Seeder */
 
     /**
-     * Seeder membangkitkan denah gudang sesuai pendataan: 2.264 bin, 29 rak,
+     * Seeder membangkitkan denah gudang sesuai pendataan: 2.264 rak, 29 rak,
      * dengan pembagian zona 826 / 476 / 962.
      */
     public function test_seeder_menghasilkan_denah_gudang_yang_benar(): void

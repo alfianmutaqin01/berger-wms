@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\PaymentTerm;
+use App\Models\PickingList;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
@@ -15,6 +16,7 @@ use App\Models\StockTransfer;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Outbound\PickingRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -101,8 +103,13 @@ class StockTransferTest extends TestCase
         ], $atribut));
     }
 
-    /** Mengirim $qty dari satu baris stok Karawang ke Pekanbaru. */
-    private function kirim(InventoryStock $stok, int $qty): StockTransfer
+    /**
+     * MENYUSUN transfer: barangnya dicadangkan dan masuk antrean picking.
+     *
+     * Belum ada yang berangkat. Untuk sampai ke DALAM PERJALANAN, jalankan
+     * pickingSelesai() sesudahnya — atau pakai kirim() yang menempuh keduanya.
+     */
+    private function susun(InventoryStock $stok, int $qty): StockTransfer
     {
         $this->post(route('wms.transfers.store'), [
             'to_warehouse_id' => $this->pekanbaru->id,
@@ -112,7 +119,172 @@ class StockTransferTest extends TestCase
         return StockTransfer::latest('id')->firstOrFail();
     }
 
+    /**
+     * Operator mengerjakan daftar picking transfer sampai menekan Loading.
+     *
+     * Menempuh PickingRun yang sungguhan, bukan menulis langsung ke kolom
+     * status: yang membuat transfer berangkat memang mesin picking, dan
+     * meniru efeknya dengan tangan membuat test-nya hijau untuk sesuatu yang
+     * tidak pernah dijalankan sistem.
+     *
+     * @param  array<int, int>  $ditemukan  qty sungguhan per baris (urutan
+     *                                      baris daftar), untuk meniru barang
+     *                                      yang ternyata kurang di rak
+     */
+    private function pickingSelesai(StockTransfer $transfer, array $ditemukan = []): StockTransfer
+    {
+        $operator = User::factory()->withRole(Role::WAREHOUSE_OPERATOR)->create([
+            'warehouse_id' => $transfer->from_warehouse_id,
+        ]);
+
+        $picking = app(PickingRun::class);
+        $daftar = $transfer->pickingList()->firstOrFail();
+
+        $picking->claim($daftar, $operator);
+
+        foreach ($daftar->items()->orderBy('id')->get()->values() as $i => $item) {
+            $qty = $ditemukan[$i] ?? null;
+
+            if ($qty === null || $qty >= $item->qty_to_pick) {
+                $picking->pick($item, $operator);
+            } else {
+                $picking->reportShort($item, $operator, $qty, 'Di rak hanya ada segini saat dicek.');
+            }
+        }
+
+        $picking->complete($daftar->refresh(), $operator);
+
+        return $transfer->refresh();
+    }
+
+    /** Menyusun DAN memberangkatkan $qty dari Karawang ke Pekanbaru. */
+    private function kirim(InventoryStock $stok, int $qty): StockTransfer
+    {
+        return $this->pickingSelesai($this->susun($stok, $qty));
+    }
+
+    /* ------------------------------------------- Menunggu picking dulu */
+
+    /**
+     * MENYUSUN TRANSFER BUKAN MEMBERANGKATKANNYA.
+     *
+     * Permintaan pemilik produk: transfer menempuh picking persis seperti
+     * pesanan pelanggan. Dulu tombol Kirim langsung menyatakan barangnya
+     * dalam perjalanan padahal belum ada seorang pun yang berjalan ke rak —
+     * angka di sistem berangkat lebih dulu daripada barangnya.
+     */
+    public function test_transfer_baru_menunggu_picking_dan_belum_berangkat(): void
+    {
+        $this->loginAt($this->karawang);
+        $stok = $this->stok(100);
+
+        $transfer = $this->susun($stok, 40);
+
+        $this->assertSame(StockTransfer::STATUS_PENDING, $transfer->status);
+        $this->assertNull($transfer->shipped_at, 'Belum ada yang berangkat.');
+        $this->assertSame(40, (int) $transfer->details()->sum('qty_requested'));
+        $this->assertNull($transfer->details()->firstOrFail()->qty_shipped);
+    }
+
+    /**
+     * DICADANGKAN, BUKAN DIKURANGI. Barangnya masih di rak gudang asal —
+     * tetapi tidak bisa dijanjikan ke pelanggan mana pun.
+     */
+    public function test_barang_dicadangkan_bukan_dikurangi_selama_menunggu_picking(): void
+    {
+        $this->loginAt($this->karawang);
+        $stok = $this->stok(100);
+
+        $this->susun($stok, 40);
+        $stok->refresh();
+
+        $this->assertSame(60, $stok->qty_available, 'Tidak bisa dijual lagi.');
+        $this->assertSame(40, $stok->qty_allocated, 'Tetapi masih ada di rak ini.');
+        $this->assertSame(100, $stok->qty_available + $stok->qty_allocated,
+            'Tidak satu unit pun boleh hilang dari gudang asal sebelum benar-benar berangkat.');
+    }
+
+    /** Daftar picking-nya benar-benar ada dan masuk antrean operator. */
+    public function test_transfer_masuk_antrean_picking_operator(): void
+    {
+        $this->loginAt($this->karawang);
+        $transfer = $this->susun($this->stok(100), 40);
+
+        $daftar = $transfer->pickingList;
+
+        $this->assertNotNull($daftar, 'Transfer tanpa daftar picking tidak akan pernah dikerjakan siapa pun.');
+        $this->assertSame(PickingList::STATUS_OPEN, $daftar->status);
+        $this->assertSame($this->karawang->id, $daftar->warehouse_id, 'Orangnya berjalan di gudang asal.');
+        $this->assertSame(1, $daftar->items()->count());
+        $this->assertSame(40, (int) $daftar->items()->sum('qty_to_pick'));
+        $this->assertSame(0, $daftar->orders()->count(), 'Daftar transfer tidak memuat pesanan pelanggan.');
+    }
+
+    /** Operator melihatnya di antrean, ditandai jelas sebagai transfer. */
+    public function test_antrean_operator_menyebut_tugas_transfer(): void
+    {
+        $this->loginAt($this->karawang);
+        $transfer = $this->susun($this->stok(100), 40);
+
+        $this->loginAt($this->karawang, Role::WAREHOUSE_OPERATOR);
+
+        $this->get(route('wms.picking.queue'))
+            ->assertOk()
+            ->assertSee($transfer->pickingList->list_number)
+            ->assertSee('Transfer → Pekanbaru');
+    }
+
     /* ------------------------------------------------------------- Kirim */
+
+    /**
+     * LOADING-lah yang memberangkatkan, bukan tombol Kirim.
+     *
+     * Baru di sinilah barangnya turun dari rak: cadangannya berakhir dan
+     * qty_allocated kembali nol, sementara qty_available memang tidak boleh
+     * naik lagi — barangnya sudah tidak ada di gudang ini.
+     */
+    public function test_loading_operator_yang_memberangkatkan_transfer(): void
+    {
+        $this->loginAt($this->karawang);
+        $stok = $this->stok(100);
+
+        $transfer = $this->pickingSelesai($this->susun($stok, 40));
+        $stok->refresh();
+
+        $this->assertSame(StockTransfer::STATUS_IN_TRANSIT, $transfer->status);
+        $this->assertNotNull($transfer->shipped_at);
+        $this->assertSame(60, $stok->qty_available);
+        $this->assertSame(0, $stok->qty_allocated, 'Cadangannya berakhir karena barangnya benar-benar diambil.');
+        $this->assertSame(40, (int) $transfer->details()->sum('qty_shipped'));
+    }
+
+    /**
+     * BARANG YANG TERNYATA KURANG DI RAK TIDAK BOLEH BERANGKAT SEBAGAI UTUH.
+     *
+     * Inilah yang tidak bisa dikatakan alur lama sama sekali: dulu qty yang
+     * disusun Admin langsung jadi qty yang "berangkat", dan gudang tujuan baru
+     * menemukan selisihnya saat membongkar muatan.
+     */
+    public function test_selisih_picking_membuat_kiriman_berangkat_kurang(): void
+    {
+        $this->loginAt($this->karawang);
+        $stok = $this->stok(100);
+
+        $transfer = $this->pickingSelesai($this->susun($stok, 40), [30]);
+        $detail = $transfer->details()->firstOrFail();
+
+        $this->assertSame(40, $detail->qty_requested);
+        $this->assertSame(30, $detail->qty_shipped, 'Yang berangkat adalah yang benar-benar ditemukan.');
+
+        // 10 yang tidak ada di rak dikoreksi turun — bukan dianggap berangkat.
+        $this->assertSame(60, $stok->fresh()->qty_available);
+        $this->assertDatabaseHas('stock_movements', [
+            'movement_type' => StockMovement::TYPE_ADJUSTMENT,
+            'reference_type' => StockMovement::REF_STOCK_TRANSFER,
+            'reference_id' => $transfer->id,
+            'qty_change' => -10,
+        ]);
+    }
 
     public function test_pengiriman_mengurangi_stok_gudang_asal(): void
     {
@@ -469,6 +641,72 @@ class StockTransferTest extends TestCase
         $this->assertSame(0, (int) InventoryStock::where('warehouse_id', $this->pekanbaru->id)->sum('qty_available'));
     }
 
+    /**
+     * PEMBATALAN SEBELUM BERANGKAT MELEPAS CADANGAN, BUKAN MENAMBAH STOK.
+     *
+     * Barangnya tidak pernah turun dari rak. Menuliskan TRANSFER_IN di sini
+     * akan MENAMBAH barang yang tidak pernah berkurang — stok bertambah dari
+     * ketiadaan, ledger-nya tetap terlihat rapi, dan selisihnya baru ketahuan
+     * saat stocktake.
+     */
+    public function test_pembatalan_sebelum_berangkat_melepas_cadangan(): void
+    {
+        $this->loginAt($this->karawang);
+        $stok = $this->stok(100);
+        $transfer = $this->susun($stok, 40);
+
+        $this->post(route('wms.transfers.cancel', $transfer), [
+            'cancellation_reason' => 'Salah pilih batch, disusun ulang saja.',
+        ])->assertSessionHasNoErrors();
+
+        $stok->refresh();
+
+        $this->assertSame(100, $stok->qty_available, 'Bisa dijual lagi.');
+        $this->assertSame(0, $stok->qty_allocated);
+        $this->assertSame(StockTransfer::STATUS_CANCELLED, $transfer->fresh()->status);
+
+        $this->assertDatabaseMissing('stock_movements', [
+            'movement_type' => StockMovement::TYPE_TRANSFER_IN,
+            'reference_id' => $transfer->id,
+        ]);
+    }
+
+    /** Daftar picking-nya ikut bubar, tidak menggantung di antrean operator. */
+    public function test_pembatalan_sebelum_berangkat_membubarkan_daftar_pickingnya(): void
+    {
+        $this->loginAt($this->karawang);
+        $transfer = $this->susun($this->stok(100), 40);
+        $daftar = $transfer->pickingList;
+
+        $this->post(route('wms.transfers.cancel', $transfer), [
+            'cancellation_reason' => 'Salah pilih batch, disusun ulang saja.',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(PickingList::STATUS_CANCELLED, $daftar->fresh()->status);
+    }
+
+    /**
+     * DAFTAR TRANSFER TIDAK BOLEH DIBUBARKAN DARI LAYAR BATCHING.
+     *
+     * Membubarkannya menghapus barisnya dan meninggalkan transfernya menunggu
+     * picking tanpa daftar yang bisa mengerjakannya — sementara barangnya
+     * TETAP tercadang di rak, tidak bisa dijual siapa pun, tanpa satu layar
+     * pun yang mengatakan kenapa.
+     */
+    public function test_daftar_picking_transfer_tidak_bisa_dibubarkan_logistik(): void
+    {
+        $this->loginAt($this->karawang);
+        $stok = $this->stok(100);
+        $transfer = $this->susun($stok, 40);
+
+        $this->post(route('wms.picking.cancel', $transfer->pickingList), [
+            'cancellation_reason' => 'Coba dibubarkan dari layar penyusunan daftar.',
+        ])->assertSessionHas('error');
+
+        $this->assertSame(PickingList::STATUS_OPEN, $transfer->pickingList->fresh()->status);
+        $this->assertSame(40, $stok->fresh()->qty_allocated, 'Cadangannya tidak boleh ikut tersangkut.');
+    }
+
     public function test_transfer_yang_sudah_diterima_tidak_bisa_dibatalkan(): void
     {
         $this->loginAt($this->karawang);
@@ -576,5 +814,74 @@ class StockTransferTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $this->assertSame(StockTransfer::STATUS_RECEIVED, $transfer->fresh()->status);
+    }
+
+    /* ============================ Gudang tujuan tanpa master rak */
+
+    /**
+     * Kiriman ke gudang tanpa rak DITAHAN DI KEBERANGKATAN.
+     *
+     * Stok wajib tinggal di sebuah rak, jadi gudang tanpa master rak tidak
+     * punya tempat menaruh barangnya. Sebelum pemeriksaan ini kiriman tetap
+     * berangkat: stoknya keluar dari gudang asal, tercatat DALAM PERJALANAN,
+     * lalu tersangkut selamanya — persis yang terjadi pada TF260910003 ke
+     * Sidoarjo/Surabaya.
+     */
+    public function test_kiriman_ke_gudang_tanpa_rak_ditolak(): void
+    {
+        $this->loginAt($this->karawang);
+
+        $tanpaRak = Warehouse::factory()->create(['code' => 'WH-09', 'name' => 'Sidoarjo']);
+        $stok = $this->stok(50);
+
+        $this->post(route('wms.transfers.store'), [
+            'to_warehouse_id' => $tanpaRak->id,
+            'item' => [['stock_id' => $stok->id, 'qty' => 10]],
+        ])->assertSessionHas('error');
+
+        $this->assertSame(0, StockTransfer::count(), 'Tidak boleh ada kiriman yang terlanjur berangkat.');
+        $this->assertSame(50, $stok->fresh()->qty_available, 'Stoknya harus tetap utuh di rak asal.');
+    }
+
+    /** Rak yang ada tetapi seluruhnya nonaktif sama saja dengan tidak ada. */
+    public function test_kiriman_ke_gudang_yang_seluruh_raknya_nonaktif_ditolak(): void
+    {
+        $this->loginAt($this->karawang);
+
+        $tanpaRak = Warehouse::factory()->create(['code' => 'WH-09', 'name' => 'Sidoarjo']);
+        Location::factory()->create([
+            'warehouse_id' => $tanpaRak->id, 'code' => 'S-01-01', 'is_active' => false,
+        ]);
+
+        $stok = $this->stok(50);
+
+        $this->post(route('wms.transfers.store'), [
+            'to_warehouse_id' => $tanpaRak->id,
+            'item' => [['stock_id' => $stok->id, 'qty' => 10]],
+        ])->assertSessionHas('error');
+
+        $this->assertSame(0, StockTransfer::count());
+    }
+
+    /**
+     * Kiriman lama yang terlanjur berangkat tidak menyodorkan dropdown kosong.
+     *
+     * Yang membukanya dulu menyimpulkan tombolnya rusak. Sekarang layarnya
+     * mengatakan apa yang harus dikerjakan.
+     */
+    public function test_layar_penerimaan_menjelaskan_bila_gudangnya_belum_punya_rak(): void
+    {
+        $this->loginAt($this->karawang);
+        $transfer = $this->kirim($this->stok(50), 10);
+
+        // Raknya dinonaktifkan SETELAH kiriman berangkat — meniru kiriman lama
+        // yang lolos sebelum pemeriksaan keberangkatan dipasang.
+        $this->rakPekanbaru->forceFill(['is_active' => false])->save();
+
+        $this->loginAt($this->pekanbaru);
+
+        $this->get(route('wms.transfers.receive.form', $transfer))
+            ->assertRedirect(route('wms.transfers.show', $transfer))
+            ->assertSessionHas('error');
     }
 }

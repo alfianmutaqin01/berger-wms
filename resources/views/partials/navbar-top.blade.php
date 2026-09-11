@@ -29,47 +29,69 @@
                       $uName = $actor?->full_name ?? ($userName ?? 'Pengguna');
                       $uLabel = $actor?->role?->name ?? ($userLabel ?? '');
                       $uInitials = $actor?->initials ?? ($userInitials ?? '?');
-                      $isSalesUser = $actor?->hasRole(\App\Models\Role::SALES) ?? false;
                   @endphp
                   <h5 class="mb-0 fw-bold text-dark d-none d-md-flex align-items-center" style="letter-spacing: -0.5px;">
                       <i class="bi {{ $icon }} me-2 fs-4"></i> {{ $greeting }}, {{ $uName }}
                   </h5>
                   
                   <div class="ms-auto d-flex align-items-center gap-3">
-                      <!-- Notifications -->
+                      {{-- LONCENG NOTIFIKASI (Fase 9).
+
+                           Isinya dari tabel notifications lewat View Composer di
+                           AppServiceProvider, bukan lagi dua kartu karangan
+                           dengan titik merah yang menyala selamanya. Titik merah
+                           yang tidak pernah padam adalah titik merah yang
+                           berhenti dibaca orang. --}}
+                      @php
+                          $belumDibaca = $loncengBelumDibaca ?? 0;
+                          $terbaru = $loncengTerbaru ?? collect();
+                      @endphp
                       <div class="dropdown">
-                          <button class="btn btn-light rounded-circle position-relative border-0" type="button" data-bs-toggle="dropdown" style="width: 40px; height: 40px;">
-                              <i class="bi bi-bell"></i>
-                              <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle" style="margin-top: 5px; margin-left: -5px;">
-                                  <span class="visually-hidden">New alerts</span>
-                              </span>
+                          <button class="btn btn-light rounded-circle position-relative border-0" type="button"
+                                  data-bs-toggle="dropdown" style="width: 40px; height: 40px;"
+                                  aria-label="Notifikasi{{ $belumDibaca > 0 ? ' ('.$belumDibaca.' belum dibaca)' : '' }}">
+                              <i class="bi {{ $belumDibaca > 0 ? 'bi-bell-fill' : 'bi-bell' }}"></i>
+                              @if($belumDibaca > 0)
+                                  <span class="position-absolute badge rounded-pill bg-danger"
+                                        style="top: 2px; left: 60%; font-size: .6rem;">
+                                      {{ $belumDibaca > 9 ? '9+' : $belumDibaca }}
+                                      <span class="visually-hidden">belum dibaca</span>
+                                  </span>
+                              @endif
                           </button>
                           <div class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 mt-2 p-0" style="width: 320px;">
                               <div class="dropdown-header d-flex justify-content-between align-items-center border-bottom p-3 bg-light" style="border-top-left-radius: 0.5rem; border-top-right-radius: 0.5rem;">
                                   <h6 class="mb-0 fw-bold text-dark">Notifikasi</h6>
-                                  <span class="badge bg-primary rounded-pill">1 Baru</span>
+                                  @if($belumDibaca > 0)
+                                      <span class="badge bg-primary rounded-pill">{{ $belumDibaca }} Baru</span>
+                                  @endif
                               </div>
                               <div class="p-2">
-                                  <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1" href="#" style="white-space: normal;">
-                                        <div class="mt-1"><i class="bi bi-bell-fill text-primary fs-5"></i></div>
-                                        <div class="flex-grow-1">
-                                            <small class="fw-bold d-block text-primary mb-1">Pesanan Baru</small>
-                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">PO-00145 sedang Menunggu Diterima.</small>
-                                            <small class="text-muted d-block" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i> 21 Ags 2026, 09:30 WIB</small>
-                                        </div>
-                                    </a>
-                                    
-                                  <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1 opacity-75" href="#" style="white-space: normal;">
-                                        <div class="mt-1"><i class="bi bi-check-circle-fill text-success fs-5"></i></div>
-                                        <div class="flex-grow-1">
-                                            <small class="fw-bold d-block text-success mb-1">Retur Selesai</small>
-                                            <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">Proses Good Stock untuk RTN-0081 selesai.</small>
-                                            <small class="text-muted d-block" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i> 20 Ags 2026, 14:15 WIB</small>
-                                        </div>
-                                    </a>
+                                  @forelse($terbaru as $n)
+                                      {{-- Diklik = ditandai dibaca lalu diantar ke
+                                           halamannya. Dua hal sekaligus, supaya
+                                           loncengnya tidak tetap merah sesudah
+                                           pekerjaannya dikerjakan. --}}
+                                      <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1 {{ $n->read_at ? 'opacity-75' : '' }}"
+                                         href="{{ route('wms.notifications.open', $n) }}" style="white-space: normal;">
+                                          <div class="mt-1"><i class="bi {{ $n->ikon }} text-{{ $n->warna }} fs-5"></i></div>
+                                          <div class="flex-grow-1">
+                                              <small class="fw-bold d-block text-{{ $n->read_at ? 'dark' : $n->warna }} mb-1">{{ $n->title }}</small>
+                                              <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">{{ $n->body }}</small>
+                                              <small class="text-muted d-block" style="font-size: 0.7rem;">
+                                                  <i class="bi bi-clock me-1"></i>{{ $n->created_at?->diffForHumans() }}
+                                              </small>
+                                          </div>
+                                      </a>
+                                  @empty
+                                      <div class="text-center text-muted small py-4">
+                                          <i class="bi bi-bell-slash fs-4 d-block mb-2 opacity-50"></i>
+                                          Belum ada notifikasi.
+                                      </div>
+                                  @endforelse
                               </div>
                               <div class="dropdown-divider my-0"></div>
-                              <a href="/wms/notifications" class="dropdown-item text-center py-2 text-primary fw-bold small bg-light" style="border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem;">
+                              <a href="{{ route('wms.notifications.index') }}" class="dropdown-item text-center py-2 text-primary fw-bold small bg-light" style="border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem;">
                                   Lihat Semua Notifikasi <i class="bi bi-arrow-right ms-1"></i>
                               </a>
                           </div>
@@ -92,9 +114,13 @@
                                       <small class="text-muted">{{ $uLabel }}</small>
                                   </div>
                               </li>
-                              @unless ($isSalesUser)
-                              <li><a class="dropdown-item py-2 mt-2" href="/wms/profile"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
-                              @endunless
+                              {{-- MILIK SEMUA ROLE. Dulu disembunyikan dari Tim Sales
+                                   karena profil hanya ada di Portal WMS, dan Sales
+                                   dipagari keluar dari portal itu — sehingga satu-satunya
+                                   role yang paling sering berpindah perangkat justru tidak
+                                   bisa mengganti sandinya sendiri. Rutenya kini di /profile,
+                                   di luar kedua portal. --}}
+                              <li><a class="dropdown-item py-2 mt-2" href="{{ route('profile') }}"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
 
                               <li><hr class="dropdown-divider"></li>
                               <li>

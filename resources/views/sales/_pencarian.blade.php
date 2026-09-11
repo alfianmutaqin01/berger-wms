@@ -1,10 +1,14 @@
 {{-- Skrip form Buat Pesanan. Dipisah dari berkas view agar bagian markup
      dan bagian perilaku tidak saling menyulitkan saat dibaca. --}}
+
+{{-- Kolom ketik-lalu-pilih diangkat ke partial bersama sejak halaman Booking
+     memakainya juga: penundaan ketikan dan penanda permintaan terakhir harus
+     diperbaiki di SATU tempat, bukan dua. --}}
+@include('partials.pencarian-ketik')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const ITEM_AWAL = @json($itemLama);
     const PRODUK_TERPILIH = @json($produkTerpilih);
-    const MIN_CARI = 2;
 
     // Tidak ada lagi pemilih gudang di halaman ini: gudang Sales ditentukan
     // akunnya dan dibaca server dari sesi, bukan dikirim formulir.
@@ -14,98 +18,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const sourceManual = document.getElementById('sourceManual');
     const blokDokumen = document.getElementById('blokDokumen');
     const blokItem = document.getElementById('blokItem');
-
-    /* ==================================================================
-     | Kolom pencarian — dipakai customer maupun produk.
-     |
-     | Daftarnya TIDAK ada di halaman; tiap ketikan menanyakannya ke server.
-     | Itulah sebabnya ada penundaan (debounce) dan penanda permintaan
-     | terakhir: tanpa keduanya, mengetik "APKO" mengirim empat permintaan,
-     | dan jawaban untuk "A" yang datang belakangan bisa menimpa jawaban
-     | "APKO" yang sudah benar.
-     ================================================================== */
-    function pasangPencarian(wadah, opsi) {
-        const teks = wadah.querySelector('.cari-teks');
-        const nilai = wadah.querySelector('.cari-nilai');
-        const saran = wadah.querySelector('.cari-saran');
-
-        let tunda = null;
-        let permintaanKe = 0;
-
-        function tutup() {
-            saran.classList.add('d-none');
-            saran.innerHTML = '';
-        }
-
-        function tampilkan(hasil) {
-            saran.innerHTML = '';
-
-            if (hasil.length === 0) {
-                const kosong = document.createElement('div');
-                kosong.className = 'list-group-item small text-muted';
-                kosong.textContent = 'Tidak ada yang cocok.';
-                saran.appendChild(kosong);
-                saran.classList.remove('d-none');
-                return;
-            }
-
-            hasil.forEach(function (item) {
-                const baris = document.createElement('button');
-                baris.type = 'button';
-                baris.className = 'list-group-item list-group-item-action py-2';
-                baris.innerHTML = opsi.tampilan(item);
-                baris.addEventListener('click', function () {
-                    nilai.value = item.id;
-                    teks.value = opsi.label(item);
-                    tutup();
-                    if (opsi.setelahPilih) opsi.setelahPilih(item);
-                });
-                saran.appendChild(baris);
-            });
-
-            saran.classList.remove('d-none');
-        }
-
-        function cari() {
-            const q = teks.value.trim();
-
-            if (q.length < MIN_CARI) {
-                tutup();
-                return;
-            }
-
-            const ini = ++permintaanKe;
-
-            fetch(opsi.url(q), { headers: { 'Accept': 'application/json' } })
-                .then(function (r) { return r.ok ? r.json() : []; })
-                .then(function (hasil) {
-                    if (ini !== permintaanKe) return;   // jawaban terlambat, abaikan
-                    tampilkan(hasil);
-                })
-                .catch(function () { if (ini === permintaanKe) tutup(); });
-        }
-
-        teks.addEventListener('input', function () {
-            // Mengubah ketikan membatalkan pilihan sebelumnya, supaya teks
-            // yang terlihat tidak pernah berbeda dari id yang terkirim.
-            nilai.value = '';
-            if (opsi.setelahPilih) opsi.setelahPilih(null);
-
-            clearTimeout(tunda);
-            tunda = setTimeout(cari, 250);
-        });
-
-        teks.addEventListener('focus', cari);
-        teks.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') tutup();
-        });
-
-        // Klik di luar menutup saran; tanpa ini daftarnya menggantung
-        // menutupi kolom di bawahnya.
-        document.addEventListener('click', function (e) {
-            if (!wadah.contains(e.target)) tutup();
-        });
-    }
 
     /* ---------------------------------------------------------- Customer */
 

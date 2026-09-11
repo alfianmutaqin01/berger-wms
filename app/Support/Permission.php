@@ -39,7 +39,21 @@ class Permission
 
     public const INBOUND_PUTAWAY = 'inbound.putaway';
 
-    public const INBOUND_RETURNS = 'inbound.returns';
+    /**
+     * PENOLAKAN CUSTOMER — barang yang ditolak saat pengiriman lalu kembali.
+     *
+     * DIPECAH TIGA, karena tiga peran berbeda mengerjakan tiga hal berbeda
+     * pada dokumen yang sama. Menyatukannya jadi satu izin berarti Operator
+     * yang menaikkan barang ke rak juga boleh mengesahkan hasil kerjanya
+     * sendiri — persis yang dihindari di STOCKTAKE_COUNT vs STOCKTAKE_MANAGE.
+     */
+    public const RETURN_VIEW = 'return.view';
+
+    /** Menyetujui klaim penolakan DAN memverifikasi barangnya di rak. */
+    public const RETURN_APPROVE = 'return.approve';
+
+    /** Menaikkan barang tolakan ke rak, memisah yang bagus dari yang DDP. */
+    public const RETURN_PUTAWAY = 'return.putaway';
 
     public const INBOUND_VERIFY = 'inbound.verify';
 
@@ -49,8 +63,57 @@ class Permission
 
     public const INVENTORY_ADJUST = 'inventory.adjust';
 
-    /** Pemindahan antar RAK di dalam satu gudang (F-INV-02). */
+    /**
+     * Pemindahan antar RAK di dalam satu gudang (F-INV-02).
+     *
+     * TERBUKA SAMPAI OPERATOR GUDANG — keputusan pemilik produk. Merekalah
+     * yang benar-benar mengangkat barangnya; memaksa mereka memanggil Logistik
+     * hanya untuk mencatat perpindahan yang sudah terjadi membuat sistem
+     * tertinggal dari kenyataan di rak. Memindahkan TIDAK mengubah jumlah stok
+     * sama sekali, jadi wewenang ini tidak bisa dipakai untuk menambah atau
+     * mengurangi apa pun — itu tetap INVENTORY_ADJUST.
+     */
     public const INVENTORY_TRANSFER = 'inventory.transfer';
+
+    /**
+     * Penanda batch: Karantina, Quality Issue, dan Dahulukan Keluar —
+     * permintaan pemilik produk, bukan PRD.
+     *
+     * SENGAJA DIPISAH dari INVENTORY_ADJUST. Koreksi qty dan penandaan DDP
+     * permanen tetap wewenang Manager/Super Admin saja; tapi karantina adalah
+     * hasil pemeriksaan QC yang dilakukan begitu barang naik rak — pekerjaan
+     * sehari-hari Logistik, bukan keputusan yang perlu naik ke Manager.
+     */
+    public const INVENTORY_QUARANTINE = 'inventory.quarantine';
+
+    /**
+     * MEMASUKKAN hasil hitungan fisik saat stocktake.
+     *
+     * Terbuka sampai Operator Gudang: merekalah yang berdiri di depan rak dan
+     * menghitung. Memasukkan hitungan TIDAK mengubah stok sama sekali — ia
+     * hanya menumpuk sebagai catatan sampai laporannya disahkan.
+     */
+    public const STOCKTAKE_COUNT = 'stocktake.count';
+
+    /**
+     * Membuka sesi stocktake dan MENGESAHKAN laporannya.
+     *
+     * SENGAJA DIPISAH dari yang menghitung. Pengesahan itulah yang benar-benar
+     * menggeser angka stok — kadang ribuan unit sekaligus — dan orang yang
+     * salah menghitung tidak boleh sekaligus menjadi orang yang mengesahkan
+     * koreksi atas kesalahannya sendiri.
+     */
+    public const STOCKTAKE_MANAGE = 'stocktake.manage';
+
+    /**
+     * Booking produk: menahan jatah untuk customer sebelum pesanannya masuk.
+     *
+     * Wewenang Logistik, bukan Sales. Yang ditahan adalah stok gudang — dan
+     * setiap unit yang dibooking langsung hilang dari angka yang boleh
+     * dijanjikan ke pelanggan lain. Membuka pintu itu ke Sales berarti siapa
+     * pun bisa mengunci stok untuk pelanggannya sendiri tanpa gudang tahu.
+     */
+    public const BOOKING = 'booking.manage';
 
     /*
      | Transfer antar GUDANG (F-INV-05) — sengaja dipisah dari yang di atas.
@@ -69,13 +132,69 @@ class Permission
 
     public const OUTBOUND_APPROVAL = 'outbound.approval';
 
+    /**
+     * Membuat pesanan dari sisi WMS, atas nama seorang Sales.
+     *
+     * SENGAJA IZIN TERSENDIRI, bukan menumpang OUTBOUND_APPROVAL. Kalau
+     * menumpang, Logistik ikut mendapatkannya — dan Logistik adalah pihak
+     * yang menilai pesanan. Yang membuat sekaligus menilai tanpa seorang pun
+     * di luar rantai itu adalah keadaan yang justru dihindari.
+     *
+     * Pemilik produk memutuskan pembuat BOLEH menyetujui pesanannya sendiri,
+     * jadi pemisahan itu memang sudah dilepas untuk Admin dan Manager. Yang
+     * tersisa sebagai kontrol adalah jejaknya (sales_orders.placed_by) dan
+     * kabar ke Sales yang namanya dipakai — keduanya wajib, dan keduanya ada.
+     */
+    public const OUTBOUND_ORDER_INTERNAL = 'outbound.order_internal';
+
     public const OUTBOUND_PICKING_LIST = 'outbound.picking.list';
 
     public const OUTBOUND_PICKING_PROCESS = 'outbound.picking.process';
 
+    /**
+     * MEMBACA rincian satu daftar picking.
+     *
+     * Fitur tersendiri karena dibaca dua peran dengan pekerjaan berbeda:
+     * Logistik memeriksa hasil susunannya, Operator mengerjakannya. Menumpang
+     * salah satu dari dua fitur di atas berarti salah satu peran itu ditolak
+     * membuka halaman yang justru jadi bagian pekerjaannya.
+     */
+    public const OUTBOUND_PICKING_VIEW = 'outbound.picking.view';
+
     public const OUTBOUND_DELIVERY = 'outbound.delivery';
 
     public const OUTBOUND_VERIFICATION = 'outbound.verification';
+
+    /* ------------------------------------------------------------------ MRF */
+
+    /*
+     | PERMINTAAN MATERIAL PRODUKSI (MRF) — empat izin, empat pekerjaan.
+     |
+     | Dipecah sebanyak ini bukan karena senang memecah, melainkan karena
+     | empat orang yang berbeda mengerjakan empat hal yang berbeda pada satu
+     | dokumen: Produksi meminta, Logistik memutuskan, Operator mengambilkan,
+     | Produksi menerima dan memakainya. Menyatukan MRF_CREATE dengan
+     | MRF_APPROVE berarti Produksi menyetujui permintaannya sendiri — dan
+     | seluruh gunanya persetujuan hilang di baris itu juga.
+     */
+
+    /** Menyusun dan mengirim permintaan material. */
+    public const MRF_CREATE = 'mrf.create';
+
+    /** Membaca daftar dan rincian MRF. */
+    public const MRF_VIEW = 'mrf.view';
+
+    /** Menyetujui/menolak dari sisi gudang DAN memilih batch sungguhannya. */
+    public const MRF_APPROVE = 'mrf.approve';
+
+    /**
+     * Menerima barangnya dan mencatat pemakaiannya.
+     *
+     * Milik Produksi, bukan Logistik. Sesudah diterima, barang itu ada di
+     * lantai produksi dan hanya orang di sana yang tahu berapa yang benar-
+     * benar masuk mixer hari ini.
+     */
+    public const MRF_RECEIVE = 'mrf.receive';
 
     /* -------------------------------------------------------------- Billing */
 
@@ -92,6 +211,29 @@ class Permission
     public const ADMIN_USERS = 'admin.users';
 
     public const ADMIN_SEQUENCE = 'admin.sequence';
+
+    /**
+     * Pengaturan Sistem — SUPER ADMIN SAJA (Fase 10).
+     *
+     * Manager sengaja tidak ikut, walau ia ikut di ADMIN_USERS dan
+     * ADMIN_SEQUENCE. Alasannya bukan soal kepercayaan melainkan CAKUPAN:
+     * setelan di sini berlaku untuk SELURUH perusahaan, sementara seluruh
+     * kewenangan Manager dibatasi ke gudangnya sendiri. Manager Karawang yang
+     * menggeser jam cutoff akan mengubah jam kerja Sales Pekanbaru yang tidak
+     * pernah ia temui.
+     */
+    public const ADMIN_SETTINGS = 'admin.settings';
+
+    /**
+     * Log aktivitas: siapa melakukan apa, kapan — SUPER ADMIN SAJA.
+     *
+     * Manager sengaja TIDAK ikut, walau ia ikut di hampir semua gate admin
+     * lainnya. Log ini merekam tindakan Manager juga; memberi Manager akses
+     * membaca log berarti orang yang diawasi memegang jendela pengawasnya
+     * sendiri. Log yang bisa dibaca pelakunya masih berguna, tetapi bukan lagi
+     * alat pemeriksaan.
+     */
+    public const ADMIN_AUDIT = 'admin.audit';
 
     /**
      * Fitur => daftar slug role yang diizinkan.
@@ -116,7 +258,16 @@ class Permission
         self::INBOUND_CREATE => [Role::SUPER_ADMIN, Role::PRODUCTION],
         self::INBOUND_HISTORY => [Role::SUPER_ADMIN, Role::MANAGER, Role::PRODUCTION],
         self::INBOUND_PUTAWAY => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
-        self::INBOUND_RETURNS => [Role::SUPER_ADMIN, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR],
+        /*
+         | PENOLAKAN CUSTOMER. Semua yang terlibat boleh MELIHAT antreannya —
+         | Operator perlu tahu ada barang menunggu dinaikkan, dan tanpa itu ia
+         | harus ditelepon setiap kali. Yang dipisah adalah tindakannya.
+         */
+        self::RETURN_VIEW => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
+        self::RETURN_APPROVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::RETURN_PUTAWAY => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
         self::INBOUND_VERIFY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
         // Stok: Produksi & Operator hanya MELIHAT (butuh cek lokasi saat
@@ -126,7 +277,15 @@ class Permission
             Role::PRODUCTION, Role::WAREHOUSE_OPERATOR,
         ],
         self::INVENTORY_ADJUST => [Role::SUPER_ADMIN, Role::MANAGER],
-        self::INVENTORY_TRANSFER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::INVENTORY_TRANSFER => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
+        self::INVENTORY_QUARANTINE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::STOCKTAKE_COUNT => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
+        self::STOCKTAKE_MANAGE => [Role::SUPER_ADMIN, Role::MANAGER],
+        self::BOOKING => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
         // Penerimaan transfer memutuskan angka stok final di gudang tujuan —
         // wewenang yang sama dengan Verifikasi Logistik pada jalur inbound,
@@ -139,10 +298,29 @@ class Permission
 
         // Outbound: proses picking di tangan Operator; sisanya Logistik.
         self::OUTBOUND_APPROVAL => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        // Logistik TIDAK ikut — lihat alasannya di konstantanya.
+        self::OUTBOUND_ORDER_INTERNAL => [Role::SUPER_ADMIN, Role::MANAGER],
         self::OUTBOUND_PICKING_LIST => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_PICKING_PROCESS => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
+        self::OUTBOUND_PICKING_VIEW => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
         self::OUTBOUND_DELIVERY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_VERIFICATION => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+
+        /*
+         | MRF. Operator ikut MELIHAT: daftar picking yang ia kerjakan bisa
+         | berisi permintaan material, dan tanpa akses membaca dokumennya ia
+         | mengambil barang tanpa tahu untuk siapa dan ke rak mana harus
+         | ditaruh. Yang dipisah adalah tindakannya, bukan bacaannya.
+         */
+        self::MRF_CREATE => [Role::SUPER_ADMIN, Role::PRODUCTION],
+        self::MRF_VIEW => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS,
+            Role::PRODUCTION, Role::WAREHOUSE_OPERATOR,
+        ],
+        self::MRF_APPROVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::MRF_RECEIVE => [Role::SUPER_ADMIN, Role::PRODUCTION],
 
         self::BILLING_VIEW => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
@@ -155,6 +333,8 @@ class Permission
         self::MASTER_LOCATIONS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_USERS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_SEQUENCE => [Role::SUPER_ADMIN, Role::MANAGER],
+        self::ADMIN_SETTINGS => [Role::SUPER_ADMIN],
+        self::ADMIN_AUDIT => [Role::SUPER_ADMIN],
     ];
 
     /** Seluruh nama fitur, dipakai AppServiceProvider untuk mendaftarkan Gate. */

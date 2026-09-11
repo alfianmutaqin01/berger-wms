@@ -4,6 +4,7 @@ namespace App\Support\Outbound;
 
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
+use App\Models\StockBooking;
 use Illuminate\Support\Collection;
 
 /**
@@ -31,38 +32,114 @@ use Illuminate\Support\Collection;
  */
 class PendingAllocationFiller
 {
-    public function __construct(private readonly FifoAllocator $allocator) {}
+    public function __construct(
+        private readonly FifoAllocator $allocator,
+        private readonly ProductBooking $booking,
+    ) {}
 
     /**
-     * @return array{terisi:int, pesanan:list<array{nomor:string, qty:int}>}
+     * SATU ANTREAN UNTUK DUA BENTUK JANJI.
+     *
+     * Ada dua cara sebuah unit sudah punya pemilik sebelum barangnya ada:
+     * pesanan yang disetujui melebihi stok, dan BOOKING yang dibuat sebelum
+     * pesanannya masuk. Keduanya sama-sama "sudah dijanjikan, belum ada
+     * barangnya", jadi keduanya mengantre di deret yang sama dan diurutkan
+     * menurut KAPAN JANJINYA DIBUAT.
+     *
+     * Memberi salah satunya prioritas mutlak akan salah dengan sendirinya:
+     * booking yang dibuat kemarin akan menyalip pesanan yang sudah menunggu
+     * tiga minggu, atau sebaliknya. Yang adil dan bisa dijelaskan ke customer
+     * hanya satu — siapa yang dijanjikan lebih dulu, dia yang dilayani dulu.
+     *
+     * @return array{terisi:int, pesanan:list<array{nomor:string, qty:int}>, booking:list<array{nomor:string, qty:int}>}
      */
     public function fill(int $productId, int $warehouseId, ?int $userId): array
     {
-        $tertahan = $this->menunggu($productId, $warehouseId);
-
         $terisi = 0;
         $pesanan = [];
+        $booking = [];
 
-        foreach ($tertahan as $detail) {
-            $kurang = $detail->qty_pending_stock;
+        foreach ($this->antreanJanji($productId, $warehouseId) as $janji) {
+            if ($janji['jenis'] === 'pesanan') {
+                $detail = $janji['objek'];
+                $kurang = $detail->qty_pending_stock;
 
-            if ($kurang < 1) {
+                if ($kurang < 1) {
+                    continue;
+                }
+
+                $dapat = $this->allocator->allocate($detail, $kurang, $userId);
+
+                if ($dapat < 1) {
+                    // Stok habis sebelum giliran janji ini. Yang berikutnya
+                    // pasti juga tidak kebagian, jadi tidak perlu diteruskan.
+                    break;
+                }
+
+                $terisi += $dapat;
+                $pesanan[] = ['nomor' => $detail->salesOrder->order_number, 'qty' => $dapat];
+
                 continue;
             }
 
-            $dapat = $this->allocator->allocate($detail, $kurang, $userId);
+            $dapat = $this->booking->reserve($janji['objek'], $userId);
 
             if ($dapat < 1) {
-                // Stok habis sebelum giliran pesanan ini. Yang berikutnya
-                // pasti juga tidak kebagian, jadi tidak perlu diteruskan.
                 break;
             }
 
             $terisi += $dapat;
-            $pesanan[] = ['nomor' => $detail->salesOrder->order_number, 'qty' => $dapat];
+            $booking[] = ['nomor' => $janji['objek']->reference, 'qty' => $dapat];
         }
 
-        return ['terisi' => $terisi, 'pesanan' => $pesanan];
+        return ['terisi' => $terisi, 'pesanan' => $pesanan, 'booking' => $booking];
+    }
+
+    /**
+     * Seluruh janji yang menunggu stok, terurut dari yang paling lama.
+     *
+     * Waktu janji pesanan diambil dari `submitted_at` — titik awal SLA §7.6 —
+     * dan janji booking dari kapan booking-nya dibuat. Keduanya adalah saat
+     * customer mulai menunggu, dan itulah yang sebanding.
+     *
+     * @return list<array{jenis:string, waktu:mixed, objek:mixed}>
+     */
+    private function antreanJanji(int $productId, int $warehouseId): array
+    {
+        $antrean = [];
+
+        foreach ($this->menunggu($productId, $warehouseId) as $detail) {
+            $antrean[] = [
+                'jenis' => 'pesanan',
+                'waktu' => $detail->salesOrder?->submitted_at ?? $detail->created_at,
+                'objek' => $detail,
+            ];
+        }
+
+        $bookings = StockBooking::query()
+            ->berlaku()
+            ->where('product_id', $productId)
+            ->where('warehouse_id', $warehouseId)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($bookings as $booking) {
+            if ($booking->qty_waiting < 1) {
+                continue;
+            }
+
+            $antrean[] = [
+                'jenis' => 'booking',
+                'waktu' => $booking->created_at,
+                'objek' => $booking,
+            ];
+        }
+
+        usort($antrean, fn (array $a, array $b) => ($a['waktu']?->timestamp ?? 0) <=> ($b['waktu']?->timestamp ?? 0));
+
+        return $antrean;
     }
 
     /**
@@ -82,7 +159,13 @@ class PendingAllocationFiller
             ->where('sales_order_details.product_id', $productId)
             ->whereHas('salesOrder', fn ($q) => $q
                 ->where('warehouse_id', $warehouseId)
-                ->whereIn('status', [SalesOrder::STATUS_APPROVED, SalesOrder::STATUS_PICKING]))
+                ->whereIn('status', [SalesOrder::STATUS_APPROVED, SalesOrder::STATUS_PICKING])
+                // Pesanan yang sudah masuk daftar picking TIDAK ditambahi
+                // alokasi lagi. Isi daftar dibekukan saat disusun dan sudah
+                // dicetak; alokasi susulan tidak akan pernah muncul di kertas
+                // yang dibawa operator, jadi barangnya tidak akan ikut
+                // terambil — tetapi angkanya sudah terlanjur dicadangkan.
+                ->whereNull('picking_list_id'))
             ->join('sales_orders', 'sales_orders.id', '=', 'sales_order_details.sales_order_id')
             // Yang teralokasi belum menutup yang disetujui = masih menunggu.
             // Dihitung di SQL supaya baris yang sudah penuh tidak ikut ditarik
@@ -112,15 +195,32 @@ class PendingAllocationFiller
             return null;
         }
 
-        $daftar = collect($hasil['pesanan'])
-            ->map(fn (array $p) => "{$p['nomor']} ({$p['qty']})")
-            ->implode(', ');
+        $bagian = [];
+
+        if ($hasil['pesanan'] !== []) {
+            $bagian[] = sprintf(
+                '%d pesanan yang menunggu (%s)',
+                count($hasil['pesanan']),
+                collect($hasil['pesanan'])->map(fn (array $p) => "{$p['nomor']} {$p['qty']}")->implode(', '),
+            );
+        }
+
+        // Booking disebut TERPISAH, bukan dilebur jadi "pesanan". Yang membaca
+        // perlu tahu bahwa sebagian barang baru ini sudah ada yang punya
+        // walaupun pesanannya belum masuk — itu justru kabar yang paling
+        // mudah terlewat.
+        if (! empty($hasil['booking'])) {
+            $bagian[] = sprintf(
+                '%d booking (%s)',
+                count($hasil['booking']),
+                collect($hasil['booking'])->map(fn (array $p) => "{$p['nomor']} {$p['qty']}")->implode(', '),
+            );
+        }
 
         return sprintf(
-            '%d unit langsung dialokasikan ke %d pesanan yang menunggu: %s.',
+            '%d unit langsung dialokasikan ke %s.',
             $hasil['terisi'],
-            count($hasil['pesanan']),
-            $daftar
+            implode(' dan ', $bagian),
         );
     }
 }

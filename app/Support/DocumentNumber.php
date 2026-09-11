@@ -40,6 +40,88 @@ class DocumentNumber
 
     public const TYPE_STOCK_TRANSFER = 'stock_transfer';
 
+    public const TYPE_PICKING_LIST = 'picking_list';
+
+    public const TYPE_SALES_RETURN = 'sales_return';
+
+    public const TYPE_MATERIAL_REQUISITION = 'material_requisition';
+
+    /**
+     * Nomor MRF: MR{YYMMDD}{urut 3 digit}.
+     *
+     * LINTAS GUDANG, sama alasannya dengan PL, TF, dan RJ. MRF dibaca
+     * Produksi, Logistik, Operator, dan atasan yang menyetujui lewat WhatsApp
+     * — sebagian di antaranya tidak melihat layar WMS sama sekali dan hanya
+     * menyebut nomornya. Nomor yang berulang di tiap gudang membuat
+     * "MR261011001" berarti tiga permintaan berbeda tergantung siapa yang
+     * menyebutnya.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forMaterialRequisition(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_MATERIAL_REQUISITION,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'MR'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Nomor daftar picking: PL{YYMMDD}{urut 3 digit}.
+     *
+     * LINTAS GUDANG, bukan per gudang — sama alasannya dengan nomor transfer.
+     * Daftar picking memang hanya dikerjakan di satu gudang, tetapi yang
+     * membacanya tidak: Logistik dan Super Admin melihat ketiga gudang di
+     * satu layar, dan nomor yang berulang di tiap gudang membuat "PL260916001"
+     * berarti tiga tugas berbeda tergantung siapa yang menyebutnya.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forPickingList(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_PICKING_LIST,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'PL'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Nomor laporan penolakan customer: RJ{YYMMDD}{urut 3 digit}.
+     *
+     * LINTAS GUDANG, sama seperti PL dan TF: laporan penolakan dibaca Sales
+     * (yang tidak terikat gudang), Logistik, dan Operator sekaligus, dan
+     * nomor yang berulang di tiap gudang membuat "RJ260930001" berarti tiga
+     * laporan berbeda tergantung siapa yang menyebutnya.
+     *
+     * RJ, bukan RTN atau RET — sengaja dua huruf agar sebaris dengan PO, PL,
+     * TF, dan SJ. Nomor dokumen di sini selalu dibaca dan disebut lewat
+     * telepon, dan panjang yang seragam membuatnya lebih mudah dieja.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forSalesReturn(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_SALES_RETURN,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'RJ'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
     /**
      * Nomor transfer antar gudang: TF{YYMMDD}{urut 3 digit}.
      *

@@ -64,6 +64,46 @@ final class PhoneNumber
     }
 
     /**
+     * Bentuk kirim WhatsApp: SATU nomor, berkode negara, tanpa tanda plus.
+     *
+     * Berbeda dari normalize(), yang hanya membuang hiasan dan MEMBIARKAN
+     * "081234567890" apa adanya karena itulah bentuk yang datang dari ERP.
+     * WhatsApp tidak mengenal awalan nol nasional: mengirim ke "0812..." bukan
+     * gagal dengan galat, melainkan diterima sebagai nomor negara lain atau
+     * nomor yang tidak ada — dan kegagalan seperti itu tidak berbunyi.
+     *
+     *   "0812 3456 7890"  -> "6281234567890"
+     *   "+62 812-3456-7890" -> "6281234567890"
+     *   "6281234567890"   -> "6281234567890"
+     *
+     * Mengembalikan NULL bila selnya memuat lebih dari satu nomor: pesan
+     * hanya bisa dikirim ke satu tujuan, dan menebak mana yang dimaksud lebih
+     * buruk daripada menolaknya.
+     */
+    public static function forWhatsApp(?string $raw): ?string
+    {
+        $bagian = self::parts($raw);
+
+        if (count($bagian) !== 1) {
+            return null;
+        }
+
+        $nomor = $bagian[0];
+
+        if (str_starts_with($nomor, '0')) {
+            return '62'.ltrim($nomor, '0');
+        }
+
+        // Nomor yang ditulis tanpa awalan apa pun ("81234567890") tetap
+        // dianggap Indonesia: itu bentuk yang lazim diketik orang di sini.
+        if (str_starts_with($nomor, '62')) {
+            return $nomor;
+        }
+
+        return '62'.$nomor;
+    }
+
+    /**
      * Memecah sel menjadi daftar nomor berisi angka saja, tanpa kembar.
      *
      * @return list<string>

@@ -474,7 +474,7 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
 |---|---|:---:|:---:|
 | **Good Stock** (`active`) | Belum lewat `expiry_date` dan tidak ditandai rusak | ✅ | ✅ |
 | **DDP — Expired** (`expired`) | `expiry_date` sudah terlewat | ❌ | ❌ |
-| **DDP — Rusak/Karantina** (`ddp`) | Ditandai rusak dari hasil retur, write-off, atau temuan stock opname | ❌ | ❌ |
+| **DDP — Rusak/Karantina** (`ddp`) | Ditandai rusak dari hasil retur, write-off, atau temuan stocktake | ❌ | ❌ |
 
 - **Perpindahan otomatis ke DDP:** Scheduled job harian memindahkan batch yang melewati `expiry_date` dari status `active` → `expired`, dan mencatatnya di `stock_movements` (tipe `ADJUSTMENT`, alasan `EXPIRED`).
 - **Peringatan dini:** Batch yang akan kedaluwarsa dalam **90 hari** ditandai pada halaman Stok dan memicu notifikasi ke Tim Logistik & Manager.
@@ -544,7 +544,7 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
   1. Logistik melihat daftar PO yang sudah **Siap Kirim** dan meng klik salah satu daftar po.
   2. logistik mengupload data barang yang ada dan tidak ada dalam bentuk exel sebagai bahan konfirmasi.
   3. sistem akan membandingkan data barang yang ada dan tidak ada dengan data barang yang ada di sistem.
-  4. jika sudah sesuai dengan data yang dikirim kan maka bisa lanjut, namun jika ada yang tidak sesuai maka logistik bisa mengoreksi stok yang tersedia di gudang saat ini berbeda sehingga bisa menjadi bahan perbaikan/ stock opname.
+  4. jika sudah sesuai dengan data yang dikirim kan maka bisa lanjut, namun jika ada yang tidak sesuai maka logistik bisa mengoreksi stok yang tersedia di gudang saat ini berbeda sehingga bisa menjadi bahan perbaikan/ stocktake.
   5. jika data sudah sesuai logistik dapat mengisi data pengiriman: Nama Supir. nomer WA, Plat Nomor Kendaraan.
   6. Menekan **"Cetak Surat Jalan"**. 
   7. Sistem **generate nomor Surat Jalan otomatis** (melanjutkan dari starting number yang diatur Super Admin di Pengaturan).

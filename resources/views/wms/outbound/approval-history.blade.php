@@ -98,6 +98,35 @@
                                     <span class="badge bg-info-subtle text-info-emphasis">Gabung invoice</span>
                                 </div>
                             @endif
+                            {{-- BERTAHAN SEKALIPUN PESANANNYA SUDAH DITERIMA LAGI.
+                                 Kolom pembatalan di pesanan sengaja dibersihkan
+                                 saat diterima ulang supaya keadaan sekarang
+                                 jujur; hitungan ini dibaca dari tabel riwayat,
+                                 yang tidak pernah dibersihkan. Tanpa penanda
+                                 ini, PO yang sudah tiga kali batal terlihat
+                                 sama bersihnya dengan yang mulus sejak awal. --}}
+                            @if($order->cancellations_count > 0)
+                                <div class="small mt-1">
+                                    <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none text-danger-emphasis"
+                                            data-bs-toggle="collapse" data-bs-target="#batal-{{ $order->id }}">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i>
+                                        Pernah dibatalkan {{ $order->cancellations_count }}&times;
+                                    </button>
+                                </div>
+                            @endif
+                            {{-- Sama alasannya dengan pembatalan: penanda
+                                 penolakan di pesanan dibersihkan begitu Sales
+                                 memperbaiki dan mengajukan ulang, jadi hanya
+                                 tabel riwayat yang masih mengingatnya. --}}
+                            @if($order->rejections_count > 0)
+                                <div class="small mt-1">
+                                    <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none text-warning-emphasis"
+                                            data-bs-toggle="collapse" data-bs-target="#tolak-{{ $order->id }}">
+                                        <i class="bi bi-x-octagon me-1"></i>
+                                        Pernah ditolak {{ $order->rejections_count }}&times;
+                                    </button>
+                                </div>
+                            @endif
                         </td>
                         <td class="font-monospace">{{ $order->bc_so_number ?? '—' }}</td>
                         <td>
@@ -141,6 +170,29 @@
                             <small class="text-muted">{{ $waktu?->format('H:i') }}</small>
                         </td>
                         <td class="text-end">
+                            {{-- "12 item" tanpa cara membukanya membuat
+                                 pertanyaan paling wajar tentang penerimaan yang
+                                 sudah lewat — "apa saja yang waktu itu saya
+                                 setujui" — tidak bisa dijawab dari menu
+                                 penerimaan sama sekali. --}}
+                            <a href="{{ route('wms.approval.history.show', $order) }}"
+                               class="btn btn-sm btn-outline-primary rounded-3 mb-1">
+                                <i class="bi bi-list-ul me-1"></i> Rincian
+                            </a>
+                            {{-- PINTU KECIL untuk salah ketik nomor SO. Hanya
+                                 selama pesanan belum berangkat: sesudah itu
+                                 koreksinya lewat tombol Pasangkan di Surat
+                                 Jalan, supaya nomornya disalin dari dokumen BC
+                                 dan bukan diketik ulang. --}}
+                            @if($bolehDibatalkan && ! $dibatalkan && ! $ditolak && $order->so_merged_into_id === null)
+                                <button type="button" class="btn btn-sm btn-outline-secondary rounded-3 mb-1 tombol-koreksi-so"
+                                        data-bs-toggle="modal" data-bs-target="#modalKoreksiSo"
+                                        data-aksi="{{ route('wms.approval.so-number', $order) }}"
+                                        data-nomor="{{ $order->order_number }}"
+                                        data-so="{{ $order->bc_so_number }}">
+                                    <i class="bi bi-pencil me-1"></i> No. SO
+                                </button>
+                            @endif
                             @if($bolehDibatalkan)
                                 <button type="button" class="btn btn-sm btn-outline-danger rounded-3 tombol-batal"
                                         data-bs-toggle="modal" data-bs-target="#modalBatal"
@@ -155,6 +207,83 @@
                             @endif
                         </td>
                     </tr>
+                    @if($order->cancellations_count > 0)
+                        {{-- Setiap pembatalan berdiri sendiri: siapa, kapan,
+                             alasannya, dan nomor SO yang saat itu dilepas.
+                             Nomor SO-nya ikut ditampilkan karena justru itu
+                             yang ditelusuri ketika angka di BC dan WMS berbeda
+                             — nomornya sudah tidak ada lagi di pesanannya. --}}
+                        <tr class="collapse" id="batal-{{ $order->id }}">
+                            <td colspan="8" class="bg-light-subtle">
+                                <div class="small fw-semibold text-danger-emphasis mb-2">
+                                    Riwayat pembatalan pesanan {{ $order->order_number }}
+                                </div>
+                                <table class="table table-sm mb-0 bg-white">
+                                    <thead>
+                                        <tr class="small text-muted">
+                                            <th>Waktu</th>
+                                            <th>Oleh</th>
+                                            <th>Sumber</th>
+                                            <th>No. SO saat itu</th>
+                                            <th class="text-end">Unit dilepas</th>
+                                            <th>Alasan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach($order->cancellations as $batal)
+                                        <tr>
+                                            <td class="small">
+                                                {{ $batal->cancelled_at?->format('d M Y') }}
+                                                <span class="text-muted">{{ $batal->cancelled_at?->format('H:i') }}</span>
+                                            </td>
+                                            <td class="small">{{ $batal->cancelledBy?->full_name ?? '—' }}</td>
+                                            <td class="small">
+                                                <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                                    {{ $batal->source_label }}
+                                                </span>
+                                            </td>
+                                            <td class="small font-monospace">{{ $batal->bc_so_number ?? '—' }}</td>
+                                            <td class="small text-end">{{ number_format($batal->qty_released) }}</td>
+                                            <td class="small">{{ $batal->reason }}</td>
+                                        </tr>
+                                    @endforeach
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    @endif
+                    @if($order->rejections_count > 0)
+                        <tr class="collapse" id="tolak-{{ $order->id }}">
+                            <td colspan="8" class="bg-light-subtle">
+                                <div class="small fw-semibold text-warning-emphasis mb-2">
+                                    Riwayat penolakan pesanan {{ $order->order_number }}
+                                </div>
+                                <table class="table table-sm mb-0 bg-white">
+                                    <thead>
+                                        <tr class="small text-muted">
+                                            <th>Pengajuan</th>
+                                            <th>Waktu</th>
+                                            <th>Oleh</th>
+                                            <th>Alasan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach($order->rejections as $tolak)
+                                        <tr>
+                                            <td class="small">ke-{{ $tolak->attempt_no }}</td>
+                                            <td class="small">
+                                                {{ $tolak->rejected_at?->format('d M Y') }}
+                                                <span class="text-muted">{{ $tolak->rejected_at?->format('H:i') }}</span>
+                                            </td>
+                                            <td class="small">{{ $tolak->rejectedBy?->full_name ?? '—' }}</td>
+                                            <td class="small">{{ $tolak->reason }}</td>
+                                        </tr>
+                                    @endforeach
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    @endif
                 @empty
                     <tr>
                         <td colspan="8" class="text-center py-5 text-muted">
@@ -215,8 +344,58 @@
     </div>
 </div>
 
+{{-- Koreksi nomor SO yang salah ketik (Fase 6 tahap 5). --}}
+<div class="modal fade" id="modalKoreksiSo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" id="formKoreksiSo" class="modal-content rounded-4 border-0">
+            @csrf
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold">Koreksi Nomor SO</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-secondary border-0 rounded-3 small">
+                    <div class="fw-semibold" id="koreksiNomor"></div>
+                    <div id="koreksiSoLama"></div>
+                </div>
+
+                <p class="text-muted small">
+                    Dipakai bila nomor SO salah ketik dan <strong>Surat Jalan-nya belum terbit</strong>.
+                    Kalau Surat Jalan sudah masuk dari BC, jangan mengetik ulang di sini — buka Surat Jalan
+                    itu dan tekan <strong>Pasangkan</strong>, supaya nomornya disalin langsung dari dokumennya.
+                </p>
+
+                <label class="form-label small fw-semibold">Nomor SO yang benar <span class="text-danger">*</span></label>
+                <input type="text" name="bc_so_number" class="form-control font-monospace mb-3"
+                       maxlength="50" required placeholder="mis. SO260903">
+
+                <label class="form-label small fw-semibold">Alasan koreksi</label>
+                <textarea name="reason" class="form-control" rows="2" maxlength="1000"
+                          placeholder="Opsional, mis. salah ketik satu digit saat menerima pesanan"></textarea>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Tutup</button>
+                <button type="submit" class="btn btn-primary rounded-3">Simpan Nomor Baru</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const formKoreksi = document.getElementById('formKoreksiSo');
+
+    document.querySelectorAll('.tombol-koreksi-so').forEach(function (tombol) {
+        tombol.addEventListener('click', function () {
+            formKoreksi.action = tombol.dataset.aksi;
+            document.getElementById('koreksiNomor').textContent = 'Pesanan ' + tombol.dataset.nomor;
+            document.getElementById('koreksiSoLama').textContent = tombol.dataset.so
+                ? 'Nomor SO sekarang: ' + tombol.dataset.so
+                : 'Pesanan ini belum punya nomor SO.';
+            formKoreksi.querySelector('[name="bc_so_number"]').value = tombol.dataset.so || '';
+        });
+    });
+
     const form = document.getElementById('formBatal');
 
     document.querySelectorAll('.tombol-batal').forEach(function (tombol) {

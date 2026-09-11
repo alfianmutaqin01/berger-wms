@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ReceiveStockTransferRequest;
 use App\Http\Requests\Wms\StoreStockTransferRequest;
+use App\Models\ActivityLog;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\StockTransfer;
 use App\Models\Warehouse;
+use App\Support\Activity;
 use App\Support\Inventory\WarehouseTransfer;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
@@ -60,15 +62,16 @@ class StockTransferController extends Controller
 
         $transfers = $terlihat()
             ->with(['fromWarehouse:id,code,name', 'toWarehouse:id,code,name',
-                'shippedBy:id,full_name', 'receivedBy:id,full_name'])
+                'requestedBy:id,full_name', 'shippedBy:id,full_name', 'receivedBy:id,full_name'])
             ->withCount('details')
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
             ->when($filters['arah'] === 'keluar', fn ($q) => $q->where('from_warehouse_id', $gudangSaya))
             ->when($filters['arah'] === 'masuk', fn ($q) => $q->where('to_warehouse_id', $gudangSaya))
-            // Yang masih di jalan selalu di atas: itu satu-satunya yang
-            // menunggu tindakan seseorang.
-            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [StockTransfer::STATUS_IN_TRANSIT])
+            // Yang belum selesai selalu di atas: itulah yang menunggu
+            // tindakan seseorang — dipicking, atau diterima.
+            ->orderByRaw('CASE WHEN status IN (?, ?) THEN 0 ELSE 1 END',
+                [StockTransfer::STATUS_PENDING, StockTransfer::STATUS_IN_TRANSIT])
             ->latest('id')
             ->paginate(15)
             ->withQueryString();
@@ -141,7 +144,7 @@ class StockTransferController extends Controller
         WarehouseScope::assert($asalId, $user);
 
         try {
-            $transfer = $this->transfer->ship(
+            $transfer = $this->transfer->request(
                 $asalId,
                 (int) $request->validated('to_warehouse_id'),
                 $request->itemData(),
@@ -152,10 +155,45 @@ class StockTransferController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::TRANSFER_CREATE,
+            sprintf(
+                'Menyusun transfer %s ke gudang %s — %d baris, masuk antrean picking %s.',
+                $transfer->transfer_number,
+                $transfer->toWarehouse?->name ?? 'tujuan',
+                $transfer->details()->count(),
+                $transfer->pickingList?->list_number ?? '—',
+            ),
+            $transfer,
+            // Dicatat atas nama gudang ASAL: dari sanalah stoknya keluar,
+            // dan orang yang menelusuri kekurangan stok mencarinya di sana.
+            $asalId,
+            [
+                'nomor' => $transfer->transfer_number,
+                'ke_gudang' => $transfer->toWarehouse?->code,
+                'baris' => $transfer->details()->count(),
+                'daftar_picking' => $transfer->pickingList?->list_number,
+            ],
+        );
+
+        /*
+         * GUDANG TUJUAN BELUM DIBERI TAHU DI SINI.
+         *
+         * Dulu loncengnya berbunyi begitu tombol ditekan, berbunyi "dalam
+         * perjalanan" — padahal belum ada satu unit pun yang turun dari rak.
+         * Sekarang kabarnya dikirim saat operator menekan Loading, di
+         * PickingController::complete(), karena di situlah barangnya
+         * benar-benar berangkat. Memberi kabar lebih awal membuat gudang
+         * tujuan menunggu truk yang belum dimuat.
+         */
+
         return redirect()->route('wms.transfers.show', $transfer)->with('success', sprintf(
-            'Transfer %s dikirim ke gudang %s. Stoknya sudah keluar dari gudang Anda dan tercatat DALAM PERJALANAN sampai diterima di sana.',
+            'Transfer %s disusun untuk gudang %s dan masuk ke Daftar Picking %s. Barangnya sudah dicadangkan — '.
+            'tidak bisa dijual lagi — tetapi BELUM berangkat. Statusnya berubah jadi Dalam Perjalanan setelah '.
+            'operator selesai mengambilnya dari rak dan menekan Loading.',
             $transfer->transfer_number,
             $transfer->toWarehouse?->name ?? 'tujuan',
+            $transfer->pickingList?->list_number ?? '—',
         ));
     }
 
@@ -165,7 +203,9 @@ class StockTransferController extends Controller
 
         $transfer->load([
             'fromWarehouse', 'toWarehouse',
-            'shippedBy:id,full_name', 'receivedBy:id,full_name', 'cancelledBy:id,full_name',
+            'requestedBy:id,full_name', 'shippedBy:id,full_name',
+            'receivedBy:id,full_name', 'cancelledBy:id,full_name',
+            'pickingList:id,list_number,status,claimed_by', 'pickingList.claimedBy:id,full_name',
             'details.product:id,sku,name,uom', 'details.toLocation:id,code',
         ]);
 
@@ -190,13 +230,27 @@ class StockTransferController extends Controller
             'details.product:id,sku,name,uom',
         ]);
 
+        $rak = Location::where('warehouse_id', $transfer->to_warehouse_id)
+            ->active()->inStorageOrder()->get(['id', 'code', 'zone']);
+
+        // Kiriman lama yang berangkat SEBELUM pemeriksaan rak dipasang di
+        // WarehouseTransfer::ship() bisa sudah tersangkut di sini. Layarnya
+        // dulu hanya menyodorkan dropdown rak yang kosong tanpa mengatakan
+        // apa-apa, dan yang membukanya menyimpulkan tombolnya rusak.
+        if ($rak->isEmpty()) {
+            return redirect()->route('wms.transfers.show', $transfer)->with('error', sprintf(
+                'Gudang %s belum punya satu rak aktif pun, jadi barangnya tidak bisa diterima — tidak ada tempat menaruhnya. '
+                    .'Isi dulu Master Rak gudang ini lewat Master Data → Rak, lalu buka lagi layar penerimaan ini.',
+                $transfer->toWarehouse?->name ?? 'ini',
+            ));
+        }
+
         return view('wms.inventory.transfer-receive', [
             'transfer' => $transfer,
             // Kode rak GUDANG TUJUAN, bukan gudang asal. Penomoran rak tiap
             // gudang berbeda, dan inilah kesalahan yang paling mudah terjadi
             // di layar ini.
-            'rak' => Location::where('warehouse_id', $transfer->to_warehouse_id)
-                ->active()->inStorageOrder()->get(['id', 'code', 'zone']),
+            'rak' => $rak,
         ]);
     }
 
@@ -222,6 +276,26 @@ class StockTransferController extends Controller
         if ($hasil['susulan'] !== []) {
             $pesan .= ' '.implode(' ', $hasil['susulan']);
         }
+
+        Activity::record(
+            ActivityLog::TRANSFER_RECEIVE,
+            sprintf(
+                'Menerima transfer %s dari gudang %s — %d unit masuk%s.',
+                $transfer->transfer_number,
+                $transfer->fromWarehouse?->name ?? 'asal',
+                $hasil['diterima'],
+                $hasil['hilang'] > 0 ? sprintf(', %d unit tidak sampai', $hasil['hilang']) : '',
+            ),
+            $transfer,
+            // Gudang TUJUAN: di sinilah angka stoknya bertambah.
+            $transfer->to_warehouse_id,
+            [
+                'nomor' => $transfer->transfer_number,
+                'dari_gudang' => $transfer->fromWarehouse?->code,
+                'diterima' => $hasil['diterima'],
+                'hilang' => $hasil['hilang'],
+            ],
+        );
 
         return redirect()->route('wms.transfers.show', $transfer)->with(
             $hasil['hilang'] > 0 ? 'warning' : 'success',

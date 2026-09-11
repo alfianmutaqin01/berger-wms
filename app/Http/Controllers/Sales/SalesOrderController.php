@@ -4,22 +4,30 @@ namespace App\Http\Controllers\Sales;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\SalesOrderRequest;
+use App\Models\ActivityLog;
 use App\Models\Customer;
+use App\Models\DeliveryProof;
+use App\Models\Notification;
 use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\SalesOrder;
-use App\Support\DocumentNumber;
+use App\Models\SalesReturn;
+use App\Support\Activity;
+use App\Support\Notifier;
 use App\Support\OrderCutoff;
+use App\Support\Outbound\OrderComposer;
+use App\Support\Permission;
+use App\Support\Returns\CustomerRejection;
 use App\Support\StockIndicator;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use RuntimeException;
 
 /**
  * Portal Sales — pembuatan dan riwayat pesanan (PRD §6.5 F-OUT-01).
@@ -39,15 +47,24 @@ use Illuminate\View\View;
  */
 class SalesOrderController extends Controller
 {
-    private const DISK = 'local';
-
-    private const FOLDER = 'sales-orders';
+    /** Disk berkas dokumen PO — pemiliknya OrderComposer, bukan layar ini. */
+    private const DISK = OrderComposer::DISK;
 
     /** Panjang minimal kata kunci sebelum pencarian dijalankan. */
     private const MIN_CARI = 2;
 
     /** Batas saran yang ditampilkan; cukup untuk dibaca sekali lihat di HP. */
     private const MAKS_SARAN = 20;
+
+    /**
+     * Cara pesanan dibentuk tinggal di OrderComposer, bukan di sini.
+     *
+     * Sejak Admin/Manager boleh membuat pesanan atas nama Sales, ada DUA
+     * pintu masuk ke pembentukan pesanan. Menyalin caranya ke masing-masing
+     * berarti dua tempat yang suatu hari berbeda pendapat tentang kapan SLA
+     * mulai dihitung dan siapa yang diberi tahu.
+     */
+    public function __construct(private readonly OrderComposer $komposer) {}
 
     /* ------------------------------------------------------- Buat pesanan */
 
@@ -66,22 +83,17 @@ class SalesOrderController extends Controller
         }
 
         $order = DB::transaction(function () use ($request, $data): SalesOrder {
-            $order = new SalesOrder([
-                // Nomor internal SELALU dibuat, termasuk untuk pesanan
-                // bermetode dokumen — nomor PO customer tidak dijamin unik
-                // antar pelanggan, jadi tidak bisa jadi identitas sistem.
-                'order_number' => DocumentNumber::forSalesOrder(),
-                'user_id' => $request->user()->id,
-                'status' => SalesOrder::STATUS_DRAFT,
-            ]);
+            // Sales membuat pesanannya SENDIRI, jadi tidak ada yang mewakili:
+            // placed_by dibiarkan NULL oleh komposer.
+            $order = $this->komposer->baru($request->user()->id);
 
-            $this->isiDari($order, $data, $request->file('document'));
+            $this->komposer->isi($order, $data, $request->file('document'));
             $order->save();
 
-            $this->tulisRincian($order, $data);
+            $this->komposer->tulisRincian($order, $data);
 
             if ($request->wantsSubmit()) {
-                $this->tandaiTerkirim($order);
+                $this->komposer->kirimKeLogistik($order);
             }
 
             return $order;
@@ -100,7 +112,10 @@ class SalesOrderController extends Controller
     public function edit(Request $request, SalesOrder $order): View
     {
         $this->pastikanMilikSendiri($request, $order);
-        abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
+        // Pesanan yang DITOLAK ikut boleh diubah — itulah inti perbaikan ini.
+        // Yang sudah diterima Logistik tetap tidak, karena isinya sudah jadi
+        // dasar keputusan dan cadangan stok.
+        abort_unless($order->bolehDiperbaiki(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
 
         return view('sales.new_order', $this->formData($request, $order));
     }
@@ -108,38 +123,48 @@ class SalesOrderController extends Controller
     public function update(SalesOrderRequest $request, SalesOrder $order): RedirectResponse
     {
         $this->pastikanMilikSendiri($request, $order);
-        abort_unless($order->isEditable(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
+        // Pesanan yang DITOLAK ikut boleh diubah — itulah inti perbaikan ini.
+        // Yang sudah diterima Logistik tetap tidak, karena isinya sudah jadi
+        // dasar keputusan dan cadangan stok.
+        abort_unless($order->bolehDiperbaiki(), 403, 'Pesanan yang sudah dikirim tidak bisa diubah.');
 
         $data = $request->validated();
         // Diambil ulang dari akun, bukan dipertahankan dari draft: kalau Sales
         // dipindahkan ke gudang lain, draft lamanya ikut pindah bersamanya.
         $data['warehouse_id'] = WarehouseScope::require($request->user());
 
+        // Dibaca SEBELUM disimpan: tandaiTerkirim() akan menghapus penanda
+        // penolakannya, dan sesudah itu tidak ada lagi cara membedakan
+        // pengajuan ulang dari pengiriman draft biasa untuk pesan di layar.
+        $pengajuanUlang = $order->sedangDitolak();
+
         if ($galat = $this->galatDokumen($request, $order)) {
             return back()->withInput()->withErrors(['document' => $galat]);
         }
 
         DB::transaction(function () use ($request, $order, $data): void {
-            $this->isiDari($order, $data, $request->file('document'));
+            $this->komposer->isi($order, $data, $request->file('document'));
             $order->save();
 
             // Rincian ditulis ulang seluruhnya, bukan disamakan baris per
             // baris: form mengirim keadaan akhir yang dikehendaki Sales, dan
             // menyamakan selisihnya hanya menambah jalan untuk keliru.
             $order->details()->delete();
-            $this->tulisRincian($order, $data);
+            $this->komposer->tulisRincian($order, $data);
 
             if ($request->wantsSubmit()) {
-                $this->tandaiTerkirim($order);
+                $this->komposer->kirimKeLogistik($order);
             }
         });
 
-        return redirect('/sales/my-orders')->with(
-            'success',
-            $request->wantsSubmit()
-                ? 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.'
-                : 'Draft pesanan '.$order->order_number.' diperbarui.'
-        );
+        return redirect('/sales/my-orders')->with('success', match (true) {
+            $request->wantsSubmit() && $pengajuanUlang => 'Pesanan '.$order->order_number
+                .' diajukan ulang ke Logistik. Catatan bahwa pesanan ini pernah ditolak tetap tersimpan.',
+            $request->wantsSubmit() => 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.',
+            $pengajuanUlang => 'Perbaikan pesanan '.$order->order_number
+                .' tersimpan. Pesanannya belum diajukan ulang.',
+            default => 'Draft pesanan '.$order->order_number.' diperbarui.',
+        });
     }
 
     public function destroy(Request $request, SalesOrder $order): RedirectResponse
@@ -150,7 +175,7 @@ class SalesOrderController extends Controller
         $nomor = $order->order_number;
 
         DB::transaction(function () use ($order): void {
-            $this->hapusDokumen($order->document_path);
+            $this->komposer->hapusDokumen($order->document_path);
             $order->details()->delete();
             $order->delete();
         });
@@ -177,7 +202,7 @@ class SalesOrderController extends Controller
             return back()->with('error', 'Draft ini belum punya item pesanan. Lengkapi dulu sebelum dikirim.');
         }
 
-        $this->tandaiTerkirim($order);
+        $this->komposer->kirimKeLogistik($order);
 
         return back()->with('success', 'Pesanan '.$order->order_number.' berhasil dikirim ke Logistik.');
     }
@@ -194,7 +219,7 @@ class SalesOrderController extends Controller
         $orders = SalesOrder::query()
             ->ownedBy($request->user()->id)
             ->with(['customer:id,code,name', 'warehouse:id,code,name', 'paymentTerm:id,code,name'])
-            ->withCount('details')
+            ->withCount(['details', 'rejections'])
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
             // Draft di atas: itu satu-satunya yang masih menunggu tindakan
@@ -214,7 +239,7 @@ class SalesOrderController extends Controller
     }
 
     /** Detail + timeline status (docs/4 §3.3.3). */
-    public function show(Request $request, SalesOrder $order): View
+    public function show(Request $request, SalesOrder $order, CustomerRejection $penolakan): View
     {
         $this->pastikanMilikSendiri($request, $order);
 
@@ -222,11 +247,54 @@ class SalesOrderController extends Controller
             'customer', 'warehouse:id,code,name', 'paymentTerm',
             'details.product:id,sku,name,uom',
             'user:id,full_name', 'approvedBy:id,full_name', 'rejectedBy:id,full_name',
+            'proofs.verifiedBy:id,full_name',
+            // Seluruh penolakan yang pernah terjadi, bukan hanya yang
+            // terakhir: Sales perlu melihat apa saja yang sudah pernah
+            // diperbaiki, terutama pada pengajuan ketiga dan seterusnya.
+            'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
         ]);
+
+        $bukti = $order->proofs->sortByDesc('uploaded_at');
 
         return view('sales.order_detail', [
             'order' => $order,
             'timeline' => $this->timeline($order),
+            'bukti' => $bukti,
+            /*
+             * Sisa kuota dihitung dari foto yang MASIH BERLAKU saja. Kalau
+             * yang ditolak ikut dihitung, Sales yang tiga kali salah foto
+             * terkunci selamanya dan pesanannya tidak akan pernah selesai.
+             */
+            'sisaKuotaBukti' => DeliveryProof::maksFoto() - $bukti
+                ->whereIn('status', [DeliveryProof::STATUS_PENDING, DeliveryProof::STATUS_VERIFIED])
+                ->count(),
+            'alasanDitolak' => $bukti->contains('status', DeliveryProof::STATUS_PENDING)
+                ? null
+                : $bukti->firstWhere('status', DeliveryProof::STATUS_REJECTED)?->rejection_reason,
+
+            /*
+             * PENOLAKAN CUSTOMER (Fase 7).
+             *
+             * Formulirnya menempel di halaman ini, tepat di bawah unggah
+             * bukti, karena keduanya dikerjakan dalam SATU KUNJUNGAN: Sales
+             * berdiri di depan toko, memotret Surat Jalan, dan pada saat itu
+             * juga tahu barang mana yang tidak diterima. Memisahkannya ke
+             * halaman lain berarti ia harus mengingat lalu kembali lagi
+             * nanti — dan yang tidak dilaporkan hari itu biasanya tidak
+             * pernah dilaporkan sama sekali.
+             */
+            'bolehLaporTolak' => $penolakan->bolehMelapor($order, $request->user())
+                && $order->cancelled_at === null,
+
+            // Sudah boleh melapor, tapi foto Surat Jalannya belum ada.
+            // Halaman mengatakan itu, bukan menyembunyikan kartunya.
+            'perluBuktiDulu' => $penolakan->menungguBuktiDulu($order, $request->user())
+                && $order->cancelled_at === null,
+            'laporanTolak' => SalesReturn::query()
+                ->where('sales_order_id', $order->id)
+                ->with('details.product:id,sku')
+                ->latest('id')
+                ->first(),
         ]);
     }
 
@@ -241,11 +309,79 @@ class SalesOrderController extends Controller
 
     /* ------------------------------------------------------- Penolakan */
 
-    public function reportReturn(Request $request): RedirectResponse
+    /**
+     * Sales melaporkan barang yang ditolak customer, dari depan toko.
+     *
+     * MENEMPEL DI HALAMAN DETAIL PESANAN, bukan halaman sendiri — aturan yang
+     * sama dengan unggah bukti Surat Jalan: keduanya dikerjakan bersamaan
+     * dalam satu kunjungan, sambil memegang HP, sebelum truk pergi.
+     */
+    public function reportReturn(Request $request, CustomerRejection $penolakan): RedirectResponse
     {
-        // Retur adalah lingkup Fase 7 (rencana pembangunan). Sengaja dibiarkan apa adanya
-        // agar tidak ada mekanisme setengah jadi yang menyentuh stok.
-        return back()->with('error', 'Pelaporan penolakan barang belum tersedia (dijadwalkan Fase 7).');
+        $order = SalesOrder::query()->findOrFail((int) $request->input('order_id'));
+
+        $this->pastikanMilikSendiri($request, $order);
+
+        $data = $request->validate([
+            'order_id' => ['required', 'integer'],
+            // Alasan WAJIB dan tidak boleh sepatah kata. Logistik yang
+            // menilai klaim ini tidak ikut ke toko; kalimat "ditolak" saja
+            // tidak memberinya apa pun untuk dinilai.
+            'reason' => ['required', 'string', 'min:10', 'max:1000'],
+            'qty' => ['required', 'array', 'min:1'],
+            'qty.*' => ['nullable', 'integer', 'min:0'],
+        ], [], ['reason' => 'alasan penolakan', 'qty' => 'jumlah yang ditolak']);
+
+        // Baris berjumlah nol atau kosong bukan kesalahan — Sales mencentang
+        // sebagian item saja dan sisanya dibiarkan kosong.
+        $baris = [];
+
+        foreach ($data['qty'] as $detailId => $qty) {
+            if ((int) $qty > 0) {
+                $baris[] = ['detail_id' => (int) $detailId, 'qty' => (int) $qty];
+            }
+        }
+
+        try {
+            $retur = $penolakan->report($order, $baris, $data['reason'], $request->user()?->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::RETURN_REPORT,
+            sprintf(
+                'Melaporkan penolakan %s pada pesanan %s (%d baris) — %s',
+                $retur->reference,
+                $order->order_number,
+                count($baris),
+                $data['reason'],
+            ),
+            $retur,
+            $order->warehouse_id,
+            ['pesanan' => $order->order_number, 'baris' => $baris, 'alasan' => $data['reason']],
+        );
+
+        Notifier::toPermission(
+            Permission::RETURN_APPROVE,
+            $order->warehouse_id,
+            Notification::RETURN_REPORTED,
+            'Laporan penolakan customer baru',
+            sprintf(
+                '%s pada pesanan %s (%s) — %s',
+                $retur->reference,
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $data['reason'],
+            ),
+            route('wms.returns.show', $retur),
+            $retur,
+        );
+
+        return back()->with('success', sprintf(
+            'Laporan penolakan %s terkirim. Logistik akan memeriksanya bersama foto Surat Jalan Anda.',
+            $retur->reference,
+        ));
     }
 
     /* -------------------------------------------------------- Pencarian */
@@ -428,74 +564,6 @@ class SalesOrderController extends Controller
             ->all();
     }
 
-    /** Menyalin isian form ke model, termasuk mengganti berkas bila ada. */
-    private function isiDari(SalesOrder $order, array $data, ?UploadedFile $berkas): void
-    {
-        $order->fill([
-            'customer_id' => $data['customer_id'],
-            'warehouse_id' => $data['warehouse_id'],
-            'payment_term_id' => $data['payment_term_id'],
-            'order_source' => $data['order_source'],
-            'notes' => $data['notes'] ?? null,
-            'customer_po_number' => $data['order_source'] === SalesOrder::SOURCE_DOCUMENT
-                ? $data['customer_po_number']
-                : null,
-        ]);
-
-        if ($berkas !== null) {
-            // Berkas lama dihapus SETELAH yang baru tersimpan, supaya
-            // kegagalan penyimpanan tidak meninggalkan pesanan tanpa dokumen.
-            $lama = $order->document_path;
-
-            $order->fill([
-                'document_path' => $berkas->store(self::FOLDER, self::DISK),
-                'document_name' => $berkas->getClientOriginalName(),
-                'document_size' => $berkas->getSize(),
-                'document_mime' => $berkas->getMimeType(),
-            ]);
-
-            $this->hapusDokumen($lama);
-        }
-
-        // Berpindah ke metode rincian: dokumen lamanya tidak lagi berarti.
-        if ($data['order_source'] === SalesOrder::SOURCE_MANUAL && filled($order->document_path)) {
-            $this->hapusDokumen($order->document_path);
-            $order->fill([
-                'document_path' => null, 'document_name' => null,
-                'document_size' => null, 'document_mime' => null,
-            ]);
-        }
-    }
-
-    /**
-     * Menulis baris item.
-     *
-     * Pesanan bermetode dokumen sengaja TIDAK punya baris item di Fase 5 —
-     * rinciannya diisi Logistik saat approval sambil membaca dokumennya.
-     */
-    private function tulisRincian(SalesOrder $order, array $data): void
-    {
-        if ($data['order_source'] === SalesOrder::SOURCE_DOCUMENT) {
-            return;
-        }
-
-        foreach ($data['items'] ?? [] as $item) {
-            $order->details()->create([
-                'product_id' => $item['product_id'],
-                'qty_ordered' => $item['qty'],
-            ]);
-        }
-    }
-
-    /** Submit: status berpindah dan SLA (§7.6) mulai dihitung dari sini. */
-    private function tandaiTerkirim(SalesOrder $order): void
-    {
-        $order->forceFill([
-            'status' => SalesOrder::STATUS_PENDING,
-            'submitted_at' => now(),
-        ])->save();
-    }
-
     /**
      * Memeriksa keberadaan dokumen pada metode dokumen.
      *
@@ -514,13 +582,6 @@ class SalesOrderController extends Controller
         }
 
         return 'Unggah dokumen PO customer — pesanan bermetode dokumen tidak bisa diproses Logistik tanpa berkasnya.';
-    }
-
-    private function hapusDokumen(?string $path): void
-    {
-        if (filled($path) && Storage::disk(self::DISK)->exists($path)) {
-            Storage::disk(self::DISK)->delete($path);
-        }
     }
 
     /**

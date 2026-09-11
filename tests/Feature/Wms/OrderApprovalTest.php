@@ -721,4 +721,106 @@ class OrderApprovalTest extends TestCase
             ]],
         ], $tambahan));
     }
+
+    /* ============================ Rincian penerimaan yang sudah selesai */
+
+    /**
+     * "Apa saja yang waktu itu saya setujui, dan berapa."
+     *
+     * Sebelum layar ini ada, daftar riwayat hanya menyebut "N item" tanpa satu
+     * pun cara membukanya — pertanyaan paling wajar tentang penerimaan yang
+     * sudah lewat justru tidak bisa dijawab dari menu penerimaan.
+     */
+    public function test_rincian_penerimaan_yang_sudah_selesai_bisa_dibuka(): void
+    {
+        $this->loginAs();
+        $this->stok(100, now()->subMonth()->toDateString());
+
+        $order = $this->pesanan();
+        $order->details()->create([
+            'product_id' => $this->produk->id,
+            'qty_ordered' => 10,
+        ]);
+
+        $this->terima($order, 7);
+
+        $this->get(route('wms.approval.history.show', $order))
+            ->assertOk()
+            ->assertViewIs('wms.outbound.approval-history-detail')
+            ->assertSee($this->produk->sku)
+            ->assertSee('Dipotong 3 saat penerimaan');
+    }
+
+    /** Empat angka yang berbeda artinya, dan semuanya ditampilkan. */
+    public function test_rincian_menampilkan_dipesan_disetujui_dan_kurang(): void
+    {
+        $this->loginAs();
+        $this->stok(100, now()->subMonth()->toDateString());
+
+        $order = $this->pesanan();
+        $order->details()->create([
+            'product_id' => $this->produk->id,
+            'qty_ordered' => 10,
+        ]);
+
+        $this->terima($order, 7);
+
+        $totals = $this->get(route('wms.approval.history.show', $order))->viewData('totals');
+
+        $this->assertSame(10, $totals['dipesan']);
+        $this->assertSame(7, $totals['disetujui']);
+        $this->assertSame(0, $totals['terkirim'], 'Belum ada yang berangkat.');
+        $this->assertSame(3, $totals['outstanding']);
+    }
+
+    /**
+     * Layar KEPUTUSAN tetap menolak pesanan yang sudah dinilai.
+     *
+     * Layar rincian sengaja terpisah: satu layar dengan dua watak cepat atau
+     * lambat memunculkan tombol keputusan di keadaan yang tidak menerimanya.
+     */
+    public function test_layar_keputusan_tetap_menolak_pesanan_yang_sudah_dinilai(): void
+    {
+        $this->loginAs();
+        $this->stok(100, now()->subMonth()->toDateString());
+
+        $order = $this->pesanan();
+        $order->details()->create(['product_id' => $this->produk->id, 'qty_ordered' => 10]);
+
+        $this->terima($order, 10);
+
+        $this->get("/wms/outbound/approval/{$order->id}")->assertRedirect();
+        $this->get(route('wms.approval.history.show', $order))->assertOk();
+    }
+
+    /** Daftar riwayat menautkan ke rinciannya, bukan cuma menyebut jumlahnya. */
+    public function test_daftar_riwayat_menautkan_ke_rincian(): void
+    {
+        $this->loginAs();
+        $this->stok(100, now()->subMonth()->toDateString());
+
+        $order = $this->pesanan();
+        $order->details()->create(['product_id' => $this->produk->id, 'qty_ordered' => 10]);
+        $this->terima($order, 10);
+
+        $this->get(route('wms.approval.history'))
+            ->assertOk()
+            ->assertSee(route('wms.approval.history.show', $order), false);
+    }
+
+    /** Pesanan gudang lain tetap tidak bisa dibuka lewat pintu baru ini. */
+    public function test_rincian_pesanan_gudang_lain_ditolak(): void
+    {
+        $this->loginAs();
+        $this->stok(100, now()->subMonth()->toDateString());
+
+        $order = $this->pesanan();
+        $order->details()->create(['product_id' => $this->produk->id, 'qty_ordered' => 10]);
+        $this->terima($order, 10);
+
+        $lain = Warehouse::factory()->create(['code' => 'WH-77']);
+        $order->forceFill(['warehouse_id' => $lain->id])->save();
+
+        $this->get(route('wms.approval.history.show', $order))->assertForbidden();
+    }
 }

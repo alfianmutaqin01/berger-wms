@@ -40,6 +40,30 @@
     <i class="bi bi-arrow-left me-1"></i> Kembali ke antrean
 </a>
 
+{{-- Apa yang DULU salah, dibawa ke layar penilaian. Tanpa ini, pengajuan
+     kedua dinilai tanpa yang menilainya tahu ia sedang menilai sebuah
+     koreksi — dan alasan penolakan pertama tersimpan di tempat yang tidak
+     dilihat siapa pun saat keputusan diambil. --}}
+@if($order->rejections->isNotEmpty())
+<div class="alert alert-warning border-0 shadow-sm rounded-3">
+    <strong class="d-block mb-2">
+        <i class="bi bi-arrow-repeat me-2"></i>
+        Ini pengajuan ke-{{ $order->rejections->count() + 1 }} — pesanan ini pernah ditolak
+        {{ $order->rejections->count() }}&times;
+    </strong>
+    @foreach($order->rejections as $tolak)
+        <div class="small {{ ! $loop->last ? 'border-bottom pb-2 mb-2' : '' }}">
+            <span class="fw-semibold">Pengajuan ke-{{ $tolak->attempt_no }}:</span>
+            {{ $tolak->reason }}
+            <span class="text-muted">
+                ({{ $tolak->rejected_at?->translatedFormat('d M Y, H:i') }},
+                {{ $tolak->rejectedBy?->full_name ?? '—' }})
+            </span>
+        </div>
+    @endforeach
+</div>
+@endif
+
 <div class="row g-3">
     {{-- ------------------------------------------------ Identitas pesanan --}}
     <div class="col-12 col-xl-4">
@@ -73,7 +97,18 @@
                     <dd class="col-7 font-monospace">{{ $order->customer?->phone_label ?? '—' }}</dd>
 
                     <dt class="col-5 text-muted fw-normal">Sales</dt>
-                    <dd class="col-7">{{ $order->user?->full_name ?? '—' }}</dd>
+                    <dd class="col-7">
+                        {{ $order->user?->full_name ?? '—' }}
+                        @if($order->dibuatkanOrangLain())
+                            {{-- Ditandai DI SEBELAH nama Sales, bukan di kotak
+                                 terpisah di bawah: yang membaca baris ini sedang
+                                 menyimpulkan "ini pesanan si A", dan kesimpulan
+                                 itu harus dikoreksi di detik yang sama. --}}
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1">
+                                <i class="bi bi-person-badge me-1"></i>dibuatkan
+                            </span>
+                        @endif
+                    </dd>
 
                     <dt class="col-5 text-muted fw-normal">Gudang</dt>
                     <dd class="col-7">{{ $order->warehouse?->name ?? '—' }}</dd>
@@ -84,6 +119,24 @@
                     <dt class="col-5 text-muted fw-normal">Disubmit</dt>
                     <dd class="col-7">{{ $order->submitted_at?->format('d M Y H:i') ?? '—' }}</dd>
                 </dl>
+
+                {{-- JALUR INTERNAL DIKATAKAN LENGKAP DI SINI.
+
+                     Pemilik produk memutuskan pembuat pesanan boleh menyetujui
+                     pesanannya sendiri, jadi tidak ada mata kedua di rantai
+                     ini. Yang tersisa sebagai kontrol adalah orang yang sedang
+                     membaca layar ini — dan ia hanya bisa menjalankan perannya
+                     kalau tahu pesanan ini tidak datang dari Sales-nya. --}}
+                @if($order->dibuatkanOrangLain())
+                    <div class="alert alert-warning border-0 rounded-3 mt-3 mb-0 small">
+                        <div class="fw-semibold mb-1">
+                            <i class="bi bi-person-badge me-1"></i>
+                            Dibuat {{ $order->placedBy?->full_name ?? 'pengguna internal' }},
+                            bukan oleh {{ $order->user?->full_name ?? 'Sales' }}
+                        </div>
+                        <div class="text-muted">Alasan: {{ $order->placed_reason }}</div>
+                    </div>
+                @endif
 
                 @if(filled($order->notes))
                     <div class="alert alert-light border mt-3 mb-0 small">
@@ -364,7 +417,10 @@
                 <td>${lolos(b.nama)}</td>
                 <td>${lolos(b.uom ?? '')}</td>
                 <td class="angka">${b.qty_ordered}</td>
-                <td class="angka ${angka(b.stok) === 0 ? 'text-danger fw-semibold' : ''}">${angka(b.stok)}</td>
+                <td class="angka ${angka(b.stok) === 0 ? 'text-danger fw-semibold' : ''}">
+                    ${angka(b.stok)}
+                    ${gudangLain(b)}
+                </td>
                 <td class="angka">
                     <input type="number" min="0" max="${b.qty_ordered}" step="1"
                         value="${setuju}" data-i="${i}" class="setuju"
@@ -388,6 +444,22 @@
 
         kisiKosong.classList.toggle('d-none', baris.length > 0);
         hitungTotal();
+    }
+
+    // "Stok nol di gudang ini" dan "produknya tidak ada di mana pun" adalah dua
+    // keadaan yang sangat berbeda, dan yang pertama sering berarti barangnya
+    // salah gudang — bukan benar-benar habis. Tanpa keterangan ini Logistik
+    // menolak baris pesanan padahal barangnya ada, cuma di gudang sebelah.
+    function gudangLain(b) {
+        const lain = b.gudang_lain || [];
+        if (lain.length === 0) return '';
+
+        const rincian = lain
+            .map((g) => lolos(g.gudang) + ' ' + angka(g.qty))
+            .join(', ');
+
+        return '<div class="text-warning-emphasis fw-normal" style="font-size:.7rem">'
+            + 'ada di ' + rincian + ' (gudang lain)</div>';
     }
 
     function badge(setuju, kurang, b) {

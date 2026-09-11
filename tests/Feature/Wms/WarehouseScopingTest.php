@@ -255,19 +255,36 @@ class WarehouseScopingTest extends TestCase
         $this->assertSame(40, $asing->fresh()->qty_available);
     }
 
+    /**
+     * DUA LAPIS PENJAGAAN, dan keduanya diuji.
+     *
+     * Sejak gudang jadi isian tersendiri, Manager Karawang yang menyebut rak
+     * Surabaya bisa mencobanya dengan dua cara — dan tidak satu pun boleh
+     * tembus.
+     */
     public function test_menambah_stok_ke_rak_gudang_lain_ditolak(): void
     {
         $this->loginAt($this->karawang, Role::MANAGER);
         $rakAsing = Location::factory()->create(['warehouse_id' => $this->surabaya->id, 'code' => 'Z-01-01']);
 
-        $this->post('/wms/inventory/stocks', [
+        $isian = [
             'sku' => $this->produk->sku,
             'location_code' => $rakAsing->code,
             'batch_no' => 'BT-0001',
             'qty' => 25,
             'production_date' => now()->subMonth()->toDateString(),
             'reason' => 'Percobaan dari gudang lain.',
-        ])->assertForbidden();
+        ];
+
+        // 1. Menyebut gudang asing secara terang-terangan -> ditolak
+        //    WarehouseScope, bukan sekadar tidak ketemu.
+        $this->post('/wms/inventory/stocks', $isian + ['warehouse_id' => $this->surabaya->id])
+            ->assertForbidden();
+
+        // 2. Menyebut gudang sendiri tetapi kode rak milik gudang lain ->
+        //    raknya memang tidak ada DI SINI, jadi gagal validasi.
+        $this->post('/wms/inventory/stocks', $isian + ['warehouse_id' => $this->karawang->id])
+            ->assertSessionHasErrors('location_code');
 
         $this->assertDatabaseMissing('inventory_stocks', ['location_id' => $rakAsing->id]);
     }

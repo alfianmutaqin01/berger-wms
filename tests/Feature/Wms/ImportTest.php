@@ -125,7 +125,7 @@ class ImportTest extends TestCase
         $tin = Product::where('sku', 'ID1-F00113202225')->firstOrFail();
         $this->assertSame('Royale Smart Clean White 2.5Ltr', $tin->name);
         $this->assertSame('TIN', $tin->uom);
-        $this->assertSame(180, $tin->max_qty_per_pallet);
+        $this->assertSame(180, $tin->kapasitasPalet());
     }
 
     /**
@@ -147,7 +147,10 @@ class ImportTest extends TestCase
 
         $product = Product::where('sku', 'ID1-F0011B128320')->firstOrFail();
 
-        $this->assertSame(27, $product->max_qty_per_pallet);
+        // Impor TIDAK PERNAH menulis kolom pengecualian — ia tidak punya
+        // pendapat tentang produk mana yang berbeda dari aturan ukurannya.
+        $this->assertSame(27, $product->kapasitasPalet());
+        $this->assertNull($product->max_qty_per_pallet);
         $this->assertSame('20.000', $product->pack_size);
         $this->assertSame('19.400', $product->unit_volume);
     }

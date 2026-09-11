@@ -1,0 +1,729 @@
+<?php
+
+namespace App\Support\Outbound;
+
+use App\Models\InventoryStock;
+use App\Models\PickingList;
+use App\Models\PickingListItem;
+use App\Models\Role;
+use App\Models\SalesOrder;
+use App\Models\SalesOrderAllocation;
+use App\Models\StockMovement;
+use App\Models\User;
+use App\Support\Inventory\WarehouseTransfer;
+use App\Support\Production\MaterialRequisitionRun;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
+
+/**
+ * Pengerjaan daftar picking di lapangan — pekerjaan OPERATOR.
+ *
+ * Pasangannya PickingListBuilder, yang memegang pekerjaan Logistik.
+ *
+ * TIGA MUTASI, BUKAN SATU — bagian ini yang paling mudah "disederhanakan"
+ * lalu diam-diam merusak buku besar. Aturannya: SELURUH ledger harus
+ * berjumlah sama dengan qty_available (lihat FifoAllocator). Saat alokasi
+ * dibuat, barangnya SUDAH dikurangi dari qty_available dan dipindahkan ke
+ * qty_allocated. Jadi ketika barangnya benar-benar turun dari rak,
+ * qty_available TIDAK berubah lagi — menuliskan satu baris OUT bernilai
+ * negatif akan mengurangi barang yang sama untuk KEDUA KALINYA di ledger.
+ *
+ * Yang benar, dan inilah yang dilakukan complete():
+ *
+ *   DEALLOCATED  +qty_to_pick  cadangannya berakhir, angkanya kembali dulu
+ *   OUT          -qty_diambil  yang benar-benar keluar menuju customer
+ *   ADJUSTMENT   -qty_kurang   yang ternyata TIDAK ADA di rak (bila ada)
+ *
+ * Jumlah ketiganya nol terhadap qty_available — dan itu memang benar, karena
+ * yang berkurang adalah qty_allocated. Masing-masing baris tetap bercerita
+ * apa adanya: cadangan berakhir, barang keluar, dan sisanya memang tidak
+ * pernah ada.
+ *
+ * JANGAN GABUNGKAN KETIGANYA. Selisih picking bukan "barang keluar": ia
+ * tidak pernah sampai ke customer, dan menghitungnya sebagai OUT membuat
+ * laporan pengiriman lebih besar daripada yang benar-benar dikirim.
+ */
+class PickingRun
+{
+    /**
+     * Operator mengambil tugas. Daftar terkunci atas namanya.
+     *
+     * @throws RuntimeException
+     */
+    public function claim(PickingList $list, User $operator): PickingList
+    {
+        return DB::transaction(function () use ($list, $operator) {
+            $terkunci = PickingList::query()->lockForUpdate()->findOrFail($list->id);
+
+            // Diperiksa ULANG di dalam kunci: dua operator yang membuka
+            // antrean pada saat yang sama sama-sama melihat tombol "Ambil
+            // Tugas" aktif pada daftar yang sama.
+            if ($terkunci->status !== PickingList::STATUS_OPEN) {
+                throw new RuntimeException($this->alasanTidakBisaDiambil($terkunci));
+            }
+
+            $terkunci->fill([
+                'status' => PickingList::STATUS_PICKING,
+                'claimed_by' => $operator->id,
+                'claimed_at' => now(),
+            ])->save();
+
+            // Pesanannya ikut berpindah status supaya layar Logistik dan
+            // Sales tahu barangnya sedang diambil, bukan masih mengantre.
+            $terkunci->orders()->lockForUpdate()->get()->each(
+                fn (SalesOrder $order) => $order->forceFill(['status' => SalesOrder::STATUS_PICKING])->save()
+            );
+
+            return $terkunci;
+        });
+    }
+
+    /**
+     * Operator melepas tugas yang sudah diambilnya — daftar kembali bebas.
+     *
+     * KENAPA INI PERLU ADA. Tugas yang sudah diambil dahulu terkunci
+     * selamanya atas nama satu orang. Pengiriman ditunda ke besok, atau orang
+     * yang memegangnya pulang lebih dulu — dan satu-satunya jalan keluar
+     * adalah Logistik MEMBUBARKAN seluruh daftar lalu menyusunnya lagi dari
+     * nol. Terlalu mahal untuk keadaan yang justru sering terjadi.
+     *
+     * AMAN TERHADAP BUKU BESAR, dan itu bukan kebetulan: menandai baris
+     * picking TIDAK menyentuh stok sama sekali — yang menggerakkan angka
+     * hanyalah complete(). Jadi melepas tugas cukup mengosongkan tanda pada
+     * barisnya; tidak ada satu pun mutasi yang perlu dibalik. Sesudah
+     * complete() ditekan, jalan ini tertutup: barangnya sudah turun ke dock.
+     *
+     * BARIS YANG SUDAH DITANDAI IKUT DIKOSONGKAN. Membiarkannya berarti
+     * operator berikutnya mewarisi tanda yang tidak ia buat sendiri, dan
+     * "sudah diambil" jadi keterangan yang tidak ada yang bisa menjamin.
+     *
+     * PESANANNYA KEMBALI KE STATUS DITERIMA, bukan tetap "sedang dipicking".
+     * Layar Sales dan Logistik harus berhenti mengatakan barangnya sedang
+     * diambil begitu tidak ada lagi yang mengambilnya.
+     *
+     * DAFTARNYA TIDAK DIBUBARKAN. Isinya tetap utuh dan langsung bisa
+     * diambil operator lain — kalau susunannya memang perlu diubah, Logistik
+     * punya pintunya sendiri (PickingListBuilder::cancel).
+     *
+     * @param  bool  $olehPengawas  true bila dilepas Logistik/Manager, bukan
+     *                              oleh operator yang memegangnya
+     * @return int jumlah baris yang tandanya ikut dikosongkan
+     *
+     * @throws RuntimeException
+     */
+    public function release(PickingList $list, User $pelaku, bool $olehPengawas = false): int
+    {
+        return DB::transaction(function () use ($list, $pelaku, $olehPengawas) {
+            $terkunci = PickingList::query()->lockForUpdate()->findOrFail($list->id);
+
+            if ($terkunci->status !== PickingList::STATUS_PICKING) {
+                throw new RuntimeException(sprintf(
+                    'Daftar %s sedang tidak dikerjakan siapa pun (status: %s), jadi tidak ada tugas untuk dilepas.',
+                    $terkunci->list_number,
+                    $terkunci->status_label,
+                ));
+            }
+
+            // Operator hanya boleh melepas tugasnya SENDIRI. Pengawas boleh
+            // melepas milik siapa pun — itu satu-satunya jalan saat orangnya
+            // sudah pulang dan daftarnya tertinggal terkunci.
+            if (! $olehPengawas && $terkunci->claimed_by !== $pelaku->id) {
+                throw new RuntimeException(
+                    'Daftar ini tugas operator lain. Minta Logistik yang melepasnya.'
+                );
+            }
+
+            $dikosongkan = $terkunci->items()
+                ->where('status', '<>', PickingListItem::STATUS_PENDING)
+                ->update([
+                    'qty_picked' => null,
+                    'status' => PickingListItem::STATUS_PENDING,
+                    'discrepancy_reason' => null,
+                    'picked_at' => null,
+                    'picked_by' => null,
+                ]);
+
+            $terkunci->fill([
+                'status' => PickingList::STATUS_OPEN,
+                'claimed_by' => null,
+                'claimed_at' => null,
+            ])->save();
+
+            $terkunci->orders()->lockForUpdate()->get()->each(
+                fn (SalesOrder $order) => $order->forceFill(['status' => SalesOrder::STATUS_APPROVED])->save()
+            );
+
+            return $dikosongkan;
+        });
+    }
+
+    /**
+     * Menandai satu baris terambil PENUH — jalur cepat, satu ketuk.
+     *
+     * @throws RuntimeException
+     */
+    public function pick(PickingListItem $item, User $operator): void
+    {
+        $this->tandai($item, $operator, (int) $item->qty_to_pick, null);
+    }
+
+    /**
+     * Menandai satu baris KURANG dari daftar, dengan alasan wajib.
+     *
+     * Pintu terpisah, bukan isian di setiap baris (keputusan pemilik produk).
+     * Kalau tiap baris meminta "berapa yang benar-benar diambil", operator
+     * mengetik angka yang sama dengan yang tertulis ratusan kali sehari — dan
+     * ketikan yang selalu sama persis berhenti dibaca, justru pada hari
+     * angkanya berbeda.
+     *
+     * @throws RuntimeException
+     */
+    public function reportShort(PickingListItem $item, User $operator, int $qty, string $reason): void
+    {
+        if ($qty >= $item->qty_to_pick) {
+            throw new RuntimeException(
+                'Qty selisih harus lebih kecil daripada yang tertulis di daftar. '.
+                'Kalau barangnya lengkap, pakai tombol Ambil.'
+            );
+        }
+
+        $this->tandai($item, $operator, $qty, $reason);
+    }
+
+    /**
+     * Membatalkan penandaan satu baris — operator salah ketuk.
+     *
+     * Hanya selama daftarnya BELUM diselesaikan. Sesudah Siap Loading
+     * ditekan, stok sudah berkurang dan barangnya sudah di dock; yang bisa
+     * membetulkannya adalah koreksi stok, bukan menghapus tanda di sini.
+     *
+     * @throws RuntimeException
+     */
+    public function resetItem(PickingListItem $item, User $operator): void
+    {
+        DB::transaction(function () use ($item, $operator) {
+            $daftar = PickingList::query()->lockForUpdate()->findOrFail($item->picking_list_id);
+
+            $this->pastikanSedangDikerjakan($daftar, $operator);
+
+            $item->forceFill([
+                'qty_picked' => null,
+                'status' => PickingListItem::STATUS_PENDING,
+                'discrepancy_reason' => null,
+                'picked_at' => null,
+                'picked_by' => null,
+            ])->save();
+        });
+    }
+
+    /**
+     * "Siap Loading" — seluruh baris sudah ditandai, stok dikurangi.
+     *
+     * $rakSerah dan $catatanSerah HANYA dipakai daftar MRF, dan wajib di
+     * sana: barang permintaan Produksi tidak naik kendaraan mana pun, ia
+     * ditaruh di sebuah rak untuk diambil Produksi sendiri. Tanpa rak yang
+     * disebut, barangnya berdiri tanpa alamat — dan itulah persis kebiasaan
+     * lama yang membuat material produksi hilang dari ingatan berbulan-bulan.
+     *
+     * @return array{diambil:int, kurang:int}
+     *
+     * @throws RuntimeException
+     */
+    public function complete(
+        PickingList $list,
+        User $operator,
+        ?int $rakSerah = null,
+        ?string $catatanSerah = null,
+    ): array {
+        return DB::transaction(function () use ($list, $operator, $rakSerah, $catatanSerah) {
+            $daftar = PickingList::query()->lockForUpdate()->findOrFail($list->id);
+
+            $this->pastikanSedangDikerjakan($daftar, $operator);
+
+            $belum = $daftar->items()->where('status', PickingListItem::STATUS_PENDING)->count();
+
+            if ($belum > 0) {
+                throw new RuntimeException(sprintf(
+                    'Masih ada %d baris yang belum ditandai. Tandai seluruh baris lebih dulu — baris yang terlewat '.
+                    'berarti barang yang tidak ikut naik ke kendaraan tanpa ada yang tahu.',
+                    $belum
+                ));
+            }
+
+            $diambil = 0;
+            $kurang = 0;
+
+            // Diurutkan menurut id baris stok. Dua daftar yang kebetulan
+            // menyentuh batch yang sama akan mengunci barisnya dalam urutan
+            // yang sama pula, sehingga keduanya tidak saling menunggu.
+            $baris = $daftar->items()->orderBy('inventory_stock_id')->orderBy('id')->get();
+
+            foreach ($baris as $item) {
+                $hasil = $this->keluarkanDariRak($item, $daftar, $operator->id);
+                $diambil += $hasil['diambil'];
+                $kurang += $hasil['kurang'];
+            }
+
+            $this->selesaikanPesanan($daftar, $operator->id, $rakSerah, $catatanSerah);
+
+            $daftar->fill([
+                'status' => PickingList::STATUS_COMPLETED,
+                'completed_at' => now(),
+                'completed_by' => $operator->id,
+            ])->save();
+
+            return ['diambil' => $diambil, 'kurang' => $kurang];
+        });
+    }
+
+    /**
+     * Mengembalikan barang yang SUDAH dipicking ke raknya semula.
+     *
+     * Dipakai OrderCanceller ketika pesanan dibatalkan setelah daftarnya
+     * selesai — barangnya sudah turun ke loading dock tetapi belum berangkat.
+     * Rak, batch, dan tanggal produksinya diketahui pasti karena dibekukan di
+     * baris picking, jadi tidak ada yang perlu ditebak.
+     *
+     * WAJIB dipanggil di dalam DB::transaction milik pemanggilnya.
+     *
+     * @return int qty yang dikembalikan
+     */
+    public function kembalikanHasilPicking(SalesOrder $order, ?int $userId): int
+    {
+        $baris = PickingListItem::query()
+            ->where('sales_order_id', $order->id)
+            // Putaran yang berjalan SAJA. Tanpa ini, pesanan yang dibatalkan
+            // untuk KEDUA kalinya akan mengembalikan barang putaran pertama
+            // sekali lagi — barang yang sudah lama ada di rak dihitung masuk
+            // untuk kedua kalinya, dan stok bertambah dari ketiadaan.
+            ->forOrderRound($order)
+            ->where('status', '<>', PickingListItem::STATUS_PENDING)
+            ->whereHas('pickingList', fn ($q) => $q->where('status', PickingList::STATUS_COMPLETED))
+            ->orderBy('id')
+            ->get();
+
+        $total = 0;
+
+        foreach ($baris as $item) {
+            $qty = (int) $item->qty_picked;
+
+            if ($qty < 1) {
+                continue;
+            }
+
+            $this->masukkanKembali(
+                $item,
+                $order,
+                $qty,
+                sprintf('Pembatalan %s: barang yang sudah dipicking dikembalikan ke rak', $order->order_number),
+                $userId,
+            );
+
+            $total += $qty;
+        }
+
+        return $total;
+    }
+
+    /**
+     * Menambahkan kembali qty ke baris stok asal satu baris picking.
+     *
+     * Satu-satunya tempat yang menulis mutasi pengembalian, dipakai baik oleh
+     * pembatalan pesanan maupun penyesuaian ke Surat Jalan BC. Dua penulis
+     * mutasi untuk kejadian yang sama cepat atau lambat berbeda aturannya.
+     */
+    private function masukkanKembali(
+        PickingListItem $item,
+        SalesOrder $order,
+        int $qty,
+        string $catatan,
+        ?int $userId,
+    ): void {
+        $stok = $this->stokUntukDikembalikan($item, $order);
+        $sebelum = $stok->qty_available;
+
+        $stok->qty_available = $sebelum + $qty;
+        $stok->save();
+
+        StockMovement::create([
+            'product_id' => $item->product_id,
+            'location_id' => $stok->location_id,
+            'warehouse_id' => $stok->warehouse_id,
+            'movement_type' => StockMovement::TYPE_IN,
+            'qty_change' => $qty,
+            'qty_before' => $sebelum,
+            'qty_after' => $stok->qty_available,
+            'reference_type' => StockMovement::REF_SALES_ORDER,
+            'reference_id' => $order->id,
+            'batch_no' => $item->batch_no,
+            'notes' => sprintf(
+                '%s %s (batch %s).',
+                $catatan,
+                $stok->location?->code ?? '—',
+                $item->batch_no ?? '—'
+            ),
+            'user_id' => $userId,
+        ]);
+    }
+
+    /**
+     * Mengembalikan SEBAGIAN hasil picking satu produk ke raknya semula.
+     *
+     * Dipakai saat Surat Jalan BC menyebut qty LEBIH KECIL daripada yang
+     * sudah diturunkan operator dari rak. Selisihnya nyata: barangnya ada di
+     * loading dock, tetapi dokumen resmi tidak menyertakannya, jadi ia tidak
+     * ikut berangkat. Tanpa langkah ini, barang itu hilang dari catatan stok
+     * padahal wujudnya masih di gudang.
+     *
+     * Diambil dari baris picking produk ini, satu per satu, sampai jumlahnya
+     * terpenuhi — sehingga tiap unit kembali ke rak dan batch tempat ia
+     * benar-benar diambil, bukan ditumpuk ke satu rak yang paling mudah.
+     *
+     * WAJIB dipanggil di dalam DB::transaction milik pemanggilnya.
+     *
+     * @return int qty yang benar-benar dikembalikan
+     */
+    public function kembalikanSebagian(SalesOrder $order, int $productId, int $qty, string $catatan, ?int $userId): int
+    {
+        if ($qty < 1) {
+            return 0;
+        }
+
+        $baris = PickingListItem::query()
+            ->where('sales_order_id', $order->id)
+            ->where('product_id', $productId)
+            // Putaran yang berjalan SAJA — kelebihan hari ini harus kembali
+            // ke batch dan rak yang tadi diturunkan, bukan ke baris putaran
+            // lama yang barangnya sudah lama berdiri di rak.
+            ->forOrderRound($order)
+            ->where('status', '<>', PickingListItem::STATUS_PENDING)
+            ->whereHas('pickingList', fn ($q) => $q->where('status', PickingList::STATUS_COMPLETED))
+            ->orderBy('id')
+            ->get();
+
+        $sisa = $qty;
+        $total = 0;
+
+        foreach ($baris as $item) {
+            if ($sisa < 1) {
+                break;
+            }
+
+            $ambil = min($sisa, (int) $item->qty_picked);
+
+            if ($ambil < 1) {
+                continue;
+            }
+
+            $this->masukkanKembali($item, $order, $ambil, $catatan, $userId);
+
+            $sisa -= $ambil;
+            $total += $ambil;
+        }
+
+        return $total;
+    }
+
+    /* ------------------------------------------------------------- Dalam */
+
+    /**
+     * Satu baris keluar dari rak. Seluruh aturan buku besarnya di sini.
+     *
+     * @return array{diambil:int, kurang:int}
+     */
+    private function keluarkanDariRak(PickingListItem $item, PickingList $daftar, ?int $userId): array
+    {
+        $diambil = (int) $item->qty_picked;
+        $kurang = $item->qty_kurang;
+        $dijanjikan = (int) $item->qty_to_pick;
+
+        /*
+         * SATU GERAKAN, TIGA DOKUMEN. Baris yang sama bisa milik pesanan
+         * pelanggan, transfer antar gudang, atau permintaan material Produksi
+         * (MRF); yang berbeda hanya dokumen yang dirujuk dan ke mana barangnya
+         * menuju.
+         *
+         * Rujukan mutasinya WAJIB ikut berbeda. Baris transfer yang menulis
+         * reference_type 'sales_order' menunjuk pesanan yang tidak ada, dan
+         * penelusuran "kenapa stok ini berkurang" berhenti di jalan buntu.
+         */
+        $transferDetail = $item->stock_transfer_detail_id === null ? null : $item->transferDetail;
+        $transfer = $transferDetail?->transfer;
+
+        $alokasiMrf = $item->material_requisition_allocation_id === null ? null : $item->allocation;
+        $mrf = $alokasiMrf?->requisition;
+
+        [$refType, $refId] = match (true) {
+            $transferDetail !== null => [StockMovement::REF_STOCK_TRANSFER, $transferDetail->stock_transfer_id],
+            $alokasiMrf !== null => [StockMovement::REF_MATERIAL_REQUISITION, $alokasiMrf->material_requisition_id],
+            default => [StockMovement::REF_SALES_ORDER, $item->sales_order_id],
+        };
+
+        $stok = $item->inventory_stock_id === null
+            ? null
+            : InventoryStock::query()->lockForUpdate()->find($item->inventory_stock_id);
+
+        if ($stok === null) {
+            throw new RuntimeException(sprintf(
+                'Baris stok untuk %s batch %s di rak %s sudah tidak ada, jadi tidak bisa dikurangi. '.
+                'Daftar ini perlu disusun ulang oleh Logistik.',
+                $item->product?->sku ?? 'produk ini',
+                $item->batch_no ?? '—',
+                $item->location?->code ?? '—'
+            ));
+        }
+
+        // 1. Cadangannya berakhir. Angkanya kembali dulu ke qty_available
+        //    supaya jumlah ledger tetap setara dengannya — lihat catatan
+        //    kelas ini soal kenapa satu baris OUT saja salah.
+        $sebelum = $stok->qty_available;
+        $stok->qty_available = $sebelum + $dijanjikan;
+        $stok->qty_allocated = max(0, $stok->qty_allocated - $dijanjikan);
+        $stok->save();
+
+        StockMovement::create([
+            'product_id' => $item->product_id,
+            'location_id' => $stok->location_id,
+            'warehouse_id' => $stok->warehouse_id,
+            'movement_type' => StockMovement::TYPE_DEALLOCATED,
+            'qty_change' => $dijanjikan,
+            'qty_before' => $sebelum,
+            'qty_after' => $stok->qty_available,
+            'reference_type' => $refType,
+            'reference_id' => $refId,
+            'batch_no' => $item->batch_no,
+            'notes' => sprintf(
+                'Picking %s: cadangan berakhir, barang diambil dari rak (batch %s).',
+                $daftar->list_number,
+                $item->batch_no ?? '—'
+            ),
+            'user_id' => $userId,
+        ]);
+
+        // 2. Yang benar-benar keluar — menuju customer, menuju gudang lain,
+        //    atau menuju Produksi. JENISNYA IKUT BERBEDA, dan itu bukan
+        //    sekadar label yang lebih rapi: laporan penjualan menjumlahkan
+        //    OUT, dan barang yang cuma berpindah gudang atau diambil Produksi
+        //    untuk direproses akan terhitung sebagai penjualan kalau ditulis
+        //    dengan jenis yang sama.
+        if ($diambil > 0) {
+            $sebelum = $stok->qty_available;
+            $stok->qty_available = $sebelum - $diambil;
+            $stok->save();
+
+            StockMovement::create([
+                'product_id' => $item->product_id,
+                'location_id' => $stok->location_id,
+                'warehouse_id' => $stok->warehouse_id,
+                'movement_type' => match (true) {
+                    $transferDetail !== null => StockMovement::TYPE_TRANSFER_OUT,
+                    $alokasiMrf !== null => StockMovement::TYPE_PRODUCTION_OUT,
+                    default => StockMovement::TYPE_OUT,
+                },
+                'qty_change' => -$diambil,
+                'qty_before' => $sebelum,
+                'qty_after' => $stok->qty_available,
+                'reference_type' => $refType,
+                'reference_id' => $refId,
+                'batch_no' => $item->batch_no,
+                'notes' => sprintf(
+                    'Picking %s: %d keluar dari rak %s menuju %s.',
+                    $daftar->list_number,
+                    $diambil,
+                    $item->location?->code ?? '—',
+                    match (true) {
+                        $transferDetail !== null => sprintf('gudang %s (%s)',
+                            $transfer?->toWarehouse?->name ?? 'tujuan',
+                            $transfer?->transfer_number ?? '—'),
+                        $alokasiMrf !== null => sprintf('Produksi (%s, %s)',
+                            $mrf?->mrf_number ?? '—',
+                            $mrf?->jenis_label ?? 'permintaan material'),
+                        default => 'loading dock',
+                    },
+                ),
+                'user_id' => $userId,
+            ]);
+        }
+
+        // 3. Yang ternyata TIDAK ADA di rak. Bukan barang keluar — ia tidak
+        //    pernah sampai ke customer. Ini koreksi stok, dan karena itu
+        //    alasannya wajib (StockMovement::REQUIRES_NOTES).
+        if ($kurang > 0) {
+            $sebelum = $stok->qty_available;
+            $stok->qty_available = max(0, $sebelum - $kurang);
+            $stok->save();
+
+            StockMovement::create([
+                'product_id' => $item->product_id,
+                'location_id' => $stok->location_id,
+                'warehouse_id' => $stok->warehouse_id,
+                'movement_type' => StockMovement::TYPE_ADJUSTMENT,
+                'qty_change' => -$kurang,
+                'qty_before' => $sebelum,
+                'qty_after' => $stok->qty_available,
+                'reference_type' => $refType,
+                'reference_id' => $refId,
+                'batch_no' => $item->batch_no,
+                'notes' => sprintf(
+                    'Selisih picking %s di rak %s (batch %s): tercatat %d, ditemukan %d. Alasan: %s',
+                    $daftar->list_number,
+                    $item->location?->code ?? '—',
+                    $item->batch_no ?? '—',
+                    $dijanjikan,
+                    $diambil,
+                    $item->discrepancy_reason
+                ),
+                'user_id' => $userId,
+            ]);
+        }
+
+        // Cadangannya sudah dipakai habis, jadi barisnya tidak boleh
+        // tertinggal: SalesOrderDetail::qty_allocated menjumlahkannya, dan
+        // baris yang tersisa membuat pesanan yang barangnya sudah di dock
+        // terbaca seolah masih memegang cadangan di rak.
+        //
+        // Transfer dan MRF tidak punya baris alokasi tersendiri — cadangannya
+        // tercatat langsung di qty_allocated baris stok dan sudah dilepas di
+        // langkah 1.
+        if ($transferDetail === null && $alokasiMrf === null) {
+            SalesOrderAllocation::query()
+                ->where('sales_order_detail_id', $item->sales_order_detail_id)
+                ->where('inventory_stock_id', $stok->id)
+                ->delete();
+        }
+
+        return ['diambil' => $diambil, 'kurang' => $kurang];
+    }
+
+    private function tandai(PickingListItem $item, User $operator, int $qty, ?string $reason): void
+    {
+        DB::transaction(function () use ($item, $operator, $qty, $reason) {
+            $daftar = PickingList::query()->lockForUpdate()->findOrFail($item->picking_list_id);
+
+            $this->pastikanSedangDikerjakan($daftar, $operator);
+
+            $item->forceFill([
+                'qty_picked' => $qty,
+                'status' => $reason === null
+                    ? PickingListItem::STATUS_PICKED
+                    : PickingListItem::STATUS_SHORT,
+                'discrepancy_reason' => $reason,
+                'picked_at' => now(),
+                'picked_by' => $operator->id,
+            ])->save();
+        });
+    }
+
+    /**
+     * Pesanan dalam daftar berpindah ke "Siap Kirim" (F-OUT-03 #6).
+     *
+     * TIGA AKHIR YANG BERBEDA untuk satu gerakan operator yang sama:
+     *
+     *   pesanan  pesanannya jadi Siap Kirim, menunggu Surat Jalan
+     *   transfer transfernya berangkat ke gudang lain (Dalam Perjalanan)
+     *   MRF      barangnya ditaruh di rak serah terima, menunggu Produksi
+     *
+     * Itulah arti tombol Loading bagi operator — sama gerakannya, dokumen yang
+     * berbeda, dan dokumen itulah yang menentukan ke mana barangnya menuju.
+     */
+    private function selesaikanPesanan(
+        PickingList $daftar,
+        ?int $userId,
+        ?int $rakSerah = null,
+        ?string $catatanSerah = null,
+    ): void {
+        $transfer = $daftar->transfer()->first();
+
+        if ($transfer !== null) {
+            app(WarehouseTransfer::class)->loading($transfer, $daftar, $userId);
+
+            return;
+        }
+
+        $mrf = $daftar->requisition()->first();
+
+        if ($mrf !== null) {
+            app(MaterialRequisitionRun::class)->siapDiambil($mrf, $daftar, $rakSerah, $catatanSerah, $userId);
+
+            return;
+        }
+
+        foreach ($daftar->orders()->lockForUpdate()->get() as $order) {
+            $order->forceFill([
+                'status' => SalesOrder::STATUS_READY_TO_SHIP,
+                'picking_completed_at' => now(),
+            ])->save();
+        }
+    }
+
+    /**
+     * Baris stok tujuan pengembalian.
+     *
+     * Barisnya bisa saja sudah dihapus setelah kosong. Dibuat ulang di rak,
+     * batch, dan tanggal produksi yang SAMA — ketiganya dibekukan di baris
+     * picking, jadi tidak ada yang ditebak. Membuatnya di rak lain berarti
+     * menaruh barang di tempat yang tidak akan dicari orang.
+     */
+    private function stokUntukDikembalikan(PickingListItem $item, SalesOrder $order): InventoryStock
+    {
+        if ($item->inventory_stock_id !== null) {
+            $stok = InventoryStock::query()->lockForUpdate()->find($item->inventory_stock_id);
+
+            if ($stok !== null) {
+                return $stok;
+            }
+        }
+
+        return InventoryStock::create([
+            'product_id' => $item->product_id,
+            'location_id' => $item->location_id,
+            'warehouse_id' => $order->warehouse_id,
+            'batch_no' => $item->batch_no,
+            'qty_available' => 0,
+            'qty_allocated' => 0,
+            'production_date' => $item->production_date,
+            'status' => InventoryStock::STATUS_ACTIVE,
+        ]);
+    }
+
+    /**
+     * @throws RuntimeException
+     */
+    private function pastikanSedangDikerjakan(PickingList $daftar, User $operator): void
+    {
+        if ($daftar->status !== PickingList::STATUS_PICKING) {
+            throw new RuntimeException(sprintf(
+                'Daftar %s berstatus %s, jadi tidak sedang dikerjakan siapa pun.',
+                $daftar->list_number,
+                strtolower($daftar->status_label)
+            ));
+        }
+
+        // Super Admin boleh menolong daftar yang tersangkut — misalnya
+        // operator yang memegangnya pulang di tengah shift. Selain itu,
+        // hanya pemegangnya: dua orang yang menandai baris di daftar yang
+        // sama akan saling menghapus pekerjaan tanpa sadar.
+        if ($daftar->claimed_by === $operator->id || $operator->role?->slug === Role::SUPER_ADMIN) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'Daftar %s sedang dipegang %s. Minta ia menyelesaikannya, atau minta Super Admin memindahkan tugasnya.',
+            $daftar->list_number,
+            $daftar->claimedBy?->full_name ?? 'operator lain'
+        ));
+    }
+
+    private function alasanTidakBisaDiambil(PickingList $daftar): string
+    {
+        return match ($daftar->status) {
+            PickingList::STATUS_PICKING => sprintf(
+                'Daftar %s sudah diambil %s lebih dulu.',
+                $daftar->list_number,
+                $daftar->claimedBy?->full_name ?? 'operator lain'
+            ),
+            PickingList::STATUS_COMPLETED => sprintf('Daftar %s sudah selesai dikerjakan.', $daftar->list_number),
+            default => sprintf('Daftar %s sudah dibatalkan Logistik.', $daftar->list_number),
+        };
+    }
+}

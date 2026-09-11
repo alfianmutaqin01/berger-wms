@@ -5,6 +5,7 @@ namespace Tests\Feature\Wms;
 use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\Location;
+use App\Models\Notification;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
@@ -37,7 +38,18 @@ class PutawayTest extends TestCase
 
     private function loginAs(string $roleSlug = Role::WAREHOUSE_OPERATOR): User
     {
-        $user = User::factory()->withRole($roleSlug)->create();
+        return $this->actingAsUser(User::factory()->withRole($roleSlug)->create());
+    }
+
+    /**
+     * Masuk sebagai user yang SUDAH ada.
+     *
+     * Dibutuhkan pengujian selisih: Tim Produksi pembuat dokumen harus orang
+     * yang sama dengan yang kemudian membuka loncengnya — kalau dibuatkan user
+     * baru, yang diuji bukan alur yang sebenarnya.
+     */
+    private function actingAsUser(User $user): User
+    {
         $token = Str::random(64);
 
         UserSession::create([
@@ -591,5 +603,241 @@ class PutawayTest extends TestCase
         ])->assertForbidden();
 
         $this->assertNull($palet->fresh()->location_id);
+    }
+
+    /* ------------------------------------- Selisih qty & penyesuaian Produksi */
+
+    /**
+     * Menempatkan kedua palet, palet pertama dengan qty fisik yang berbeda.
+     *
+     * @return array{0: InboundHeader, 1: User} dokumen dan Tim Produksi pembuatnya
+     */
+    private function dokumenBerselisih(int $fisik = 175): array
+    {
+        $produksi = User::factory()->withRole(Role::PRODUCTION)->create([
+            'warehouse_id' => $this->warehouse->id,
+        ]);
+
+        $header = $this->makeDocument(['created_by' => $produksi->id]);
+
+        $this->bin('B-01-01');
+        $this->bin('B-01-02');
+
+        $this->loginAs(Role::WAREHOUSE_OPERATOR);
+
+        $palet = $header->details()->orderBy('pallet_no')->get();
+
+        $this->post('/wms/inbound/putaway/'.$header->document_number, [
+            'pallets' => [
+                $palet[0]->id => ['location_code' => 'B-01-01', 'qty_actual' => $fisik],
+                $palet[1]->id => ['location_code' => 'B-01-02', 'qty_actual' => 55],
+            ],
+        ]);
+
+        return [$header->fresh(), $produksi];
+    }
+
+    /**
+     * Tim Produksi diberi tahu, bukan dibiarkan menemukan sendiri.
+     *
+     * Sebelum ini selisih hanya beredar antara Operator dan Logistik. Yang
+     * mengetik angkanya — dan satu-satunya yang bisa memperbaiki sumbernya —
+     * tidak pernah tahu berkasnya meleset.
+     */
+    public function test_produksi_diberi_tahu_saat_qty_fisik_berbeda(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $produksi->id,
+            'type' => Notification::INBOUND_QTY_VARIANCE,
+            'subject_id' => $header->id,
+        ]);
+    }
+
+    /** Tidak ada selisih, tidak ada lonceng. Lonceng kosong melatih orang mengabaikannya. */
+    public function test_tidak_ada_lonceng_bila_qty_fisik_sama(): void
+    {
+        [, $produksi] = $this->dokumenBerselisih(fisik: 180);
+
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $produksi->id,
+            'type' => Notification::INBOUND_QTY_VARIANCE,
+        ]);
+    }
+
+    /** Layar detail memisahkan palet berselisih, tidak membiarkannya dicari sendiri. */
+    public function test_layar_detail_memisahkan_palet_berselisih(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->actingAsUser($produksi);
+
+        $response = $this->get('/wms/inbound/history/'.$header->document_number)->assertOk();
+
+        $this->assertCount(1, $response->viewData('berselisih'));
+        $this->assertTrue($response->viewData('bolehSesuaikan'));
+    }
+
+    public function test_produksi_menyesuaikan_qty_ke_hitungan_fisik(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->actingAsUser($produksi);
+
+        $palet = $header->details()->orderBy('pallet_no')->first();
+
+        $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'salah ketik qty di berkas produksi pagi',
+        ])->assertSessionHas('success');
+
+        $palet->refresh();
+
+        $this->assertSame(175, $palet->pallet_qty, 'Angka dokumen mengikuti hitungan fisik.');
+        $this->assertSame(180, $palet->pallet_qty_original, 'Angka semula TIDAK boleh hilang.');
+        $this->assertSame($produksi->id, $palet->qty_adjusted_by);
+        $this->assertNotNull($palet->qty_adjusted_at);
+        $this->assertSame('salah ketik qty di berkas produksi pagi', $palet->qty_adjust_reason);
+
+        // total_qty ikut dibetulkan; kalau tidak, jumlah paletnya tidak lagi
+        // sama dengan barisnya dan pembaca mengira ada palet yang hilang.
+        $this->assertSame(230, (int) $palet->total_qty);
+    }
+
+    /**
+     * Inti janjinya: penyesuaian MENAMBAH keterangan, bukan menghapus temuan.
+     *
+     * Kalau selisihnya ikut hilang, Tim Produksi bisa merapikan sendiri bukti
+     * kesalahannya sebelum Logistik — yang bertugas memeriksanya — sempat
+     * melihat.
+     */
+    public function test_selisih_tetap_terlihat_logistik_setelah_disesuaikan(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->actingAsUser($produksi);
+
+        $palet = $header->details()->orderBy('pallet_no')->first();
+
+        $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'salah ketik qty di berkas produksi pagi',
+        ]);
+
+        $this->assertSame(-5, $palet->fresh()->qty_variance);
+        $this->assertSame(1, InboundDetail::query()->berselisih()->count());
+
+        $this->loginAs(Role::LOGISTICS);
+        $this->assertSame(1, $this->get('/wms/inbound/verify')->viewData('stats')['selisih']);
+    }
+
+    public function test_penyesuaian_wajib_beralasan(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->actingAsUser($produksi);
+
+        $palet = $header->details()->orderBy('pallet_no')->first();
+
+        $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'salah',
+        ])->assertSessionHasErrors('reason');
+
+        $this->assertNull($palet->fresh()->pallet_qty_original);
+    }
+
+    /** Palet yang tidak berselisih tidak bisa diselundupkan lewat peramban. */
+    public function test_palet_tanpa_selisih_tidak_bisa_disesuaikan(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->actingAsUser($produksi);
+
+        $palet = $header->details()->orderBy('pallet_no')->get()[1];
+
+        $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'mencoba mengubah palet yang tidak berselisih',
+        ])->assertSessionHas('error');
+
+        $this->assertNull($palet->fresh()->pallet_qty_original);
+    }
+
+    /**
+     * Setelah diverifikasi, dokumen dan buku besar tidak boleh bercerita beda.
+     */
+    public function test_dokumen_yang_sudah_diverifikasi_tidak_bisa_disesuaikan(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $header->update(['status' => InboundHeader::STATUS_VERIFIED]);
+
+        $this->actingAsUser($produksi);
+
+        $palet = $header->details()->orderBy('pallet_no')->first();
+
+        $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'terlambat menyadari selisihnya',
+        ])->assertSessionHas('error');
+
+        $this->assertNull($palet->fresh()->pallet_qty_original);
+    }
+
+    /** Melihat selisih itu tugas Manager; membetulkan berkas produksi bukan. */
+    public function test_manager_tidak_boleh_menyesuaikan_qty(): void
+    {
+        [$header] = $this->dokumenBerselisih();
+
+        $this->loginAs(Role::MANAGER);
+
+        $palet = $header->details()->orderBy('pallet_no')->first();
+
+        $this->get('/wms/inbound/history/'.$header->document_number)->assertOk();
+
+        $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'manager mencoba membetulkan berkas produksi',
+        ])->assertForbidden();
+    }
+
+    /** Menyesuaikan dua kali akan menimpa angka semula dengan yang sudah disesuaikan. */
+    public function test_palet_yang_sudah_disesuaikan_tidak_bisa_disesuaikan_lagi(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->actingAsUser($produksi);
+
+        $palet = $header->details()->orderBy('pallet_no')->first();
+        $kirim = fn () => $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'salah ketik qty di berkas produksi pagi',
+        ]);
+
+        $kirim();
+        $kirim()->assertSessionHas('error');
+
+        $this->assertSame(180, $palet->fresh()->pallet_qty_original);
+    }
+
+    /** Stok memakai hitungan fisik sejak awal — penyesuaian tidak menyentuhnya. */
+    public function test_penyesuaian_tidak_mengubah_qty_yang_berlaku_untuk_stok(): void
+    {
+        [$header, $produksi] = $this->dokumenBerselisih();
+
+        $this->actingAsUser($produksi);
+
+        $palet = $header->details()->orderBy('pallet_no')->first();
+
+        $this->assertSame(175, $palet->effective_qty);
+
+        $this->post('/wms/inbound/history/'.$header->document_number.'/adjust-qty', [
+            'pallets' => [$palet->id],
+            'reason' => 'salah ketik qty di berkas produksi pagi',
+        ]);
+
+        $this->assertSame(175, $palet->fresh()->effective_qty);
     }
 }

@@ -5,7 +5,6 @@ namespace App\Support\Import;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Support\PackSize;
-use App\Support\PalletCapacity;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -105,7 +104,12 @@ class ProductImporter extends Importer
                 'unit_volume' => $this->decimal($this->value($row, ['unit_volume'])),
                 'net_weight' => $this->decimal($this->value($row, ['net_weight'])),
                 'gross_weight' => $this->decimal($this->value($row, ['gross_weight'])),
-                'max_qty_per_pallet' => PalletCapacity::resolve($pack['unit'] ?? null, $pack['size'] ?? null),
+                // SENGAJA TIDAK DIISI. Kolom ini sekarang berarti
+                // "pengecualian untuk produk ini", bukan salinan hasil aturan
+                // — dan impor tidak pernah tahu sebuah produk itu pengecualian.
+                // Kapasitasnya dibaca dari aturan ukuran saat dibutuhkan; ukuran
+                // yang belum punya aturan ditandai di Master Produk.
+                'max_qty_per_pallet' => null,
                 'shelf_life_months' => 30,
                 'stock_threshold_low' => 50,
                 'is_active' => true,
@@ -120,13 +124,11 @@ class ProductImporter extends Importer
 
             if ($product) {
                 // Impor ulang TIDAK menghidupkan kembali produk yang sengaja
-                // dinonaktifkan Manager, dan tidak menimpa kapasitas palet yang
-                // sudah diisi manual untuk ukuran di luar aturan gudang.
-                unset($data['is_active']);
-
-                if ($product->max_qty_per_pallet !== null && $data['max_qty_per_pallet'] === null) {
-                    unset($data['max_qty_per_pallet']);
-                }
+                // dinonaktifkan Manager, dan TIDAK PERNAH menghapus kapasitas
+                // palet yang diketik khusus untuk produk ini — berkas impor
+                // tidak memuat kolom itu sama sekali, jadi ia tidak punya
+                // pendapat apa pun tentangnya.
+                unset($data['is_active'], $data['max_qty_per_pallet']);
 
                 $product->update($data);
 

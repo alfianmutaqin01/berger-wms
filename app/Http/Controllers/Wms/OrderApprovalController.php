@@ -5,12 +5,22 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\AcceptSalesOrderRequest;
 use App\Http\Requests\Wms\RejectSalesOrderRequest;
+use App\Models\ActivityLog;
+use App\Models\Notification;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
+use App\Models\SalesOrderOutstanding;
+use App\Models\SalesOrderRejection;
+use App\Support\Activity;
+use App\Support\Notifier;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
+use App\Support\Outbound\OutstandingRecorder;
+use App\Support\Outbound\ProductBooking;
+use App\Support\Outbound\SoNumberFixer;
+use App\Support\Permission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -56,6 +66,8 @@ class OrderApprovalController extends Controller
     public function __construct(
         private readonly FifoAllocator $allocator,
         private readonly OrderCanceller $canceller,
+        private readonly OutstandingRecorder $outstanding,
+        private readonly ProductBooking $booking,
     ) {}
 
     /** Antrean pesanan yang menunggu diterima (F-OUT-02 langkah 1). */
@@ -76,7 +88,11 @@ class OrderApprovalController extends Controller
             ->search($filters['search'])
             ->when($filters['warehouse'], fn ($q, $w) => $q->where('warehouse_id', $w))
             ->with(['customer:id,code,name', 'user:id,full_name', 'warehouse:id,code,name'])
-            ->withCount('details')
+            // Pengajuan ULANG harus terbaca dari antrean, bukan baru ketahuan
+            // setelah layar penerimaannya dibuka: pesanan yang pernah ditolak
+            // menuntut perhatian yang berbeda dari pesanan yang baru pertama
+            // kali masuk.
+            ->withCount(['details', 'rejections'])
             // Terlama di atas: ini antrean, bukan kabar terbaru. Pesanan yang
             // sudah menunggu paling lama justru yang paling mendesak.
             ->orderBy('submitted_at')
@@ -119,6 +135,10 @@ class OrderApprovalController extends Controller
         $order->load([
             'customer', 'user:id,full_name', 'warehouse', 'paymentTerm',
             'details.product:id,sku,name,uom',
+            // Alasan penolakan sebelumnya ikut dibawa: yang menilai pengajuan
+            // kedua perlu tahu apa yang dulu salah, kalau tidak koreksi Sales
+            // dinilai tanpa tahu ia sedang mengoreksi apa.
+            'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
         ]);
 
         $tersedia = $this->allocator->availableFor(
@@ -126,7 +146,16 @@ class OrderApprovalController extends Controller
             $order->warehouse_id
         );
 
-        $baris = $order->details->map(function (SalesOrderDetail $detail) use ($tersedia) {
+        // Stok produk yang sama di gudang LAIN. Tidak bisa dipakai pesanan ini,
+        // tetapi "stok nol" dan "stoknya ada, cuma di gudang sebelah" adalah
+        // dua keadaan yang sangat berbeda — dan yang kedua sering berarti
+        // barangnya salah gudang, bukan benar-benar habis.
+        $diGudangLain = $this->allocator->elsewhereFor(
+            $order->details->pluck('product_id')->all(),
+            $order->warehouse_id
+        );
+
+        $baris = $order->details->map(function (SalesOrderDetail $detail) use ($tersedia, $diGudangLain) {
             $stok = $tersedia[$detail->product_id] ?? 0;
 
             return [
@@ -136,6 +165,12 @@ class OrderApprovalController extends Controller
                 'uom' => $detail->product?->uom,
                 'qty_ordered' => $detail->qty_ordered,
                 'stok' => $stok,
+                // Hanya ditampilkan saat gudang ini kurang — kalau stoknya
+                // cukup, keberadaan barang di gudang lain tidak relevan dan
+                // hanya menambah bacaan.
+                'gudang_lain' => $stok < $detail->qty_ordered
+                    ? ($diGudangLain[$detail->product_id] ?? [])
+                    : [],
                 // Usulan = min(pesan, stok), sesuai F-OUT-02 langkah 3.
                 // Hanya USULAN: Logistik boleh menaikkannya sampai qty pesan.
                 'usul' => min($detail->qty_ordered, $stok),
@@ -239,14 +274,36 @@ class OrderApprovalController extends Controller
                 // layar yang sama sama-sama lolos pemeriksaan di show().
                 $this->pastikanMasihMenunggu($terkunci);
 
-                $this->tulisRincian($terkunci, $request->itemData());
+                $this->tulisRincian($terkunci, $request->itemData(), $userId);
                 $terkunci->load('details');
 
                 $dialokasikan = 0;
                 $menunggu = 0;
+                $dariBooking = 0;
+                $nomorBooking = [];
 
                 foreach ($terkunci->details as $detail) {
-                    $dapat = $this->allocator->allocate($detail, $detail->qty_approved, $userId);
+                    /*
+                     * BOOKING MILIK CUSTOMER INI DIPAKAI LEBIH DULU, sebelum
+                     * FIFO menyentuh stok bebas. Bukan sekadar urutan: tanpa
+                     * langkah ini booking dan pesanan akan sama-sama memegang
+                     * unit yang sama, dan gudang terlihat menjanjikan dua kali
+                     * lipat dari barang yang benar-benar ada.
+                     *
+                     * Yang berpindah bukan cuma jatah yang sudah tercadang.
+                     * Porsi booking yang masih MENUNGGU stok pun ditutup di
+                     * sini, karena mulai sekarang pesanan inilah yang memikul
+                     * janjinya — kalau tidak, satu unit yang sama akan antre
+                     * dua kali begitu barang baru masuk.
+                     */
+                    $booking = $this->booking->consume($detail, $detail->qty_approved, $userId);
+
+                    $dariBooking += $booking['dari_cadangan'];
+                    $nomorBooking = array_merge($nomorBooking, $booking['booking']);
+
+                    $sisa = $detail->qty_approved - $booking['dari_cadangan'];
+                    $dapat = $booking['dari_cadangan'] + $this->allocator->allocate($detail, $sisa, $userId);
+
                     $dialokasikan += $dapat;
                     $menunggu += $detail->qty_approved - $dapat;
                 }
@@ -274,13 +331,84 @@ class OrderApprovalController extends Controller
                     'cancellation_reason' => null,
                 ])->save();
 
-                return ['dialokasikan' => $dialokasikan, 'menunggu' => $menunggu];
+                return [
+                    'dialokasikan' => $dialokasikan,
+                    'menunggu' => $menunggu,
+                    'dari_booking' => $dariBooking,
+                    'nomor_booking' => array_values(array_unique($nomorBooking)),
+                ];
             });
         } catch (RuntimeException $e) {
             return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::ORDER_APPROVE,
+            sprintf(
+                'Menerima pesanan %s dari %s — %d unit dicadangkan, %d menunggu stok.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $ringkasan['dialokasikan'],
+                $ringkasan['menunggu'],
+            ),
+            $order,
+            $order->warehouse_id,
+            [
+                'nomor_so_bc' => $order->fresh()->bc_so_number,
+                'dialokasikan' => $ringkasan['dialokasikan'],
+                'menunggu_stok' => $ringkasan['menunggu'],
+                'dari_booking' => $ringkasan['dari_booking'],
+            ],
+        );
+
+        /*
+         * DUA LONCENG, DUA PENERIMA, karena yang harus bergerak berikutnya
+         * memang dua orang berbeda: Sales perlu tahu pesanannya lolos, dan
+         * gudang perlu tahu ada yang siap dipicking. Menggabungkannya jadi
+         * satu berarti salah satunya tidak pernah diberi tahu.
+         */
+        Notifier::toUser(
+            $order->user_id,
+            Notification::ORDER_APPROVED,
+            'Pesanan Anda diterima',
+            sprintf(
+                '%s untuk %s sudah diterima Logistik dan masuk antrean gudang.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+            ),
+            url('/sales/orders/'.$order->id),
+            $order->warehouse_id,
+            $order,
+        );
+
+        Notifier::toPermission(
+            Permission::OUTBOUND_PICKING_LIST,
+            $order->warehouse_id,
+            Notification::PICKING_READY,
+            'Pesanan siap dipicking',
+            sprintf(
+                '%s untuk %s — %d unit sudah dicadangkan.',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $ringkasan['dialokasikan'],
+            ),
+            route('wms.picking.queue'),
+            $order,
+        );
+
         $pesan = "Pesanan {$order->order_number} diterima. {$ringkasan['dialokasikan']} unit dicadangkan dari stok.";
+
+        // Disebut TERPISAH. Jatah yang datang dari booking bukan stok yang
+        // baru saja direbut dari pasaran — ia memang sudah disisihkan untuk
+        // customer ini sejak lama, dan yang menerima pesanan perlu tahu
+        // booking mana yang barusan ditutup.
+        if ($ringkasan['dari_booking'] > 0) {
+            $pesan .= sprintf(
+                ' %d unit di antaranya diambil dari booking %s.',
+                $ringkasan['dari_booking'],
+                implode(', ', $ringkasan['nomor_booking']),
+            );
+        }
 
         if ($ringkasan['menunggu'] > 0) {
             return redirect()->route('wms.approval.index')->with('warning', $pesan.sprintf(
@@ -303,6 +431,20 @@ class OrderApprovalController extends Controller
 
                 $this->pastikanMasihMenunggu($terkunci);
 
+                // Riwayatnya ditulis SEBELUM kolom pesanannya diisi, memakai
+                // submitted_at yang masih menunjuk pengajuan yang sedang
+                // dinilai. Pesanan ini boleh diperbaiki lalu diajukan lagi,
+                // dan begitu itu terjadi kolom penolakan di pesanannya
+                // dikosongkan — hanya tabel inilah yang tetap mengingatnya.
+                SalesOrderRejection::create([
+                    'sales_order_id' => $terkunci->id,
+                    'reason' => $request->validated('rejection_reason'),
+                    'attempt_no' => $terkunci->rejections()->count() + 1,
+                    'submitted_at' => $terkunci->submitted_at,
+                    'rejected_at' => now(),
+                    'rejected_by' => $request->user()?->id,
+                ]);
+
                 $terkunci->fill([
                     'status' => SalesOrder::STATUS_REJECTED,
                     'rejection_reason' => $request->validated('rejection_reason'),
@@ -313,6 +455,33 @@ class OrderApprovalController extends Controller
         } catch (RuntimeException $e) {
             return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
         }
+
+        Activity::record(
+            ActivityLog::ORDER_REJECT,
+            sprintf(
+                'Menolak pesanan %s dari %s — %s',
+                $order->order_number,
+                $order->customer?->name ?? 'pelanggan',
+                $request->validated('rejection_reason'),
+            ),
+            $order,
+            $order->warehouse_id,
+            ['alasan' => $request->validated('rejection_reason')],
+        );
+
+        Notifier::toUser(
+            $order->user_id,
+            Notification::ORDER_REJECTED,
+            'Pesanan Anda ditolak',
+            sprintf(
+                '%s ditolak Logistik — %s Pesanan ini masih bisa diperbaiki lalu diajukan ulang.',
+                $order->order_number,
+                $request->validated('rejection_reason'),
+            ),
+            url('/sales/orders/'.$order->id),
+            $order->warehouse_id,
+            $order,
+        );
 
         return redirect()->route('wms.approval.index')
             ->with('success', "Pesanan {$order->order_number} ditolak.");
@@ -395,6 +564,24 @@ class OrderApprovalController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        Activity::record(
+            ActivityLog::ORDER_CANCEL,
+            sprintf(
+                'Membatalkan pesanan %s (%s) — %s',
+                $order->order_number,
+                SalesOrderCancellation::SOURCE_LABELS[$data['cancellation_source']] ?? $data['cancellation_source'],
+                $data['cancellation_reason'],
+            ),
+            $order,
+            $order->warehouse_id,
+            [
+                'sumber' => $data['cancellation_source'],
+                'alasan' => $data['cancellation_reason'],
+                'qty_dilepas' => $hasil['qty_dilepas'],
+                'nomor_so_dibebaskan' => $hasil['nomor_so'],
+            ],
+        );
+
         return redirect()->route('wms.approval.history')->with('warning', sprintf(
             'Pesanan %s dibatalkan. %d unit dikembalikan ke stok%s, dan pesanannya kembali ke antrean — '.
             'terima lagi bila sudah diperbaiki, atau tolak bila memang final.',
@@ -404,7 +591,94 @@ class OrderApprovalController extends Controller
         ));
     }
 
+    /**
+     * Koreksi manual nomor SO yang salah ketik (Fase 6 tahap 5).
+     *
+     * PINTU KECIL, bukan alur utama. Dipakai untuk salah ketik yang ketahuan
+     * sendiri SEBELUM Surat Jalan-nya terbit — saat itu belum ada dokumen
+     * yang bisa disalin. Setelah SJ terbit, jalannya lewat tombol Pasangkan
+     * di Surat Jalan, supaya nomornya diambil dari dokumen BC dan bukan
+     * diketik ulang oleh jari yang tadi salah. Batasnya ditegakkan
+     * SoNumberFixer, bukan di sini.
+     */
+    public function renameSoNumber(Request $request, SalesOrder $order, SoNumberFixer $koreksi): RedirectResponse
+    {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'bc_so_number' => ['required', 'string', 'max:50'],
+            'reason' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'bc_so_number.required' => 'Nomor SO yang benar wajib diisi.',
+        ], [
+            'bc_so_number' => 'nomor SO',
+            'reason' => 'alasan koreksi',
+        ]);
+
+        $lama = $order->bc_so_number;
+
+        try {
+            $koreksi->rename($order, $data['bc_so_number'], $data['reason'] ?? null, $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', sprintf(
+            'Nomor SO pesanan %s diubah dari %s menjadi %s. Perubahannya tercatat.',
+            $order->order_number,
+            $lama ?: '(kosong)',
+            $order->fresh()->bc_so_number,
+        ));
+    }
+
     /** Riwayat penerimaan, penolakan, dan pembatalan (permintaan pemilik produk). */
+    /**
+     * Rincian pesanan yang sudah dinilai — hanya untuk dibaca.
+     *
+     * KENAPA LAYAR SENDIRI, BUKAN show() YANG DILONGGARKAN
+     * ----------------------------------------------------
+     * show() adalah layar KEPUTUSAN: ia menghitung stok tersedia, mencari
+     * barang yang sama di gudang lain, dan memasang tombol Terima/Tolak.
+     * Melonggarkannya agar juga melayani pesanan yang sudah dinilai berarti
+     * satu layar dengan dua watak, dan cepat atau lambat sebuah tombol
+     * keputusan muncul di keadaan yang seharusnya tidak menerimanya lagi.
+     *
+     * YANG DIJAWAB LAYAR INI
+     * ----------------------
+     * "Waktu itu apa saja yang saya setujui, dan berapa." Sebelum ada layar
+     * ini, daftar riwayat hanya menyebut "12 item" tanpa satu pun cara
+     * membukanya — sehingga pertanyaan yang paling wajar tentang penerimaan
+     * yang sudah lewat justru tidak bisa dijawab dari menu penerimaan.
+     *
+     * Ditampilkan APA ADANYA sampai hari ini: qty dipesan, disetujui,
+     * terkirim, dan sisa outstanding. Tiga angka terakhir memang bergerak
+     * setelah penerimaan, dan itu bukan alasan menyembunyikannya — justru
+     * di situlah terlihat apakah yang disetujui benar-benar sampai.
+     */
+    public function historyShow(Request $request, SalesOrder $order): View
+    {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        $order->load([
+            'customer', 'user:id,full_name', 'warehouse', 'paymentTerm',
+            'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name',
+            'placedBy:id,full_name',
+            'details.product:id,sku,name,uom',
+            'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
+            'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
+        ]);
+
+        return view('wms.outbound.approval-history-detail', [
+            'order' => $order,
+            'totals' => [
+                'dipesan' => (int) $order->details->sum('qty_ordered'),
+                'disetujui' => (int) $order->details->sum('qty_approved'),
+                'terkirim' => (int) $order->details->sum('qty_shipped'),
+                'outstanding' => (int) $order->details->sum('outstanding_qty'),
+            ],
+        ]);
+    }
+
     public function history(Request $request): View
     {
         $filters = [
@@ -418,18 +692,32 @@ class OrderApprovalController extends Controller
             // sehingga riwayat memunculkan pesanan yang tidak dicari.
             ->where(fn ($q) => $q->whereNotNull('approved_at')
                 ->orWhereNotNull('rejected_at')
-                ->orWhereNotNull('cancelled_at'))
+                ->orWhereNotNull('cancelled_at')
+                // Pesanan yang PERNAH dibatalkan lalu diterima lagi: kolom
+                // cancelled_at-nya sudah dibersihkan supaya keadaan sekarang
+                // jujur, jadi hanya tabel riwayat yang masih mengingatnya.
+                ->orWhereHas('cancellations')
+                // Sama halnya dengan penolakan: pesanan yang ditolak lalu
+                // diperbaiki dan diajukan ulang sudah tidak punya rejected_at
+                // lagi, dan hanya tabel riwayatnya yang masih mengingat.
+                ->orWhereHas('rejections'))
             ->search($filters['search'])
             // "diterima" TIDAK mencakup yang sudah dibatalkan: pesanan yang
             // dibatalkan memang pernah diterima, tetapi hasil akhirnya bukan
             // itu lagi, dan menghitungnya sebagai diterima membuat rekap
             // penerimaan lebih besar daripada yang benar-benar berjalan.
             ->when($filters['hasil'] === 'diterima', fn ($q) => $q->whereNotNull('approved_at')->whereNull('cancelled_at'))
-            ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereNotNull('rejected_at'))
-            ->when($filters['hasil'] === 'dibatalkan', fn ($q) => $q->whereNotNull('cancelled_at'))
+            ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereHas('rejections'))
+            // Menyaring lewat tabel riwayat, bukan lewat cancelled_at: pesanan
+            // yang dibatalkan lalu diterima lagi tetap harus bisa ditemukan di
+            // sini — pembatalannya benar-benar pernah terjadi, dan justru
+            // pesanan seperti itulah yang paling perlu ditelusuri.
+            ->when($filters['hasil'] === 'dibatalkan', fn ($q) => $q->whereHas('cancellations'))
             ->with(['customer:id,code,name', 'warehouse:id,code,name',
-                'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name'])
-            ->withCount('details')
+                'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name',
+                'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
+                'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->latest('rejected_at')])
+            ->withCount(['details', 'cancellations', 'rejections'])
             ->orderByDesc(DB::raw("GREATEST(COALESCE(approved_at, 'epoch'), COALESCE(rejected_at, 'epoch'), COALESCE(cancelled_at, 'epoch'))"))
             ->paginate(15)
             ->withQueryString();
@@ -450,7 +738,7 @@ class OrderApprovalController extends Controller
      *
      * @param  list<array{product_id:int, qty_approved:int, qty_ordered:int}>  $item
      */
-    private function tulisRincian(SalesOrder $order, array $item): void
+    private function tulisRincian(SalesOrder $order, array $item, ?int $userId): void
     {
         foreach ($item as $baris) {
             $detail = SalesOrderDetail::firstOrNew([
@@ -469,6 +757,23 @@ class OrderApprovalController extends Controller
             // kelak dikoreksi.
             $detail->outstanding_qty = max(0, $detail->qty_ordered - $detail->qty_approved);
             $detail->save();
+
+            // Riwayat outstanding (permintaan pemilik produk). Kolom di atas
+            // hanya menyimpan keadaan sekarang dan akan ditimpa saat barangnya
+            // berangkat; tanpa baris riwayat ini, "PO itu dulu kurang berapa"
+            // tidak bisa lagi dijawab begitu kekurangannya tertutup.
+            $this->outstanding->record(
+                $order,
+                $detail,
+                $detail->outstanding_qty,
+                SalesOrderOutstanding::CAUSE_APPROVAL,
+                $userId,
+                sprintf(
+                    'Dipesan %d, disetujui %d saat penerimaan.',
+                    $detail->qty_ordered,
+                    $detail->qty_approved,
+                ),
+            );
         }
 
         // Baris yang dibuang Logistik dari kisi ikut hilang. Dipakai saat

@@ -39,6 +39,11 @@ use RuntimeException;
  */
 class OrderCanceller
 {
+    public function __construct(
+        private readonly PickingListBuilder $penyusunDaftar,
+        private readonly PickingRun $picking,
+    ) {}
+
     /** Status yang masih boleh dibatalkan — barangnya belum berangkat. */
     private const DAPAT_DIBATALKAN = [
         SalesOrder::STATUS_APPROVED,
@@ -61,7 +66,22 @@ class OrderCanceller
             $this->pastikanBolehDibatalkan($terkunci);
 
             $nomorSo = $terkunci->bc_so_number;
-            $qtyDilepas = $this->lepasSeluruhAlokasi($terkunci, $userId);
+
+            // Barang yang SUDAH turun dari rak dikembalikan lebih dulu.
+            // Sesudah picking selesai, alokasinya sudah tidak ada lagi —
+            // sudah dipakai habis — sehingga lepasSeluruhAlokasi() di bawah
+            // tidak menemukan apa pun untuk dikembalikan. Tanpa langkah ini,
+            // membatalkan pesanan yang sudah dipicking membuat stoknya
+            // lenyap tanpa jejak: barangnya ada di dock, angkanya tidak.
+            $qtyDikembalikan = $this->picking->kembalikanHasilPicking($terkunci, $userId);
+
+            // Daftar yang BELUM selesai cukup melepaskan pesanan ini. Baris
+            // pickingnya menunjuk cadangan yang sebentar lagi dilepas, dan
+            // membiarkannya berarti operator disuruh mengambil barang untuk
+            // pesanan yang sudah tidak berlaku.
+            $this->penyusunDaftar->keluarkanPesanan($terkunci, $userId);
+
+            $qtyDilepas = $this->lepasSeluruhAlokasi($terkunci, $userId) + $qtyDikembalikan;
 
             SalesOrderCancellation::create([
                 'sales_order_id' => $terkunci->id,
@@ -83,6 +103,8 @@ class OrderCanceller
 
             $terkunci->fill([
                 'status' => SalesOrder::STATUS_PENDING,
+                'picking_list_id' => null,
+                'picking_completed_at' => null,
                 // Dikosongkan supaya nomornya kembali bisa dipakai. Salinannya
                 // sudah aman di sales_order_cancellations.
                 'bc_so_number' => null,

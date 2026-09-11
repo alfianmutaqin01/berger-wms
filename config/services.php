@@ -45,4 +45,27 @@ return [
         'secret_key' => env('RECAPTCHA_SECRET_KEY'),
     ],
 
+    /*
+    | WhatsApp — tautan konfirmasi untuk supir (PRD §6.5 F-OUT-04 #10).
+    |
+    | driver = manual : bawaan. Sistem menyiapkan pesan + tautan, Logistik
+    |                   yang menekan kirim lewat WhatsApp-nya sendiri. Tanpa
+    |                   langganan, tanpa risiko nomor diblokir.
+    |         = cloud  : WhatsApp Cloud API resmi Meta. Butuh SELURUH isian di
+    |                   bawah terisi; lihat CloudApiWhatsAppSender untuk apa
+    |                   yang harus disiapkan di sisi Meta lebih dulu.
+    |         = log    : mencatat ke log, untuk pengembangan.
+    |
+    | Berpindah ke 'cloud' TIDAK mengubah kode mana pun — hanya nilai ini.
+    */
+    'whatsapp' => [
+        'driver' => env('WHATSAPP_DRIVER', 'manual'),
+        'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
+        'token' => env('WHATSAPP_TOKEN'),
+        // Nama template "utility" yang sudah disetujui Meta. Pesan yang
+        // dimulai bisnis ke nomor yang belum pernah membalas WAJIB template.
+        'template' => env('WHATSAPP_TEMPLATE', 'konfirmasi_pengiriman'),
+        'language' => env('WHATSAPP_TEMPLATE_LANGUAGE', 'id'),
+    ],
+
 ];

@@ -153,7 +153,7 @@ class BinAllocator
 
         return InboundDetail::query()
             ->whereIn('location_id', $locations->pluck('id'))
-            ->with('product:id,uom,max_qty_per_pallet')
+            ->with('product:id,uom,pack_unit,pack_size,max_qty_per_pallet')
             ->get(['id', 'location_id', 'product_id', 'qty_actual', 'pallet_qty'])
             ->groupBy('location_id')
             ->mapWithKeys(function ($group) use ($idKeKode) {
@@ -162,7 +162,7 @@ class BinAllocator
                 return [$idKeKode[$group->first()->location_id] => [
                     'product_id' => $group->first()->product_id,
                     'qty' => $group->sum(fn (InboundDetail $d) => $d->effective_qty),
-                    'capacity' => $produk?->max_qty_per_pallet,
+                    'capacity' => $produk?->kapasitasPalet(),
                     'uom' => $produk?->uom,
                 ]];
             })
@@ -188,7 +188,7 @@ class BinAllocator
         }
 
         $locationId = $this->bins->get($code)->id;
-        $kapasitas = $detail->product?->max_qty_per_pallet;
+        $kapasitas = $detail->product?->kapasitasPalet();
 
         $terpakai = 0;
         $produkLain = null;

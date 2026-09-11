@@ -36,22 +36,65 @@
 </div>
 @endif
 
-@can('inventory.adjust')
-{{-- Dua pintu memasukkan stok tanpa dokumen inbound. Keduanya hanya untuk
-     Manager & Super Admin, dan keduanya WAJIB mencatat alasan ke ledger. --}}
+@canany(['reports.view', 'inventory.adjust'])
 <div class="d-flex justify-content-end gap-2 mb-3 flex-wrap">
+    @can('reports.view')
+    {{-- TIDAK ADA logika unduhan sendiri di halaman ini. Kedua tautan
+         mengarah ke PRATINJAU laporan yang sudah ada, persis seperti kartu
+         Pergerakan Stok di menu Laporan & Analisis: lihat dulu 25 baris
+         pertama beserta jumlah baris sebenarnya, baru tekan unduh.
+
+         Kalau halaman ini menulis query-nya sendiri, akan ada dua definisi
+         "stok" — dan suatu hari salah satunya berubah tanpa yang lain ikut.
+
+         Hanya gudang yang diteruskan. Penyaring lain (kategori, batch, rak)
+         SENGAJA tidak ikut: halaman laporan tidak punya isian itu, jadi
+         meneruskannya hanya membuat penyaring yang tak terlihat dan tak bisa
+         dibatalkan siapa pun yang membuka pratinjaunya.
+
+         Gate-nya reports.view, BUKAN inventory.view seperti halaman ini:
+         Produksi & Operator boleh melihat stok di layar, tetapi membawa
+         keluar seluruh isi gudang dalam satu berkas adalah hal lain. --}}
+    @php
+        $gudangKini = request()->query('warehouse_id');
+    @endphp
+    <div class="btn-group">
+        <button type="button" class="btn btn-outline-success rounded-3 dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li>
+                <a class="dropdown-item py-2" href="{{ route('wms.reports.show', array_filter(['key' => 'posisi-stok', 'warehouse_id' => $gudangKini])) }}">
+                    <i class="bi bi-boxes me-2 text-primary"></i>Posisi Stok
+                    <small class="d-block text-muted ms-4">Isi rak saat ini, satu baris per batch</small>
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item py-2" href="{{ route('wms.reports.show', array_filter(['key' => 'pergerakan-stok', 'warehouse_id' => $gudangKini])) }}">
+                    <i class="bi bi-arrow-left-right me-2 text-danger"></i>Pergerakan Stok
+                    <small class="d-block text-muted ms-4">Kartu stok: tiap tambah &amp; kurang beserta pelakunya</small>
+                </a>
+            </li>
+        </ul>
+    </div>
+    @endcan
+
+    @can('inventory.adjust')
+    {{-- Dua pintu memasukkan stok tanpa dokumen inbound. Keduanya hanya untuk
+         Manager & Super Admin, dan keduanya WAJIB mencatat alasan ke ledger. --}}
     <button type="button" class="btn btn-outline-primary rounded-3" data-bs-toggle="modal" data-bs-target="#modalImporStok">
         <i class="bi bi-upload me-1"></i> Impor Stok Awal
     </button>
     <button type="button" class="btn btn-primary rounded-3" data-bs-toggle="modal" data-bs-target="#modalTambahStok">
         <i class="bi bi-plus-lg me-1"></i> Tambah Stok
     </button>
+    @endcan
 </div>
-@endcan
+@endcanany
 
 <!-- Ringkasan -->
 <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-success border-4">
             <div class="card-body">
                 <h6 class="text-muted fw-normal mb-2">Good Stock</h6>
@@ -59,7 +102,7 @@
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-primary border-4">
             <div class="card-body">
                 <h6 class="text-muted fw-normal mb-2">Teralokasi</h6>
@@ -67,7 +110,18 @@
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
+        {{-- Karantina BUKAN DDP: masih boleh dijual, cuma ditahan menunggu
+             jangka waktunya lewat. Diberi warna sendiri (kuning) supaya tidak
+             terbaca sebagai "rusak" seperti Stok DDP di sebelahnya. --}}
+        <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted fw-normal mb-2">Karantina</h6>
+                <h3 class="mb-0 fw-bold text-warning-emphasis">{{ number_format($stats['karantina']) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-secondary border-4">
             <div class="card-body">
                 <h6 class="text-muted fw-normal mb-2">Stok DDP</h6>
@@ -75,7 +129,7 @@
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl">
         {{-- Batch yang umurnya tinggal <= 90 hari; ini yang harus dijual duluan. --}}
         <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-danger border-4">
             <div class="card-body">
@@ -170,6 +224,27 @@
                         <span class="text-muted">Good Stock:</span>
                         <strong class="text-success">{{ number_format($baris['total_good']) }}</strong>
                     </span>
+                    @if($baris['per_gudang']->count() > 1)
+                        {{-- Angka di atas MENJUMLAHKAN GUDANG YANG BERBEDA.
+                             Tanpa rincian ini ia pernah terbaca sebagai selisih
+                             stocktake — 234 di layar melawan 55 di laporan
+                             Karawang, padahal 180 di antaranya sudah lama
+                             dipindah ke Pekanbaru dan stocktake-nya benar. --}}
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning text-wrap"
+                              title="Angka Good Stock di atas adalah gabungan seluruh gudang">
+                            <i class="bi bi-diagram-3 me-1"></i>{{ $baris['per_gudang']->count() }} gudang:
+                            @foreach($baris['per_gudang'] as $kodeGudang => $qty)
+                                <span class="font-monospace">{{ $kodeGudang }}</span> {{ number_format($qty) }}@if(! $loop->last) &middot; @endif
+                            @endforeach
+                        </span>
+                    @endif
+                    @if($baris['total_karantina'] > 0)
+                    <span class="text-muted">·</span>
+                    <span class="small text-nowrap">
+                        <span class="text-muted">Karantina:</span>
+                        <strong class="text-warning-emphasis">{{ number_format($baris['total_karantina']) }}</strong>
+                    </span>
+                    @endif
                     <span class="text-muted">·</span>
                     <span class="small text-nowrap">
                         <span class="text-muted">DDP Stock:</span>
@@ -197,7 +272,7 @@
                                         <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
                                         <th class="text-secondary small fw-semibold text-end">TERSEDIA</th>
                                         <th class="text-secondary small fw-semibold text-end">DI-BOOK</th>
-                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                         <th class="text-secondary small fw-semibold text-center">AKSI</th>
                                         @endcanany
                                     </tr>
@@ -213,7 +288,21 @@
                                             };
                                         @endphp
                                         <tr>
-                                            <td><small class="font-monospace">{{ $stock->batch_no }}</small></td>
+                                            <td>
+                                                <small class="font-monospace">{{ $stock->batch_no }}</small>
+                                                @if($stock->has_quality_issue)
+                                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
+                                                        Quality Issue
+                                                    </span>
+                                                @endif
+                                                @if($stock->prioritize_out)
+                                                    <span class="badge bg-success-subtle text-success-emphasis border border-success d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Dialokasikan lebih dulu, mendahului batch yang lebih tua. Alasan: {{ $stock->prioritize_reason }}">
+                                                        ↑ Dahulukan Keluar
+                                                    </span>
+                                                @endif
+                                            </td>
                                             <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M y') }}</td>
                                             <td class="text-nowrap small {{ $warnaUmur }}">
@@ -237,7 +326,7 @@
                                                     <span class="text-muted">—</span>
                                                 @endif
                                             </td>
-                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                             <td class="text-center text-nowrap">
                                                 @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
                                             </td>
@@ -247,6 +336,91 @@
                                         <tr>
                                             <td colspan="8" class="text-center text-muted small py-3">
                                                 {{ $statusDisaring ? 'Disembunyikan oleh filter status.' : 'Tidak ada Good Stock untuk SKU ini.' }}
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ============ BLOK KARANTINA ============ -->
+                    {{-- Selalu dirender meski kosong, pola yang sama dengan blok
+                         DDP di bawahnya: ketiadaan batch yang sedang ditahan
+                         harus terbaca sebagai informasi, bukan data yang belum
+                         dimuat. BUKAN DDP — batch di sini biasanya masih layak
+                         jual, cuma menunggu jangka waktunya lewat. --}}
+                    <div class="bg-warning-subtle px-3 pt-3 pb-1 border-top">
+                        <h6 class="fw-bold text-warning-emphasis mb-2 small">
+                            <i class="bi bi-circle-fill me-1" style="font-size: 0.6rem;"></i>KARANTINA (Menunggu, Masih Layak Jual)
+                        </h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle bg-white rounded-3 mb-3">
+                                <thead>
+                                    <tr>
+                                        <th class="text-secondary small fw-semibold">BATCH</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">TGL PROD</th>
+                                        <th class="text-secondary small fw-semibold" style="min-width: 170px;">KARANTINA</th>
+                                        <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
+                                        <th class="text-secondary small fw-semibold text-end">QTY</th>
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
+                                        <th class="text-secondary small fw-semibold text-center">AKSI</th>
+                                        @endcanany
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse($baris['karantina'] as $stock)
+                                        @php($sisaHari = $stock->quarantine_days_left)
+                                        <tr>
+                                            <td>
+                                                <small class="font-monospace">{{ $stock->batch_no }}</small>
+                                                @if($stock->has_quality_issue)
+                                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
+                                                        Quality Issue
+                                                    </span>
+                                                @endif
+                                                @if($stock->prioritize_out)
+                                                    <span class="badge bg-success-subtle text-success-emphasis border border-success d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Dialokasikan lebih dulu, mendahului batch yang lebih tua. Alasan: {{ $stock->prioritize_reason }}">
+                                                        ↑ Dahulukan Keluar
+                                                    </span>
+                                                @endif
+                                            </td>
+                                            <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
+                                            <td class="small text-nowrap">
+                                                @if($sisaHari !== null && $sisaHari <= 0)
+                                                    <span class="text-success fw-semibold">Jangka waktu terlewati</span>
+                                                    <small class="d-block text-muted">Akan dilepas sweep berikutnya.</small>
+                                                @else
+                                                    <span class="text-warning-emphasis fw-semibold">Sisa {{ $sisaHari }} hari</span>
+                                                    <small class="d-block text-muted">
+                                                        Habis {{ $stock->quarantine_until?->translatedFormat('d M Y') }}
+                                                        ({{ $stock->quarantine_days }} hari)
+                                                    </small>
+                                                @endif
+                                                @if($stock->quarantine_note)
+                                                    <small class="d-block text-muted fst-italic">{{ $stock->quarantine_note }}</small>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-primary-subtle text-primary-emphasis border border-primary font-monospace">{{ $stock->location?->code ?? '—' }}</span>
+                                                <small class="d-block text-muted" style="font-size: 0.7rem;">{{ $stock->warehouse?->code }}</small>
+                                            </td>
+                                            <td class="text-end fw-bold text-nowrap">
+                                                {{ number_format($stock->qty_available) }}
+                                                <small class="text-muted fw-normal">{{ $p->uom }}</small>
+                                            </td>
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
+                                            <td class="text-center text-nowrap">
+                                                @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
+                                            </td>
+                                            @endcanany
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted small py-3">
+                                                {{ $statusDisaring ? 'Disembunyikan oleh filter status.' : 'Tidak ada batch yang sedang dikarantina untuk SKU ini.' }}
                                             </td>
                                         </tr>
                                     @endforelse
@@ -272,7 +446,7 @@
                                         <th class="text-secondary small fw-semibold" style="min-width: 150px;">KETERANGAN</th>
                                         <th class="text-secondary small fw-semibold text-nowrap">LOKASI</th>
                                         <th class="text-secondary small fw-semibold text-end">QTY</th>
-                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                        @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                         <th class="text-secondary small fw-semibold text-center">AKSI</th>
                                         @endcanany
                                     </tr>
@@ -280,7 +454,21 @@
                                 <tbody>
                                     @forelse($baris['ddp'] as $stock)
                                         <tr>
-                                            <td><small class="font-monospace">{{ $stock->batch_no }}</small></td>
+                                            <td>
+                                                <small class="font-monospace">{{ $stock->batch_no }}</small>
+                                                @if($stock->has_quality_issue)
+                                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Penanda informasi — batch ini tetap ikut FIFO. Pakai Karantina/DDP untuk menahannya.">
+                                                        Quality Issue
+                                                    </span>
+                                                @endif
+                                                @if($stock->prioritize_out)
+                                                    <span class="badge bg-success-subtle text-success-emphasis border border-success d-block mt-1" style="font-size: 0.65rem;"
+                                                          title="Dialokasikan lebih dulu, mendahului batch yang lebih tua. Alasan: {{ $stock->prioritize_reason }}">
+                                                        ↑ Dahulukan Keluar
+                                                    </span>
+                                                @endif
+                                            </td>
                                             <td class="small text-muted text-nowrap">{{ $stock->production_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">{{ $stock->expiry_date->translatedFormat('d M y') }}</td>
                                             <td class="small text-nowrap">
@@ -299,7 +487,7 @@
                                                 {{ number_format($stock->qty_available) }}
                                                 <small class="text-muted fw-normal">{{ $p->uom }}</small>
                                             </td>
-                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER])
+                                            @canany([\App\Support\Permission::INVENTORY_ADJUST, \App\Support\Permission::INVENTORY_TRANSFER, \App\Support\Permission::INVENTORY_QUARANTINE])
                                             <td class="text-center text-nowrap">
                                                 @include('wms.inventory._aksi-batch', ['stock' => $stock, 'sku' => $p->sku])
                                             </td>
@@ -360,6 +548,44 @@
                 </p>
 
                 <div class="row g-3">
+                    {{-- GUDANG DIPILIH, TIDAK DISIMPULKAN DARI KODE RAK. Kode rak
+                         tidak unik antar gudang — "A-01-02" ada di Karawang maupun
+                         Pekanbaru — sehingga menyimpulkannya bisa menaruh stok di
+                         gudang yang sama sekali tidak dimaksud tanpa pesan galat.
+
+                         Yang gudangnya tunggal (Manager, Logistik) tidak diberi
+                         pilihan sama sekali: pilihan yang cuma punya satu jawaban
+                         hanya menambah langkah, dan wewenangnya tetap ditegakkan
+                         di belakang oleh WarehouseScope. --}}
+                    @if($warehouses->count() > 1)
+                        <div class="col-12">
+                            <label for="tsGudang" class="form-label fw-semibold">
+                                Gudang Tujuan <span class="text-danger">*</span>
+                            </label>
+                            <select name="warehouse_id" id="tsGudang" required class="form-select">
+                                <option value="">— pilih gudang —</option>
+                                @foreach($warehouses as $w)
+                                    <option value="{{ $w->id }}" @selected(old('warehouse_id') == $w->id)>
+                                        {{ $w->code }} — {{ $w->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <small class="text-muted">
+                                Wajib dipilih. Kode rak yang sama bisa ada di lebih dari satu gudang,
+                                jadi raknya dicari di dalam gudang ini saja.
+                            </small>
+                        </div>
+                    @else
+                        <input type="hidden" name="warehouse_id" value="{{ $warehouses->first()?->id }}">
+                        <div class="col-12">
+                            <div class="alert alert-light border rounded-3 small mb-0">
+                                <i class="bi bi-building me-1"></i>
+                                Masuk ke gudang <strong>{{ $warehouses->first()?->code }} —
+                                {{ $warehouses->first()?->name }}</strong>, wilayah kerja Anda.
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="col-12 col-md-6">
                         <label for="tsSku" class="form-label fw-semibold">SKU <span class="text-danger">*</span></label>
                         <input type="text" name="sku" id="tsSku" required maxlength="50"
@@ -395,7 +621,7 @@
                         <label for="tsAlasan" class="form-label fw-semibold">Alasan <span class="text-danger">*</span></label>
                         <textarea name="reason" id="tsAlasan" rows="2" required minlength="5" maxlength="500"
                                   class="form-control"
-                                  placeholder="mis. Stok opname 1 Sep, barang sudah di rak sejak sebelum sistem dipakai">{{ old('reason') }}</textarea>
+                                  placeholder="mis. Stocktake 1 Sep, barang sudah di rak sejak sebelum sistem dipakai">{{ old('reason') }}</textarea>
                         <small class="text-muted">Tercatat di ledger sebagai koreksi, berikut nama Anda.</small>
                     </div>
                 </div>
@@ -507,7 +733,7 @@
                 <div class="mb-2">
                     <label class="form-label small fw-semibold">Alasan Koreksi <span class="text-danger">*</span></label>
                     <textarea name="reason" class="form-control" rows="2" minlength="5" maxlength="500" required
-                              placeholder="Contoh: hasil opname 31 Agu 2026, selisih 2 pail rusak saat penurunan."></textarea>
+                              placeholder="Contoh: hasil stocktake 31 Agu 2026, selisih 2 pail rusak saat penurunan."></textarea>
                     <small class="text-muted">Wajib diisi — tercatat permanen di ledger stok.</small>
                 </div>
             </div>
@@ -560,6 +786,108 @@
     </div>
 </div>
 @endcan
+
+@can(\App\Support\Permission::INVENTORY_QUARANTINE)
+{{--
+    Karantina — permintaan pemilik produk (bukan PRD).
+
+    BUKAN penandaan DDP: batch ini biasanya MASIH LAYAK JUAL, cuma ditahan
+    menunggu hasil pemeriksaan QC selesai dinyatakan. Lama harinya bebas
+    diisi (mis. 30 atau 90 hari) supaya sistem tinggal menghitung tanggal
+    lepasnya sendiri — Logistik tidak perlu mengingat tanggal kalender.
+--}}
+<div class="modal fade" id="modalKarantina" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ route('wms.inventory.quarantine') }}" class="modal-content border-0 rounded-4">
+            @csrf
+            <input type="hidden" name="stock_id" id="krtStockId">
+            <div class="modal-header border-bottom-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-hourglass-split text-warning me-2"></i>Karantina Batch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="bg-light rounded-3 p-3 mb-3 small">
+                    <div><strong id="krtSku" class="font-monospace"></strong></div>
+                    <div class="text-muted">Batch <span id="krtBatch" class="font-monospace"></span></div>
+                </div>
+
+                <div class="alert alert-warning border-0 rounded-3 small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Berlaku untuk <strong>seluruh baris stok</strong> batch ini di gudang yang sama,
+                    bukan cuma baris yang dipilih — satu batch, satu keputusan karantina.
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Lama Karantina (hari) <span class="text-danger">*</span></label>
+                    <input type="number" name="days" id="krtDays" class="form-control" min="1" max="365" step="1" required
+                           placeholder="mis. 30">
+                    <small class="text-muted">
+                        Otomatis kembali jadi Good Stock setelah jangka waktu ini lewat — tidak perlu tindakan manual.
+                    </small>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold">Catatan (opsional)</label>
+                    <textarea name="note" class="form-control" rows="2" maxlength="500"
+                              placeholder="Contoh: menunggu hasil uji QC batch produksi 18 Sep 2026."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-warning fw-bold">Karantina</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{{-- Dahulukan Keluar — kebalikan karantina. Alasannya WAJIB: ini satu-satunya
+     penanda yang melanggar FIFO, dan orang akan bertanya kenapa batch baru
+     keluar duluan sementara yang lama menua di rak. --}}
+<div class="modal fade" id="modalPrioritas" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ route('wms.inventory.prioritize') }}" class="modal-content border-0 rounded-4">
+            @csrf
+            <input type="hidden" name="stock_id" id="prtStockId">
+            <div class="modal-header border-bottom-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-box-arrow-up text-success me-2"></i>Dahulukan Keluar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="bg-light rounded-3 p-3 mb-3 small">
+                    <div><strong id="prtSku" class="font-monospace"></strong></div>
+                    <div class="text-muted">Batch <span id="prtBatch" class="font-monospace"></span></div>
+                </div>
+
+                <div class="alert alert-success border-0 rounded-3 small mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Batch ini akan <strong>dialokasikan lebih dulu</strong> walau ada batch yang lebih tua —
+                    berlaku untuk pesanan, booking, maupun pengeluaran saat kirim. Penanda lepas sendiri
+                    begitu batchnya habis.
+                </div>
+
+                <div class="alert alert-warning border-0 rounded-3 small mb-3">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Batch yang lebih tua akan <strong>menunggu lebih lama</strong> dan bisa mendekati
+                    kedaluwarsa. Lepas penandanya begitu tidak diperlukan lagi.
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold">Alasan <span class="text-danger">*</span></label>
+                    <textarea name="reason" class="form-control" rows="2" maxlength="500" required
+                              placeholder="Contoh: batch B05 diminta customer PT Aneka, harus dikosongkan lebih dulu."></textarea>
+                    <small class="text-muted">
+                        Ikut tercatat di ledger stok dan terbaca di layar ini — supaya nanti masih ada yang
+                        bisa menjawab kenapa FIFO dilewati.
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-success fw-bold">Dahulukan Batch Ini</button>
+            </div>
+        </form>
+    </div>
+</div>
+@endcan
 @endsection
 
 @push('styles')
@@ -607,6 +935,28 @@
                 transfer.querySelector('#trfQty').max = b.dataset.qty;
                 transfer.querySelector('#trfQty').value = b.dataset.qty;
                 transfer.querySelector('#trfQtyHint').textContent = 'Maksimal ' + b.dataset.qty + ' (stok tersedia di rak ini).';
+            });
+        }
+
+        const karantina = document.getElementById('modalKarantina');
+        if (karantina) {
+            karantina.addEventListener('show.bs.modal', function (e) {
+                const b = e.relatedTarget;
+
+                karantina.querySelector('#krtStockId').value = b.dataset.stock;
+                karantina.querySelector('#krtSku').textContent = b.dataset.sku || '—';
+                karantina.querySelector('#krtBatch').textContent = b.dataset.batch || '—';
+            });
+        }
+
+        const prioritas = document.getElementById('modalPrioritas');
+        if (prioritas) {
+            prioritas.addEventListener('show.bs.modal', function (e) {
+                const b = e.relatedTarget;
+
+                prioritas.querySelector('#prtStockId').value = b.dataset.stock;
+                prioritas.querySelector('#prtSku').textContent = b.dataset.sku || '—';
+                prioritas.querySelector('#prtBatch').textContent = b.dataset.batch || '—';
             });
         }
     });

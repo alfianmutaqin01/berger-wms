@@ -18,8 +18,18 @@ class StockTransferFactory extends Factory
             'from_warehouse_id' => Warehouse::factory(),
             'to_warehouse_id' => Warehouse::factory(),
             'status' => StockTransfer::STATUS_IN_TRANSIT,
+            'requested_at' => now(),
             'shipped_at' => now(),
         ];
+    }
+
+    /** Baru disusun: barangnya masih di rak, daftar picking-nya menunggu. */
+    public function menungguPicking(): static
+    {
+        return $this->state(fn () => [
+            'status' => StockTransfer::STATUS_PENDING,
+            'shipped_at' => null,
+        ]);
     }
 
     public function received(): static

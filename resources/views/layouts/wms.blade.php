@@ -64,7 +64,7 @@
             @endcan
 
             @can(\App\Support\Permission::REPORTS_VIEW)
-                <li class="nav-item {{ request()->is('wms/reports') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->is('wms/reports*') ? 'active' : '' }}">
                     <a href="/wms/reports" class="nav-link">
                         <i class="bi bi-file-earmark-bar-graph"></i>
                         <span>Laporan & Analisis</span>
@@ -77,20 +77,22 @@
                 \App\Support\Permission::INBOUND_CREATE,
                 \App\Support\Permission::INBOUND_HISTORY,
                 \App\Support\Permission::INBOUND_PUTAWAY,
-                \App\Support\Permission::INBOUND_RETURNS,
+                \App\Support\Permission::RETURN_VIEW,
                 \App\Support\Permission::INBOUND_VERIFY,
                 \App\Support\Permission::INVENTORY_VIEW,
+                \App\Support\Permission::STOCKTAKE_COUNT,
                 \App\Support\Permission::TRANSFER_HISTORY,
             ])
                 @php
                     $inboundOpen = request()->is('wms/inbound*')
                         || request()->is('wms/inventory*')
+                        || request()->is('wms/stocktake*')
                         || request()->is('wms/transfers*');
 
                     // Produksi hanya ada di Karawang. Bagi staff Pekanbaru dan
                     // Surabaya, dua menu produksi di bawah ini tidak pernah
                     // bisa dipakai — barang sampai ke sana lewat transfer,
-                    // bukan lini produksi. Put-away dan verifikasi TETAP ada:
+                    // bukan lini produksi. PDN dan verifikasi TETAP ada:
                     // barang kiriman pun harus dinaikkan ke rak.
                     //
                     // Akun tanpa gudang (Super Admin) melihat semuanya.
@@ -120,12 +122,12 @@
                         @endcan
                         @can(\App\Support\Permission::INBOUND_PUTAWAY)
                             <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Proses Put-away</span></a>
+                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>PDN</span></a>
                             </li>
                         @endcan
-                        @can(\App\Support\Permission::INBOUND_RETURNS)
+                        @can(\App\Support\Permission::RETURN_VIEW)
                             <li class="nav-item {{ request()->is('wms/inbound/returns*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/returns" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penerimaan Retur</span></a>
+                                <a href="/wms/inbound/returns" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penolakan Customer</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INBOUND_VERIFY)
@@ -134,8 +136,18 @@
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INVENTORY_VIEW)
-                            <li class="nav-item {{ request()->is('wms/inventory*') ? 'active' : '' }}">
-                                <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok (Inventory)</span></a>
+                            <li class="nav-item {{ request()->is('wms/inventory') || request()->is('wms/inventory/*') ? 'active' : '' }}">
+                                <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::STOCKTAKE_COUNT)
+                            {{-- Menu sendiri, bukan menumpang Denah. Stocktake
+                                 adalah PROSES bertahap dengan awal, akhir, dan
+                                 penanggung jawab; menyembunyikannya di dalam
+                                 layar master data membuatnya luput justru dari
+                                 orang yang harus memantaunya. --}}
+                            <li class="nav-item {{ request()->is('wms/stocktake*') ? 'active' : '' }}">
+                                <a href="/wms/stocktake" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Stocktake</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::TRANSFER_HISTORY)
@@ -151,9 +163,48 @@
                 </li>
             @endcanany
 
+            <!-- MRF — permintaan material Produksi ke Logistik -->
+            @canany([
+                \App\Support\Permission::MRF_VIEW,
+                \App\Support\Permission::MRF_RECEIVE,
+            ])
+                @php $mrfOpen = request()->is('wms/mrf*') || request()->is('wms/material-produksi*'); @endphp
+                <li class="nav-section mt-2">Produksi</li>
+                <li class="nav-item">
+                    <a class="nav-link {{ $mrfOpen ? '' : 'collapsed' }}" href="#mrfMenu" data-bs-toggle="collapse" aria-expanded="{{ $mrfOpen ? 'true' : 'false' }}">
+                        <i class="bi bi-clipboard2-check"></i>
+                        <span>Permintaan Material</span>
+                        <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
+                    </a>
+                    <ul class="collapse list-unstyled ps-4 {{ $mrfOpen ? 'show' : '' }}" id="mrfMenu" data-bs-parent=".sidebar-nav">
+                        @can(\App\Support\Permission::MRF_VIEW)
+                            {{-- Satu pintu untuk semua peran: Produksi memantau
+                                 permintaannya, Logistik mencari yang menunggu
+                                 keputusannya, Operator memastikan tugas yang ia
+                                 pegang milik siapa. Memisahnya per peran berarti
+                                 tiga layar yang isinya tabel yang sama. --}}
+                            <li class="nav-item {{ request()->is('wms/mrf') || request()->is('wms/mrf/*') ? 'active' : '' }}">
+                                <a href="/wms/mrf" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>MRF</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::MRF_RECEIVE)
+                            {{-- Milik Produksi saja. Barang di sini sudah KELUAR
+                                 dari stok gudang; yang tahu berapa yang benar-
+                                 benar masuk mixer hari ini cuma orang di lantai
+                                 produksi. --}}
+                            <li class="nav-item {{ request()->is('wms/material-produksi*') ? 'active' : '' }}">
+                                <a href="/wms/material-produksi" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Material di Tangan Produksi</span></a>
+                            </li>
+                        @endcan
+                    </ul>
+                </li>
+            @endcanany
+
             <!-- OUTBOUND -->
             @canany([
                 \App\Support\Permission::OUTBOUND_APPROVAL,
+                \App\Support\Permission::OUTBOUND_ORDER_INTERNAL,
+                \App\Support\Permission::BOOKING,
                 \App\Support\Permission::OUTBOUND_PICKING_LIST,
                 \App\Support\Permission::OUTBOUND_PICKING_PROCESS,
                 \App\Support\Permission::OUTBOUND_DELIVERY,
@@ -167,6 +218,16 @@
                         <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $outboundOpen ? 'show' : '' }}" id="outboundMenu" data-bs-parent=".sidebar-nav">
+                        {{-- Ditaruh PALING ATAS karena inilah awal alurnya:
+                             pesanan dibuat dulu, baru diterima. Hanya Admin &
+                             Manager — Logistik sengaja tidak, karena merekalah
+                             yang menilai pesanan. --}}
+                        @can(\App\Support\Permission::OUTBOUND_ORDER_INTERNAL)
+                            <li class="nav-item {{ request()->is('wms/outbound/new-order') ? 'active' : '' }}">
+                                <a href="/wms/outbound/new-order" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Buat Pesanan</span></a>
+                            </li>
+                        @endcan
+
                         @can(\App\Support\Permission::OUTBOUND_APPROVAL)
                             {{-- is() dengan pola eksplisit, BUKAN 'wms/outbound/approval*':
                                  pola berbintang membuat kedua menu ini menyala
@@ -176,6 +237,18 @@
                             </li>
                             <li class="nav-item {{ request()->is('wms/outbound/approval/history') ? 'active' : '' }}">
                                 <a href="/wms/outbound/approval/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Penerimaan</span></a>
+                            </li>
+                            <li class="nav-item {{ request()->is('wms/outbound/outstanding') ? 'active' : '' }}">
+                                <a href="/wms/outbound/outstanding" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Outstanding</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::BOOKING)
+                            {{-- Ditaruh di Outbound, bukan Inventory: yang
+                                 dipegang booking adalah janji ke CUSTOMER, dan
+                                 orang yang memakainya sehari-hari adalah orang
+                                 yang sama dengan yang menerima pesanan. --}}
+                            <li class="nav-item {{ request()->is('wms/outbound/booking') ? 'active' : '' }}">
+                                <a href="/wms/outbound/booking" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Booking Produk</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_PICKING_LIST)
@@ -190,7 +263,7 @@
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_DELIVERY)
                             <li class="nav-item {{ request()->is('wms/outbound/delivery') ? 'active' : '' }}">
-                                <a href="/wms/outbound/delivery" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Cetak Surat Jalan</span></a>
+                                <a href="/wms/outbound/delivery" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Surat Jalan (BC)</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_VERIFICATION)
@@ -210,6 +283,7 @@
                 \App\Support\Permission::MASTER_LOCATIONS,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
+                \App\Support\Permission::ADMIN_SETTINGS,
             ])
                 <li class="nav-section mt-2">Keuangan & Sistem</li>
             @endcanany
@@ -229,6 +303,7 @@
                 \App\Support\Permission::MASTER_LOCATIONS,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
+                \App\Support\Permission::ADMIN_SETTINGS,
             ])
                 @php $systemOpen = request()->is('wms/master*') || request()->is('wms/admin*'); @endphp
                 <li class="nav-item">
@@ -255,12 +330,25 @@
                         @endcan
                         @can(\App\Support\Permission::ADMIN_USERS)
                             <li class="nav-item {{ request()->is('wms/admin/users') ? 'active' : '' }}">
-                                <a href="/wms/admin/users" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Manajemen User</span></a>
+                                <a href="/wms/admin/users" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>User Management</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_SEQUENCE)
                             <li class="nav-item {{ request()->is('wms/admin/sequence') ? 'active' : '' }}">
-                                <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Pengaturan Dokumen</span></a>
+                                <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penomoran Dokumen</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::ADMIN_SETTINGS)
+                            <li class="nav-item {{ request()->is('wms/admin/settings') ? 'active' : '' }}">
+                                <a href="/wms/admin/settings" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Setelan Operasional</span></a>
+                            </li>
+                            <li class="nav-item {{ request()->is('wms/admin/pallet-capacity') ? 'active' : '' }}">
+                                <a href="/wms/admin/pallet-capacity" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kapasitas Palet</span></a>
+                            </li>
+                        @endcan
+                        @can(\App\Support\Permission::ADMIN_AUDIT)
+                            <li class="nav-item {{ request()->is('wms/admin/activity-log') ? 'active' : '' }}">
+                                <a href="/wms/admin/activity-log" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Log Aktivitas</span></a>
                             </li>
                         @endcan
                     </ul>

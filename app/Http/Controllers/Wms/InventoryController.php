@@ -4,18 +4,23 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreInventoryStockRequest;
+use App\Models\ActivityLog;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\ProductCategory;
 use App\Models\StockMovement;
+use App\Support\Activity;
+use App\Support\Inventory\StockQuarantine;
 use App\Support\Outbound\PendingAllocationFiller;
 use App\Support\ShelfLife;
 use App\Support\WarehouseScope;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use RuntimeException;
 
 /**
  * Modul Inventory / Stok — PRD §6.4.
@@ -26,7 +31,10 @@ use Illuminate\View\View;
  */
 class InventoryController extends Controller
 {
-    public function __construct(private readonly PendingAllocationFiller $pengisi) {}
+    public function __construct(
+        private readonly PendingAllocationFiller $pengisi,
+        private readonly StockQuarantine $karantina,
+    ) {}
 
     /**
      * F-INV-01: Tampilan Stok — accordion per SKU (docs/4 §4.3.9).
@@ -45,12 +53,13 @@ class InventoryController extends Controller
      * -----------------------------------------
      * $halaman    : LengthAwarePaginator — satu entri per SKU, untuk links()
      * $barisSku   : Collection<array{product:Product, good:Collection,
-     *                                ddp:Collection, total_good:int,
-     *                                total_ddp:int, kritis:bool}>
+     *                                ddp:Collection, karantina:Collection,
+     *                                total_good:int, total_ddp:int,
+     *                                total_karantina:int, kritis:bool}>
      * $warehouses : Collection<Warehouse>
      * $categories : Collection<ProductCategory>
      * $statuses   : array<string, string>
-     * $stats      : array{good:int, dialokasikan:int, ddp:int, kritis:int}
+     * $stats      : array{good:int, dialokasikan:int, ddp:int, karantina:int, kritis:int}
      * $filters    : array{search, warehouse_id, category_id, location_id,
      *                     batch, status, production_date, expiring:?string}
      *
@@ -62,38 +71,7 @@ class InventoryController extends Controller
     {
         $user = $request->user();
 
-        $filters = [
-            'search' => $request->query('search'),
-            // Dijepit ke gudang user; bagi yang terikat, isian URL diabaikan.
-            'warehouse_id' => WarehouseScope::resolveFilter($request, $user),
-            'category_id' => $request->query('category_id'),
-            'location_id' => $request->query('location_id'),
-            'batch' => $request->query('batch'),
-            'status' => $request->query('status'),
-            'production_date' => $request->query('production_date'),
-            // "hampir kedaluwarsa" = dalam ambang peringatan dini 90 hari.
-            'expiring' => $request->query('expiring'),
-        ];
-
-        // apply() DAN filter gudang keduanya dipasang. Yang pertama adalah
-        // batas kewenangan (tidak bisa dikosongkan), yang kedua pilihan
-        // tampilan milik Super Admin yang memang lintas gudang.
-        $base = WarehouseScope::apply(InventoryStock::query(), $user)
-            ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id))
-            ->when($filters['category_id'], fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('category_id', $id)));
-
-        // Semua penyaring baris dikumpulkan sekali supaya daftar SKU dan
-        // daftar batch di dalamnya TIDAK PERNAH memakai kriteria berbeda —
-        // kalau berbeda, sebuah SKU bisa muncul dengan accordion kosong.
-        $terpilih = fn () => (clone $base)
-            ->search($filters['search'])
-            ->when($filters['location_id'], fn ($q, $id) => $q->where('location_id', $id))
-            ->when($filters['batch'], fn ($q, $b) => $q->where('batch_no', 'ILIKE', '%'.$b.'%'))
-            ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
-            ->when($filters['production_date'], fn ($q, $d) => $q->whereDate('production_date', $d))
-            ->when($filters['expiring'], fn ($q) => $q
-                ->where('status', InventoryStock::STATUS_ACTIVE)
-                ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::WARNING_DAYS)->toDateString()));
+        ['filters' => $filters, 'base' => $base, 'terpilih' => $terpilih] = $this->saringan($request);
 
         // Paginasi di tingkat SKU. Diurutkan dari SKU yang salah satu
         // batch-nya paling dekat kedaluwarsa: itulah yang harus dijual duluan.
@@ -123,13 +101,38 @@ class InventoryController extends Controller
                 $isi = $batch->get($id, collect());
                 $good = $isi->where('status', InventoryStock::STATUS_ACTIVE)->values();
                 $ddp = $isi->whereIn('status', [InventoryStock::STATUS_DDP, InventoryStock::STATUS_EXPIRED])->values();
+                // BLOK KETIGA. Sebelum ditambahkan, batch berstatus 'quarantine'
+                // tidak cocok dengan $good (status != active) MAUPUN $ddp
+                // (bukan ddp/expired) — akan lenyap dari accordion sama sekali
+                // begitu status ini ada, padahal barangnya masih di rak.
+                $karantina = $isi->where('status', InventoryStock::STATUS_QUARANTINE)->values();
 
                 return [
                     'product' => $isi->first()?->product,
                     'good' => $good,
                     'ddp' => $ddp,
+                    'karantina' => $karantina,
                     'total_good' => (int) $good->sum('qty_available'),
                     'total_ddp' => (int) $ddp->sum('qty_available'),
+                    'total_karantina' => (int) $karantina->sum('qty_available'),
+                    // RINCIAN PER GUDANG.
+                    //
+                    // Satu baris = satu SKU, dan bagi akun lintas gudang itu
+                    // berarti angkanya MENJUMLAHKAN GUDANG YANG BERBEDA tanpa
+                    // mengatakannya. Pernah terbaca sebagai selisih stocktake:
+                    // layar ini menunjukkan 234 sementara laporan stocktake
+                    // Karawang menyebut 55 — padahal 180 di antaranya sudah
+                    // dipindah ke Pekanbaru berbulan-bulan sebelumnya dan
+                    // stocktake-nya benar.
+                    //
+                    // Kode gudangnya sendiri nyaris kembar (ID11_1001 vs
+                    // ID1I_1001), jadi menyandarkan pembacanya pada label kecil
+                    // di tiap baris batch tidak cukup — yang dibaca lebih dulu
+                    // adalah angka besar di kepala baris.
+                    'per_gudang' => $isi
+                        ->groupBy(fn ($s) => $s->warehouse?->code ?? '—')
+                        ->map(fn ($g) => (int) $g->sum('qty_available'))
+                        ->sortKeys(),
                     // Menandai baris tertutup: ada batch yang harus segera dijual.
                     'kritis' => $good->contains(fn ($s) => in_array($s->shelf_life_urgency, ['critical', 'expired'], true)),
                 ];
@@ -146,14 +149,83 @@ class InventoryController extends Controller
             'stats' => [
                 'good' => (int) (clone $base)->where('status', InventoryStock::STATUS_ACTIVE)->sum('qty_available'),
                 'dialokasikan' => (int) (clone $base)->where('status', InventoryStock::STATUS_ACTIVE)->sum('qty_allocated'),
-                'ddp' => (int) (clone $base)->quarantined()->sum('qty_available'),
+                'ddp' => (int) (clone $base)->ddpOrExpired()->sum('qty_available'),
+                'karantina' => (int) (clone $base)->inQuarantine()->sum('qty_available'),
                 'kritis' => (clone $base)
                     ->where('status', InventoryStock::STATUS_ACTIVE)
-                    ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::WARNING_DAYS)->toDateString())
+                    ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::warningDays())->toDateString())
                     ->count(),
             ],
             'filters' => $filters,
         ]);
+    }
+
+    /**
+     * Penyaring halaman Data Stok — daftar SKU maupun batch di dalamnya.
+     *
+     * Dipisah dari index() supaya kriterianya berdiri sebagai satu blok yang
+     * terbaca sekaligus. Unduhan Excel TIDAK memakainya: tombol Export di
+     * halaman ini mengarah ke pratinjau laporan Posisi Stok / Pergerakan
+     * Stok, yang punya query-nya sendiri di ReportRunner. Menyalin logika
+     * penyaring ke sana hanya akan melahirkan dua definisi "stok" yang suatu
+     * hari berbeda.
+     *
+     * @return array{filters: array<string, mixed>, base: Builder, terpilih: \Closure}
+     */
+    private function saringan(Request $request): array
+    {
+        $user = $request->user();
+
+        $filters = [
+            'search' => $request->query('search'),
+            // Dijepit ke gudang user; bagi yang terikat, isian URL diabaikan.
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $user),
+            'category_id' => $request->query('category_id'),
+            'location_id' => $request->query('location_id'),
+            'batch' => $request->query('batch'),
+            'status' => $request->query('status'),
+            'production_date' => $request->query('production_date'),
+            // "hampir kedaluwarsa" = dalam ambang peringatan dini 90 hari.
+            'expiring' => $request->query('expiring'),
+        ];
+
+        // apply() DAN filter gudang keduanya dipasang. Yang pertama adalah
+        // batas kewenangan (tidak bisa dikosongkan), yang kedua pilihan
+        // tampilan milik Super Admin yang memang lintas gudang.
+        $base = WarehouseScope::apply(InventoryStock::query(), $user)
+            ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id))
+            ->when($filters['category_id'], fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('category_id', $id)));
+
+        // Semua penyaring baris dikumpulkan sekali supaya daftar SKU dan
+        // daftar batch di dalamnya TIDAK PERNAH memakai kriteria berbeda —
+        // kalau berbeda, sebuah SKU bisa muncul dengan accordion kosong.
+        $terpilih = fn () => (clone $base)
+            // BARIS KOSONG TIDAK DITAMPILKAN. Baris dengan tersedia DAN
+            // teralokasi sama-sama nol bukan stok — ia sisa dari batch yang
+            // sudah habis atau seluruhnya dipindah ke rak lain. Menampilkannya
+            // membuat orang membaca "batch ini ada di rak ZB-01-01" padahal
+            // raknya kosong, dan pada gudang yang sudah lama berjalan baris
+            // semacam ini menumpuk sampai menenggelamkan stok yang sungguhan.
+            //
+            // TIDAK DIHAPUS, hanya disembunyikan: barisnya masih dirujuk
+            // stock_movements sebagai reference_id, dan riwayat "batch ini
+            // pernah di rak itu" tetap terbaca di buku besar.
+            //
+            // teralokasi ikut diperiksa, bukan cuma tersedia: batch yang
+            // habis dicadangkan untuk pesanan masih berdiri di rak dan WAJIB
+            // terlihat — kalau tidak, operator picking mencari barang yang
+            // menurut layar tidak ada.
+            ->whereRaw('(qty_available + qty_allocated) > 0')
+            ->search($filters['search'])
+            ->when($filters['location_id'], fn ($q, $id) => $q->where('location_id', $id))
+            ->when($filters['batch'], fn ($q, $b) => $q->where('batch_no', 'ILIKE', '%'.$b.'%'))
+            ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
+            ->when($filters['production_date'], fn ($q, $d) => $q->whereDate('production_date', $d))
+            ->when($filters['expiring'], fn ($q) => $q
+                ->where('status', InventoryStock::STATUS_ACTIVE)
+                ->whereDate('expiry_date', '<=', now()->addDays(ShelfLife::warningDays())->toDateString()));
+
+        return ['filters' => $filters, 'base' => $base, 'terpilih' => $terpilih];
     }
 
     /**
@@ -237,8 +309,31 @@ class InventoryController extends Controller
 
             return $bertambah
                 ? $this->pengisi->fill($stock->product_id, $stock->warehouse_id, $request->user()?->id)
-                : ['terisi' => 0, 'pesanan' => []];
+                : ['terisi' => 0, 'pesanan' => [], 'booking' => []];
         });
+
+        Activity::record(
+            ActivityLog::STOCK_ADJUST,
+            sprintf(
+                'Mengoreksi %s batch %s dari %d menjadi %d%s.',
+                $stock->product?->sku ?? '—',
+                $stock->batch_no ?? '—',
+                $qtyLama,
+                $qtyBaru,
+                ($validated['ddp_reason'] ?? null) ? ' dan menandainya DDP' : '',
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'qty_sebelum' => $qtyLama,
+                'qty_sesudah' => $qtyBaru,
+                'selisih' => $qtyBaru - $qtyLama,
+                'ddp' => $validated['ddp_reason'] ?? null,
+                'alasan' => $validated['reason'],
+            ],
+        );
 
         $pesan = sprintf(
             'Koreksi tersimpan: %s batch %s dari %d menjadi %d.',
@@ -338,6 +433,29 @@ class InventoryController extends Controller
             ];
         });
 
+        Activity::record(
+            ActivityLog::STOCK_ADD,
+            sprintf(
+                'Menambahkan %d unit %s batch %s ke rak %s (gudang %s). Total batch di rak itu jadi %d.',
+                $qty,
+                $produk->sku,
+                $request->validated('batch_no'),
+                $lokasi->code,
+                $lokasi->warehouse?->code ?? '—',
+                $hasil['total'],
+            ),
+            $lokasi,
+            $lokasi->warehouse_id,
+            [
+                'sku' => $produk->sku,
+                'batch' => $request->validated('batch_no'),
+                'qty' => $qty,
+                'rak' => $lokasi->code,
+                'baris_baru' => $hasil['baru'],
+                'alasan' => $request->validated('reason'),
+            ],
+        );
+
         $pesan = sprintf(
             '%s batch %s di %s: %s %d unit (total sekarang %d).',
             $produk->sku,
@@ -412,6 +530,10 @@ class InventoryController extends Controller
             return back()->with('error', 'Lokasi tujuan sama dengan lokasi asal.');
         }
 
+        // Dibaca SEBELUM transaksi: location_id baris asal tidak berubah, tapi
+        // relasinya belum tentu masih termuat setelahnya.
+        $asal = $stock->location?->code ?? '—';
+
         DB::transaction(function () use ($stock, $tujuan, $qty, $validated, $request) {
             $asalSebelum = $stock->qty_available;
             $stock->qty_available = $asalSebelum - $qty;
@@ -439,6 +561,32 @@ class InventoryController extends Controller
                     'inbound_detail_id' => $stock->inbound_detail_id,
                     'verified_by' => $stock->verified_by,
                     'verified_at' => $stock->verified_at,
+
+                    // SELURUH PENANDA BATCH IKUT PINDAH. Ketiganya melekat pada
+                    // batch — pada apa yang terjadi saat produksi/pengujian —
+                    // bukan pada rak tempat barangnya kebetulan duduk. Baris
+                    // baru tanpa penanda akan membuat separuh batch dikarantina
+                    // dan separuhnya bebas dijual, padahal barangnya sama.
+                    //
+                    // Metadata karantina WAJIB ikut, bukan cuma statusnya:
+                    // CHECK inventory_stocks_karantina_lengkap menolak baris
+                    // berstatus 'quarantine' yang tanggal & pemasangnya kosong,
+                    // jadi tanpa ini memindahkan batch terkarantina gagal
+                    // dengan galat constraint mentah.
+                    'quarantine_days' => $stock->quarantine_days,
+                    'quarantine_until' => $stock->quarantine_until?->toDateString(),
+                    'quarantined_at' => $stock->quarantined_at,
+                    'quarantined_by' => $stock->quarantined_by,
+                    'quarantine_note' => $stock->quarantine_note,
+                    'quarantine_released_at' => $stock->quarantine_released_at,
+
+                    'has_quality_issue' => $stock->has_quality_issue,
+
+                    'prioritize_out' => $stock->prioritize_out,
+                    'prioritize_reason' => $stock->prioritize_reason,
+                    'prioritized_at' => $stock->prioritized_at,
+                    'prioritized_by' => $stock->prioritized_by,
+                    'prioritize_released_at' => $stock->prioritize_released_at,
                 ]);
             }
 
@@ -472,6 +620,28 @@ class InventoryController extends Controller
             ]);
         });
 
+        Activity::record(
+            ActivityLog::STOCK_TRANSFER,
+            sprintf(
+                'Memindahkan %d %s batch %s dari rak %s ke rak %s.',
+                $qty,
+                $stock->product?->sku ?? '—',
+                $stock->batch_no ?? '—',
+                $asal,
+                $tujuan->code,
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'qty' => $qty,
+                'dari_rak' => $asal,
+                'ke_rak' => $tujuan->code,
+                'alasan' => $validated['reason'],
+            ],
+        );
+
         return back()->with('success', sprintf(
             '%d %s batch %s dipindahkan ke %s.',
             $qty,
@@ -479,5 +649,217 @@ class InventoryController extends Controller
             $stock->batch_no,
             $tujuan->code
         ));
+    }
+
+    /**
+     * Menahan satu batch sementara — permintaan pemilik produk (bukan PRD).
+     *
+     * SELURUH BARIS product+gudang+batch yang sama ikut ditahan, bukan cuma
+     * baris yang dipilih di layar: karantina melekat pada hasil pemeriksaan
+     * QC atas batch itu, bukan pada rak tempat sebagian isinya kebetulan
+     * sekarang duduk. Lihat App\Support\Inventory\StockQuarantine::place().
+     */
+    public function quarantine(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'stock_id' => ['required', 'integer', 'exists:inventory_stocks,id'],
+            'days' => ['required', 'integer', 'min:1', 'max:365'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ], [], [
+            'days' => 'lama karantina',
+            'note' => 'catatan',
+        ]);
+
+        $stock = InventoryStock::with('product:id,sku')->findOrFail($validated['stock_id']);
+
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
+        try {
+            $jumlah = $this->karantina->place(
+                $stock,
+                (int) $validated['days'],
+                $validated['note'] ?? null,
+                $request->user()->id,
+            );
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::QUARANTINE_PLACE,
+            sprintf(
+                'Mengarantina batch %s (%s) selama %d hari.',
+                $stock->batch_no ?? '—',
+                $stock->product?->sku ?? '—',
+                $validated['days'],
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'hari' => (int) $validated['days'],
+                'sampai' => $stock->fresh()->quarantine_until?->toDateString(),
+                'baris' => $jumlah,
+                'catatan' => $validated['note'] ?? null,
+            ],
+        );
+
+        return back()->with('warning', sprintf(
+            '%d baris stok batch %s (%s) dikarantina %d hari. Otomatis kembali jadi Good Stock setelah %s '.
+            '— tidak perlu tindakan manual.',
+            $jumlah,
+            $stock->batch_no,
+            $stock->product?->sku ?? '—',
+            $validated['days'],
+            $stock->fresh()->quarantine_until->translatedFormat('d M Y'),
+        ));
+    }
+
+    /** Melepas karantina lebih awal, mis. QC selesai sebelum jangka waktunya. */
+    public function releaseQuarantine(Request $request, InventoryStock $stock): RedirectResponse
+    {
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
+        try {
+            $jumlah = $this->karantina->release($stock, $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::QUARANTINE_RELEASE,
+            sprintf('Melepas karantina batch %s lebih awal.', $stock->batch_no ?? '—'),
+            $stock,
+            $stock->warehouse_id,
+            ['batch' => $stock->batch_no, 'baris' => $jumlah],
+        );
+
+        return back()->with('success', sprintf(
+            'Karantina dibatalkan untuk %d baris stok batch %s. Kembali jadi Good Stock.',
+            $jumlah,
+            $stock->batch_no,
+        ));
+    }
+
+    /**
+     * Menandai satu batch supaya KELUAR DULUAN, mendahului yang lebih tua.
+     *
+     * Kebalikan karantina, dan satu-satunya penanda yang benar-benar mengubah
+     * urutan alokasi. Alasannya WAJIB — lihat StockQuarantine::prioritize().
+     */
+    public function prioritize(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'stock_id' => ['required', 'integer', 'exists:inventory_stocks,id'],
+            'reason' => ['required', 'string', 'max:500'],
+        ], [], [
+            'reason' => 'alasan',
+        ]);
+
+        $stock = InventoryStock::with('product:id,sku')->findOrFail($validated['stock_id']);
+
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
+        try {
+            $jumlah = $this->karantina->prioritize($stock, $validated['reason'], $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::PRIORITIZE,
+            sprintf(
+                'Menandai batch %s (%s) DAHULUKAN KELUAR — mendahului batch yang lebih tua. Alasan: %s',
+                $stock->batch_no ?? '—',
+                $stock->product?->sku ?? '—',
+                $validated['reason'],
+            ),
+            $stock,
+            $stock->warehouse_id,
+            [
+                'sku' => $stock->product?->sku,
+                'batch' => $stock->batch_no,
+                'baris' => $jumlah,
+                'alasan' => $validated['reason'],
+            ],
+        );
+
+        return back()->with('warning', sprintf(
+            '%d baris stok batch %s (%s) ditandai DAHULUKAN KELUAR — batch ini akan dialokasikan lebih dulu '.
+            'walau ada batch yang lebih tua. Lepas penandanya begitu tidak diperlukan lagi supaya FIFO kembali normal.',
+            $jumlah,
+            $stock->batch_no,
+            $stock->product?->sku ?? '—',
+        ));
+    }
+
+    /** Melepas penanda Dahulukan Keluar — batch kembali mengantre menurut umurnya. */
+    public function releasePriority(Request $request, InventoryStock $stock): RedirectResponse
+    {
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
+        try {
+            $jumlah = $this->karantina->releasePriority($stock, $request->user()->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::PRIORITIZE_RELEASE,
+            sprintf('Melepas penanda Dahulukan Keluar dari batch %s — urutan kembali FIFO.', $stock->batch_no ?? '—'),
+            $stock,
+            $stock->warehouse_id,
+            ['batch' => $stock->batch_no, 'baris' => $jumlah],
+        );
+
+        return back()->with('success', sprintf(
+            'Penanda Dahulukan Keluar dilepas dari %d baris stok batch %s. Urutan kembali FIFO.',
+            $jumlah,
+            $stock->batch_no,
+        ));
+    }
+
+    /**
+     * Menyalakan/mematikan penanda Quality Issue untuk satu batch.
+     *
+     * MURNI INFORMASI — tidak menyentuh status maupun kelayakan jual. Lihat
+     * App\Support\Inventory\StockQuarantine::toggleQualityIssue().
+     */
+    public function toggleQualityIssue(Request $request, InventoryStock $stock): RedirectResponse
+    {
+        WarehouseScope::assert($stock->warehouse_id, $request->user());
+
+        $hasil = $this->karantina->toggleQualityIssue($stock);
+
+        Activity::record(
+            ActivityLog::QUALITY_ISSUE,
+            sprintf(
+                '%s penanda Quality Issue pada batch %s (%s).',
+                $hasil['nilai'] ? 'Memasang' : 'Melepas',
+                $stock->batch_no ?? '—',
+                $stock->product?->sku ?? '—',
+            ),
+            $stock,
+            $stock->warehouse_id,
+            ['batch' => $stock->batch_no, 'menyala' => $hasil['nilai'], 'baris' => $hasil['jumlah']],
+        );
+
+        // Kalimatnya sengaja menyebut ulang bahwa stoknya TIDAK ditahan.
+        // Penanda bernama "Quality Issue" mudah dikira sudah mengunci
+        // batch dari penjualan; kalau dikira begitu, batchnya justru tetap
+        // terjual tanpa ada yang sadar.
+        return back()->with('success', $hasil['nilai']
+            ? sprintf(
+                '%d baris stok batch %s ditandai "Quality Issue". Penanda ini tidak menahan stok — '.
+                'pakai Karantina atau DDP kalau batch ini tidak boleh keluar gudang.',
+                $hasil['jumlah'],
+                $stock->batch_no,
+            )
+            : sprintf(
+                'Penanda "Quality Issue" dilepas dari %d baris stok batch %s.',
+                $hasil['jumlah'],
+                $stock->batch_no,
+            ));
     }
 }

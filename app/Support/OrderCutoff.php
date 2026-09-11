@@ -17,9 +17,17 @@ use Carbon\CarbonInterface;
  */
 class OrderCutoff
 {
+    /**
+     * Sumbernya kini system_settings (Fase 10), bukan lagi config.
+     *
+     * Nilai bawaannya tetap tinggal di App\Support\Settings, dan Settings
+     * sendiri mengembalikan bawaan itu kalau tabelnya belum ada atau gagal
+     * dibaca — jadi tidak ada keadaan di mana jam cutoff menjadi nol dan
+     * seluruh Sales terkunci sepanjang hari.
+     */
     public static function hour(): int
     {
-        return (int) config('wms.order_cutoff_hour', 15);
+        return Settings::get(Settings::ORDER_CUTOFF_HOUR);
     }
 
     public static function timezone(): string
