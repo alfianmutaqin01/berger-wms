@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Wms;
 
+use App\Models\ActivityLog;
 use App\Models\InventoryStock;
 use App\Models\Location;
 use App\Models\Product;
@@ -15,6 +16,7 @@ use App\Models\Warehouse;
 use App\Support\Inventory\StockTakeRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
 
 /**
@@ -999,5 +1001,143 @@ class StockTakeTest extends TestCase
         $html = $this->get(route('wms.stocktake.report', $sesi))->assertOk()->getContent();
 
         $this->assertStringNotContainsString('Sudah diperiksa?', $html);
+    }
+
+    /* ================================= Laporan sebagai berkas Excel */
+
+    /** @return array{teks:string, sheet:\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet} */
+    private function unduhLaporan(StockTake $sesi): array
+    {
+        $respons = $this->get(route('wms.stocktake.report.download', $sesi))->assertOk();
+
+        $berkas = tempnam(sys_get_temp_dir(), 'st').'.xlsx';
+        file_put_contents($berkas, $respons->streamedContent());
+
+        $sheet = IOFactory::load($berkas)->getActiveSheet();
+
+        $teks = '';
+
+        foreach ($sheet->toArray() as $b) {
+            $teks .= implode('|', array_map(fn ($n) => (string) $n, $b))."\n";
+        }
+
+        @unlink($berkas);
+
+        return ['teks' => $teks, 'sheet' => $sheet];
+    }
+
+    /**
+     * Laporannya diunduh, bukan dicetak.
+     *
+     * Ia dibaca untuk DICOCOKKAN — dijejerkan dengan catatan gudang, disaring
+     * per SKU, dijumlahkan. Lembar tercetak tidak bisa diapa-apakan selain
+     * dibaca.
+     */
+    public function test_laporan_bisa_diunduh_sebagai_excel(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->hitung(StockTakeItem::first(), 12);
+        $this->post(route('wms.stocktake.finalize', $sesi));
+
+        $isi = $this->unduhLaporan($sesi->fresh());
+
+        $this->assertSame('Laporan Stocktake '.$sesi->reference, $isi['sheet']->getCell('A1')->getValue());
+        $this->assertSame('SKU', $isi['sheet']->getCell('A4')->getValue());
+        $this->assertStringContainsString('APKO-001', $isi['teks']);
+
+        // Angka HARUS mendarat sebagai bilangan; kalau jadi teks, SUM() di
+        // Excel mengembalikan nol tanpa keluhan apa pun.
+        $this->assertSame(10, $isi['sheet']->getCell('D5')->getValue());
+        $this->assertSame(12, $isi['sheet']->getCell('E5')->getValue());
+        $this->assertSame(2, $isi['sheet']->getCell('F5')->getValue());
+        $this->assertSame('n', $isi['sheet']->getCell('D5')->getDataType());
+    }
+
+    /** Tombolnya Excel, bukan cetak. */
+    public function test_layar_laporan_menawarkan_unduhan_bukan_cetak(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+
+        $html = $this->get(route('wms.stocktake.report', $sesi))->assertOk()->getContent();
+
+        $this->assertStringContainsString(route('wms.stocktake.report.download', $sesi), $html);
+        $this->assertStringNotContainsString('window.print()', $html);
+    }
+
+    /**
+     * Pratinjau boleh diunduh, tetapi MENGAKU di dalam berkasnya sendiri.
+     *
+     * Berkas Excel hidup lebih lama daripada layar yang melahirkannya: ia
+     * di-forward dan dibuka lagi berbulan-bulan kemudian oleh orang yang tidak
+     * pernah melihat layarnya.
+     */
+    public function test_unduhan_sebelum_disahkan_mengaku_belum_disahkan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $isi = $this->unduhLaporan(StockTake::first());
+
+        $this->assertStringContainsString('BELUM DISAHKAN', $isi['teks']);
+    }
+
+    /** Baris yang tidak sempat dihitung ikut mengaku di dalam berkasnya. */
+    public function test_unduhan_menyebut_baris_yang_belum_dihitung(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->stok(20, lokasi: $this->rakDi('C-01-01', 'C-01'));
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+        $this->hitung(StockTakeItem::first(), 10);
+        $this->post(route('wms.stocktake.finalize', $sesi));
+
+        $isi = $this->unduhLaporan($sesi->fresh());
+
+        $this->assertStringContainsString('PERHATIAN', $isi['teks']);
+    }
+
+    /** Unduhan meninggalkan jejak — berkasnya beredar lebih lama dari layarnya. */
+    public function test_unduhan_laporan_tercatat_di_log(): void
+    {
+        $user = $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $this->unduhLaporan(StockTake::first());
+
+        $log = ActivityLog::where('action', ActivityLog::REPORT_EXPORT)->latest('id')->first();
+
+        $this->assertNotNull($log);
+        $this->assertSame($user->id, $log->user_id);
+        $this->assertSame('stocktake', $log->properties['laporan']);
+    }
+
+    /** Gudang lain tidak bisa mengunduh laporan yang bukan wilayahnya. */
+    public function test_laporan_gudang_lain_tidak_bisa_diunduh(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::first();
+
+        // Manager gudang lain: sesi ini bukan wilayahnya.
+        $lain = Warehouse::factory()->create(['code' => 'WH-88']);
+        $penyusup = User::factory()->withRole(Role::MANAGER)->create(['warehouse_id' => $lain->id]);
+        $this->withCredentials();
+        $this->actingAs($penyusup);
+
+        $this->get(route('wms.stocktake.report.download', $sesi))->assertForbidden();
     }
 }

@@ -43,6 +43,20 @@ class ProductionInputTest extends TestCase
         // permintaan HTTP sungguhan jadi gagal menulis ke folder yang sama.
         Storage::fake('local');
 
+        // WAKTU DIBEKUKAN, dan ini bukan kerapian.
+        //
+        // Nomor dokumen memuat tanggal (IN-260910-001), dan beberapa test di
+        // berkas ini menagihnya dengan now()->format('ymd') yang dihitung
+        // ULANG saat assert. Suite penuh berjalan sepuluh menit: dokumen yang
+        // dibuat pukul 23:59 ditagih sebagai tanggal berikutnya, dan testnya
+        // gagal satu kali lalu lolos di setiap percobaan berikutnya — bentuk
+        // kegagalan yang paling mudah dianggap "ah, flaky" lalu diabaikan
+        // sampai ia menyembunyikan bug sungguhan.
+        //
+        // Terjadi betulan pada 10 September 2026: satu test gagal karena
+        // suite-nya melewati tengah malam.
+        $this->freezeTime();
+
         $this->warehouse = Warehouse::factory()->withProduction()->create(['code' => 'WH-01']);
     }
 

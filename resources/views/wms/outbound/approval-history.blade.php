@@ -170,6 +170,15 @@
                             <small class="text-muted">{{ $waktu?->format('H:i') }}</small>
                         </td>
                         <td class="text-end">
+                            {{-- "12 item" tanpa cara membukanya membuat
+                                 pertanyaan paling wajar tentang penerimaan yang
+                                 sudah lewat — "apa saja yang waktu itu saya
+                                 setujui" — tidak bisa dijawab dari menu
+                                 penerimaan sama sekali. --}}
+                            <a href="{{ route('wms.approval.history.show', $order) }}"
+                               class="btn btn-sm btn-outline-primary rounded-3 mb-1">
+                                <i class="bi bi-list-ul me-1"></i> Rincian
+                            </a>
                             {{-- PINTU KECIL untuk salah ketik nomor SO. Hanya
                                  selama pesanan belum berangkat: sesudah itu
                                  koreksinya lewat tombol Pasangkan di Surat

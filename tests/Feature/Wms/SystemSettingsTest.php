@@ -216,6 +216,11 @@ class SystemSettingsTest extends TestCase
 
     public function test_halaman_penomoran_menampilkan_format_sungguhan(): void
     {
+        // Halaman ini menampilkan contoh nomor bertanggal hari ini. Tanpa
+        // membekukan waktu, test yang kebetulan berjalan melewati tengah
+        // malam menagih tanggal yang berbeda dari yang dirender.
+        $this->freezeTime();
+
         $this->login();
 
         $tanggal = now()->format('ymd');

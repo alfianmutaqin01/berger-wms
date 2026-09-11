@@ -10,6 +10,7 @@ use App\Models\StockTake;
 use App\Models\StockTakeItem;
 use App\Models\Warehouse;
 use App\Support\Activity;
+use App\Support\Export\XlsxWriter;
 use App\Support\Inventory\StockTakeRun;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Stocktake — mencocokkan angka sistem dengan barang yang benar-benar ada
@@ -421,7 +423,10 @@ class StockTakeController extends Controller
             );
         }
 
-        return redirect()->route('wms.stocktake.report', ['stocktake' => $stocktake, 'cetak' => 1])
+        // Tidak lagi membuka dialog cetak sendiri. Laporannya sekarang diunduh
+        // sebagai Excel lewat tombolnya, dan berkas yang terunduh tanpa
+        // diminta adalah hal yang justru dicurigai peramban.
+        return redirect()->route('wms.stocktake.report', $stocktake)
             ->with($hasil['belum'] > 0 ? 'warning' : 'success', $pesan);
     }
 
@@ -452,7 +457,28 @@ class StockTakeController extends Controller
     {
         WarehouseScope::assert($stocktake->warehouse_id, $request->user());
 
-        $baris = $stocktake->items()
+        return view('wms.inventory.stocktake-report', [
+            'sesi' => $stocktake->load([
+                'warehouse', 'openedBy:id,full_name', 'finalizedBy:id,full_name',
+            ]),
+            'baris' => $this->barisLaporan($stocktake),
+            'ringkasan' => $this->ringkasan($stocktake),
+        ]);
+    }
+
+    /**
+     * Isi laporan, dipakai bersama oleh layar dan berkas Excel.
+     *
+     * Ditulis sekali karena keduanya harus menjawab pertanyaan yang sama
+     * dengan angka yang sama. Kalau disalin, suatu hari salah satunya diberi
+     * penyesuaian dan yang lain tidak — dan tidak ada yang menyadarinya,
+     * karena keduanya tetap menghasilkan angka yang masuk akal.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function barisLaporan(StockTake $stocktake): array
+    {
+        return $stocktake->items()
             ->with('product:id,sku,name,uom')
             ->get()
             ->groupBy('product_id')
@@ -479,15 +505,81 @@ class StockTakeController extends Controller
             ->sortBy('sku')
             ->values()
             ->all();
+    }
 
-        return view('wms.inventory.stocktake-report', [
-            'sesi' => $stocktake->load([
-                'warehouse', 'openedBy:id,full_name', 'finalizedBy:id,full_name',
-            ]),
-            'baris' => $baris,
-            'ringkasan' => $this->ringkasan($stocktake),
-            'cetakOtomatis' => $request->boolean('cetak'),
-        ]);
+    /**
+     * Laporan stocktake sebagai berkas .xlsx.
+     *
+     * KENAPA EXCEL, BUKAN CETAK
+     * -------------------------
+     * Laporan ini dibaca untuk dicocokkan: dijejerkan dengan catatan gudang,
+     * disaring per SKU, dijumlahkan per kategori. Lembar tercetak berisi
+     * puluhan baris tidak bisa diapa-apakan selain dibaca — dan yang butuh
+     * kertas tetap bisa mencetak dari Excel, sedangkan yang butuh angkanya
+     * tidak bisa mengeluarkannya kembali dari kertas.
+     *
+     * PRATINJAU BOLEH DIUNDUH, TETAPI MENGAKU DI DALAM BERKASNYA
+     * ----------------------------------------------------------
+     * Sesi yang belum disahkan sengaja tetap bisa diunduh — justru di situlah
+     * gunanya, karena pemeriksaannya dikerjakan beberapa orang dan lebih mudah
+     * dibagi sebagai berkas. Tetapi berkas Excel hidup lebih lama daripada
+     * layar yang melahirkannya: ia di-forward dan dibuka lagi berbulan-bulan
+     * kemudian oleh orang yang tidak pernah melihat layarnya. Karena itu
+     * keterangan "BELUM DISAHKAN" ikut tertulis di kepala berkasnya sendiri,
+     * bukan hanya di layar.
+     */
+    public function download(Request $request, StockTake $stocktake): StreamedResponse
+    {
+        WarehouseScope::assert($stocktake->warehouse_id, $request->user());
+
+        $tabel = $this->barisLaporan($stocktake);
+        $ringkasan = $this->ringkasan($stocktake);
+
+        $keterangan = [
+            'Referensi' => $stocktake->reference,
+            'Gudang' => trim(($stocktake->warehouse?->code ?? '—').' — '.($stocktake->warehouse?->name ?? '')),
+            'Cakupan' => $stocktake->scope_label,
+            'Dibuka' => $stocktake->opened_at?->format('d/m/Y H:i').' oleh '.($stocktake->openedBy?->full_name ?? '—'),
+            'Status' => $stocktake->sudahDisahkan()
+                ? 'DISAHKAN '.$stocktake->finalized_at?->format('d/m/Y H:i').' oleh '.($stocktake->finalizedBy?->full_name ?? '—')
+                : 'BELUM DISAHKAN — angka "sesudah" di berkas ini BELUM berlaku di gudang',
+            'Baris dihitung' => $ringkasan['dihitung'].' dari '.$ringkasan['baris'],
+            'Diunduh' => now()->format('d/m/Y H:i').' WIB',
+        ];
+
+        // Baris yang tidak sempat dihitung HARUS mengaku di dalam berkasnya
+        // sendiri. Peringatan yang hanya ada di layar hilang begitu berkasnya
+        // diteruskan, dan penerimanya membaca laporan ini sebagai "seluruh
+        // gudang sudah cocok".
+        if ($ringkasan['belum'] > 0) {
+            $keterangan['PERHATIAN'] = number_format($ringkasan['belum']).' baris tidak dihitung dan '
+                .'tidak disentuh sama sekali — cakupan stocktake ini belum penuh.';
+        }
+
+        Activity::record(
+            ActivityLog::REPORT_EXPORT,
+            sprintf('Mengunduh laporan stocktake %s — %d SKU.', $stocktake->reference, count($tabel)),
+            $stocktake,
+            $stocktake->warehouse_id,
+            [
+                'laporan' => 'stocktake',
+                'referensi' => $stocktake->reference,
+                'sku' => count($tabel),
+                'disahkan' => $stocktake->sudahDisahkan(),
+            ],
+        );
+
+        return XlsxWriter::unduh(
+            'stocktake-'.$stocktake->reference.'-'.now()->format('Ymd-Hi').'.xlsx',
+            'Laporan Stocktake '.$stocktake->reference,
+            ['SKU', 'Deskripsi', 'Satuan', 'Stok Sebelum', 'Stok Sesudah', 'Selisih', 'Baris Rak', 'Belum Dihitung'],
+            array_map(fn (array $b) => [
+                $b['sku'], $b['nama'], $b['uom'],
+                $b['sebelum'], $b['sesudah'], $b['selisih'], $b['baris'], $b['belum'],
+            ], $tabel),
+            [3, 4, 5, 6, 7],
+            $keterangan,
+        );
     }
 
     /**

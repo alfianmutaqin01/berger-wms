@@ -381,6 +381,11 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.stocktake.show');
         Route::get('/stocktake/{stocktake}/report', [StockTakeController::class, 'report'])
             ->name('wms.stocktake.report');
+        // Laporannya diunduh sebagai Excel, bukan dicetak: ia dibaca untuk
+        // DICOCOKKAN — dijejerkan dengan catatan gudang, disaring, dijumlahkan
+        // — dan lembar tercetak tidak bisa diapa-apakan selain dibaca.
+        Route::get('/stocktake/{stocktake}/report/excel', [StockTakeController::class, 'download'])
+            ->name('wms.stocktake.report.download');
     });
 
     Route::middleware('can:'.Permission::STOCKTAKE_MANAGE)->group(function () {
@@ -579,6 +584,11 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.approval.index');
             Route::get('/approval/history', [OrderApprovalController::class, 'history'])
                 ->name('wms.approval.history');
+            // Rincian pesanan yang SUDAH dinilai — hanya untuk dibaca.
+            // Terpisah dari '/approval/{order}' yang merupakan layar keputusan
+            // dan menolak pesanan yang sudah selesai dinilai.
+            Route::get('/approval/history/{order}', [OrderApprovalController::class, 'historyShow'])
+                ->name('wms.approval.history.show');
             Route::get('/approval/{order}', [OrderApprovalController::class, 'show'])
                 ->name('wms.approval.show');
             Route::get('/approval/{order}/document', [OrderApprovalController::class, 'document'])

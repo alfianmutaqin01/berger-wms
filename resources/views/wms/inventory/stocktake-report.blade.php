@@ -26,9 +26,14 @@
     <a href="{{ route('wms.stocktake.index') }}" class="btn btn-sm btn-light rounded-3">
         <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar stocktake
     </a>
-    <button type="button" class="btn btn-sm btn-primary rounded-3" onclick="window.print()">
-        <i class="bi bi-printer me-1"></i> Cetak
-    </button>
+    {{-- EXCEL, bukan cetak. Laporan ini dibaca untuk DICOCOKKAN: dijejerkan
+         dengan catatan gudang, disaring per SKU, dijumlahkan per kategori.
+         Lembar tercetak berisi puluhan baris tidak bisa diapa-apakan selain
+         dibaca — dan yang butuh kertas tetap bisa mencetak dari Excel,
+         sedangkan yang butuh angkanya tidak bisa mengeluarkannya dari kertas. --}}
+    <a href="{{ route('wms.stocktake.report.download', $sesi) }}" class="btn btn-sm btn-success rounded-3">
+        <i class="bi bi-file-earmark-excel me-1"></i> Unduh Excel
+    </a>
 </div>
 
 @foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
@@ -199,7 +204,7 @@
                           onsubmit="return confirm('Sahkan laporan {{ $sesi->reference }}? Seluruh selisih akan diterapkan ke stok dan tidak bisa ditarik kembali.');">
                         @csrf
                         <button class="btn btn-success fw-bold rounded-3">
-                            <i class="bi bi-check2-circle me-1"></i> Sahkan &amp; Cetak Laporan
+                            <i class="bi bi-check2-circle me-1"></i> Sahkan Laporan
                         </button>
                     </form>
                 </div>
@@ -215,13 +220,4 @@
     @endif
 @endunless
 
-@if($cetakOtomatis && $sesi->sudahDisahkan())
-<script>
-    // Dibuka langsung setelah pengesahan: menurut pemilik produk, stok
-    // terbaru berlaku bersamaan dengan terbitnya laporan ini.
-    window.addEventListener('load', function () {
-        window.print();
-    });
-</script>
-@endif
 @endsection

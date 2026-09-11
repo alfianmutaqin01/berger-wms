@@ -632,6 +632,53 @@ class OrderApprovalController extends Controller
     }
 
     /** Riwayat penerimaan, penolakan, dan pembatalan (permintaan pemilik produk). */
+    /**
+     * Rincian pesanan yang sudah dinilai — hanya untuk dibaca.
+     *
+     * KENAPA LAYAR SENDIRI, BUKAN show() YANG DILONGGARKAN
+     * ----------------------------------------------------
+     * show() adalah layar KEPUTUSAN: ia menghitung stok tersedia, mencari
+     * barang yang sama di gudang lain, dan memasang tombol Terima/Tolak.
+     * Melonggarkannya agar juga melayani pesanan yang sudah dinilai berarti
+     * satu layar dengan dua watak, dan cepat atau lambat sebuah tombol
+     * keputusan muncul di keadaan yang seharusnya tidak menerimanya lagi.
+     *
+     * YANG DIJAWAB LAYAR INI
+     * ----------------------
+     * "Waktu itu apa saja yang saya setujui, dan berapa." Sebelum ada layar
+     * ini, daftar riwayat hanya menyebut "12 item" tanpa satu pun cara
+     * membukanya — sehingga pertanyaan yang paling wajar tentang penerimaan
+     * yang sudah lewat justru tidak bisa dijawab dari menu penerimaan.
+     *
+     * Ditampilkan APA ADANYA sampai hari ini: qty dipesan, disetujui,
+     * terkirim, dan sisa outstanding. Tiga angka terakhir memang bergerak
+     * setelah penerimaan, dan itu bukan alasan menyembunyikannya — justru
+     * di situlah terlihat apakah yang disetujui benar-benar sampai.
+     */
+    public function historyShow(Request $request, SalesOrder $order): View
+    {
+        WarehouseScope::assert($order->warehouse_id, $request->user());
+
+        $order->load([
+            'customer', 'user:id,full_name', 'warehouse', 'paymentTerm',
+            'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name',
+            'placedBy:id,full_name',
+            'details.product:id,sku,name,uom',
+            'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
+            'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
+        ]);
+
+        return view('wms.outbound.approval-history-detail', [
+            'order' => $order,
+            'totals' => [
+                'dipesan' => (int) $order->details->sum('qty_ordered'),
+                'disetujui' => (int) $order->details->sum('qty_approved'),
+                'terkirim' => (int) $order->details->sum('qty_shipped'),
+                'outstanding' => (int) $order->details->sum('outstanding_qty'),
+            ],
+        ]);
+    }
+
     public function history(Request $request): View
     {
         $filters = [
