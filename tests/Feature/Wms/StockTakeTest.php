@@ -17,6 +17,7 @@ use App\Support\Inventory\StockTakeRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Tests\TestCase;
 
 /**
@@ -1005,7 +1006,7 @@ class StockTakeTest extends TestCase
 
     /* ================================= Laporan sebagai berkas Excel */
 
-    /** @return array{teks:string, sheet:\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet} */
+    /** @return array{teks:string, sheet:Worksheet} */
     private function unduhLaporan(StockTake $sesi): array
     {
         $respons = $this->get(route('wms.stocktake.report.download', $sesi))->assertOk();

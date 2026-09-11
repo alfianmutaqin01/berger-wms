@@ -138,8 +138,18 @@
                             <span class="badge {{ $t->status_badge }}">{{ $t->status_label }}</span>
                         </td>
                         <td>
-                            <div class="small">{{ $t->shipped_at?->format('d M Y H:i') ?? '—' }}</div>
-                            <div class="small text-muted">{{ $t->shippedBy?->full_name }}</div>
+                            {{-- Kiriman yang belum berangkat tidak punya waktu
+                                 berangkat, dan strip kosong di sana terbaca
+                                 sebagai data yang hilang. Yang ditampilkan
+                                 waktu penyusunannya, dengan sebutan yang
+                                 benar. --}}
+                            @if($t->isPending())
+                                <div class="small text-muted">Disusun {{ $t->requested_at?->format('d M Y H:i') ?? '—' }}</div>
+                                <div class="small text-muted">{{ $t->requestedBy?->full_name }}</div>
+                            @else
+                                <div class="small">{{ $t->shipped_at?->format('d M Y H:i') ?? '—' }}</div>
+                                <div class="small text-muted">{{ $t->shippedBy?->full_name }}</div>
+                            @endif
                         </td>
                         <td class="text-end">
                             @if($t->isInTransit() && $gudangSaya && $t->to_warehouse_id === $gudangSaya->id)

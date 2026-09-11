@@ -148,7 +148,13 @@
                                 <a href="{{ route('wms.picking.show', $daftar) }}"
                                    class="fw-bold font-monospace text-decoration-none">{{ $daftar->list_number }}</a>
                                 <div class="small text-muted">
-                                    {{ $daftar->orders_count }} pesanan · {{ $daftar->items_count }} baris ambil
+                                    @if($daftar->transfer)
+                                        Transfer {{ $daftar->transfer->transfer_number }} →
+                                        {{ $daftar->transfer->toWarehouse?->code ?? 'gudang lain' }}
+                                    @else
+                                        {{ $daftar->orders_count }} pesanan
+                                    @endif
+                                    · {{ $daftar->items_count }} baris ambil
                                     · {{ $daftar->warehouse?->code }}
                                 </div>
                                 @if($daftar->claimed_by)
@@ -165,7 +171,12 @@
                             </div>
                         </div>
 
-                        @if($daftar->bolehDibatalkan())
+                        {{-- Daftar transfer TIDAK punya tombol ini. Membubarkannya
+                             dari sini meninggalkan barangnya tercadang di rak tanpa
+                             ada yang bisa mengambilnya; pintunya ada di dokumen
+                             transfernya. Ditegakkan juga di PickingListBuilder,
+                             bukan hanya disembunyikan di layar. --}}
+                        @if($daftar->bolehDibatalkan() && ! $daftar->transfer)
                         <button type="button" class="btn btn-sm btn-outline-danger rounded-3 mt-2 tombol-batal"
                                 data-bs-toggle="modal" data-bs-target="#modalBatal"
                                 data-aksi="{{ route('wms.picking.cancel', $daftar) }}"

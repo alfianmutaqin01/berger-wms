@@ -10,6 +10,7 @@ use App\Models\SalesOrder;
 use App\Models\SalesOrderAllocation;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Support\Inventory\WarehouseTransfer;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -252,7 +253,7 @@ class PickingRun
                 $kurang += $hasil['kurang'];
             }
 
-            $this->selesaikanPesanan($daftar);
+            $this->selesaikanPesanan($daftar, $operator->id);
 
             $daftar->fill([
                 'status' => PickingList::STATUS_COMPLETED,
@@ -425,6 +426,26 @@ class PickingRun
         $kurang = $item->qty_kurang;
         $dijanjikan = (int) $item->qty_to_pick;
 
+        /*
+         * SATU GERAKAN, DUA DOKUMEN. Baris yang sama bisa milik pesanan
+         * pelanggan atau transfer antar gudang; yang berbeda hanya dokumen
+         * yang dirujuk dan ke mana barangnya menuju.
+         *
+         * Rujukan mutasinya WAJIB ikut berbeda. Baris transfer yang menulis
+         * reference_type 'sales_order' menunjuk pesanan yang tidak ada, dan
+         * penelusuran "kenapa stok ini berkurang" berhenti di jalan buntu.
+         */
+        $transferDetail = $item->stock_transfer_detail_id === null ? null : $item->transferDetail;
+        $transfer = $transferDetail?->transfer;
+
+        $refType = $transferDetail === null
+            ? StockMovement::REF_SALES_ORDER
+            : StockMovement::REF_STOCK_TRANSFER;
+
+        $refId = $transferDetail === null
+            ? $item->sales_order_id
+            : $transferDetail->stock_transfer_id;
+
         $stok = $item->inventory_stock_id === null
             ? null
             : InventoryStock::query()->lockForUpdate()->find($item->inventory_stock_id);
@@ -455,8 +476,8 @@ class PickingRun
             'qty_change' => $dijanjikan,
             'qty_before' => $sebelum,
             'qty_after' => $stok->qty_available,
-            'reference_type' => StockMovement::REF_SALES_ORDER,
-            'reference_id' => $item->sales_order_id,
+            'reference_type' => $refType,
+            'reference_id' => $refId,
             'batch_no' => $item->batch_no,
             'notes' => sprintf(
                 'Picking %s: cadangan berakhir, barang diambil dari rak (batch %s).',
@@ -466,7 +487,10 @@ class PickingRun
             'user_id' => $userId,
         ]);
 
-        // 2. Yang benar-benar keluar menuju customer.
+        // 2. Yang benar-benar keluar — menuju customer, atau menuju gudang
+        //    lain. TRANSFER_OUT bukan sekadar label yang lebih rapi: laporan
+        //    penjualan menjumlahkan OUT, dan barang yang cuma berpindah gudang
+        //    terhitung sebagai penjualan kalau ditulis dengan jenis yang sama.
         if ($diambil > 0) {
             $sebelum = $stok->qty_available;
             $stok->qty_available = $sebelum - $diambil;
@@ -476,18 +500,25 @@ class PickingRun
                 'product_id' => $item->product_id,
                 'location_id' => $stok->location_id,
                 'warehouse_id' => $stok->warehouse_id,
-                'movement_type' => StockMovement::TYPE_OUT,
+                'movement_type' => $transferDetail === null
+                    ? StockMovement::TYPE_OUT
+                    : StockMovement::TYPE_TRANSFER_OUT,
                 'qty_change' => -$diambil,
                 'qty_before' => $sebelum,
                 'qty_after' => $stok->qty_available,
-                'reference_type' => StockMovement::REF_SALES_ORDER,
-                'reference_id' => $item->sales_order_id,
+                'reference_type' => $refType,
+                'reference_id' => $refId,
                 'batch_no' => $item->batch_no,
                 'notes' => sprintf(
-                    'Picking %s: %d keluar dari rak %s menuju loading dock.',
+                    'Picking %s: %d keluar dari rak %s menuju %s.',
                     $daftar->list_number,
                     $diambil,
-                    $item->location?->code ?? '—'
+                    $item->location?->code ?? '—',
+                    $transferDetail === null
+                        ? 'loading dock'
+                        : sprintf('gudang %s (%s)',
+                            $transfer?->toWarehouse?->name ?? 'tujuan',
+                            $transfer?->transfer_number ?? '—'),
                 ),
                 'user_id' => $userId,
             ]);
@@ -509,8 +540,8 @@ class PickingRun
                 'qty_change' => -$kurang,
                 'qty_before' => $sebelum,
                 'qty_after' => $stok->qty_available,
-                'reference_type' => StockMovement::REF_SALES_ORDER,
-                'reference_id' => $item->sales_order_id,
+                'reference_type' => $refType,
+                'reference_id' => $refId,
                 'batch_no' => $item->batch_no,
                 'notes' => sprintf(
                     'Selisih picking %s di rak %s (batch %s): tercatat %d, ditemukan %d. Alasan: %s',
@@ -529,10 +560,15 @@ class PickingRun
         // tertinggal: SalesOrderDetail::qty_allocated menjumlahkannya, dan
         // baris yang tersisa membuat pesanan yang barangnya sudah di dock
         // terbaca seolah masih memegang cadangan di rak.
-        SalesOrderAllocation::query()
-            ->where('sales_order_detail_id', $item->sales_order_detail_id)
-            ->where('inventory_stock_id', $stok->id)
-            ->delete();
+        //
+        // Transfer tidak punya baris alokasi tersendiri — cadangannya tercatat
+        // langsung di qty_allocated baris stok dan sudah dilepas di langkah 1.
+        if ($transferDetail === null) {
+            SalesOrderAllocation::query()
+                ->where('sales_order_detail_id', $item->sales_order_detail_id)
+                ->where('inventory_stock_id', $stok->id)
+                ->delete();
+        }
 
         return ['diambil' => $diambil, 'kurang' => $kurang];
     }
@@ -558,9 +594,22 @@ class PickingRun
 
     /**
      * Pesanan dalam daftar berpindah ke "Siap Kirim" (F-OUT-03 #6).
+     *
+     * Pada daftar TRANSFER tidak ada satu pesanan pun di dalamnya, dan yang
+     * berpindah keadaan adalah transfernya: dari menunggu picking menjadi
+     * dalam perjalanan. Itulah arti tombol Loading bagi operator — sama
+     * gerakannya, dokumen yang berbeda.
      */
-    private function selesaikanPesanan(PickingList $daftar): void
+    private function selesaikanPesanan(PickingList $daftar, ?int $userId): void
     {
+        $transfer = $daftar->transfer()->first();
+
+        if ($transfer !== null) {
+            app(WarehouseTransfer::class)->loading($transfer, $daftar, $userId);
+
+            return;
+        }
+
         foreach ($daftar->orders()->lockForUpdate()->get() as $order) {
             $order->forceFill([
                 'status' => SalesOrder::STATUS_READY_TO_SHIP,

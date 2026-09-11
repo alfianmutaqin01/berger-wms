@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ReportPickingShortageRequest;
 use App\Http\Requests\Wms\StorePickingListRequest;
 use App\Models\ActivityLog;
+use App\Models\Notification;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
 use App\Models\SalesOrder;
+use App\Models\StockTransfer;
 use App\Support\Activity;
+use App\Support\Notifier;
 use App\Support\Outbound\PickingListBuilder;
 use App\Support\Outbound\PickingRun;
 use App\Support\Permission;
@@ -77,7 +80,9 @@ class PickingController extends Controller
 
         $lists = WarehouseScope::apply(PickingList::query(), $user)
             ->when($gudang, fn ($q, $id) => $q->where('warehouse_id', $id))
-            ->with(['warehouse:id,code,name', 'createdBy:id,full_name', 'claimedBy:id,full_name'])
+            ->with(['warehouse:id,code,name', 'createdBy:id,full_name', 'claimedBy:id,full_name',
+                'transfer:id,picking_list_id,transfer_number,to_warehouse_id',
+                'transfer.toWarehouse:id,code,name'])
             ->withCount(['orders', 'items'])
             // Yang masih perlu dikerjakan selalu di atas.
             ->orderByRaw("CASE WHEN status IN ('open', 'picking') THEN 0 ELSE 1 END")
@@ -151,7 +156,13 @@ class PickingController extends Controller
 
         $tugas = WarehouseScope::apply(PickingList::query(), $user)
             ->aktif()
-            ->with(['warehouse:id,code,name', 'claimedBy:id,full_name'])
+            // transfer ikut dimuat supaya antrean operator bisa menyebut
+            // dengan jelas mana tugas pesanan dan mana tugas kiriman antar
+            // gudang. Keduanya pekerjaan yang sama di rak, tetapi barangnya
+            // berakhir di kendaraan yang berbeda.
+            ->with(['warehouse:id,code,name', 'claimedBy:id,full_name',
+                'transfer:id,picking_list_id,transfer_number,to_warehouse_id',
+                'transfer.toWarehouse:id,code,name'])
             ->withCount(['orders', 'items'])
             ->orderBy('created_at')
             ->get();
@@ -173,6 +184,7 @@ class PickingController extends Controller
             // mengira daftarnya salah. Alasannya harus terbaca di kertas yang
             // ia bawa, bukan cuma tersimpan di layar Logistik.
             ->with(['product:id,sku,name,uom', 'location:id,code', 'salesOrder.customer:id,code,name',
+                'transferDetail:id,stock_transfer_id,qty_requested',
                 'stock:id,prioritize_out,prioritize_reason'])
             // Urutan berjalan operator: menurut kode rak, dari A ke belakang
             // (F-OUT-03 #3). Diurutkan lewat join supaya yang menentukan
@@ -186,7 +198,8 @@ class PickingController extends Controller
         return view('wms.outbound.picking-detail', [
             'list' => $list->load(['warehouse:id,code,name', 'createdBy:id,full_name',
                 'claimedBy:id,full_name', 'completedBy:id,full_name',
-                'orders.customer:id,code,name']),
+                'orders.customer:id,code,name',
+                'transfer.toWarehouse:id,code,name', 'transfer.fromWarehouse:id,code,name']),
             'baris' => $baris,
             'ringkas' => [
                 'total' => $baris->count(),
@@ -353,6 +366,15 @@ class PickingController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        // DAFTAR TRANSFER PUNYA AKHIR YANG BERBEDA. Barangnya tidak menunggu
+        // Surat Jalan di dermaga — ia langsung berangkat ke gudang lain, dan
+        // orang di ujung sana perlu tahu sekarang, bukan saat truknya muncul.
+        $transfer = $list->transfer()->first();
+
+        if ($transfer !== null) {
+            return $this->selesaiTransfer($transfer->refresh(), $list, $hasil);
+        }
+
         $pesan = sprintf(
             'Daftar %s selesai. %d unit turun dari rak dan siap dimuat.',
             $list->list_number,
@@ -367,6 +389,72 @@ class PickingController extends Controller
             return redirect()->route('wms.picking.queue')->with('warning', $pesan.sprintf(
                 ' %d unit TIDAK ditemukan di rak dan sudah dicatat sebagai koreksi stok — periksa di Riwayat Mutasi.',
                 $hasil['kurang']
+            ));
+        }
+
+        return redirect()->route('wms.picking.queue')->with('success', $pesan);
+    }
+
+    /**
+     * Akhir daftar picking TRANSFER: barangnya berangkat ke gudang lain.
+     *
+     * @param  array{diambil:int, kurang:int}  $hasil
+     */
+    private function selesaiTransfer(StockTransfer $transfer, PickingList $list, array $hasil): RedirectResponse
+    {
+        Activity::record(
+            ActivityLog::TRANSFER_CREATE,
+            sprintf(
+                'Transfer %s berangkat ke gudang %s: %d unit turun dari rak lewat daftar %s.',
+                $transfer->transfer_number,
+                $transfer->toWarehouse?->name ?? 'tujuan',
+                $hasil['diambil'],
+                $list->list_number,
+            ),
+            $transfer,
+            $transfer->from_warehouse_id,
+            [
+                'nomor' => $transfer->transfer_number,
+                'daftar_picking' => $list->list_number,
+                'berangkat' => $hasil['diambil'],
+                'kurang' => $hasil['kurang'],
+            ],
+        );
+
+        // Dikirim ke gudang TUJUAN. Yang perlu bersiap menerima ada di ujung
+        // sana, dan tanpa lonceng ini satu-satunya cara mereka tahu adalah
+        // ditelepon.
+        Notifier::toPermission(
+            Permission::TRANSFER_RECEIVE,
+            $transfer->to_warehouse_id,
+            Notification::TRANSFER_INCOMING,
+            'Kiriman antar gudang dalam perjalanan',
+            sprintf(
+                'Transfer %s dari gudang %s — %d unit menunggu diterima dan dimasukkan ke rak.',
+                $transfer->transfer_number,
+                $transfer->fromWarehouse?->name ?? 'asal',
+                $hasil['diambil'],
+            ),
+            route('wms.transfers.show', $transfer),
+            $transfer,
+        );
+
+        $pesan = sprintf(
+            'Daftar %s selesai. Transfer %s berangkat ke gudang %s dengan %d unit dan sekarang DALAM PERJALANAN.',
+            $list->list_number,
+            $transfer->transfer_number,
+            $transfer->toWarehouse?->name ?? 'tujuan',
+            $hasil['diambil'],
+        );
+
+        // Kiriman yang berangkat kurang dari yang diminta TIDAK boleh lewat
+        // sebagai pesan sukses biasa: gudang tujuan akan menghitung barangnya
+        // dan menemukan kekurangan yang tidak pernah dikabarkan siapa pun.
+        if ($hasil['kurang'] > 0) {
+            return redirect()->route('wms.picking.queue')->with('warning', $pesan.sprintf(
+                ' %d unit TIDAK ditemukan di rak, jadi kirimannya kurang dari yang disusun — '.
+                'selisihnya sudah dicatat sebagai koreksi stok dan terbaca di dokumen transfer.',
+                $hasil['kurang'],
             ));
         }
 

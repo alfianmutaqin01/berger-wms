@@ -8,13 +8,10 @@ use App\Http\Requests\Wms\StoreStockTransferRequest;
 use App\Models\ActivityLog;
 use App\Models\InventoryStock;
 use App\Models\Location;
-use App\Models\Notification;
 use App\Models\StockTransfer;
 use App\Models\Warehouse;
 use App\Support\Activity;
 use App\Support\Inventory\WarehouseTransfer;
-use App\Support\Notifier;
-use App\Support\Permission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -65,15 +62,16 @@ class StockTransferController extends Controller
 
         $transfers = $terlihat()
             ->with(['fromWarehouse:id,code,name', 'toWarehouse:id,code,name',
-                'shippedBy:id,full_name', 'receivedBy:id,full_name'])
+                'requestedBy:id,full_name', 'shippedBy:id,full_name', 'receivedBy:id,full_name'])
             ->withCount('details')
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $s) => $q->where('status', $s))
             ->when($filters['arah'] === 'keluar', fn ($q) => $q->where('from_warehouse_id', $gudangSaya))
             ->when($filters['arah'] === 'masuk', fn ($q) => $q->where('to_warehouse_id', $gudangSaya))
-            // Yang masih di jalan selalu di atas: itu satu-satunya yang
-            // menunggu tindakan seseorang.
-            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [StockTransfer::STATUS_IN_TRANSIT])
+            // Yang belum selesai selalu di atas: itulah yang menunggu
+            // tindakan seseorang — dipicking, atau diterima.
+            ->orderByRaw('CASE WHEN status IN (?, ?) THEN 0 ELSE 1 END',
+                [StockTransfer::STATUS_PENDING, StockTransfer::STATUS_IN_TRANSIT])
             ->latest('id')
             ->paginate(15)
             ->withQueryString();
@@ -146,7 +144,7 @@ class StockTransferController extends Controller
         WarehouseScope::assert($asalId, $user);
 
         try {
-            $transfer = $this->transfer->ship(
+            $transfer = $this->transfer->request(
                 $asalId,
                 (int) $request->validated('to_warehouse_id'),
                 $request->itemData(),
@@ -160,10 +158,11 @@ class StockTransferController extends Controller
         Activity::record(
             ActivityLog::TRANSFER_CREATE,
             sprintf(
-                'Mengirim transfer %s ke gudang %s — %d baris.',
+                'Menyusun transfer %s ke gudang %s — %d baris, masuk antrean picking %s.',
                 $transfer->transfer_number,
                 $transfer->toWarehouse?->name ?? 'tujuan',
                 $transfer->details()->count(),
+                $transfer->pickingList?->list_number ?? '—',
             ),
             $transfer,
             // Dicatat atas nama gudang ASAL: dari sanalah stoknya keluar,
@@ -173,31 +172,28 @@ class StockTransferController extends Controller
                 'nomor' => $transfer->transfer_number,
                 'ke_gudang' => $transfer->toWarehouse?->code,
                 'baris' => $transfer->details()->count(),
+                'daftar_picking' => $transfer->pickingList?->list_number,
             ],
         );
 
-        // Dikirim ke gudang TUJUAN, bukan gudang asal. Yang perlu bersiap
-        // menerima ada di ujung sana, dan tanpa lonceng ini satu-satunya cara
-        // mereka tahu adalah ditelepon.
-        Notifier::toPermission(
-            Permission::TRANSFER_RECEIVE,
-            $transfer->to_warehouse_id,
-            Notification::TRANSFER_INCOMING,
-            'Kiriman antar gudang dalam perjalanan',
-            sprintf(
-                'Transfer %s dari gudang %s — %d baris menunggu diterima.',
-                $transfer->transfer_number,
-                $transfer->fromWarehouse?->name ?? 'asal',
-                $transfer->details()->count(),
-            ),
-            route('wms.transfers.show', $transfer),
-            $transfer,
-        );
+        /*
+         * GUDANG TUJUAN BELUM DIBERI TAHU DI SINI.
+         *
+         * Dulu loncengnya berbunyi begitu tombol ditekan, berbunyi "dalam
+         * perjalanan" — padahal belum ada satu unit pun yang turun dari rak.
+         * Sekarang kabarnya dikirim saat operator menekan Loading, di
+         * PickingController::complete(), karena di situlah barangnya
+         * benar-benar berangkat. Memberi kabar lebih awal membuat gudang
+         * tujuan menunggu truk yang belum dimuat.
+         */
 
         return redirect()->route('wms.transfers.show', $transfer)->with('success', sprintf(
-            'Transfer %s dikirim ke gudang %s. Stoknya sudah keluar dari gudang Anda dan tercatat DALAM PERJALANAN sampai diterima di sana.',
+            'Transfer %s disusun untuk gudang %s dan masuk ke Daftar Picking %s. Barangnya sudah dicadangkan — '.
+            'tidak bisa dijual lagi — tetapi BELUM berangkat. Statusnya berubah jadi Dalam Perjalanan setelah '.
+            'operator selesai mengambilnya dari rak dan menekan Loading.',
             $transfer->transfer_number,
             $transfer->toWarehouse?->name ?? 'tujuan',
+            $transfer->pickingList?->list_number ?? '—',
         ));
     }
 
@@ -207,7 +203,9 @@ class StockTransferController extends Controller
 
         $transfer->load([
             'fromWarehouse', 'toWarehouse',
-            'shippedBy:id,full_name', 'receivedBy:id,full_name', 'cancelledBy:id,full_name',
+            'requestedBy:id,full_name', 'shippedBy:id,full_name',
+            'receivedBy:id,full_name', 'cancelledBy:id,full_name',
+            'pickingList:id,list_number,status,claimed_by', 'pickingList.claimedBy:id,full_name',
             'details.product:id,sku,name,uom', 'details.toLocation:id,code',
         ]);
 

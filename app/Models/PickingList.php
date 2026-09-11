@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Satu tugas pengambilan barang — PRD §6.5 F-OUT-03.
@@ -70,6 +71,21 @@ class PickingList extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(SalesOrder::class);
+    }
+
+    /**
+     * Transfer antar gudang yang dikerjakan daftar ini — bila memang transfer.
+     *
+     * Satu daftar mengerjakan SATU jenis pekerjaan: pesanan saja, atau satu
+     * transfer saja. Keputusan pemilik produk, dan alasannya di dermaga:
+     * barang transfer naik truk antar gudang sementara barang pesanan naik
+     * kendaraan menuju pelanggan — mencampurnya dalam satu tumpukan membuat
+     * barang gampang naik kendaraan yang salah, dan kekeliruan itu baru
+     * ketahuan setelah truknya berangkat.
+     */
+    public function transfer(): HasOne
+    {
+        return $this->hasOne(StockTransfer::class);
     }
 
     public function createdBy(): BelongsTo

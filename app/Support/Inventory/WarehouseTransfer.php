@@ -4,6 +4,8 @@ namespace App\Support\Inventory;
 
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\PickingList;
+use App\Models\PickingListItem;
 use App\Models\StockMovement;
 use App\Models\StockTransfer;
 use App\Models\StockTransferDetail;
@@ -20,12 +22,23 @@ use RuntimeException;
  * Stok adalah angka yang dipercaya keuangan; kalau jalur tulisnya lebih dari
  * satu, cepat atau lambat salah satunya lupa menulis mutasi.
  *
- * TIGA PERPINDAHAN, BUKAN SATU
- * ----------------------------
- *   ship()    TRANSFER_OUT di gudang asal. Barang keluar dari stok, tetapi
- *             BELUM masuk ke mana pun — ia sedang di jalan.
- *   receive() TRANSFER_IN di gudang tujuan, sebanyak yang benar-benar sampai.
- *   cancel()  TRANSFER_IN di gudang ASAL, mengembalikan yang belum berangkat.
+ * TRANSFER MENEMPUH PICKING, PERSIS SEPERTI PESANAN PELANGGAN
+ * -----------------------------------------------------------
+ * Permintaan pemilik produk. Dulu tombol Kirim mengurangi stok saat itu juga
+ * dan langsung menyatakan barangnya dalam perjalanan — padahal belum ada
+ * seorang pun yang berjalan ke rak dan mengangkatnya. Angka di sistem
+ * berangkat lebih dulu daripada barangnya, dan kalau di rak ternyata kurang,
+ * tidak ada satu langkah pun dalam alur itu yang bisa mengatakannya.
+ *
+ *   request()  Admin menyusun transfer. Barangnya DICADANGKAN di gudang asal
+ *              (ALLOCATED) dan daftar picking-nya masuk antrean operator.
+ *              Belum ada yang berangkat.
+ *   loading()  Operator selesai picking dan menekan Loading. Barang benar-
+ *              benar turun dari rak; TRANSFER_OUT ditulis oleh PickingRun,
+ *              bukan di sini — lihat alasannya di kelas itu.
+ *   receive()  TRANSFER_IN di gudang tujuan, sebanyak yang benar-benar sampai.
+ *   cancel()   Melepas cadangan (masih pending) atau mengembalikan barang ke
+ *              gudang asal (sudah dalam perjalanan).
  *
  * KEHILANGAN DI PERJALANAN TIDAK PUNYA MUTASI SENDIRI. Barangnya sudah
  * dikurangi saat ship() dan memang tidak pernah ditambahkan saat receive();
@@ -48,13 +61,18 @@ class WarehouseTransfer
     public function __construct(private readonly PendingAllocationFiller $pengisi) {}
 
     /**
-     * Mengirim beberapa batch dari satu gudang ke gudang lain.
+     * Menyusun transfer: mencadangkan batch yang dipilih dan mengantrekannya
+     * ke daftar picking.
+     *
+     * TIDAK ADA YANG BERANGKAT DI SINI. Yang terjadi cuma satu: barang yang
+     * dipilih berhenti bisa dijual siapa pun, dan seorang operator mendapat
+     * tugas mengambilnya dari rak. Keberangkatannya menyusul di loading().
      *
      * @param  list<array{stock_id:int, qty:int}>  $baris
      *
      * @throws RuntimeException bila stok tidak cukup atau tidak layak kirim
      */
-    public function ship(int $fromWarehouseId, int $toWarehouseId, array $baris, ?string $catatan, ?int $userId): StockTransfer
+    public function request(int $fromWarehouseId, int $toWarehouseId, array $baris, ?string $catatan, ?int $userId): StockTransfer
     {
         if ($fromWarehouseId === $toWarehouseId) {
             throw new RuntimeException('Gudang asal dan tujuan tidak boleh sama. Untuk memindahkan antar rak, gunakan tombol Pindah di Data Stok.');
@@ -67,22 +85,83 @@ class WarehouseTransfer
         $this->pastikanTujuanPunyaRak($toWarehouseId);
 
         return DB::transaction(function () use ($fromWarehouseId, $toWarehouseId, $baris, $catatan, $userId) {
+            $daftar = PickingList::create([
+                'list_number' => DocumentNumber::forPickingList(),
+                // Daftarnya milik gudang ASAL — di sanalah orangnya berjalan
+                // mengambil barang. Gudang tujuan baru muncul saat penerimaan.
+                'warehouse_id' => $fromWarehouseId,
+                'status' => PickingList::STATUS_OPEN,
+                'created_by' => $userId,
+                'notes' => $catatan,
+            ]);
+
             $transfer = StockTransfer::create([
                 'transfer_number' => DocumentNumber::forStockTransfer(),
                 'from_warehouse_id' => $fromWarehouseId,
                 'to_warehouse_id' => $toWarehouseId,
-                'status' => StockTransfer::STATUS_IN_TRANSIT,
+                'status' => StockTransfer::STATUS_PENDING,
+                'picking_list_id' => $daftar->id,
                 'notes' => $catatan,
-                'shipped_at' => now(),
-                'shipped_by' => $userId,
+                'requested_at' => now(),
+                'requested_by' => $userId,
             ]);
 
             foreach ($baris as $item) {
-                $this->kirimSatuBatch($transfer, (int) $item['stock_id'], (int) $item['qty'], $userId);
+                $this->cadangkanSatuBatch($transfer, $daftar, (int) $item['stock_id'], (int) $item['qty'], $userId);
             }
 
             return $transfer;
         });
+    }
+
+    /**
+     * Operator menekan Loading: transfernya benar-benar berangkat.
+     *
+     * WAJIB dipanggil di dalam transaksi milik PickingRun::complete(), dan
+     * SESUDAH baris-barisnya dikeluarkan dari rak — angka qty_picked yang
+     * dibaca di sini adalah hasil pekerjaan operator, bukan angka yang diminta
+     * Admin. Keduanya sengaja disimpan terpisah: selisihnya adalah barang yang
+     * ternyata tidak ada di rak, dan itu pertanyaan yang akan ditanyakan
+     * gudang tujuan begitu kirimannya kurang.
+     *
+     * @return array{berangkat:int, kurang:int}
+     */
+    public function loading(StockTransfer $transfer, PickingList $daftar, ?int $userId): array
+    {
+        $terkunci = StockTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
+
+        if (! $terkunci->isPending()) {
+            throw new RuntimeException(sprintf(
+                'Transfer %s berstatus "%s", bukan menunggu picking. Daftar ini tidak bisa diberangkatkan lagi.',
+                $terkunci->transfer_number,
+                $terkunci->status_label,
+            ));
+        }
+
+        $berangkat = 0;
+        $kurang = 0;
+
+        foreach ($terkunci->details as $detail) {
+            $item = $daftar->items()->where('stock_transfer_detail_id', $detail->id)->first();
+
+            // Baris yang tidak punya pasangan di daftar picking berarti
+            // daftarnya disusun ulang di luar alur ini. Diperlakukan sebagai
+            // tidak terambil — bukan diam-diam dianggap berangkat penuh.
+            $diambil = $item === null ? 0 : (int) $item->qty_picked;
+
+            $detail->forceFill(['qty_shipped' => $diambil])->save();
+
+            $berangkat += $diambil;
+            $kurang += max(0, (int) $detail->qty_requested - $diambil);
+        }
+
+        $terkunci->fill([
+            'status' => StockTransfer::STATUS_IN_TRANSIT,
+            'shipped_at' => now(),
+            'shipped_by' => $userId,
+        ])->save();
+
+        return ['berangkat' => $berangkat, 'kurang' => $kurang];
     }
 
     /**
@@ -120,7 +199,17 @@ class WarehouseTransfer
         ));
     }
 
-    private function kirimSatuBatch(StockTransfer $transfer, int $stockId, int $qty, ?int $userId): void
+    /**
+     * Mencadangkan satu batch dan menuliskan barisnya di daftar picking.
+     *
+     * DICADANGKAN, BUKAN DIKURANGI. qty_available turun dan qty_allocated naik
+     * sebesar yang sama — barangnya masih di rak, masih milik gudang ini,
+     * tetapi tidak bisa dijanjikan ke pelanggan mana pun. Pola yang sama
+     * persis dengan FifoAllocator, dan memang harus sama: kalau transfer
+     * memakai aturan buku besar sendiri, cepat atau lambat salah satunya lupa
+     * menulis mutasi.
+     */
+    private function cadangkanSatuBatch(StockTransfer $transfer, PickingList $daftar, int $stockId, int $qty, ?int $userId): void
     {
         // Dikunci: angka yang dilihat pengirim di layar BISA SUDAH BASI saat
         // tombol ditekan — alokasi pesanan atau transfer lain mungkin sudah
@@ -150,6 +239,7 @@ class WarehouseTransfer
 
         $sebelum = $stok->qty_available;
         $stok->qty_available = $sebelum - $qty;
+        $stok->qty_allocated = $stok->qty_allocated + $qty;
         $stok->save();
 
         $detail = $transfer->details()->create([
@@ -160,14 +250,19 @@ class WarehouseTransfer
             'expiry_date' => $stok->expiry_date->toDateString(),
             'status' => $stok->status,
             'ddp_reason' => $stok->ddp_reason,
-            'qty_shipped' => $qty,
+            'qty_requested' => $qty,
+            // NULL sampai operator selesai. Bukan nol: nol berarti "sudah
+            // dicari di rak dan tidak ada satu pun".
+            'qty_shipped' => null,
         ]);
 
         StockMovement::create([
             'product_id' => $stok->product_id,
             'location_id' => $stok->location_id,
             'warehouse_id' => $stok->warehouse_id,
-            'movement_type' => StockMovement::TYPE_TRANSFER_OUT,
+            'movement_type' => StockMovement::TYPE_ALLOCATED,
+            // Cadangan MENGURANGI yang tersedia; qty_change negatif supaya
+            // penjumlahan ledger tetap setara dengan qty_available.
             'qty_change' => -$qty,
             'qty_before' => $sebelum,
             'qty_after' => $stok->qty_available,
@@ -175,13 +270,26 @@ class WarehouseTransfer
             'reference_id' => $transfer->id,
             'batch_no' => $stok->batch_no,
             'notes' => sprintf(
-                'Kirim %s ke gudang %s (%s baris #%d).',
+                'Dicadangkan untuk %s ke gudang %s, menunggu picking (baris #%d).',
                 $transfer->transfer_number,
                 $transfer->toWarehouse?->name ?? 'tujuan',
-                $transfer->transfer_number,
                 $detail->id
             ),
             'user_id' => $userId,
+        ]);
+
+        // Barisnya di kertas yang dibawa operator. Rak, batch, dan tanggal
+        // produksinya DISALIN — kalau baris stoknya berubah setelah daftar
+        // dicetak, yang tercetak harus tetap terbaca apa adanya.
+        $daftar->items()->create([
+            'stock_transfer_detail_id' => $detail->id,
+            'product_id' => $stok->product_id,
+            'inventory_stock_id' => $stok->id,
+            'location_id' => $stok->location_id,
+            'batch_no' => $stok->batch_no,
+            'production_date' => $stok->production_date->toDateString(),
+            'qty_to_pick' => $qty,
+            'status' => PickingListItem::STATUS_PENDING,
         ]);
     }
 
@@ -410,7 +518,7 @@ class WarehouseTransfer
         DB::transaction(function () use ($transfer, $alasan, $userId) {
             $terkunci = StockTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
 
-            if (! $terkunci->isInTransit()) {
+            if (! $terkunci->isPending() && ! $terkunci->isInTransit()) {
                 throw new RuntimeException(sprintf(
                     'Transfer %s sudah %s dan tidak bisa dibatalkan lagi.',
                     $terkunci->transfer_number,
@@ -418,8 +526,23 @@ class WarehouseTransfer
                 ));
             }
 
-            foreach ($terkunci->details as $detail) {
-                $this->kembalikanKeAsal($terkunci, $detail, $alasan, $userId);
+            /*
+             * DUA KEADAAN, DUA PERLAKUAN YANG BERBEDA SEKALI.
+             *
+             * Yang masih MENUNGGU PICKING: barangnya tidak pernah turun dari
+             * rak. Yang perlu dilepas cuma cadangannya — menuliskan
+             * TRANSFER_IN di sini akan MENAMBAH barang yang tidak pernah
+             * berkurang, dan stok bertambah dari ketiadaan.
+             *
+             * Yang sudah DALAM PERJALANAN: barangnya benar-benar keluar, jadi
+             * ia memang harus dikembalikan.
+             */
+            if ($terkunci->isPending()) {
+                $this->batalkanSebelumBerangkat($terkunci, $alasan, $userId);
+            } else {
+                foreach ($terkunci->details as $detail) {
+                    $this->kembalikanKeAsal($terkunci, $detail, $alasan, $userId);
+                }
             }
 
             $terkunci->fill([
@@ -429,6 +552,80 @@ class WarehouseTransfer
                 'cancellation_reason' => $alasan,
             ])->save();
         });
+    }
+
+    /**
+     * Membatalkan transfer yang barangnya masih di rak: cadangannya dilepas.
+     *
+     * Daftar picking-nya ikut dibubarkan. Dibiarkan hidup, ia menggantung di
+     * antrean operator sebagai tugas yang tidak menuju ke mana-mana — dan
+     * operator yang mengerjakannya akan menurunkan barang dari rak untuk
+     * transfer yang sudah tidak ada.
+     *
+     * @throws RuntimeException bila operator sudah telanjur menurunkan barang
+     */
+    private function batalkanSebelumBerangkat(StockTransfer $transfer, string $alasan, ?int $userId): void
+    {
+        $daftar = $transfer->picking_list_id === null
+            ? null
+            : PickingList::query()->lockForUpdate()->find($transfer->picking_list_id);
+
+        if ($daftar !== null && $daftar->status === PickingList::STATUS_COMPLETED) {
+            throw new RuntimeException(sprintf(
+                'Daftar picking %s untuk transfer ini sudah diselesaikan operator, jadi barangnya sudah turun dari rak. '.
+                'Transfer yang barangnya sudah di dermaga dibatalkan lewat jalur Dalam Perjalanan, bukan dari sini.',
+                $daftar->list_number,
+            ));
+        }
+
+        foreach ($transfer->details as $detail) {
+            $stok = $detail->source_stock_id === null
+                ? null
+                : InventoryStock::query()->lockForUpdate()->find($detail->source_stock_id);
+
+            if ($stok === null) {
+                throw new RuntimeException(sprintf(
+                    'Baris stok asal batch %s sudah tidak ada, sehingga cadangannya tidak bisa dilepas ke rak yang benar. '.
+                    'Perbaiki dulu lewat Penyesuaian Stok di gudang asal.',
+                    $detail->batch_no,
+                ));
+            }
+
+            $qty = (int) $detail->qty_requested;
+
+            $sebelum = $stok->qty_available;
+            $stok->qty_available = $sebelum + $qty;
+            $stok->qty_allocated = max(0, $stok->qty_allocated - $qty);
+            $stok->save();
+
+            StockMovement::create([
+                'product_id' => $detail->product_id,
+                'location_id' => $stok->location_id,
+                'warehouse_id' => $transfer->from_warehouse_id,
+                'movement_type' => StockMovement::TYPE_DEALLOCATED,
+                'qty_change' => $qty,
+                'qty_before' => $sebelum,
+                'qty_after' => $stok->qty_available,
+                'reference_type' => StockMovement::REF_STOCK_TRANSFER,
+                'reference_id' => $transfer->id,
+                'batch_no' => $detail->batch_no,
+                'notes' => sprintf(
+                    'Pembatalan %s sebelum berangkat, cadangan dilepas kembali ke rak: %s',
+                    $transfer->transfer_number,
+                    $alasan,
+                ),
+                'user_id' => $userId,
+            ]);
+        }
+
+        if ($daftar !== null && $daftar->status !== PickingList::STATUS_CANCELLED) {
+            $daftar->fill([
+                'status' => PickingList::STATUS_CANCELLED,
+                'cancelled_at' => now(),
+                'cancelled_by' => $userId,
+                'cancellation_reason' => sprintf('Transfer %s dibatalkan: %s', $transfer->transfer_number, $alasan),
+            ])->save();
+        }
     }
 
     private function kembalikanKeAsal(StockTransfer $transfer, StockTransferDetail $detail, string $alasan, ?int $userId): void

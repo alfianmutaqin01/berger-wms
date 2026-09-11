@@ -31,6 +31,26 @@
             <span class="badge {{ $transfer->status_badge }} fs-6">{{ $transfer->status_label }}</span>
         </div>
 
+        @if($transfer->isPending())
+            {{-- Keadaan yang paling mudah disalahpahami: dokumennya sudah ada,
+                 tetapi barangnya masih di rak. Dikatakan terang-terangan,
+                 bukan disimpulkan dari badge status, karena yang membaca layar
+                 ini sering yang sedang menunggu kirimannya. --}}
+            <div class="alert alert-info border-0 rounded-3 mb-3">
+                <i class="bi bi-hourglass-split me-2"></i>
+                Barangnya <strong>masih di rak {{ $transfer->fromWarehouse?->name }}</strong> dan sudah
+                <strong>dicadangkan</strong> — tidak bisa dijual ke siapa pun. Kirimannya berangkat setelah
+                operator menyelesaikan
+                @if($transfer->pickingList)
+                    daftar picking <span class="font-monospace">{{ $transfer->pickingList->list_number }}</span>
+                    ({{ strtolower($transfer->pickingList->status_label) }}@if($transfer->pickingList->claimedBy), dipegang {{ $transfer->pickingList->claimedBy->full_name }}@endif)
+                @else
+                    daftar picking-nya
+                @endif
+                dan menekan Loading.
+            </div>
+        @endif
+
         @if($transfer->isInTransit())
             <div class="alert alert-warning border-0 rounded-3 mb-3">
                 <i class="bi bi-truck me-2"></i>
@@ -42,7 +62,12 @@
 
         <div class="row g-3">
             <div class="col-6 col-md-3">
-                <div class="small text-muted">Dikirim</div>
+                <div class="small text-muted">Disusun</div>
+                <div class="fw-semibold">{{ $transfer->requested_at?->format('d M Y H:i') ?? '—' }}</div>
+                <div class="small text-muted">{{ $transfer->requestedBy?->full_name }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="small text-muted">Berangkat</div>
                 <div class="fw-semibold">{{ $transfer->shipped_at?->format('d M Y H:i') ?? '—' }}</div>
                 <div class="small text-muted">{{ $transfer->shippedBy?->full_name }}</div>
             </div>
@@ -52,8 +77,20 @@
                 <div class="small text-muted">{{ $transfer->receivedBy?->full_name }}</div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="small text-muted">Total Dikirim</div>
-                <div class="fw-semibold">{{ number_format($transfer->total_shipped) }} unit</div>
+                {{-- DUA ANGKA, SENGAJA TIDAK DISATUKAN. Yang diminta adalah
+                     keputusan Admin; yang berangkat adalah temuan operator di
+                     rak. Selisihnya barang yang ternyata tidak ada, dan itu
+                     pertanyaan pertama gudang tujuan begitu kirimannya kurang. --}}
+                <div class="small text-muted">Diminta / Berangkat</div>
+                <div class="fw-semibold">
+                    {{ number_format($transfer->total_requested) }}
+                    @if(! $transfer->isPending())
+                        / <span class="{{ $transfer->total_shipped < $transfer->total_requested ? 'text-danger' : '' }}">{{ number_format($transfer->total_shipped) }}</span>
+                    @else
+                        / <span class="text-muted">belum</span>
+                    @endif
+                    <span class="small text-muted">unit</span>
+                </div>
             </div>
             <div class="col-6 col-md-3">
                 <div class="small text-muted">Tidak Sampai</div>
@@ -95,7 +132,8 @@
                     <tr>
                         <th>SKU / Produk</th>
                         <th>Batch</th>
-                        <th class="text-end">Dikirim</th>
+                        <th class="text-end">Diminta</th>
+                        <th class="text-end">Berangkat</th>
                         <th class="text-end">Diterima</th>
                         <th>Rak Tujuan</th>
                         <th>Keterangan Selisih</th>
@@ -118,7 +156,16 @@
                                 Exp {{ $d->expiry_date?->format('d M Y') }}
                             </div>
                         </td>
-                        <td class="text-end fw-semibold">{{ number_format($d->qty_shipped) }}</td>
+                        <td class="text-end">{{ number_format($d->qty_requested) }}</td>
+                        <td class="text-end fw-semibold">
+                            @if($d->qty_shipped === null)
+                                <span class="text-muted">belum</span>
+                            @else
+                                <span class="{{ $d->qty_shipped < $d->qty_requested ? 'text-danger' : '' }}">
+                                    {{ number_format($d->qty_shipped) }}
+                                </span>
+                            @endif
+                        </td>
                         <td class="text-end fw-semibold">
                             {{ $d->qty_received === null ? '—' : number_format($d->qty_received) }}
                         </td>
@@ -143,7 +190,7 @@
             <i class="bi bi-arrow-left me-1"></i> Kembali
         </a>
 
-        @if($transfer->isInTransit())
+        @if($transfer->isPending() || $transfer->isInTransit())
             <div class="d-flex gap-2">
                 {{-- Membatalkan hanya hak gudang ASAL: yang menghendaki
                      pembatalan adalah yang mengirim. Gudang tujuan yang tidak
@@ -158,19 +205,24 @@
                     @endcan
                 @endif
 
-                @if(auth()->user()?->warehouse_id === null || auth()->user()?->warehouse_id === $transfer->to_warehouse_id)
-                    @can(\App\Support\Permission::TRANSFER_RECEIVE)
-                        <a href="{{ route('wms.transfers.receive.form', $transfer) }}" class="btn btn-success rounded-3">
-                            <i class="bi bi-box-arrow-in-down me-1"></i> Terima Kiriman
-                        </a>
-                    @endcan
+                {{-- Menerima hanya setelah barangnya BENAR-BENAR berangkat.
+                     Kiriman yang masih menunggu picking belum punya apa pun
+                     untuk diterima — barangnya masih di rak gudang asal. --}}
+                @if($transfer->isInTransit())
+                    @if(auth()->user()?->warehouse_id === null || auth()->user()?->warehouse_id === $transfer->to_warehouse_id)
+                        @can(\App\Support\Permission::TRANSFER_RECEIVE)
+                            <a href="{{ route('wms.transfers.receive.form', $transfer) }}" class="btn btn-success rounded-3">
+                                <i class="bi bi-box-arrow-in-down me-1"></i> Terima Kiriman
+                            </a>
+                        @endcan
+                    @endif
                 @endif
             </div>
         @endif
     </div>
 </div>
 
-@if($transfer->isInTransit())
+@if($transfer->isPending() || $transfer->isInTransit())
 <div class="modal fade" id="modalBatal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <form method="POST" action="{{ route('wms.transfers.cancel', $transfer) }}" class="modal-content rounded-4 border-0">
@@ -180,11 +232,21 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small">
-                    Seluruh stok dalam kiriman ini akan dikembalikan ke rak asalnya di
-                    {{ $transfer->fromWarehouse?->name }}. Pakai ini hanya bila barangnya
-                    memang <strong>belum berangkat</strong>.
-                </p>
+                {{-- Dua keadaan, dua akibat yang berbeda — dan orang yang
+                     menekan tombol berhak tahu yang mana yang ia pilih. --}}
+                @if($transfer->isPending())
+                    <p class="text-muted small">
+                        Barangnya <strong>masih di rak</strong> dan belum pernah berangkat. Yang dilepas adalah
+                        cadangannya, sehingga stoknya bisa dijual lagi. Daftar picking-nya ikut dibubarkan,
+                        jadi operator tidak lagi mendapat tugas ini.
+                    </p>
+                @else
+                    <p class="text-muted small">
+                        Seluruh stok dalam kiriman ini akan dikembalikan ke rak asalnya di
+                        {{ $transfer->fromWarehouse?->name }}. Pakai ini hanya bila barangnya
+                        memang <strong>belum sampai di tujuan</strong>.
+                    </p>
+                @endif
                 <label class="form-label small fw-semibold">Alasan pembatalan <span class="text-danger">*</span></label>
                 <textarea name="cancellation_reason" class="form-control" rows="3" minlength="10" maxlength="500" required
                           placeholder="Minimal 10 karakter, mis. truk batal berangkat"></textarea>

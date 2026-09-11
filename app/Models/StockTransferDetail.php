@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Satu batch yang ikut dalam satu pengiriman antar gudang.
@@ -27,6 +28,7 @@ class StockTransferDetail extends Model
         'expiry_date',
         'status',
         'ddp_reason',
+        'qty_requested',
         'qty_shipped',
         'qty_received',
         'to_location_id',
@@ -38,9 +40,16 @@ class StockTransferDetail extends Model
         return [
             'production_date' => 'date',
             'expiry_date' => 'date',
+            'qty_requested' => 'integer',
             'qty_shipped' => 'integer',
             'qty_received' => 'integer',
         ];
+    }
+
+    /** Baris daftar picking yang mengambil batch ini dari rak. */
+    public function pickingItem(): HasOne
+    {
+        return $this->hasOne(PickingListItem::class, 'stock_transfer_detail_id');
     }
 
     public function transfer(): BelongsTo

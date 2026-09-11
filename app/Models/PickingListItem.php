@@ -36,7 +36,8 @@ class PickingListItem extends Model
     ];
 
     protected $fillable = [
-        'picking_list_id', 'sales_order_id', 'sales_order_detail_id', 'product_id',
+        'picking_list_id', 'sales_order_id', 'sales_order_detail_id',
+        'stock_transfer_detail_id', 'product_id',
         'inventory_stock_id', 'location_id', 'batch_no', 'production_date',
         'qty_to_pick', 'qty_picked', 'status', 'discrepancy_reason',
         'picked_at', 'picked_by',
@@ -67,6 +68,19 @@ class PickingListItem extends Model
     public function detail(): BelongsTo
     {
         return $this->belongsTo(SalesOrderDetail::class, 'sales_order_detail_id');
+    }
+
+    /**
+     * Baris transfer antar gudang yang dikerjakan baris ini.
+     *
+     * Terisi HANYA pada baris transfer; baris pesanan mengisi salesOrder()
+     * dan detail() sebagai gantinya. Tepat satu di antaranya wajib ada —
+     * ditegakkan CHECK picking_list_items_satu_jenis_pekerjaan, bukan hanya
+     * kesepakatan: baris yang menunjuk keduanya dikurangi dua kali dari rak.
+     */
+    public function transferDetail(): BelongsTo
+    {
+        return $this->belongsTo(StockTransferDetail::class, 'stock_transfer_detail_id');
     }
 
     public function product(): BelongsTo

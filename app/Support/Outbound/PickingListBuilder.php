@@ -103,6 +103,31 @@ class PickingListBuilder
                 throw new RuntimeException($this->alasanTidakBolehDibatalkan($terkunci));
             }
 
+            /*
+             * DAFTAR TRANSFER TIDAK DIBUBARKAN DARI SINI.
+             *
+             * Membubarkannya akan menghapus barisnya dan meninggalkan
+             * transfernya berstatus "menunggu picking" tanpa daftar yang bisa
+             * mengerjakannya — sementara barangnya TETAP tercadang di rak,
+             * tidak bisa dijual siapa pun, selamanya, tanpa satu layar pun
+             * yang mengatakan kenapa.
+             *
+             * Pintu yang benar ada di dokumen transfernya: membatalkan
+             * transfer melepas cadangannya DAN membubarkan daftar ini
+             * sekaligus (WarehouseTransfer::cancel).
+             */
+            $transfer = $terkunci->transfer()->first();
+
+            if ($transfer !== null) {
+                throw new RuntimeException(sprintf(
+                    'Daftar %s adalah tugas kiriman antar gudang %s, bukan daftar pesanan. Membubarkannya dari sini '.
+                    'akan meninggalkan barangnya tercadang di rak tanpa ada yang bisa mengambilnya. '.
+                    'Batalkan transfernya lewat menu Transfer Antar Gudang — cadangannya dilepas dan daftar ini ikut bubar.',
+                    $terkunci->list_number,
+                    $transfer->transfer_number,
+                ));
+            }
+
             // Barisnya dihapus, bukan disimpan sebagai riwayat: tidak ada
             // kejadian fisik apa pun yang perlu ditelusuri — belum ada satu
             // barang pun yang turun dari rak. Yang tersisa hanyalah rencana

@@ -43,13 +43,34 @@
                 </div>
 
                 <div class="d-flex gap-2 flex-wrap mb-3">
-                    <span class="badge bg-light text-dark border">
-                        <i class="bi bi-receipt text-primary me-1"></i> {{ $daftar->orders_count }} pesanan
-                    </span>
+                    {{-- JENIS TUGASNYA DISEBUT, bukan disimpulkan dari jumlah
+                         pesanan yang kebetulan nol. Gerakannya di rak memang
+                         sama, tetapi barangnya berakhir di kendaraan yang
+                         berbeda — dan operator yang mengira tugas transfer
+                         adalah pesanan akan menurunkannya di dermaga yang
+                         salah. --}}
+                    @if($daftar->transfer)
+                        <span class="badge bg-info-subtle text-info-emphasis border border-info">
+                            <i class="bi bi-arrow-left-right me-1"></i>
+                            Transfer → {{ $daftar->transfer->toWarehouse?->name ?? 'gudang lain' }}
+                        </span>
+                    @else
+                        <span class="badge bg-light text-dark border">
+                            <i class="bi bi-receipt text-primary me-1"></i> {{ $daftar->orders_count }} pesanan
+                        </span>
+                    @endif
                     <span class="badge bg-light text-dark border">
                         <i class="bi bi-geo-alt text-primary me-1"></i> {{ $daftar->items_count }} baris ambil
                     </span>
                 </div>
+
+                @if($daftar->transfer)
+                    <div class="small text-muted mb-3">
+                        <i class="bi bi-box-seam me-1"></i>
+                        Kiriman <span class="font-monospace">{{ $daftar->transfer->transfer_number }}</span>.
+                        Setelah Anda menekan Loading, barangnya berangkat ke gudang tujuan.
+                    </div>
+                @endif
 
                 @if($daftar->notes)
                     <p class="small text-muted mb-3"><i class="bi bi-sticky me-1"></i>{{ $daftar->notes }}</p>

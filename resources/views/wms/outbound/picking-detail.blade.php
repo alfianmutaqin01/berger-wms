@@ -78,6 +78,19 @@
             <div class="progress-bar bg-success" id="bilahKemajuan" style="width: {{ $persen }}%"></div>
         </div>
 
+        {{-- Daftar TRANSFER: tidak ada pesanan di dalamnya, dan yang perlu
+             diketahui operator justru ke mana barangnya pergi. --}}
+        @if($list->transfer)
+            <div class="alert alert-info border-0 rounded-3 mt-3 mb-0 small">
+                <i class="bi bi-arrow-left-right me-1"></i>
+                <strong>Kiriman antar gudang {{ $list->transfer->transfer_number }}</strong> —
+                dari {{ $list->transfer->fromWarehouse?->name ?? 'gudang ini' }}
+                ke <strong>{{ $list->transfer->toWarehouse?->name ?? 'gudang tujuan' }}</strong>.
+                Barang ini <strong>tidak menuju pelanggan</strong>: begitu Anda menekan Loading, kirimannya
+                berangkat dan menunggu diterima tim logistik di sana.
+            </div>
+        @endif
+
         {{-- Pesanan yang ikut dalam daftar ini. Operator perlu tahu barang
              ini untuk siapa saat memisahkannya di loading dock. --}}
         <div class="d-flex flex-wrap gap-2 mt-3">
@@ -192,10 +205,17 @@
                             @endif
                         </td>
                         <td>
-                            <div class="small">{{ $item->salesOrder?->customer?->name ?? '—' }}</div>
-                            <small class="text-muted font-monospace">
-                                {{ $item->salesOrder?->bc_so_number ?? $item->salesOrder?->order_number }}
-                            </small>
+                            @if($item->stock_transfer_detail_id)
+                                <div class="small">{{ $list->transfer?->toWarehouse?->name ?? 'Gudang tujuan' }}</div>
+                                <small class="text-muted font-monospace">
+                                    {{ $list->transfer?->transfer_number ?? '—' }}
+                                </small>
+                            @else
+                                <div class="small">{{ $item->salesOrder?->customer?->name ?? '—' }}</div>
+                                <small class="text-muted font-monospace">
+                                    {{ $item->salesOrder?->bc_so_number ?? $item->salesOrder?->order_number }}
+                                </small>
+                            @endif
                         </td>
                         <td class="text-end">
                             <span class="fw-bold fs-5">{{ $item->qty_to_pick }}</span>
