@@ -549,6 +549,44 @@
                     </div>
                 </div>
                 @endif
+
+                @if($note->sales_notify_status !== null)
+                {{-- KABAR KE SALES — terpisah dari pesan supir di atas.
+
+                     Ditampilkan di layar Logistik karena merekalah yang bisa
+                     berbuat sesuatu kalau kabarnya tidak keluar: menelepon
+                     Sales, atau meminta nomor HP-nya dilengkapi. Sales yang
+                     tidak menerima apa pun tidak akan tahu ada yang harus
+                     ia tanyakan. --}}
+                @php($salesGagal = $note->sales_notify_status === \App\Models\DeliveryNote::NOTIFY_FAILED)
+                @php($salesManual = $note->sales_notify_status === \App\Models\DeliveryNote::NOTIFY_MANUAL)
+                @php($salesMenunggu = $note->sales_notify_status === \App\Models\DeliveryNote::NOTIFY_PENDING)
+
+                <div class="alert alert-{{ $salesGagal ? 'danger' : ($salesManual || $salesMenunggu ? 'secondary' : 'success') }} border-0 rounded-3 small">
+                    <div class="fw-semibold mb-1">
+                        <i class="bi bi-whatsapp me-1"></i> WA ke Sales: {{ $note->sales_notify_label }}
+                        @if($note->sales_notify_phone)
+                            <span class="fw-normal font-monospace ms-1">({{ $note->sales_notify_phone }})</span>
+                        @endif
+                    </div>
+                    @if($note->sales_notify_error)
+                        <div>{{ $note->sales_notify_error }}</div>
+                    @endif
+                    @if($salesManual)
+                        {{-- Dikatakan terang-terangan. Di mode manual pesan ini
+                             TIDAK PERNAH keluar — tidak ada orang di sisi
+                             perusahaan yang menekan kirim, karena yang memicunya
+                             supir. Diam di sini akan dibaca "terkirim". --}}
+                        <div>
+                            Sistem belum tersambung ke penyedia WhatsApp, jadi kabar ini tidak terkirim.
+                            Sales tetap menerima lonceng di Portal Sales.
+                        </div>
+                    @endif
+                    @if($note->sales_notified_at)
+                        <div class="text-muted">Terkirim {{ $note->sales_notified_at->format('d/m/Y H:i') }}</div>
+                    @endif
+                </div>
+                @endif
             </div>
         </div>
         @endif

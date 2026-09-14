@@ -16,41 +16,40 @@ use Throwable;
  *      nomor yang sudah aktif di aplikasi WhatsApp harus dilepas dulu, dan
  *      setelah dipakai Cloud API ia tidak bisa dipakai sebagai WhatsApp
  *      biasa lagi.
- *   3. TEMPLATE PESAN yang disetujui Meta, kategori "utility". Pesan yang
- *      dimulai oleh bisnis ke nomor yang belum pernah membalas HARUS berupa
- *      template; teks bebas hanya boleh di dalam jendela 24 jam setelah
- *      lawan bicara membalas — dan supir tidak akan pernah membalas lebih
- *      dulu.
+ *   3. TEMPLATE PESAN yang disetujui Meta, kategori "utility", SATU PER JENIS
+ *      PESAN (lihat PesanWhatsApp dan .env.example). Pesan yang dimulai oleh
+ *      bisnis ke nomor yang belum pernah membalas HARUS berupa template; teks
+ *      bebas hanya boleh di dalam jendela 24 jam setelah lawan bicara
+ *      membalas — dan supir maupun atasan tidak akan membalas lebih dulu.
  *
- * KARENA ITU parameter template dikirim TERPISAH dari teksnya. Isi pesan
- * yang dipakai mode manual tidak bisa langsung dikirim lewat jalur ini;
- * yang dikirim adalah nama template beserta variabelnya.
- *
- * Isi variabelnya diambil dari pesan yang sama supaya keduanya tidak pernah
- * berbeda: baris terakhir yang berisi tautan adalah variabel yang penting,
- * sisanya sudah tertulis di template.
+ * NAMA TEMPLATE DITERJEMAHKAN LEWAT PETA, bukan dikirim apa adanya. Nama yang
+ * disetujui Meta sering berbeda dari yang direncanakan (Meta menolak nama
+ * yang sudah dipakai, atau pemiliknya menambahkan akhiran versi saat
+ * mengajukan ulang). Peta di config/services.php memungkinkan penggantian itu
+ * tanpa menyentuh kode.
  */
 class CloudApiWhatsAppSender implements WhatsAppSender
 {
+    /**
+     * @param  array<string, string>  $templates  nama jenis pesan => nama template di Meta
+     */
     public function __construct(
         private readonly string $phoneNumberId,
         private readonly string $token,
-        private readonly string $template,
+        private readonly array $templates = [],
         private readonly string $language = 'id',
         private readonly string $version = 'v21.0',
     ) {}
 
-    public function send(string $phone, string $message): DispatchResult
+    public function send(string $phone, PesanWhatsApp $pesan): DispatchResult
     {
-        // Variabel template diambil dari tautan di dalam pesan. Template
-        // "utility" milik Meta hanya menerima nilai variabel, bukan seluruh
-        // teks — dan tautan inilah satu-satunya bagian yang berbeda tiap
-        // pengiriman.
-        $tautan = $this->tautanDari($message);
-
-        if ($tautan === null) {
-            return DispatchResult::failed('Pesan tidak memuat tautan konfirmasi, jadi tidak ada yang bisa dikirim.');
+        if ($pesan->variabel === []) {
+            return DispatchResult::failed(
+                'Pesan tidak membawa variabel template, jadi tidak ada yang bisa dikirim lewat WhatsApp resmi.'
+            );
         }
+
+        $nama = $this->templates[$pesan->template] ?? $pesan->template;
 
         try {
             $respons = Http::withToken($this->token)
@@ -60,17 +59,18 @@ class CloudApiWhatsAppSender implements WhatsAppSender
                     'to' => $phone,
                     'type' => 'template',
                     'template' => [
-                        'name' => $this->template,
+                        'name' => $nama,
                         'language' => ['code' => $this->language],
                         'components' => [[
                             'type' => 'body',
-                            'parameters' => [['type' => 'text', 'text' => $tautan]],
+                            'parameters' => array_map(
+                                fn (string $nilai) => ['type' => 'text', 'text' => $nilai],
+                                $pesan->variabel,
+                            ),
                         ]],
                     ],
                 ]);
         } catch (Throwable $e) {
-            // Gangguan jaringan bukan alasan menahan barang; ia dicatat lalu
-            // ditampilkan supaya ada yang menindaklanjuti.
             return DispatchResult::failed('Tidak dapat menghubungi WhatsApp: '.$e->getMessage());
         }
 
@@ -84,12 +84,5 @@ class CloudApiWhatsAppSender implements WhatsAppSender
         return DispatchResult::failed(
             $respons->json('error.message') ?? 'Ditolak WhatsApp dengan kode '.$respons->status()
         );
-    }
-
-    private function tautanDari(string $message): ?string
-    {
-        preg_match('~https?://\S+~', $message, $cocok);
-
-        return $cocok[0] ?? null;
     }
 }

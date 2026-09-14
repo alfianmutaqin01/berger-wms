@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Messaging\PesanWhatsApp;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -296,6 +297,26 @@ class MaterialRequisition extends Model
             '',
             'Terima kasih.',
         ]), fn ($baris) => $baris !== null));
+    }
+
+    /**
+     * Pesan atasan dalam bentuk yang diterima seluruh penyedia WhatsApp.
+     *
+     * Urutan variabel adalah kontrak dengan template persetujuan_mrf di Meta —
+     * lihat PesanWhatsApp::TEMPLATE_PERSETUJUAN_MRF.
+     */
+    public function pesanWhatsAppApprover(): PesanWhatsApp
+    {
+        return new PesanWhatsApp(
+            teks: $this->pesanUntukApprover(),
+            template: PesanWhatsApp::TEMPLATE_PERSETUJUAN_MRF,
+            variabel: [
+                (string) $this->approver_name,
+                (string) $this->mrf_number,
+                (string) ($this->requestedBy?->full_name ?? 'Produksi'),
+                (string) $this->approvalUrl(),
+            ],
+        );
     }
 
     /** Sudah disetujui atasan, menunggu Logistik memilih batch. */

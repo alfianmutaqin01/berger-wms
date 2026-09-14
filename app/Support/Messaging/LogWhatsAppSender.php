@@ -7,17 +7,20 @@ use Illuminate\Support\Facades\Log;
 /**
  * Menulis pesan ke log alih-alih mengirimnya — pengembangan dan test.
  *
- * Nomornya ikut dicatat karena di lingkungan pengembangan justru nomor
- * itulah yang perlu diperiksa: salah normalisasi baru kelihatan saat
- * dibandingkan dengan yang diketik.
+ * Nomor dan nama templatenya ikut dicatat karena di lingkungan pengembangan
+ * justru keduanya yang perlu diperiksa: salah normalisasi nomor dan salah
+ * pilih template sama-sama baru kelihatan saat dibandingkan dengan yang
+ * seharusnya.
  */
 class LogWhatsAppSender implements WhatsAppSender
 {
-    public function send(string $phone, string $message): DispatchResult
+    public function send(string $phone, PesanWhatsApp $pesan): DispatchResult
     {
         Log::info('WhatsApp (mode log, tidak benar-benar dikirim)', [
             'to' => $phone,
-            'message' => $message,
+            'template' => $pesan->template,
+            'variabel' => $pesan->variabel,
+            'message' => $pesan->teks,
         ]);
 
         return DispatchResult::sent();

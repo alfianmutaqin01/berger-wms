@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\SendArrivalNoticeToSales;
 use App\Models\ActivityLog;
 use App\Models\DeliveryNote;
 use App\Models\Notification;
@@ -9,6 +10,7 @@ use App\Support\Activity;
 use App\Support\Notifier;
 use App\Support\Outbound\ArrivalPhoto;
 use App\Support\Outbound\Shipment;
+use App\Support\Permission;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -138,6 +140,38 @@ class EpodController extends Controller
             ),
             $note->sales_order_id ? url('/sales/orders/'.$note->sales_order_id) : null,
             $note->warehouse_id,
+            $note,
+        );
+
+        /*
+         * WHATSAPP KE SALES — permintaan pemilik produk. Lonceng di atas
+         * hanya terbaca kalau Sales kebetulan membuka sistemnya, sementara
+         * Sales bekerja di jalan dengan HP di saku. Justru saat inilah ia
+         * perlu bergerak: Surat Jalan bertanda tangan harus difoto selagi
+         * masih di tangan pelanggan.
+         *
+         * 'pending' ditulis SEBELUM job diantrekan, supaya layar Logistik
+         * yang dibuka detik itu juga menyebut "menunggu dikirim" — bukan
+         * kosong seolah tidak ada kabar yang akan keluar.
+         */
+        $note->forceFill(['sales_notify_status' => DeliveryNote::NOTIFY_PENDING])->save();
+        SendArrivalNoticeToSales::dispatch($note->id);
+
+        // Logistik cukup lewat lonceng web — keputusan pemilik produk. Mereka
+        // bekerja di depan layar sistem sepanjang hari; WhatsApp untuk mereka
+        // hanya menambah satu pesan lagi di antara ratusan.
+        Notifier::toPermission(
+            Permission::OUTBOUND_DELIVERY,
+            $note->warehouse_id,
+            Notification::DELIVERY_ARRIVED,
+            'Barang sampai di tujuan',
+            sprintf(
+                'Surat Jalan %s untuk %s dikonfirmasi sampai oleh supir%s. Menunggu Sales mengunggah bukti Surat Jalan.',
+                $note->document_no,
+                $note->customer?->name ?? 'pelanggan',
+                filled($data['received_by_name'] ?? null) ? ', diterima '.trim($data['received_by_name']) : '',
+            ),
+            route('wms.delivery.show', $note),
             $note,
         );
 

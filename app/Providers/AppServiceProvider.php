@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\Notification;
 use App\Models\User;
 use App\Support\Messaging\CloudApiWhatsAppSender;
+use App\Support\Messaging\FonnteWhatsAppSender;
 use App\Support\Messaging\LogWhatsAppSender;
 use App\Support\Messaging\ManualWhatsAppSender;
 use App\Support\Messaging\WhatsAppSender;
@@ -46,13 +47,20 @@ class AppServiceProvider extends ServiceProvider
 
             $lengkap = filled($config['phone_number_id'] ?? null) && filled($config['token'] ?? null);
 
+            $driver = $config['driver'] ?? 'manual';
+
+            // Aturan yang sama untuk Fonnte: token kosong berarti turun ke
+            // manual, bukan meledak.
             return match (true) {
-                ($config['driver'] ?? 'manual') === 'log' => new LogWhatsAppSender,
-                ($config['driver'] ?? 'manual') === 'cloud' && $lengkap => new CloudApiWhatsAppSender(
+                $driver === 'log' => new LogWhatsAppSender,
+                $driver === 'cloud' && $lengkap => new CloudApiWhatsAppSender(
                     phoneNumberId: $config['phone_number_id'],
                     token: $config['token'],
-                    template: $config['template'] ?? 'konfirmasi_pengiriman',
+                    templates: $config['templates'] ?? [],
                     language: $config['language'] ?? 'id',
+                ),
+                $driver === 'fonnte' && filled($config['fonnte_token'] ?? null) => new FonnteWhatsAppSender(
+                    token: $config['fonnte_token'],
                 ),
                 default => new ManualWhatsAppSender,
             };

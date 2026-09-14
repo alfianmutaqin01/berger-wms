@@ -5,10 +5,9 @@ namespace App\Support\Messaging;
 /**
  * Mode tanpa penyedia: sistem menyiapkan, orang yang mengirim.
  *
- * TIDAK MENGIRIM APA PUN, dan itu memang tugasnya. Layar Surat Jalan
+ * TIDAK MENGIRIM APA PUN, dan itu memang tugasnya. Layar Surat Jalan dan MRF
  * menyediakan tombol yang membuka WhatsApp dengan nomor dan pesan sudah
- * terisi — Logistik tinggal menekan kirim — beserta tombol salin tautan
- * sebagai cadangan.
+ * terisi — orangnya tinggal menekan kirim.
  *
  * Ia mengembalikan status `manual`, BUKAN `failed`. Membedakannya penting:
  * pada mode ini "belum terkirim" adalah cara kerja normal yang menunggu satu
@@ -19,7 +18,7 @@ namespace App\Support\Messaging;
  */
 class ManualWhatsAppSender implements WhatsAppSender
 {
-    public function send(string $phone, string $message): DispatchResult
+    public function send(string $phone, PesanWhatsApp $pesan): DispatchResult
     {
         return DispatchResult::manual();
     }

@@ -57,6 +57,9 @@ class Notification extends Model
 
     public const TRANSFER_INCOMING = 'transfer.incoming';
 
+    /** Supir mengonfirmasi barang sampai; untuk Logistik gudang pengirim. */
+    public const DELIVERY_ARRIVED = 'delivery.arrived';
+
     /** MRF sudah disetujui atasan; Logistik yang ditunggu sekarang. */
     public const MRF_NEEDS_LOGISTICS = 'mrf.needs_logistics';
 
@@ -87,6 +90,7 @@ class Notification extends Model
         self::RETURN_APPROVED => ['bi-check2-square', 'success'],
         self::RETURN_VERIFY_READY => ['bi-clipboard-check', 'info'],
         self::TRANSFER_INCOMING => ['bi-truck', 'info'],
+        self::DELIVERY_ARRIVED => ['bi-geo-alt-fill', 'success'],
         self::MRF_NEEDS_LOGISTICS => ['bi-clipboard2-plus', 'warning'],
         self::MRF_READY_FOR_PICKUP => ['bi-box-seam', 'primary'],
         self::MRF_DECIDED => ['bi-clipboard2-check', 'info'],

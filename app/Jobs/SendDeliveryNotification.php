@@ -53,7 +53,7 @@ class SendDeliveryNotification implements ShouldQueue
             return;
         }
 
-        $hasil = $sender->send($note->driver_phone, $note->pesanUntukSupir());
+        $hasil = $sender->send($note->driver_phone, $note->pesanWhatsAppSupir());
 
         $note->forceFill([
             'notify_status' => $hasil->status,

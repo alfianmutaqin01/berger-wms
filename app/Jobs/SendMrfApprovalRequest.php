@@ -60,7 +60,7 @@ class SendMrfApprovalRequest implements ShouldQueue
             return;
         }
 
-        $hasil = $sender->send($mrf->approver_phone, $mrf->pesanUntukApprover());
+        $hasil = $sender->send($mrf->approver_phone, $mrf->pesanWhatsAppApprover());
 
         $mrf->forceFill([
             'notify_status' => $hasil->status,

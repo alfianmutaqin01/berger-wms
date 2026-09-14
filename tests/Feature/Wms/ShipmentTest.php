@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Wms;
 
+use App\Jobs\SendArrivalNoticeToSales;
 use App\Jobs\SendDeliveryNotification;
 use App\Models\ActivityLog;
 use App\Models\Customer;
@@ -9,6 +10,7 @@ use App\Models\DeliveryNote;
 use App\Models\DeliveryNoteLine;
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\Notification;
 use App\Models\PaymentTerm;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
@@ -21,6 +23,7 @@ use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
 use App\Support\Messaging\DispatchResult;
+use App\Support\Messaging\PesanWhatsApp;
 use App\Support\Messaging\WhatsAppSender;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\Shipment;
@@ -735,7 +738,7 @@ class ShipmentTest extends TestCase
 
         $this->swap(WhatsAppSender::class, new class implements WhatsAppSender
         {
-            public function send(string $phone, string $message): DispatchResult
+            public function send(string $phone, PesanWhatsApp $pesan): DispatchResult
             {
                 return DispatchResult::failed('Nomor tidak terdaftar di WhatsApp.');
             }
@@ -788,7 +791,7 @@ class ShipmentTest extends TestCase
 
         $this->swap(WhatsAppSender::class, new class implements WhatsAppSender
         {
-            public function send(string $phone, string $message): DispatchResult
+            public function send(string $phone, PesanWhatsApp $pesan): DispatchResult
             {
                 return DispatchResult::sent();
             }
@@ -1098,6 +1101,195 @@ class ShipmentTest extends TestCase
     }
 
     /** Satu Surat Jalan yang sudah berangkat, siap dikonfirmasi supir. */
+    /* ------------------------------------------ Kabar barang sampai */
+
+    public function test_konfirmasi_supir_mengabari_logistik_lewat_lonceng(): void
+    {
+        $logistik = User::factory()->withRole(Role::LOGISTICS)->create(['warehouse_id' => $this->karawang->id]);
+        $logistikGudangLain = User::factory()->withRole(Role::LOGISTICS)->create(['warehouse_id' => $this->pekanbaru->id]);
+
+        [$order, $note] = $this->barangDikonfirmasiSampai();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $logistik->id,
+            'type' => Notification::DELIVERY_ARRIVED,
+        ]);
+
+        // Logistik Pekanbaru tidak ada urusannya dengan kiriman Karawang.
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $logistikGudangLain->id,
+            'type' => Notification::DELIVERY_ARRIVED,
+        ]);
+
+        // Sales tetap menerima loncengnya sendiri, yang memang berbeda
+        // isinya: ia disuruh mengunggah bukti, bukan sekadar diberi tahu.
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $order->user_id,
+            'type' => Notification::PROOF_NEEDED,
+        ]);
+    }
+
+    public function test_konfirmasi_supir_mengantrekan_wa_untuk_sales(): void
+    {
+        Queue::fake();
+
+        [, $note] = $this->barangDikonfirmasiSampai();
+
+        Queue::assertPushed(SendArrivalNoticeToSales::class, fn ($job) => $job->deliveryNoteId === $note->id);
+
+        // Tercatat MENUNGGU sejak detik itu, bukan kosong — layar Logistik
+        // yang dibuka sebelum antrean berjalan harus tahu ada kabar yang
+        // akan keluar.
+        $this->assertSame(DeliveryNote::NOTIFY_PENDING, $note->fresh()->sales_notify_status);
+    }
+
+    public function test_wa_barang_sampai_dikirim_ke_nomor_sales_bukan_supir(): void
+    {
+        Queue::fake();
+
+        [$order, $note] = $this->barangDikonfirmasiSampai(nomorSales: '081298765432');
+
+        $penyedia = $this->penyediaPencatat();
+        (new SendArrivalNoticeToSales($note->id))->handle($penyedia);
+
+        $this->assertCount(1, $penyedia->terkirim);
+
+        [$nomor, $pesan] = $penyedia->terkirim[0];
+
+        // Ke Sales, dinormalkan ke bentuk WhatsApp — BUKAN ke supir yang
+        // nomornya juga tersimpan di dokumen yang sama.
+        $this->assertSame('6281298765432', $nomor);
+        $this->assertNotSame($note->driver_phone, $nomor);
+
+        // Template milik jenis pesan ini sendiri. Memakai template supir
+        // membuat Sales menerima pesan "mohon tekan tombol konfirmasi".
+        $this->assertSame(PesanWhatsApp::TEMPLATE_BARANG_SAMPAI, $pesan->template);
+
+        $this->assertStringContainsString('SAMPAI', $pesan->teks);
+        $this->assertStringContainsString('206215', $pesan->teks);
+        $this->assertStringContainsString($order->bc_so_number, $pesan->teks);
+        $this->assertStringContainsString('Ibu Sari', $pesan->teks);
+        $this->assertStringContainsString('/sales/orders/'.$order->id, $pesan->teks);
+
+        // Urutan variabel adalah kontrak dengan template di Meta.
+        $this->assertSame($order->bc_so_number, $pesan->variabel[1]);
+        $this->assertSame('206215', $pesan->variabel[3]);
+
+        $note->refresh();
+        $this->assertSame(DeliveryNote::NOTIFY_SENT, $note->sales_notify_status);
+        $this->assertSame('6281298765432', $note->sales_notify_phone);
+        $this->assertNotNull($note->sales_notified_at);
+    }
+
+    public function test_sales_tanpa_nomor_hp_dicatat_gagal_dengan_nama_orangnya(): void
+    {
+        Queue::fake();
+
+        [$order, $note] = $this->barangDikonfirmasiSampai(nomorSales: null);
+
+        $penyedia = $this->penyediaPencatat();
+
+        // TIDAK melempar: mengulang tiga kali tidak akan membuat nomornya
+        // muncul. Yang dibutuhkan orang yang melengkapi data akunnya.
+        (new SendArrivalNoticeToSales($note->id))->handle($penyedia);
+
+        $this->assertCount(0, $penyedia->terkirim);
+
+        $note->refresh();
+        $this->assertSame(DeliveryNote::NOTIFY_FAILED, $note->sales_notify_status);
+        $this->assertStringContainsString($order->user->full_name, $note->sales_notify_error);
+    }
+
+    public function test_wa_barang_sampai_tidak_dikirim_dua_kali(): void
+    {
+        Queue::fake();
+
+        [, $note] = $this->barangDikonfirmasiSampai(nomorSales: '081298765432');
+
+        $penyedia = $this->penyediaPencatat();
+        (new SendArrivalNoticeToSales($note->id))->handle($penyedia);
+        (new SendArrivalNoticeToSales($note->id))->handle($penyedia);
+
+        $this->assertCount(1, $penyedia->terkirim);
+        $this->assertSame(1, $note->fresh()->sales_notify_attempts);
+    }
+
+    public function test_mode_manual_tercatat_manual_bukan_terkirim(): void
+    {
+        Queue::fake();
+
+        [, $note] = $this->barangDikonfirmasiSampai(nomorSales: '081298765432');
+
+        // Bawaan sistem. Pesan ini TIDAK PERNAH keluar di mode manual — yang
+        // memicunya supir, jadi tidak ada orang yang menekan kirim. Mencatatnya
+        // "terkirim" adalah kebohongan yang baru ketahuan saat Sales bilang
+        // tidak pernah menerima apa pun.
+        (new SendArrivalNoticeToSales($note->id))->handle(app(WhatsAppSender::class));
+
+        $this->assertSame(DeliveryNote::NOTIFY_MANUAL, $note->fresh()->sales_notify_status);
+    }
+
+    public function test_layar_surat_jalan_menampilkan_status_wa_ke_sales(): void
+    {
+        Queue::fake();
+
+        [, $note] = $this->barangDikonfirmasiSampai(nomorSales: null);
+        (new SendArrivalNoticeToSales($note->id))->handle($this->penyediaPencatat());
+
+        $this->loginAt($this->karawang);
+
+        $this->get(route('wms.delivery.show', $note))
+            ->assertOk()
+            ->assertSee('WA ke Sales')
+            ->assertSee('belum punya nomor HP');
+    }
+
+    /**
+     * Menempuh alur aslinya sampai supir menekan konfirmasi di halaman publik.
+     *
+     * @return array{0: SalesOrder, 1: DeliveryNote}
+     */
+    private function barangDikonfirmasiSampai(?string $nomorSales = '081298765432'): array
+    {
+        $order = $this->pesananSudahDipicking(10, 10);
+        $order->user->forceFill(['phone_number' => $nomorSales])->save();
+
+        $note = $this->suratJalan($order, 10);
+
+        $this->loginAt($this->karawang);
+        $this->kirim($note);
+
+        $token = $note->fresh()->epod_token;
+
+        auth()->logout();
+        $this->flushSession();
+
+        $this->post(route('epod.confirm', $token), [
+            'received_by_name' => 'Ibu Sari',
+            'photo_source' => 'camera',
+            'photo' => $this->fotoSampai(),
+        ])->assertRedirect();
+
+        return [$order->fresh(), $note->fresh()];
+    }
+
+    /** Penyedia palsu yang mencatat tiap pesan yang diminta dikirim. */
+    private function penyediaPencatat(): WhatsAppSender
+    {
+        return new class implements WhatsAppSender
+        {
+            /** @var list<array{0:string, 1:PesanWhatsApp}> */
+            public array $terkirim = [];
+
+            public function send(string $phone, PesanWhatsApp $pesan): DispatchResult
+            {
+                $this->terkirim[] = [$phone, $pesan];
+
+                return DispatchResult::sent();
+            }
+        };
+    }
+
     private function siapDikonfirmasi(): string
     {
         $order = $this->pesananSudahDipicking(10, 10);

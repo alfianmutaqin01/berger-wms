@@ -125,6 +125,8 @@ peta() {
             echo 'MaterialRequisitionTest|PickingTest|SmokeRouteTest' ;;
         *Inbound*|*inbound*)        echo 'ProductionInputTest|ProductionHistoryTest|PutawayTest|VerificationTest|BatchPriorityTest' ;;
         *Picking*|*picking*)        echo 'PickingTest|RepeatPickingTest|StockTransferTest|MaterialRequisitionTest' ;;
+        *Messaging*|*Epod*|*epod*|*SendArrival*|*SendMrf*|*SendDelivery*)
+            echo 'WhatsAppSenderTest|ShipmentTest|MaterialRequisitionTest' ;;
         *Shipment*|*Delivery*|*delivery*|*Proof*) echo 'ShipmentTest|ProofOfDeliveryTest|DeliveryNoteImportTest' ;;
         *Outstanding*|*Reshipment*|*outstanding*) echo 'OutstandingHistoryTest|OutstandingReshipmentTest' ;;
         *Approval*|*Cancel*|*Rejection*|*approval*) echo 'OrderApprovalTest|OrderCancellationTest|CustomerRejectionTest' ;;
