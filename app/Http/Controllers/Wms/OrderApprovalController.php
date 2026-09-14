@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\AcceptSalesOrderRequest;
 use App\Http\Requests\Wms\RejectSalesOrderRequest;
 use App\Models\ActivityLog;
+use App\Models\CustomerBilling;
 use App\Models\Notification;
 use App\Models\Product;
 use App\Models\SalesOrder;
@@ -182,6 +183,8 @@ class OrderApprovalController extends Controller
         return view('wms.outbound.approval-detail', [
             'order' => $order,
             'baris' => $baris,
+            // F-BILL-03: informasi untuk yang memutuskan, bukan pemblokir.
+            'piutang' => CustomerBilling::penandaCustomer([$order->customer_id])[$order->customer_id] ?? null,
         ]);
     }
 
@@ -344,23 +347,32 @@ class OrderApprovalController extends Controller
             return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
         }
 
+        // PRD §7.4: menyetujui pesanan customer yang menunggak adalah keputusan
+        // yang harus meninggalkan jejak beserta penyetujunya. Tidak memblokir.
+        $piutang = CustomerBilling::penandaCustomer([$order->customer_id])[$order->customer_id] ?? null;
+        $menunggak = ($piutang['menunggak'] ?? 0) > 0;
+
         Activity::record(
             ActivityLog::ORDER_APPROVE,
             sprintf(
-                'Menerima pesanan %s dari %s — %d unit dicadangkan, %d menunggu stok.',
+                'Menerima pesanan %s dari %s — %d unit dicadangkan, %d menunggu stok.%s',
                 $order->order_number,
                 $order->customer?->name ?? 'pelanggan',
                 $ringkasan['dialokasikan'],
                 $ringkasan['menunggu'],
+                $menunggak
+                    ? sprintf(' Customer MENUNGGAK: %d invoice lewat jatuh tempo (terlama %d hari).', $piutang['menunggak'], $piutang['lewat_terlama'])
+                    : '',
             ),
             $order,
             $order->warehouse_id,
-            [
+            array_filter([
                 'nomor_so_bc' => $order->fresh()->bc_so_number,
                 'dialokasikan' => $ringkasan['dialokasikan'],
                 'menunggu_stok' => $ringkasan['menunggu'],
                 'dari_booking' => $ringkasan['dari_booking'],
-            ],
+                'customer_menunggak' => $menunggak ? $piutang : null,
+            ], fn ($nilai) => $nilai !== null),
         );
 
         /*

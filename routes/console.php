@@ -102,3 +102,22 @@ Schedule::command('activity:purge')
     ->timezone('Asia/Jakarta')
     ->withoutOverlapping()
     ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
+| Pengingat piutang untuk Manager (Fase 8)
+|--------------------------------------------------------------------------
+|
+| Pukul 07:00, BUKAN dini hari seperti sweep di atas: yang dihasilkannya
+| lonceng untuk dibaca orang, dan lonceng yang berbunyi pukul 00:30 sudah
+| tertimbun notifikasi lain begitu Manager membuka sistem pagi harinya.
+|
+| Sekaligus membuat tagihan yang terlewat (pesanan tempo yang selesai sebelum
+| modul Billing ada, atau yang gagal tercatat), jadi kekurangan seperti itu
+| tidak pernah bertahan lebih dari sehari.
+*/
+Schedule::command('billing:ingatkan')
+    ->dailyAt('07:00')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping()
+    ->onOneServer();

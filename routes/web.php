@@ -862,8 +862,15 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     // BILLING
     Route::middleware('can:'.Permission::BILLING_VIEW)->group(function () {
-        Route::get('/billing', [BillingController::class, 'index']);
-        Route::post('/billing/confirm/{id}', [BillingController::class, 'confirm']);
+        Route::get('/billing', [BillingController::class, 'index'])->name('wms.billing.index');
+
+        Route::post('/billing/lunas', [BillingController::class, 'pay'])
+            ->middleware('can:'.Permission::BILLING_CONFIRM)
+            ->name('wms.billing.pay');
+
+        Route::post('/billing/pembayaran/{payment}/batal', [BillingController::class, 'void'])
+            ->middleware('can:'.Permission::BILLING_VOID)
+            ->name('wms.billing.void');
     });
 });
 

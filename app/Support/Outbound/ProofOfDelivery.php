@@ -4,6 +4,7 @@ namespace App\Support\Outbound;
 
 use App\Models\DeliveryProof;
 use App\Models\SalesOrder;
+use App\Support\Billing\Piutang;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +22,8 @@ use RuntimeException;
  */
 class ProofOfDelivery
 {
+    public function __construct(private readonly Piutang $piutang) {}
+
     /**
      * Disk PRIVAT, bukan 'public'. Foto Surat Jalan memuat tanda tangan,
      * nama, dan alamat pelanggan. Menaruhnya di disk publik berarti siapa pun
@@ -178,7 +181,15 @@ class ProofOfDelivery
                 'sla_hours' => $this->slaJam($terkunci),
             ])->save();
 
-            return $selesai;
+            // Tagihan dicatat di transaksi yang sama: pesanan "menunggu bayar"
+            // tanpa tagihan adalah piutang yang tidak terlihat di mana pun.
+            // Statusnya dibaca ulang karena invoice gabungan yang sudah lunas
+            // langsung menutup pesanan ini juga (lihat Piutang::catat).
+            if ($selesai === SalesOrder::STATUS_COMPLETED_BILLING) {
+                $this->piutang->catat($terkunci);
+            }
+
+            return $terkunci->status;
         });
     }
 

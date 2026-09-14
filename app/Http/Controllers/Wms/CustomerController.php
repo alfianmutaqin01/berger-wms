@@ -7,6 +7,7 @@ use App\Http\Requests\Wms\StoreCustomerRequest;
 use App\Http\Requests\Wms\UpdateCustomerRequest;
 use App\Models\ActivityLog;
 use App\Models\Customer;
+use App\Models\CustomerBilling;
 use App\Support\Activity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,6 +48,8 @@ class CustomerController extends Controller
 
         return view('wms.master.customers', [
             'customers' => $customers,
+            // F-BILL-03: satu query untuk seluruh halaman, bukan satu per baris.
+            'piutang' => CustomerBilling::penandaCustomer($customers->pluck('id')->all()),
             'territories' => Customer::query()
                 ->whereNotNull('territory_code')
                 ->distinct()

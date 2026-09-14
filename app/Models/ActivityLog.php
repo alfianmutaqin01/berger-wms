@@ -102,6 +102,10 @@ class ActivityLog extends Model
 
     public const PROOF_REJECT = 'proof.reject';
 
+    public const BILLING_PAY = 'billing.pay';
+
+    public const BILLING_VOID = 'billing.void';
+
     /** Sales melapor; empat tindakan retur lainnya sudah ada di atas. */
     public const RETURN_REPORT = 'return.report';
 
@@ -201,6 +205,8 @@ class ActivityLog extends Model
         self::PROOF_UPLOAD => 'Unggah Bukti Surat Jalan',
         self::PROOF_VERIFY => 'Sahkan Bukti Surat Jalan',
         self::PROOF_REJECT => 'Tolak Bukti Surat Jalan',
+        self::BILLING_PAY => 'Konfirmasi Lunas',
+        self::BILLING_VOID => 'Batalkan Konfirmasi Lunas',
         self::RETURN_REPORT => 'Lapor Penolakan Customer',
         self::MRF_CREATE => 'Buat Permintaan Material',
         self::MRF_APPROVER_DECIDE => 'Keputusan Atasan atas MRF (WhatsApp)',

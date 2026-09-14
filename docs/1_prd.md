@@ -581,22 +581,40 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
 
 ### 6.6 Modul Billing (Penagihan)
 
+> [!IMPORTANT]
+> **Perubahan v1.3 (14 September 2026) — keputusan pemilik produk.** Billing adalah **buku pantau piutang, bukan pembukuan**: pembayaran tidak pernah melewati sistem ini dan nominalnya hidup di BC.
+>
+> | Keputusan | Isi |
+> |---|---|
+> | Nominal | **Tidak ada sama sekali.** Yang dicatat hanya status lunas/belum. |
+> | Satuan tagihan | **Satu tagihan per invoice (nomor SO BC)**, bukan per PO. Pesanan yang digabung ke satu invoice ikut lunas bersama. |
+> | Dasar jatuh tempo | **Tanggal barang sampai** (konfirmasi supir) + hari termin — bukan tanggal complete. |
+> | Giro | Cukup dicatat **nomor gironya** (wajib). Tidak ada status "menunggu cair". |
+> | Notifikasi | **Tidak ke Sales.** Lonceng pengingat hanya ke **Manager**: H-3 sebelum jatuh tempo dan saat lewat jatuh tempo. |
+
 #### F-BILL-01: Daftar Piutang
 - **Akses:** Tim Logistik, Manager, Super Admin.
-- **Data:** Daftar semua transaksi dengan pembayaran tempo yang belum lunas.
-- **Kolom:** Nomor PO, Customer, Tanggal Order, Payment Term, Jatuh Tempo, Total Item, Status Pembayaran.
-- **Filter:** Berdasarkan status (Belum Bayar/Lunas), customer, gudang, rentang tanggal.
-- **Highlight:** Piutang yang **sudah melewati jatuh tempo** ditandai warna merah.
+- **Data:** Satu baris per invoice pesanan tempo. Tagihan terbentuk **otomatis** saat pesanan tempo dinyatakan selesai.
+- **Kolom:** No. SO BC (beserta pesanan yang tergabung), Customer, Sales, Tanggal Barang Sampai, Termin, Jatuh Tempo, Qty Terkirim, Status.
+- **Tab:** Jatuh tempo ≤ 7 hari (tab awal) · Lewat jatuh tempo · Semua belum lunas · Lunas.
+- **Pencarian:** customer, No. SO, No. PO. Dibatasi gudang pengguna.
+- **Highlight:** Invoice yang **sudah melewati jatuh tempo** ditandai merah beserta jumlah harinya.
 
 #### F-BILL-02: Konfirmasi Pembayaran
 - **Akses:** Tim Logistik, Super Admin.
 - **Proses:**
   1. Logistik menerima informasi/bukti bahwa customer sudah membayar.
-  2. Membuka data billing yang bersangkutan.
-  3. Menekan **"Konfirmasi Lunas"** + memasukkan **tanggal bukti bayar diterima** dan **metode pelunasan** (Transfer/Giro/Tunai).
-  4. Status berubah menjadi **Lunas**.
-  5. Penanda `⚠ Menunggak` pada customer tersebut hilang dengan sendirinya begitu seluruh tagihannya lunas.
-  6. Notifikasi dikirim ke Sales terkait.
+  2. Mencentang **satu atau beberapa invoice dari customer yang sama**.
+  3. Menekan **"Konfirmasi Lunas"** + memasukkan **tanggal bukti bayar diterima**, **metode pelunasan** (Transfer/Giro/Tunai), **nomor referensi** (wajib untuk giro), dan catatan opsional.
+  4. Invoice berubah menjadi **Lunas**; pesanan di dalamnya berubah dari *Complete (Menunggu Bayar)* menjadi *Complete*.
+  5. Penanda `⚠ Menunggak` pada customer hilang dengan sendirinya begitu tidak ada lagi invoice yang lewat jatuh tempo.
+  6. Tercatat di log aktivitas. **Tidak ada notifikasi ke Sales.**
+- **Pembatalan:** Manager/Super Admin dapat **membatalkan konfirmasi lunas** yang keliru (mis. giro ditolak bank) dengan alasan wajib. Konfirmasinya tidak dihapus — invoice kembali belum lunas dan riwayatnya tetap terbaca.
+
+#### F-BILL-04: Pengingat Jatuh Tempo
+- **Penerima:** **Manager** saja (lonceng web), dibatasi gudang.
+- **Jadwal:** setiap hari pukul 07:00 WIB.
+- **Isi:** satu ringkasan per gudang untuk invoice yang jatuh tempo dalam 3 hari, dan satu untuk invoice yang lewat jatuh tempo. Tiap invoice diingatkan **sekali per tahap**.
 
 #### F-BILL-03: Penandaan Customer Overdue
 
@@ -605,6 +623,7 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
 
 - **Mekanisme:**
   - Sistem menghitung status piutang setiap customer secara real-time dan menampilkannya sebagai **penanda visual** `⚠ Menunggak`.
+  - **Dua tingkat (v1.3):** `⚠ Menunggak N hari` (merah) **hanya** bila ada invoice yang **lewat** jatuh tempo; invoice yang belum jatuh tempo cukup ditampilkan sebagai *tagihan berjalan* (abu-abu) di halaman Approval. Menandai semua invoice belum lunas sebagai menunggak membuat hampir setiap customer tempo selalu merah.
   - Penanda muncul di: form Buat Pesanan (Portal Sales), halaman Approval Pesanan (Portal WMS), dan halaman Master Customer.
   - Relevan HANYA untuk customer dengan pembayaran **Tempo 30/60/90 hari**. Customer Cash/Transfer tidak pernah memiliki piutang berjalan.
   - Penanda hilang otomatis setelah Logistik mengkonfirmasi seluruh tagihan lunas.
@@ -854,18 +873,29 @@ THEN:
     
   IF payment_term = 'tempo_30' OR 'tempo_60' OR 'tempo_90':
     → Status COMPLETE (Menunggu Pembayaran)
-    → Masuk menu Billing
-    → Hitung jatuh_tempo = tanggal_complete + payment_term_days
-    → Customer DITANDAI '⚠ Menunggak' (informatif, TIDAK memblokir)
+    → Masuk menu Billing: SATU tagihan per invoice (pesanan induk
+      gabungan invoice); pesanan anak menumpang di tagihan induknya
+    → Hitung jatuh_tempo = tanggal_barang_sampai + payment_term_days   (v1.3)
+    → Bila invoice-nya sudah lunas → pesanan langsung COMPLETE
+
+RULE: PAYMENT_CONFIRM   (v1.3)
+WHEN: Logistik mengonfirmasi lunas satu/beberapa invoice SATU customer
+THEN:
+  → Tagihan lunas; pesanan COMPLETE (Menunggu Pembayaran) → COMPLETE
+  → Giro WAJIB bernomor; tanggal bukti bayar tidak boleh di masa depan
+  → Pembatalan oleh Manager: tagihan kembali belum lunas,
+    pesanan kembali COMPLETE (Menunggu Pembayaran)
 
 RULE: CUSTOMER_OVERDUE_FLAG
 WHEN: Sistem menampilkan customer di form Buat Pesanan,
       halaman Approval Pesanan, atau Master Customer
 THEN:
-  IF customer memiliki billing dengan status 'belum_lunas':
-    → Tampilkan badge '⚠ Menunggak' + tanggal jatuh tempo terlama
+  IF customer memiliki invoice belum lunas yang due_date < hari ini:   (v1.3)
+    → Tampilkan badge '⚠ Menunggak N hari' (N = invoice terlama)
     → Pesanan TETAP boleh dibuat, disimpan, dan di-submit
     → Penanda ikut terbawa ke halaman Approval Logistik
+  ELSE IF customer memiliki invoice belum lunas yang belum jatuh tempo:
+    → Halaman Approval: badge abu-abu 'N tagihan berjalan'
   ELSE:
     → Tidak ada penanda
 

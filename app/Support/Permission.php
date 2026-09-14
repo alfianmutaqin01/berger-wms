@@ -200,6 +200,18 @@ class Permission
 
     public const BILLING_VIEW = 'billing.view';
 
+    /** Konfirmasi lunas — PRD F-BILL-02: Logistik yang menerima kabar pembayaran. */
+    public const BILLING_CONFIRM = 'billing.confirm';
+
+    /** Membatalkan konfirmasi lunas yang keliru. Sengaja BUKAN yang mengonfirmasi. */
+    public const BILLING_VOID = 'billing.void';
+
+    /**
+     * Penerima lonceng pengingat jatuh tempo — keputusan pemilik produk:
+     * Manager saja, bukan Sales dan bukan Logistik.
+     */
+    public const BILLING_REMINDER = 'billing.reminder';
+
     /* ---------------------------------------------------- Master data & admin */
 
     public const MASTER_CUSTOMERS = 'master.customers';
@@ -323,6 +335,9 @@ class Permission
         self::MRF_RECEIVE => [Role::SUPER_ADMIN, Role::PRODUCTION],
 
         self::BILLING_VIEW => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::BILLING_CONFIRM => [Role::SUPER_ADMIN, Role::LOGISTICS],
+        self::BILLING_VOID => [Role::SUPER_ADMIN, Role::MANAGER],
+        self::BILLING_REMINDER => [Role::MANAGER],
 
         self::MASTER_CUSTOMERS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::MASTER_PRODUCTS => [Role::SUPER_ADMIN, Role::MANAGER],
