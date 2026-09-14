@@ -6,7 +6,9 @@ use App\Jobs\SendArrivalNoticeToSales;
 use App\Models\ActivityLog;
 use App\Models\DeliveryNote;
 use App\Models\Notification;
+use App\Models\SalesOrderEmail;
 use App\Support\Activity;
+use App\Support\Messaging\EmailSales;
 use App\Support\Notifier;
 use App\Support\Outbound\ArrivalPhoto;
 use App\Support\Outbound\Shipment;
@@ -156,6 +158,12 @@ class EpodController extends Controller
          */
         $note->forceFill(['sales_notify_status' => DeliveryNote::NOTIFY_PENDING])->save();
         SendArrivalNoticeToSales::dispatch($note->id);
+
+        // Email sebagai cadangan WhatsApp — dikirim walau WA berhasil, karena
+        // "WA terkirim" tidak sama dengan "WA terbaca".
+        if ($note->sales_order_id !== null) {
+            EmailSales::antrekan($note->sales_order_id, SalesOrderEmail::TYPE_DELIVERED, $note->id);
+        }
 
         // Logistik cukup lewat lonceng web — keputusan pemilik produk. Mereka
         // bekerja di depan layar sistem sepanjang hari; WhatsApp untuk mereka

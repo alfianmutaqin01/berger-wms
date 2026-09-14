@@ -4,6 +4,8 @@ namespace Tests\Feature\Wms;
 
 use App\Jobs\SendArrivalNoticeToSales;
 use App\Jobs\SendDeliveryNotification;
+use App\Mail\Pesanan\BarangDikirim;
+use App\Mail\Pesanan\BarangSampai;
 use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Models\DeliveryNote;
@@ -18,6 +20,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
+use App\Models\SalesOrderEmail;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\UserSession;
@@ -30,6 +33,7 @@ use App\Support\Outbound\Shipment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -1242,6 +1246,32 @@ class ShipmentTest extends TestCase
             ->assertOk()
             ->assertSee('WA ke Sales')
             ->assertSee('belum punya nomor HP');
+    }
+
+    /**
+     * Email cadangan untuk Sales: satu saat berangkat, satu saat sampai —
+     * PER SURAT JALAN, dan dikirim walau WhatsApp-nya berhasil.
+     */
+    public function test_berangkat_dan_sampai_mengirim_email_ke_sales_pemilik_pesanan(): void
+    {
+        Mail::fake();
+
+        [$order, $note] = $this->barangDikonfirmasiSampai();
+
+        $email = $order->user->email;
+
+        Mail::assertSent(BarangDikirim::class, fn (BarangDikirim $m) => $m->hasTo($email) && $m->note->is($note));
+        Mail::assertSent(BarangSampai::class, fn (BarangSampai $m) => $m->hasTo($email) && $m->note->is($note));
+        Mail::assertSentCount(2);
+
+        foreach ([SalesOrderEmail::TYPE_SHIPPED, SalesOrderEmail::TYPE_DELIVERED] as $jenis) {
+            $this->assertDatabaseHas('sales_order_emails', [
+                'sales_order_id' => $order->id,
+                'delivery_note_id' => $note->id,
+                'type' => $jenis,
+                'status' => SalesOrderEmail::STATUS_SENT,
+            ]);
+        }
     }
 
     /**

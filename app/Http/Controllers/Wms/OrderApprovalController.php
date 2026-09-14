@@ -11,9 +11,11 @@ use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
+use App\Models\SalesOrderEmail;
 use App\Models\SalesOrderOutstanding;
 use App\Models\SalesOrderRejection;
 use App\Support\Activity;
+use App\Support\Messaging\EmailSales;
 use App\Support\Notifier;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
@@ -396,6 +398,14 @@ class OrderApprovalController extends Controller
             $order,
         );
 
+        // Email ke Sales pemilik pesanan: cadangan lonceng, dengan qty yang
+        // diterima per item. Porsi yang menunggu stok dibekukan sekarang —
+        // sesudah ini angkanya bergerak mengikuti picking.
+        EmailSales::antrekan($order->id, SalesOrderEmail::TYPE_APPROVED, data: [
+            'dicadangkan' => $ringkasan['dialokasikan'],
+            'menunggu_stok' => $ringkasan['menunggu'],
+        ]);
+
         $pesan = "Pesanan {$order->order_number} diterima. {$ringkasan['dialokasikan']} unit dicadangkan dari stok.";
 
         // Disebut TERPISAH. Jatah yang datang dari booking bukan stok yang
@@ -482,6 +492,10 @@ class OrderApprovalController extends Controller
             $order->warehouse_id,
             $order,
         );
+
+        EmailSales::antrekan($order->id, SalesOrderEmail::TYPE_REJECTED, data: [
+            'alasan' => $request->validated('rejection_reason'),
+        ]);
 
         return redirect()->route('wms.approval.index')
             ->with('success', "Pesanan {$order->order_number} ditolak.");
@@ -666,6 +680,7 @@ class OrderApprovalController extends Controller
             'details.product:id,sku,name,uom',
             'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
             'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
+            'emails' => fn ($q) => $q->with('deliveryNote:id,document_no')->orderBy('id'),
         ]);
 
         return view('wms.outbound.approval-history-detail', [

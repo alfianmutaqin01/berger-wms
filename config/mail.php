@@ -115,4 +115,13 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    | Balasan Sales atas email kabar pesanan diarahkan ke Logistik. Kosong =
+    | balasan menuju alamat pengirim.
+    */
+    'reply_to' => [
+        'address' => env('MAIL_REPLY_TO_ADDRESS'),
+        'name' => env('MAIL_REPLY_TO_NAME', env('MAIL_FROM_NAME', 'Example')),
+    ],
+
 ];
