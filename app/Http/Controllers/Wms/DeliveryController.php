@@ -8,7 +8,9 @@ use App\Jobs\SendDeliveryNotification;
 use App\Models\ActivityLog;
 use App\Models\DeliveryNote;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderEmail;
 use App\Support\Activity;
+use App\Support\Messaging\EmailSales;
 use App\Support\Outbound\ArrivalPhoto;
 use App\Support\Outbound\Shipment;
 use App\Support\Outbound\SoNumberFixer;
@@ -167,6 +169,10 @@ class DeliveryController extends Controller
         // transaksi, job bisa berjalan lebih dulu daripada commit dan membaca
         // dokumen yang belum punya token.
         SendDeliveryNotification::dispatch($note->id);
+
+        if ($note->sales_order_id !== null) {
+            EmailSales::antrekan($note->sales_order_id, SalesOrderEmail::TYPE_SHIPPED, $note->id);
+        }
 
         Activity::record(
             ActivityLog::DELIVERY_SHIP,

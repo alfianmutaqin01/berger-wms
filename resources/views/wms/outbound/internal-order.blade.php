@@ -235,7 +235,11 @@ document.addEventListener('DOMContentLoaded', function () {
     pasangPencarian(document.getElementById('cariCustomer'), {
         url: (q) => '{{ route('wms.internal-order.lookup.customers') }}?q=' + encodeURIComponent(q),
         tampilan: (c) => '<span class="badge bg-light text-dark border font-monospace me-1">'
-            + aman(c.code) + '</span>' + aman(c.name),
+            + aman(c.code) + '</span>' + aman(c.name)
+            // F-BILL-03: informasi saja — customer menunggak tetap bisa dipilih.
+            + (c.menunggak > 0
+                ? ' <span class="badge bg-danger-subtle text-danger-emphasis border border-danger ms-1">⚠ Menunggak ' + aman(c.menunggak) + ' hari</span>'
+                : ''),
         label: (c) => c.code + ' — ' + c.name,
         kosong: 'Tidak ada customer yang cocok.',
     });

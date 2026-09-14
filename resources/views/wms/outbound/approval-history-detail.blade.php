@@ -141,4 +141,55 @@
         </div>
     </div>
 </div>
+
+{{-- EMAIL KE SALES. Ditampilkan beserta alasannya bila gagal, karena
+     penyebab yang paling sering — alamat email akun Sales kosong atau salah —
+     hanya bisa diperbaiki orang yang membaca layar ini. --}}
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body p-4">
+        <h6 class="fw-bold mb-3"><i class="bi bi-envelope me-1"></i> Email ke Sales</h6>
+
+        @if($order->emails->isEmpty())
+            <div class="text-muted small">Belum ada email yang dikirim untuk pesanan ini.</div>
+        @else
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 border">
+                    <thead class="table-light">
+                        <tr class="small text-secondary">
+                            <th>Kabar</th>
+                            <th>Status</th>
+                            <th>Tujuan</th>
+                            <th>Waktu</th>
+                            <th>Keterangan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach($order->emails as $surel)
+                        <tr>
+                            <td class="small">
+                                {{ $surel->type_label }}
+                                @if($surel->deliveryNote)
+                                    <span class="text-muted font-monospace">({{ $surel->deliveryNote->document_no }})</span>
+                                @endif
+                            </td>
+                            <td>
+                                <span class="badge {{ match ($surel->status) {
+                                    \App\Models\SalesOrderEmail::STATUS_SENT => 'bg-success-subtle text-success-emphasis border border-success',
+                                    \App\Models\SalesOrderEmail::STATUS_FAILED => 'bg-danger-subtle text-danger-emphasis border border-danger',
+                                    default => 'bg-secondary-subtle text-secondary-emphasis border',
+                                } }}">{{ $surel->status_label }}</span>
+                            </td>
+                            <td class="small font-monospace">{{ $surel->recipient_email ?? '—' }}</td>
+                            <td class="small text-muted">{{ ($surel->sent_at ?? $surel->created_at)?->translatedFormat('d M Y, H:i') }}</td>
+                            <td class="small {{ $surel->status === \App\Models\SalesOrderEmail::STATUS_FAILED ? 'text-danger' : 'text-muted' }}">
+                                {{ $surel->error ?? '' }}
+                            </td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </div>
+</div>
 @endsection

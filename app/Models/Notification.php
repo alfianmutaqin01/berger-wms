@@ -69,6 +69,12 @@ class Notification extends Model
     /** Keputusan Logistik atas permintaan Produksi — disetujui atau ditolak. */
     public const MRF_DECIDED = 'mrf.decided';
 
+    /** Tagihan tempo segera jatuh tempo; untuk Manager (Fase 8). */
+    public const BILLING_DUE_SOON = 'billing.due_soon';
+
+    /** Tagihan tempo lewat jatuh tempo dan belum lunas; untuk Manager (Fase 8). */
+    public const BILLING_OVERDUE = 'billing.overdue';
+
     /**
      * Ikon & warna per jenis.
      *
@@ -94,6 +100,8 @@ class Notification extends Model
         self::MRF_NEEDS_LOGISTICS => ['bi-clipboard2-plus', 'warning'],
         self::MRF_READY_FOR_PICKUP => ['bi-box-seam', 'primary'],
         self::MRF_DECIDED => ['bi-clipboard2-check', 'info'],
+        self::BILLING_DUE_SOON => ['bi-hourglass-split', 'warning'],
+        self::BILLING_OVERDUE => ['bi-exclamation-octagon-fill', 'danger'],
     ];
 
     /** Yang ditampilkan di dalam lonceng sebelum "Lihat Semua". */

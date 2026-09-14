@@ -85,7 +85,11 @@
 
                 <dl class="row mb-0 small">
                     <dt class="col-5 text-muted fw-normal">Customer</dt>
-                    <dd class="col-7 fw-semibold">{{ $order->customer?->name ?? '—' }}</dd>
+                    <dd class="col-7 fw-semibold">
+                        {{ $order->customer?->name ?? '—' }}
+                        {{-- F-BILL-03: informasi, bukan pemblokir. Tombol Terima tetap bisa ditekan. --}}
+                        <div class="mt-1">@include('partials.penanda-piutang', ['penanda' => $piutang, 'lengkap' => true])</div>
+                    </dd>
 
                     <dt class="col-5 text-muted fw-normal">Kode Customer</dt>
                     <dd class="col-7 font-monospace">{{ $order->customer?->code ?? '—' }}</dd>

@@ -8,8 +8,10 @@ use App\Models\ActivityLog;
 use App\Models\DeliveryProof;
 use App\Models\Notification;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderEmail;
 use App\Models\SalesReturn;
 use App\Support\Activity;
+use App\Support\Messaging\EmailSales;
 use App\Support\Notifier;
 use App\Support\Outbound\ProofOfDelivery;
 use App\Support\WarehouseScope;
@@ -155,6 +157,8 @@ class ProofVerificationController extends Controller
             $order->warehouse_id,
             ['status_akhir' => $status],
         );
+
+        EmailSales::antrekan($order->id, SalesOrderEmail::TYPE_COMPLETED);
 
         return redirect()
             ->route('wms.verification.index')

@@ -176,6 +176,12 @@ class SalesOrder extends Model
         return $this->hasMany(SalesOrderRejection::class);
     }
 
+    /** Email kabar pesanan untuk Sales pemiliknya — lihat SalesOrderEmail. */
+    public function emails(): HasMany
+    {
+        return $this->hasMany(SalesOrderEmail::class);
+    }
+
     /**
      * Pesanan INDUK yang nomor SO-nya ditumpangi pesanan ini.
      *

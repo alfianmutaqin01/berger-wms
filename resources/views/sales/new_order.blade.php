@@ -112,6 +112,15 @@
                                      style="z-index: 1050; max-height: 260px; overflow-y: auto;"></div>
                             </div>
                             <small class="text-muted">Ketik minimal 2 huruf untuk mencari.</small>
+                            {{-- F-BILL-03: INFORMASI, bukan larangan. Pesanan tetap
+                                 bisa diajukan; Logistik yang memutuskan. --}}
+                            <div id="peringatanPiutang"
+                                 class="alert alert-warning border-0 rounded-3 small py-2 mt-2 mb-0 {{ ($customerTerpilih['menunggak'] ?? 0) > 0 ? '' : 'd-none' }}">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                Customer ini <strong>menunggak</strong> — ada invoice lewat jatuh tempo
+                                <span id="hariPiutang">{{ $customerTerpilih['menunggak'] ?? 0 }}</span> hari.
+                                Pesanan tetap bisa diajukan.
+                            </div>
                         </div>
 
                         <div class="col-12 col-md-6">

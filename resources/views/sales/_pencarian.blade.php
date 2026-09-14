@@ -27,9 +27,19 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         tampilan: function (c) {
             return '<span class="badge bg-light text-dark border font-monospace me-1">'
-                + c.code + '</span>' + c.name;
+                + c.code + '</span>' + c.name
+                + (c.menunggak > 0
+                    ? ' <span class="badge bg-danger-subtle text-danger-emphasis border border-danger ms-1">⚠ Menunggak</span>'
+                    : '');
         },
         label: function (c) { return c.code + ' — ' + c.name; },
+        setelahPilih: function (c) {
+            const peringatan = document.getElementById('peringatanPiutang');
+            const menunggak = c && c.menunggak > 0;
+
+            peringatan.classList.toggle('d-none', !menunggak);
+            document.getElementById('hariPiutang').textContent = menunggak ? c.menunggak : 0;
+        },
     });
 
     /* -------------------------------------------------- Metode pemesanan */

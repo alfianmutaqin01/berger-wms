@@ -6,14 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\AcceptSalesOrderRequest;
 use App\Http\Requests\Wms\RejectSalesOrderRequest;
 use App\Models\ActivityLog;
+use App\Models\CustomerBilling;
 use App\Models\Notification;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
+use App\Models\SalesOrderEmail;
 use App\Models\SalesOrderOutstanding;
 use App\Models\SalesOrderRejection;
 use App\Support\Activity;
+use App\Support\Messaging\EmailSales;
 use App\Support\Notifier;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\OrderCanceller;
@@ -180,6 +183,8 @@ class OrderApprovalController extends Controller
         return view('wms.outbound.approval-detail', [
             'order' => $order,
             'baris' => $baris,
+            // F-BILL-03: informasi untuk yang memutuskan, bukan pemblokir.
+            'piutang' => CustomerBilling::penandaCustomer([$order->customer_id])[$order->customer_id] ?? null,
         ]);
     }
 
@@ -342,23 +347,32 @@ class OrderApprovalController extends Controller
             return redirect()->route('wms.approval.index')->with('error', $e->getMessage());
         }
 
+        // PRD §7.4: menyetujui pesanan customer yang menunggak adalah keputusan
+        // yang harus meninggalkan jejak beserta penyetujunya. Tidak memblokir.
+        $piutang = CustomerBilling::penandaCustomer([$order->customer_id])[$order->customer_id] ?? null;
+        $menunggak = ($piutang['menunggak'] ?? 0) > 0;
+
         Activity::record(
             ActivityLog::ORDER_APPROVE,
             sprintf(
-                'Menerima pesanan %s dari %s — %d unit dicadangkan, %d menunggu stok.',
+                'Menerima pesanan %s dari %s — %d unit dicadangkan, %d menunggu stok.%s',
                 $order->order_number,
                 $order->customer?->name ?? 'pelanggan',
                 $ringkasan['dialokasikan'],
                 $ringkasan['menunggu'],
+                $menunggak
+                    ? sprintf(' Customer MENUNGGAK: %d invoice lewat jatuh tempo (terlama %d hari).', $piutang['menunggak'], $piutang['lewat_terlama'])
+                    : '',
             ),
             $order,
             $order->warehouse_id,
-            [
+            array_filter([
                 'nomor_so_bc' => $order->fresh()->bc_so_number,
                 'dialokasikan' => $ringkasan['dialokasikan'],
                 'menunggu_stok' => $ringkasan['menunggu'],
                 'dari_booking' => $ringkasan['dari_booking'],
-            ],
+                'customer_menunggak' => $menunggak ? $piutang : null,
+            ], fn ($nilai) => $nilai !== null),
         );
 
         /*
@@ -395,6 +409,14 @@ class OrderApprovalController extends Controller
             route('wms.picking.queue'),
             $order,
         );
+
+        // Email ke Sales pemilik pesanan: cadangan lonceng, dengan qty yang
+        // diterima per item. Porsi yang menunggu stok dibekukan sekarang —
+        // sesudah ini angkanya bergerak mengikuti picking.
+        EmailSales::antrekan($order->id, SalesOrderEmail::TYPE_APPROVED, data: [
+            'dicadangkan' => $ringkasan['dialokasikan'],
+            'menunggu_stok' => $ringkasan['menunggu'],
+        ]);
 
         $pesan = "Pesanan {$order->order_number} diterima. {$ringkasan['dialokasikan']} unit dicadangkan dari stok.";
 
@@ -482,6 +504,10 @@ class OrderApprovalController extends Controller
             $order->warehouse_id,
             $order,
         );
+
+        EmailSales::antrekan($order->id, SalesOrderEmail::TYPE_REJECTED, data: [
+            'alasan' => $request->validated('rejection_reason'),
+        ]);
 
         return redirect()->route('wms.approval.index')
             ->with('success', "Pesanan {$order->order_number} ditolak.");
@@ -666,6 +692,7 @@ class OrderApprovalController extends Controller
             'details.product:id,sku,name,uom',
             'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
             'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
+            'emails' => fn ($q) => $q->with('deliveryNote:id,document_no')->orderBy('id'),
         ]);
 
         return view('wms.outbound.approval-history-detail', [

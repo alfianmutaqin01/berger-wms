@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\InternalOrderRequest;
 use App\Models\ActivityLog;
 use App\Models\Customer;
+use App\Models\CustomerBilling;
 use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\Role;
@@ -163,14 +164,21 @@ class InternalOrderController extends Controller
             return response()->json([]);
         }
 
-        return response()->json(
-            Customer::active()
-                ->search($q)
-                ->orderBy('name')
-                ->limit(self::MAKS_SARAN)
-                ->get(['id', 'code', 'name'])
-                ->map(fn (Customer $c) => ['id' => $c->id, 'code' => $c->code, 'name' => $c->name])
-        );
+        $hasil = Customer::active()
+            ->search($q)
+            ->orderBy('name')
+            ->limit(self::MAKS_SARAN)
+            ->get(['id', 'code', 'name']);
+
+        // F-BILL-03: penanda di form Buat Pesanan — informasi, tidak memblokir.
+        $piutang = CustomerBilling::penandaCustomer($hasil->pluck('id')->all());
+
+        return response()->json($hasil->map(fn (Customer $c) => [
+            'id' => $c->id,
+            'code' => $c->code,
+            'name' => $c->name,
+            'menunggak' => $piutang[$c->id]['lewat_terlama'] ?? 0,
+        ]));
     }
 
     /**

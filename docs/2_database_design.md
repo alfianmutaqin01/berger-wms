@@ -793,32 +793,47 @@ Rincian barang yang diretur beserta keputusan alokasinya.
 
 ### 3.6 Tabel Billing (Penagihan)
 
+> [!IMPORTANT]
+> **Revisi Fase 8 (14 September 2026), disetujui pemilik produk.** Rancangan awal diubah di empat hal — lihat migrasi `2026_10_14_000001_create_billing_tables.php` untuk alasan lengkapnya:
+> 1. **Satu tagihan per invoice** (pesanan induk gabungan invoice), bukan per PO.
+> 2. **Jatuh tempo dari tanggal barang sampai** (`delivered_on`), bukan tanggal complete.
+> 3. **Satu pembayaran bisa melunasi banyak tagihan** — relasinya dibalik: tagihan menunjuk pembayaran.
+> 4. **Tidak ada kolom status.** Lunas = `billing_payment_id` terisi; lewat jatuh tempo dihitung dari `due_date` saat dibaca.
+>
+> Tidak ada kolom nominal di tabel mana pun: pembayaran tidak melewati sistem ini.
+
 #### `customer_billings`
-Catatan piutang untuk pembayaran tempo.
+Satu invoice pesanan tempo yang sudah sampai.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
-| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `sales_order_id` | BIGINT UNSIGNED | FK → sales_orders.id, UNIQUE | 1 PO = 1 billing |
-| `customer_id` | BIGINT UNSIGNED | FK → customers.id | Customer yang ditagih |
-| `payment_term` | ENUM | NOT NULL | 'tempo_30', 'tempo_60', 'tempo_90' |
-| `billing_date` | DATE | NOT NULL | Tanggal billing dibuat (= tanggal order complete) |
-| `due_date` | DATE | NOT NULL | Tanggal jatuh tempo |
-| `status` | ENUM | NOT NULL, DEFAULT 'unpaid' | 'unpaid', 'paid', 'overdue' |
-| `created_at` | TIMESTAMP | | |
-| `updated_at` | TIMESTAMP | | |
+| `id` | BIGINT | PK | |
+| `sales_order_id` | BIGINT | FK → sales_orders.id, UNIQUE | Pesanan **induk** invoice; anak gabungan (`so_merged_into_id`) menumpang |
+| `customer_id` | BIGINT | FK → customers.id | Customer yang ditagih |
+| `warehouse_id` | BIGINT | FK → warehouses.id | Pembatas gudang |
+| `payment_term_id` | BIGINT | FK → payment_terms.id, NULLABLE | Termin saat tagihan dibuat |
+| `term_days` | SMALLINT | NOT NULL | Disalin — perubahan master termin tidak menggeser jatuh tempo |
+| `delivered_on` | DATE | NOT NULL | Tanggal barang sampai (WIB) |
+| `due_date` | DATE | NOT NULL | `delivered_on + term_days` |
+| `billing_payment_id` | BIGINT | FK → billing_payments.id, NULLABLE | Terisi = lunas |
+| `reminded_due_soon_at` | TIMESTAMP | NULLABLE | Pengingat H-3 ke Manager sudah dikirim |
+| `reminded_overdue_at` | TIMESTAMP | NULLABLE | Pengingat lewat jatuh tempo sudah dikirim |
+| `created_at` / `updated_at` | TIMESTAMP | | |
 
 #### `billing_payments`
-Konfirmasi pembayaran oleh Logistik.
+Satu konfirmasi pelunasan oleh Logistik — bisa untuk beberapa invoice satu customer.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
-| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `customer_billing_id` | BIGINT UNSIGNED | FK → customer_billings.id | Billing yang dibayar |
-| `paid_date` | DATE | NOT NULL | Tanggal pembayaran diterima |
-| `confirmed_by` | BIGINT UNSIGNED | FK → users.id | Logistik yang konfirmasi |
-| `notes` | TEXT | NULLABLE | Catatan pembayaran |
-| `created_at` | TIMESTAMP | | |
+| `id` | BIGINT | PK | |
+| `customer_id` | BIGINT | FK → customers.id | |
+| `paid_on` | DATE | NOT NULL | Tanggal bukti bayar diterima |
+| `method` | VARCHAR(10) | CHECK IN ('transfer','giro','tunai') | |
+| `reference` | VARCHAR(60) | NULLABLE; CHECK wajib bila `method = 'giro'` | No. giro / referensi transfer |
+| `notes` | TEXT | NULLABLE | |
+| `confirmed_by` | BIGINT | FK → users.id, NULLABLE | |
+| `voided_at` / `voided_by` / `void_reason` | | NULLABLE; CHECK lengkap bersama | Pembatalan oleh Manager — tidak dihapus |
+| `created_at` / `updated_at` | TIMESTAMP | | |
 
 ---
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\SalesOrderRequest;
 use App\Models\ActivityLog;
 use App\Models\Customer;
+use App\Models\CustomerBilling;
 use App\Models\DeliveryProof;
 use App\Models\Notification;
 use App\Models\PaymentTerm;
@@ -408,14 +409,19 @@ class SalesOrderController extends Controller
             ->search($q)
             ->orderBy('name')
             ->limit(self::MAKS_SARAN)
-            ->get(['id', 'code', 'name'])
-            ->map(fn (Customer $c) => [
-                'id' => $c->id,
-                'code' => $c->code,
-                'name' => $c->name,
-            ]);
+            ->get(['id', 'code', 'name']);
 
-        return response()->json($hasil);
+        // F-BILL-03: penanda di form Buat Pesanan. HANYA informasi — Sales
+        // tetap bisa memilih customer ini dan mengajukan pesanannya; yang
+        // memutuskan tetap Logistik saat approval.
+        $piutang = CustomerBilling::penandaCustomer($hasil->pluck('id')->all());
+
+        return response()->json($hasil->map(fn (Customer $c) => [
+            'id' => $c->id,
+            'code' => $c->code,
+            'name' => $c->name,
+            'menunggak' => $piutang[$c->id]['lewat_terlama'] ?? 0,
+        ]));
     }
 
     /**
@@ -536,6 +542,7 @@ class SalesOrderController extends Controller
             'id' => $customer->id,
             'code' => $customer->code,
             'name' => $customer->name,
+            'menunggak' => CustomerBilling::penandaCustomer([$customer->id])[$customer->id]['lewat_terlama'] ?? 0,
         ] : null;
     }
 
