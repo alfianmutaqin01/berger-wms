@@ -124,6 +124,49 @@ class ActivityLogTest extends TestCase
         $this->get(route('wms.admin.activity-log'))->assertOk();
     }
 
+    /**
+     * Rincian berbentuk daftar atau data bertingkat tetap bisa dibaca.
+     *
+     * Dahulu satu baris log berisi daftar (mis. kolom_berubah dari ubah master
+     * data) mematikan SELURUH halaman dengan "htmlspecialchars(): array given",
+     * sehingga Super Admin tidak bisa membaca log apa pun.
+     */
+    public function test_rincian_berupa_daftar_dan_data_bertingkat_tidak_mematikan_halaman(): void
+    {
+        $this->login(Role::SUPER_ADMIN);
+
+        ActivityLog::create([
+            'action' => ActivityLog::MASTER_UPDATE,
+            'description' => 'Mengubah produk APKO-001.',
+            'properties' => [
+                'kolom_berubah' => ['max_qty_per_pallet', 'updated_at'],
+                'perubahan' => [['batch' => 'I126090020', 'palet' => 1, 'semula' => 10, 'menjadi' => 8]],
+                'penyaring' => [],
+                'aktif' => false,
+                'catatan' => null,
+            ],
+            'created_at' => now(),
+        ]);
+
+        $this->get(route('wms.admin.activity-log'))
+            ->assertOk()
+            ->assertSee('max_qty_per_pallet, updated_at')
+            ->assertSee('"batch":"I126090020"')
+            ->assertSee('tidak');
+    }
+
+    public function test_nilai_rincian_diubah_ke_teks_yang_terbaca(): void
+    {
+        $this->assertSame('—', ActivityLog::tampilkanNilai(null));
+        $this->assertSame('—', ActivityLog::tampilkanNilai([]));
+        $this->assertSame('ya', ActivityLog::tampilkanNilai(true));
+        $this->assertSame('40', ActivityLog::tampilkanNilai(40));
+        $this->assertSame('12, 15', ActivityLog::tampilkanNilai([12, 15]));
+        $this->assertSame('{"menunggak":1,"jatuh_tempo_terlama":"2026-09-21"}', ActivityLog::tampilkanNilai([
+            'menunggak' => 1, 'jatuh_tempo_terlama' => '2026-09-21',
+        ]));
+    }
+
     public function test_manager_ditolak_membuka_log(): void
     {
         $this->login(Role::MANAGER);

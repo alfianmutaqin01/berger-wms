@@ -121,9 +121,11 @@
                             <div class="collapse mt-2" id="rinci-{{ $log->id }}">
                                 <div class="bg-light rounded-3 p-2 font-monospace" style="font-size:.72rem">
                                     @foreach($log->properties as $kunci => $nilai)
-                                        <div>
+                                        <div class="text-break">
                                             <span class="text-muted">{{ $kunci }}:</span>
-                                            {{ is_bool($nilai) ? ($nilai ? 'ya' : 'tidak') : ($nilai ?? '—') }}
+                                            {{-- Nilainya bisa daftar atau data bertingkat, bukan
+                                                 hanya teks — lihat ActivityLog::tampilkanNilai(). --}}
+                                            {{ \App\Models\ActivityLog::tampilkanNilai($nilai) }}
                                         </div>
                                     @endforeach
                                     @if($log->ip_address)

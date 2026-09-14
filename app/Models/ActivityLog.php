@@ -293,4 +293,27 @@ class ActivityLog extends Model
     {
         return $this->user_name ?? 'Sistem';
     }
+
+    /**
+     * Satu nilai `properties` dalam bentuk yang bisa dibaca di halaman log.
+     *
+     * NILAINYA BEBAS BENTUK, dan itu memang kontrak Activity::record(): kolom
+     * yang berubah disimpan sebagai daftar, penyesuaian qty sebagai daftar
+     * baris, penyaring laporan sebagai peta. Menampilkannya dengan asumsi
+     * "selalu teks" pernah mematikan SELURUH halaman log begitu satu baris
+     * saja berisi daftar — tepat di halaman yang dibuka saat ada yang perlu
+     * dipertanggungjawabkan.
+     */
+    public static function tampilkanNilai(mixed $nilai): string
+    {
+        return match (true) {
+            $nilai === null, $nilai === '', $nilai === [] => '—',
+            is_bool($nilai) => $nilai ? 'ya' : 'tidak',
+            is_scalar($nilai) => (string) $nilai,
+            // Daftar sederhana ["max_qty_per_pallet", "updated_at"] dibaca
+            // sebagai kalimat, bukan sebagai kode.
+            is_array($nilai) && array_is_list($nilai) && collect($nilai)->every(fn ($v) => is_scalar($v) || $v === null) => implode(', ', array_map(fn ($v) => $v === null ? '—' : (is_bool($v) ? ($v ? 'ya' : 'tidak') : (string) $v), $nilai)),
+            default => (string) json_encode($nilai, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR),
+        };
+    }
 }
