@@ -110,6 +110,13 @@ class SalesOrderRequest extends FormRequest
      */
     private function pastikanCustomerTercakup(Validator $validator): void
     {
+        // Aturan dasar field ini sudah gagal (bukan angka, array, dll.):
+        // mencarinya ke basis data hanya mengubah pesan validasi menjadi
+        // galat 500. Temuan SQA.
+        if ($validator->errors()->has('customer_id')) {
+            return;
+        }
+
         $gudang = $this->user()?->warehouse;
         $customer = Customer::find($this->input('customer_id'), ['id', 'name', 'territory_code']);
 

@@ -914,11 +914,11 @@
                 adjust.querySelector('#adjBatch').textContent = b.dataset.batch || '—';
                 adjust.querySelector('#adjQtyOld').value = b.dataset.qty;
                 adjust.querySelector('#adjQtyNew').value = b.dataset.qty;
-                // Batas bawah dipasang di input juga, bukan cuma di server,
-                // supaya kesalahannya ketahuan sebelum dikirim.
-                adjust.querySelector('#adjQtyNew').min = alloc;
+                // Yang dikoreksi hanya stok BEBAS. Unit teralokasi tersimpan
+                // terpisah dan tidak ikut berubah, jadi batas bawahnya nol —
+                // bukan jumlah alokasi (temuan SQA).
                 adjust.querySelector('#adjAllocHint').textContent = alloc > 0
-                    ? alloc + ' sudah dialokasikan untuk pesanan — qty baru tidak boleh di bawah angka itu.'
+                    ? alloc + ' unit lain sudah dialokasikan untuk pesanan dan tidak ikut dikoreksi. Batch ini tidak bisa ditandai DDP selama alokasi itu ada.'
                     : '';
             });
         }

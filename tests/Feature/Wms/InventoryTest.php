@@ -12,7 +12,9 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\TestCase;
@@ -410,21 +412,86 @@ class InventoryTest extends TestCase
     }
 
     /**
-     * Stok yang sudah dikunci untuk order tidak boleh hilang lewat koreksi —
-     * kalau boleh, order yang sudah disetujui mendadak tidak punya barang.
+     * Temuan SQA: koreksi mengubah stok BEBAS (qty_available); unit yang
+     * teralokasi tersimpan terpisah dan tidak ikut berubah.
+     *
+     * Versi awal test ini menolak qty baru di bawah qty_allocated — mengunci
+     * cacat sebagai perilaku benar. Di data pengembangan ada batch dengan 2
+     * unit bebas dan 10 teralokasi: formulirnya tidak menerima 0, 1, atau 2,
+     * dan satu-satunya yang bisa disimpan (>= 10) menciptakan unit fiktif.
      */
-    public function test_koreksi_tidak_boleh_di_bawah_qty_teralokasi(): void
+    public function test_koreksi_stok_bebas_boleh_di_bawah_jumlah_teralokasi(): void
     {
         $this->loginAs();
-        $stock = $this->stock(['qty_available' => 180, 'qty_allocated' => 50]);
+        $stock = $this->stock(['qty_available' => 2, 'qty_allocated' => 10]);
 
         $this->post('/wms/inventory/adjust', [
-            'stock_id' => $stock->id, 'qty_new' => 30,
-            'reason' => 'Percobaan mengurangi di bawah alokasi.',
-        ])->assertSessionHas('error');
+            'stock_id' => $stock->id, 'qty_new' => 0,
+            'reason' => 'Dua kaleng bocor ditemukan saat pengecekan rak.',
+        ])->assertSessionHas('success');
 
-        $this->assertSame(180, $stock->fresh()->qty_available);
+        $stock->refresh();
+        $this->assertSame(0, $stock->qty_available);
+        $this->assertSame(10, $stock->qty_allocated, 'Unit yang dijanjikan ke pelanggan tidak boleh tersentuh.');
+        $this->assertSame(-2, (int) StockMovement::sum('qty_change'));
+    }
+
+    /**
+     * Temuan SQA: DDP berlaku untuk seluruh baris, sedangkan daftar picking
+     * dibangun dari alokasi tanpa melihat status batch. Unit rusak yang
+     * teralokasi akan tetap diambil untuk pelanggan.
+     */
+    public function test_batch_yang_punya_alokasi_tidak_bisa_ditandai_ddp(): void
+    {
+        $this->loginAs();
+        $stock = $this->stock(['qty_available' => 20, 'qty_allocated' => 5]);
+
+        $this->post('/wms/inventory/adjust', [
+            'stock_id' => $stock->id, 'qty_new' => 20,
+            'ddp_reason' => InventoryStock::DDP_WRITE_OFF,
+            'reason' => 'Kemasan penyok, tidak layak jual.',
+        ])->assertSessionHas('error', fn ($pesan) => str_contains($pesan, '5 unit yang sudah dialokasikan'));
+
+        $this->assertSame(InventoryStock::STATUS_ACTIVE, $stock->fresh()->status);
         $this->assertSame(0, StockMovement::count());
+    }
+
+    /**
+     * Mengubah baris stok SETELAH controller membacanya dan SEBELUM ia
+     * menulis — meniru permintaan lain (klik ganda, picking, alokasi) yang
+     * selesai lebih dulu. Deterministik, tanpa proses paralel.
+     */
+    private function ubahSetelahDibaca(InventoryStock $stock, array $kolom): void
+    {
+        $sudah = false;
+
+        DB::listen(function (QueryExecuted $q) use (&$sudah, $stock, $kolom) {
+            if ($sudah
+                || ! str_starts_with($q->sql, 'select * from "inventory_stocks" where "inventory_stocks"."id" = ?')
+                || str_contains($q->sql, 'for update')) {
+                return;
+            }
+
+            $sudah = true;
+            DB::table('inventory_stocks')->where('id', $stock->id)->update($kolom);
+        });
+    }
+
+    /** Temuan SQA: koreksi menulis angka "sebelum" yang basi ke ledger. */
+    public function test_koreksi_membaca_ulang_stok_di_dalam_kunci(): void
+    {
+        $this->loginAs();
+        $stock = $this->stock(['qty_available' => 10]);
+        $this->ubahSetelahDibaca($stock, ['qty_available' => 7]);
+
+        $this->post('/wms/inventory/adjust', [
+            'stock_id' => $stock->id, 'qty_new' => 12,
+            'reason' => 'Hitung ulang rak setelah bongkar muat.',
+        ])->assertSessionHas('success');
+
+        $gerakan = StockMovement::sole();
+        $this->assertSame(7, $gerakan->qty_before);
+        $this->assertSame(5, $gerakan->qty_change);
     }
 
     public function test_koreksi_bisa_menandai_ddp(): void
@@ -498,6 +565,28 @@ class InventoryTest extends TestCase
         ])->assertSessionHas('error');
 
         $this->assertSame(50, $asal->fresh()->qty_available);
+        $this->assertSame(0, StockMovement::count());
+    }
+
+    /**
+     * Temuan SQA: klik ganda / picking di antara baca dan tulis. Stok yang
+     * sudah berubah menjadi 50 tidak boleh ditimpa dengan "100 dikurangi 60",
+     * dan rak tujuan tidak boleh bertambah 60 unit yang tidak pernah ada.
+     */
+    public function test_transfer_memeriksa_ulang_stok_di_dalam_kunci(): void
+    {
+        $this->loginAs();
+        $asal = $this->stock(['qty_available' => 100]);
+        $this->bin('B-01-05');
+        $this->ubahSetelahDibaca($asal, ['qty_available' => 50]);
+
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $asal->id, 'to_location_code' => 'B-01-05',
+            'qty' => 60, 'reason' => 'Konsolidasi rak.',
+        ])->assertSessionHas('error');
+
+        $this->assertSame(50, $asal->fresh()->qty_available);
+        $this->assertSame(1, InventoryStock::count(), 'Rak tujuan tidak boleh mendapat stok dari udara.');
         $this->assertSame(0, StockMovement::count());
     }
 

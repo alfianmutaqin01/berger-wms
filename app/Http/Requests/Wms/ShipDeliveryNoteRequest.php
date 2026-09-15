@@ -56,6 +56,12 @@ class ShipDeliveryNoteRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            // Aturan dasarnya sudah gagal (kosong, array, terlalu panjang):
+            // pesan itu yang ditampilkan, bukan galat 500 dari forWhatsApp(?string).
+            if ($validator->errors()->has('driver_phone')) {
+                return;
+            }
+
             // forWhatsApp(), BUKAN normalize(): yang kedua membiarkan
             // "081234567890" apa adanya, dan WhatsApp tidak mengenal awalan
             // nol nasional. Ia juga menolak sel berisi lebih dari satu nomor

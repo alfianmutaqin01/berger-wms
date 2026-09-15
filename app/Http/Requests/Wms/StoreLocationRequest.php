@@ -2,12 +2,15 @@
 
 namespace App\Http\Requests\Wms;
 
+use App\Http\Requests\Concerns\MembacaTeks;
 use App\Models\Location;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StoreLocationRequest extends FormRequest
 {
+    use MembacaTeks;
+
     public function authorize(): bool
     {
         // Otorisasi ditegakkan middleware can:master.locations pada route.
@@ -22,7 +25,7 @@ class StoreLocationRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $code = strtoupper(trim((string) $this->input('code')));
+        $code = strtoupper((string) $this->teks('code'));
         $parsed = Location::parseCode($code);
 
         $this->merge([
@@ -30,7 +33,7 @@ class StoreLocationRequest extends FormRequest
             'rack' => $parsed['rack'] ?? null,
             'level' => $parsed['level'] ?? null,
             'cell' => $parsed['cell'] ?? null,
-            'zone' => Location::normalizeZone($this->input('zone')),
+            'zone' => Location::normalizeZone($this->teks('zone')),
         ]);
     }
 

@@ -2,12 +2,15 @@
 
 namespace App\Http\Requests\Wms;
 
+use App\Http\Requests\Concerns\MembacaTeks;
 use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StoreCustomerRequest extends FormRequest
 {
+    use MembacaTeks;
+
     public function authorize(): bool
     {
         // Otorisasi ditegakkan middleware can:master.customers pada route.
@@ -17,18 +20,16 @@ class StoreCustomerRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
-            'code' => filled($this->input('code')) ? strtoupper(trim($this->input('code'))) : null,
+            'code' => $this->teksBesar('code'),
             'ship_to_code' => $this->input('ship_to_code') ?: null,
             'contact_name' => $this->input('contact_name') ?: null,
             'email' => $this->input('email') ?: null,
             'address_2' => $this->input('address_2') ?: null,
-            'territory_code' => filled($this->input('territory_code'))
-                ? strtoupper(trim($this->input('territory_code')))
-                : null,
+            'territory_code' => $this->teksBesar('territory_code'),
             // Nomor dari ERP memakai kode negara tanpa tanda plus dan kadang
             // mengandung spasi/strip; satu sel juga bisa memuat dua nomor
             // dipisah garis miring. Aturannya di App\Support\PhoneNumber.
-            'phone' => PhoneNumber::normalize($this->input('phone')),
+            'phone' => PhoneNumber::normalize($this->teks('phone')),
         ]);
     }
 

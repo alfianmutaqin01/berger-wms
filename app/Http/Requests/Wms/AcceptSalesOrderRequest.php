@@ -128,6 +128,12 @@ class AcceptSalesOrderRequest extends FormRequest
      */
     private function tolakNomorSoBermasalah(Validator $v, SalesOrder $order): void
     {
+        // Aturan `string` sudah menolaknya: (string) pada array hanya
+        // mengubah pesan validasi menjadi galat 500. Temuan SQA.
+        if ($v->errors()->has('bc_so_number')) {
+            return;
+        }
+
         $nomor = trim((string) $this->input('bc_so_number'));
 
         if ($nomor === '') {

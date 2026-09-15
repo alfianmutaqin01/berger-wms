@@ -10,6 +10,7 @@ use App\Models\Location;
 use App\Models\ProductCategory;
 use App\Models\StockMovement;
 use App\Support\Activity;
+use App\Support\FilterTanggal;
 use App\Support\Inventory\StockQuarantine;
 use App\Support\Outbound\PendingAllocationFiller;
 use App\Support\ShelfLife;
@@ -184,7 +185,7 @@ class InventoryController extends Controller
             'location_id' => $request->query('location_id'),
             'batch' => $request->query('batch'),
             'status' => $request->query('status'),
-            'production_date' => $request->query('production_date'),
+            'production_date' => FilterTanggal::bersih($request->query('production_date')),
             // "hampir kedaluwarsa" = dalam ambang peringatan dini 90 hari.
             'expiring' => $request->query('expiring'),
         ];
@@ -231,14 +232,29 @@ class InventoryController extends Controller
     /**
      * F-INV-02: Stok Adjustment — Manager & Super Admin saja.
      *
-     * Dua aturan yang membentuk method ini:
+     * Aturan yang membentuk method ini:
      *
      * 1. ALASAN WAJIB. Keputusan pemilik produk (docs/2 §3.4): tiap koreksi
      *    dicatat sebagai ADJUSTMENT dengan notes wajib + user pencatat.
      *    Angka stok yang berubah tanpa alasan tidak bisa diaudit.
-     * 2. TIDAK BOLEH DI BAWAH qty_allocated. Stok yang sudah dikunci untuk
-     *    order pelanggan tidak boleh hilang lewat koreksi — kalau boleh,
-     *    order yang sudah disetujui mendadak tidak punya barang.
+     *
+     * 2. YANG DIKOREKSI HANYA qty_available — stok BEBAS. Unit yang sudah
+     *    dialokasikan ada di qty_allocated dan tidak tersentuh, jadi koreksi
+     *    tidak bisa menghilangkan barang yang sudah dijanjikan ke pelanggan.
+     *
+     *    Temuan SQA: sebelumnya qty baru dilarang di bawah qty_allocated.
+     *    Dua angka yang tidak berkaitan: batch dengan 2 unit bebas dan 10
+     *    teralokasi tidak bisa dikoreksi ke 0/1/2 sama sekali — satu-satunya
+     *    yang diterima formulir adalah >= 10, yang menciptakan 8 unit fiktif.
+     *
+     * 3. DDP DITOLAK BILA ADA ALOKASI. Status DDP berlaku untuk seluruh baris,
+     *    sedangkan daftar picking dibangun dari alokasi tanpa melihat status
+     *    batch — unit rusak yang teralokasi tetap diambil untuk pelanggan.
+     *    Unit yang rusak dipindah dulu ke rak lain, lalu ditandai di sana.
+     *
+     * 4. DIKUNCI DAN DIBACA ULANG DI DALAM TRANSAKSI. Angka sebelum koreksi
+     *    dan status alokasi yang dipakai adalah angka saat ditulis, bukan saat
+     *    halaman dibuka — alokasi dan picking bisa berjalan di antaranya.
      */
     public function adjust(Request $request): RedirectResponse
     {
@@ -260,57 +276,64 @@ class InventoryController extends Controller
         WarehouseScope::assert($stock->warehouse_id, $request->user());
 
         $qtyBaru = (int) $validated['qty_new'];
+        $ddp = $validated['ddp_reason'] ?? null;
 
-        if ($qtyBaru < $stock->qty_allocated) {
-            return back()->with('error', sprintf(
-                'Qty tidak boleh di bawah %d yang sudah dialokasikan untuk pesanan.',
-                $stock->qty_allocated
-            ));
+        try {
+            [$qtyLama, $susulan] = DB::transaction(function () use ($stock, $qtyBaru, $ddp, $validated, $request) {
+                $terkunci = InventoryStock::query()->lockForUpdate()->findOrFail($stock->id);
+                $qtyLama = (int) $terkunci->qty_available;
+
+                if ($qtyBaru === $qtyLama && blank($ddp)) {
+                    throw new RuntimeException('Tidak ada perubahan untuk disimpan.');
+                }
+
+                if ($ddp && $terkunci->qty_allocated > 0) {
+                    throw new RuntimeException(sprintf(
+                        'Batch ini punya %d unit yang sudah dialokasikan untuk pesanan. Kalau seluruh baris ditandai DDP, '.
+                        'unit itu tetap diambil untuk pelanggan. Pindahkan dulu unit yang rusak ke rak lain, lalu tandai DDP di rak itu.',
+                        $terkunci->qty_allocated,
+                    ));
+                }
+
+                $terkunci->qty_available = $qtyBaru;
+
+                // Menandai DDP adalah perubahan STATUS, bukan perubahan qty —
+                // barangnya masih ada di rak, hanya tidak boleh dijual.
+                if ($ddp) {
+                    $terkunci->status = InventoryStock::STATUS_DDP;
+                    $terkunci->ddp_reason = $ddp;
+                }
+
+                $terkunci->save();
+
+                StockMovement::create([
+                    'product_id' => $terkunci->product_id,
+                    'location_id' => $terkunci->location_id,
+                    'warehouse_id' => $terkunci->warehouse_id,
+                    'movement_type' => StockMovement::TYPE_ADJUSTMENT,
+                    'qty_change' => $qtyBaru - $qtyLama,
+                    'qty_before' => $qtyLama,
+                    'qty_after' => $qtyBaru,
+                    'reference_type' => StockMovement::REF_ADJUSTMENT,
+                    'reference_id' => $terkunci->id,
+                    'batch_no' => $terkunci->batch_no,
+                    'notes' => $validated['reason'],
+                    'user_id' => $request->user()?->id,
+                ]);
+
+                // Stok BERTAMBAH berarti pesanan yang tertahan mungkin sudah bisa
+                // dipenuhi. Hanya saat bertambah — koreksi yang mengurangi tidak
+                // punya apa pun untuk dibagikan. Stok yang baru saja ditandai DDP
+                // juga dilewati: barangnya ada, tapi tidak boleh dijual.
+                $bertambah = $qtyBaru > $qtyLama && $terkunci->status === InventoryStock::STATUS_ACTIVE;
+
+                return [$qtyLama, $bertambah
+                    ? $this->pengisi->fill($terkunci->product_id, $terkunci->warehouse_id, $request->user()?->id)
+                    : ['terisi' => 0, 'pesanan' => [], 'booking' => []]];
+            });
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
         }
-
-        $qtyLama = $stock->qty_available;
-
-        if ($qtyBaru === $qtyLama && blank($validated['ddp_reason'] ?? null)) {
-            return back()->with('error', 'Tidak ada perubahan untuk disimpan.');
-        }
-
-        $susulan = DB::transaction(function () use ($stock, $qtyBaru, $qtyLama, $validated, $request) {
-            $stock->qty_available = $qtyBaru;
-
-            // Menandai DDP adalah perubahan STATUS, bukan perubahan qty —
-            // barangnya masih ada di rak, hanya tidak boleh dijual.
-            if ($ddp = $validated['ddp_reason'] ?? null) {
-                $stock->status = InventoryStock::STATUS_DDP;
-                $stock->ddp_reason = $ddp;
-            }
-
-            $stock->save();
-
-            StockMovement::create([
-                'product_id' => $stock->product_id,
-                'location_id' => $stock->location_id,
-                'warehouse_id' => $stock->warehouse_id,
-                'movement_type' => StockMovement::TYPE_ADJUSTMENT,
-                'qty_change' => $qtyBaru - $qtyLama,
-                'qty_before' => $qtyLama,
-                'qty_after' => $qtyBaru,
-                'reference_type' => StockMovement::REF_ADJUSTMENT,
-                'reference_id' => $stock->id,
-                'batch_no' => $stock->batch_no,
-                'notes' => $validated['reason'],
-                'user_id' => $request->user()?->id,
-            ]);
-
-            // Stok BERTAMBAH berarti pesanan yang tertahan mungkin sudah bisa
-            // dipenuhi. Hanya saat bertambah — koreksi yang mengurangi tidak
-            // punya apa pun untuk dibagikan. Stok yang baru saja ditandai DDP
-            // juga dilewati: barangnya ada, tapi tidak boleh dijual.
-            $bertambah = $qtyBaru > $qtyLama && $stock->status === InventoryStock::STATUS_ACTIVE;
-
-            return $bertambah
-                ? $this->pengisi->fill($stock->product_id, $stock->warehouse_id, $request->user()?->id)
-                : ['terisi' => 0, 'pesanan' => [], 'booking' => []];
-        });
 
         Activity::record(
             ActivityLog::STOCK_ADJUST,
@@ -534,91 +557,119 @@ class InventoryController extends Controller
         // relasinya belum tentu masih termuat setelahnya.
         $asal = $stock->location?->code ?? '—';
 
-        DB::transaction(function () use ($stock, $tujuan, $qty, $validated, $request) {
-            $asalSebelum = $stock->qty_available;
-            $stock->qty_available = $asalSebelum - $qty;
-            $stock->save();
+        /*
+         * DIKUNCI DAN DIBACA ULANG DI DALAM TRANSAKSI (temuan SQA).
+         *
+         * Sebelumnya qty asal dibaca saat permintaan masuk lalu ditulis sebagai
+         * "angka lama dikurangi qty". Klik ganda pada tombol Pindahkan
+         * menjalankan dua permintaan yang sama-sama membaca 100: keduanya lolos
+         * pemeriksaan, asal ditulis 40 dua kali, tetapi rak tujuan bertambah 60
+         * dua kali — 60 unit tercipta dari udara. Picking atau alokasi yang
+         * mengubah baris yang sama di antaranya juga tertimpa diam-diam.
+         */
+        try {
+            DB::transaction(function () use ($stock, $tujuan, $qty, $validated, $request) {
+                $stock = InventoryStock::query()->lockForUpdate()->findOrFail($stock->id);
 
-            // Batch yang sama di rak tujuan digabung, bukan dibuat baris baru
-            // kembar yang harus dijumlahkan manual setiap kali dilihat.
-            $tujuanStok = InventoryStock::firstOrNew([
-                'product_id' => $stock->product_id,
-                'location_id' => $tujuan->id,
-                'batch_no' => $stock->batch_no,
-                'production_date' => $stock->production_date->toDateString(),
-            ]);
+                if ($qty > $stock->qty_available) {
+                    throw new RuntimeException(sprintf(
+                        'Qty pindah (%d) melebihi stok tersedia (%d). Stoknya baru saja berubah — muat ulang halaman.',
+                        $qty,
+                        $stock->qty_available
+                    ));
+                }
 
-            $tujuanSebelum = $tujuanStok->exists ? $tujuanStok->qty_available : 0;
+                $asalSebelum = $stock->qty_available;
+                $stock->qty_available = $asalSebelum - $qty;
+                $stock->save();
 
-            if (! $tujuanStok->exists) {
-                $tujuanStok->fill([
+                // Batch yang sama di rak tujuan digabung, bukan dibuat baris baru
+                // kembar yang harus dijumlahkan manual setiap kali dilihat. Ikut
+                // dikunci: dua pemindahan ke rak yang sama tidak boleh saling
+                // menimpa jumlahnya.
+                $kunciTujuan = [
+                    'product_id' => $stock->product_id,
+                    'location_id' => $tujuan->id,
+                    'batch_no' => $stock->batch_no,
+                    'production_date' => $stock->production_date->toDateString(),
+                ];
+                $tujuanStok = InventoryStock::query()->where($kunciTujuan)->lockForUpdate()->first()
+                    ?? new InventoryStock($kunciTujuan);
+
+                $tujuanSebelum = $tujuanStok->exists ? $tujuanStok->qty_available : 0;
+
+                if (! $tujuanStok->exists) {
+                    $tujuanStok->fill([
+                        'warehouse_id' => $stock->warehouse_id,
+                        'qty_allocated' => 0,
+                        // Kedaluwarsa & status IKUT dari asalnya, tidak dihitung ulang.
+                        'expiry_date' => $stock->expiry_date->toDateString(),
+                        'status' => $stock->status,
+                        'ddp_reason' => $stock->ddp_reason,
+                        'inbound_detail_id' => $stock->inbound_detail_id,
+                        'verified_by' => $stock->verified_by,
+                        'verified_at' => $stock->verified_at,
+
+                        // SELURUH PENANDA BATCH IKUT PINDAH. Ketiganya melekat pada
+                        // batch — pada apa yang terjadi saat produksi/pengujian —
+                        // bukan pada rak tempat barangnya kebetulan duduk. Baris
+                        // baru tanpa penanda akan membuat separuh batch dikarantina
+                        // dan separuhnya bebas dijual, padahal barangnya sama.
+                        //
+                        // Metadata karantina WAJIB ikut, bukan cuma statusnya:
+                        // CHECK inventory_stocks_karantina_lengkap menolak baris
+                        // berstatus 'quarantine' yang tanggal & pemasangnya kosong,
+                        // jadi tanpa ini memindahkan batch terkarantina gagal
+                        // dengan galat constraint mentah.
+                        'quarantine_days' => $stock->quarantine_days,
+                        'quarantine_until' => $stock->quarantine_until?->toDateString(),
+                        'quarantined_at' => $stock->quarantined_at,
+                        'quarantined_by' => $stock->quarantined_by,
+                        'quarantine_note' => $stock->quarantine_note,
+                        'quarantine_released_at' => $stock->quarantine_released_at,
+
+                        'has_quality_issue' => $stock->has_quality_issue,
+
+                        'prioritize_out' => $stock->prioritize_out,
+                        'prioritize_reason' => $stock->prioritize_reason,
+                        'prioritized_at' => $stock->prioritized_at,
+                        'prioritized_by' => $stock->prioritized_by,
+                        'prioritize_released_at' => $stock->prioritize_released_at,
+                    ]);
+                }
+
+                $tujuanStok->qty_available = $tujuanSebelum + $qty;
+                $tujuanStok->save();
+
+                $jejak = [
+                    'product_id' => $stock->product_id,
                     'warehouse_id' => $stock->warehouse_id,
-                    'qty_allocated' => 0,
-                    // Kedaluwarsa & status IKUT dari asalnya, tidak dihitung ulang.
-                    'expiry_date' => $stock->expiry_date->toDateString(),
-                    'status' => $stock->status,
-                    'ddp_reason' => $stock->ddp_reason,
-                    'inbound_detail_id' => $stock->inbound_detail_id,
-                    'verified_by' => $stock->verified_by,
-                    'verified_at' => $stock->verified_at,
+                    'reference_type' => StockMovement::REF_STOCK_TRANSFER,
+                    'reference_id' => $stock->id,
+                    'batch_no' => $stock->batch_no,
+                    'notes' => $validated['reason'],
+                    'user_id' => $request->user()?->id,
+                ];
 
-                    // SELURUH PENANDA BATCH IKUT PINDAH. Ketiganya melekat pada
-                    // batch — pada apa yang terjadi saat produksi/pengujian —
-                    // bukan pada rak tempat barangnya kebetulan duduk. Baris
-                    // baru tanpa penanda akan membuat separuh batch dikarantina
-                    // dan separuhnya bebas dijual, padahal barangnya sama.
-                    //
-                    // Metadata karantina WAJIB ikut, bukan cuma statusnya:
-                    // CHECK inventory_stocks_karantina_lengkap menolak baris
-                    // berstatus 'quarantine' yang tanggal & pemasangnya kosong,
-                    // jadi tanpa ini memindahkan batch terkarantina gagal
-                    // dengan galat constraint mentah.
-                    'quarantine_days' => $stock->quarantine_days,
-                    'quarantine_until' => $stock->quarantine_until?->toDateString(),
-                    'quarantined_at' => $stock->quarantined_at,
-                    'quarantined_by' => $stock->quarantined_by,
-                    'quarantine_note' => $stock->quarantine_note,
-                    'quarantine_released_at' => $stock->quarantine_released_at,
-
-                    'has_quality_issue' => $stock->has_quality_issue,
-
-                    'prioritize_out' => $stock->prioritize_out,
-                    'prioritize_reason' => $stock->prioritize_reason,
-                    'prioritized_at' => $stock->prioritized_at,
-                    'prioritized_by' => $stock->prioritized_by,
-                    'prioritize_released_at' => $stock->prioritize_released_at,
+                StockMovement::create($jejak + [
+                    'location_id' => $stock->location_id,
+                    'movement_type' => StockMovement::TYPE_TRANSFER_OUT,
+                    'qty_change' => -$qty,
+                    'qty_before' => $asalSebelum,
+                    'qty_after' => $stock->qty_available,
                 ]);
-            }
 
-            $tujuanStok->qty_available = $tujuanSebelum + $qty;
-            $tujuanStok->save();
-
-            $jejak = [
-                'product_id' => $stock->product_id,
-                'warehouse_id' => $stock->warehouse_id,
-                'reference_type' => StockMovement::REF_STOCK_TRANSFER,
-                'reference_id' => $stock->id,
-                'batch_no' => $stock->batch_no,
-                'notes' => $validated['reason'],
-                'user_id' => $request->user()?->id,
-            ];
-
-            StockMovement::create($jejak + [
-                'location_id' => $stock->location_id,
-                'movement_type' => StockMovement::TYPE_TRANSFER_OUT,
-                'qty_change' => -$qty,
-                'qty_before' => $asalSebelum,
-                'qty_after' => $stock->qty_available,
-            ]);
-
-            StockMovement::create($jejak + [
-                'location_id' => $tujuan->id,
-                'movement_type' => StockMovement::TYPE_TRANSFER_IN,
-                'qty_change' => $qty,
-                'qty_before' => $tujuanSebelum,
-                'qty_after' => $tujuanStok->qty_available,
-            ]);
-        });
+                StockMovement::create($jejak + [
+                    'location_id' => $tujuan->id,
+                    'movement_type' => StockMovement::TYPE_TRANSFER_IN,
+                    'qty_change' => $qty,
+                    'qty_before' => $tujuanSebelum,
+                    'qty_after' => $tujuanStok->qty_available,
+                ]);
+            });
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         Activity::record(
             ActivityLog::STOCK_TRANSFER,

@@ -43,7 +43,9 @@ class LocationController extends Controller
             'warehouse_id' => WarehouseScope::resolveFilter($request, $user),
             'search' => $request->query('search'),
             'rack' => $request->query('rack'),
-            'level' => $request->query('level'),
+            // Kolom level bertipe tinyint: teks atau angka raksasa dari URL
+            // ditolak PostgreSQL dan menjatuhkan halaman (temuan SQA).
+            'level' => filter_var($request->query('level'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 99]]) ?: null,
             'zone' => $request->query('zone'),
             'status' => $request->query('status'),
         ];

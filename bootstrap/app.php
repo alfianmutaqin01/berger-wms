@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsurePortalAccess;
+use App\Http\Middleware\NormalizeQueryString;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrackUserSession;
 use Illuminate\Foundation\Application;
@@ -24,7 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // X-Forwarded-* kiriman pengguna.
         $middleware->trustProxies(at: '*');
 
-        $middleware->web(append: [SecurityHeaders::class]);
+        $middleware->web(append: [SecurityHeaders::class, NormalizeQueryString::class]);
 
         $middleware->alias([
             'session.track' => TrackUserSession::class,

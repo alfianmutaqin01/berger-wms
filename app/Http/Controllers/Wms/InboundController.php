@@ -11,6 +11,7 @@ use App\Models\Notification;
 use App\Models\Warehouse;
 use App\Support\Activity;
 use App\Support\DocumentNumber;
+use App\Support\FilterTanggal;
 use App\Support\Inbound\BinAllocator;
 use App\Support\Inbound\DuplikatProduksi;
 use App\Support\Inbound\ProductionSheet;
@@ -76,8 +77,8 @@ class InboundController extends Controller
             'search' => $request->query('search'),
             'status' => $request->query('status'),
             'warehouse_id' => WarehouseScope::resolveFilter($request, $request->user()),
-            'from' => $request->query('from'),
-            'to' => $request->query('to'),
+            'from' => FilterTanggal::bersih($request->query('from')),
+            'to' => FilterTanggal::bersih($request->query('to')),
         ];
 
         $base = WarehouseScope::apply(InboundHeader::query(), $request->user())
