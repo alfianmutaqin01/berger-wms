@@ -677,7 +677,7 @@ Header pesanan penjualan.
 | Ditolak | `rejected` | Logistik menolak PO |
 | Proses Picking | `picking` | Operator sedang mengambil barang |
 | Siap Kirim | `ready_to_ship` | Barang sudah di loading dock |
-| Dalam Pengiriman | `shipping` | Surat Jalan sudah dicetak |
+| Dalam Pengiriman | `shipping` | Surat Jalan (salinan dokumen BC) sudah diberangkatkan |
 | Menunggu Verifikasi Bukti | `proof_uploaded` | Sales sudah upload bukti SJ |
 | Complete | `completed` | Logistik sudah verifikasi bukti |
 | Complete (Menunggu Bayar) | `completed_billing` | Complete tapi menunggu pembayaran tempo |
@@ -712,20 +712,30 @@ Detail alokasi FIFO per item pesanan — menghubungkan order detail ke inventory
 | `created_at` | TIMESTAMP | | |
 
 #### `delivery_notes`
-Surat Jalan.
+Surat Jalan — **salinan dokumen yang terbit di sistem BC**, bukan dokumen yang diterbitkan atau dicetak sistem ini (PRD v1.4 F-OUT-04). Satu pesanan bisa punya lebih dari satu Surat Jalan bila kekurangannya dikirim ulang; yang dibatasi hanya satu Surat Jalan yang **belum berangkat** per putaran.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
-| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `sales_order_id` | BIGINT UNSIGNED | FK → sales_orders.id | PO terkait |
-| `delivery_number` | VARCHAR(30) | NOT NULL, UNIQUE | Nomor SJ otomatis |
-| `driver_name` | VARCHAR(100) | NOT NULL | Nama supir |
-| `vehicle_plate` | VARCHAR(20) | NOT NULL | Plat nomor kendaraan |
-| `vehicle_description` | VARCHAR(100) | NULLABLE | Deskripsi kendaraan |
-| `printed_at` | TIMESTAMP | NOT NULL | Waktu cetak |
-| `printed_by` | BIGINT UNSIGNED | FK → users.id | Logistik yang mencetak |
-| `created_at` | TIMESTAMP | | |
-| `updated_at` | TIMESTAMP | | |
+| `id` | BIGINT | PK | |
+| `document_no` | VARCHAR(30) | NOT NULL, UNIQUE | "Document No." dari BC |
+| `bc_so_number` | VARCHAR(50) | NOT NULL, INDEX | Nomor SO di dokumen BC — dipakai memasangkan ke pesanan |
+| `sales_order_id` | BIGINT | FK → sales_orders.id, NULLABLE | Kosong = "yatim", menunggu dipasangkan manual |
+| `customer_code` / `customer_id` | VARCHAR(30) / BIGINT | NULLABLE | Pelanggan menurut dokumen BC |
+| `warehouse_id` | BIGINT | FK, NULLABLE | Gudang pesanan pasangannya |
+| `bc_location_code`, `shipment_date` | VARCHAR(30), DATE | NULLABLE | Salinan kolom BC |
+| `status` | VARCHAR(20) | `imported` → `shipped` → `delivered` | |
+| `imported_at`, `imported_by` | TIMESTAMP, FK users | | Jejak impor |
+| `driver_name`, `driver_phone`, `vehicle_plate` | VARCHAR | Wajib saat berangkat | Data pengiriman |
+| `shipped_at`, `shipped_by` | TIMESTAMP, FK users | | Waktu berangkat — awal SLA |
+| `epod_token` | VARCHAR(64) | UNIQUE, NULLABLE | Tautan konfirmasi supir tanpa login |
+| `delivered_at`, `received_by_name` | TIMESTAMP, VARCHAR(100) | | Konfirmasi sampai |
+| `arrival_photo_path/mime/size/source/taken_at` | | CHECK: lengkap bersama; source `camera`/`file` | Foto barang sampai dari supir |
+| `substitution_confirmed_at/by`, `substitution_reason`, `substitution_note` | | | Konfirmasi SKU pengganti |
+| `notify_status/attempts/error`, `notified_at` | | | Status WhatsApp ke supir |
+| `sales_notify_status/error/phone`, `sales_notified_at` | | | Status WhatsApp barang sampai ke Sales |
+| `created_at`, `updated_at` | TIMESTAMP | | |
+
+Baris barangnya ada di `delivery_note_lines` (`delivery_note_id`, `sku`, `product_id`, `description`, `qty`, `qty_invoiced`, `uom_code`; UNIQUE `delivery_note_id + sku`).
 
 #### `delivery_proofs`
 Bukti foto Surat Jalan yang ditandatangani.

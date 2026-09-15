@@ -1,9 +1,12 @@
 # Strategi Testing
 ## Sistem WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.1  
-> **Tanggal:** 26 Agustus 2026 *(revisi dari v1.0, 14 Agustus 2026)*  
-> **Testing Framework:** PHPUnit (Unit + Feature), Laravel Dusk (Browser)
+> **Versi:** 1.2  
+> **Tanggal:** 14 September 2026 *(revisi dari v1.1, 26 Agustus 2026)*  
+> **Testing Framework:** PHPUnit + ParaTest (Unit + Feature). Laravel Dusk **tidak dipakai** — alur end-to-end diuji sebagai feature test HTTP, ditambah UAT manual.
+
+> [!NOTE]
+> **Perubahan v1.2 (Fase 13, pra-go-live):** Browser test (Dusk) diganti feature test alur lintas modul (`tests/Feature/Alur/`) + checklist UAT manual per peran (`docs/10_checklist_uat.md`). Ditambahkan audit hak akses seluruh rute (`RouteSecurityTest`) dan uji N+1 berbasis volume (`PerformaHalamanTest`). Skenario cetak PDF dan notifikasi suara/WebSocket dihapus (PRD v1.4). Checklist go-live §10 ditulis ulang untuk VPS.
 
 > [!NOTE]
 > **Perubahan v1.1:** skenario "blokir customer" diganti menjadi *guard test* yang justru memastikan order **tidak** terblokir. Ditambahkan `ExpiryServiceTest`, `SalesReturnServiceTest`, `StockTransferServiceTest`, serta skenario E2E untuk retur dan masa kedaluwarsa.
@@ -16,7 +19,7 @@
 2. [Piramida Testing](#2-piramida-testing)
 3. [Unit Tests](#3-unit-tests)
 4. [Feature Tests (Integration)](#4-feature-tests)
-5. [Browser Tests (E2E)](#5-browser-tests)
+5. [Pengujian Alur Lintas Modul (E2E)](#5-pengujian-alur-lintas-modul-e2e)
 6. [Security Tests](#6-security-tests)
 7. [Performance Tests](#7-performance-tests)
 8. [User Acceptance Testing (UAT)](#8-user-acceptance-testing)
@@ -53,9 +56,9 @@
 
 ```
             ┌───────────┐
-            │  Browser  │  ← Sedikit, lambat, mahal
-            │   Tests   │     (Dusk: 10-15 test scenarios)
-            │  (E2E)    │
+            │  UAT      │  ← Manual per peran, di HP & browser
+            │  manual   │     (docs/10_checklist_uat.md)
+            │  + Alur   │     + feature test alur lintas modul
            ┌┴───────────┴┐
            │   Feature    │  ← Sedang, HTTP-level
            │    Tests     │     (60-80 test cases)
@@ -308,7 +311,7 @@ Feature tests mengirim HTTP request ke endpoint dan memverifikasi response, data
 | 3 | Notification created on order submit | Notification in DB for Logistik users |
 | 4 | Notification created on order approve | Notification in DB for Sales user |
 | 5 | Notification marked as read | is_read=true, badge count decremented |
-| 6 | WebSocket broadcast on order submit | Event dispatched to correct channel |
+| 6 | Kabar pesanan ke Sales | Email hanya ke Sales pemilik pesanan (`EmailPesananTest`) |
 
 ### 4.8 Audit Log Feature Tests
 
@@ -322,29 +325,29 @@ Feature tests mengirim HTTP request ke endpoint dan memverifikasi response, data
 
 ---
 
-## 5. Browser Tests (E2E)
+## 5. Pengujian Alur Lintas Modul (E2E)
 
-Browser tests menggunakan **Laravel Dusk** untuk mensimulasikan interaksi pengguna nyata di browser.
+Tidak memakai browser otomatis (Dusk). Alur penuh dijalankan sebagai **feature test HTTP**: setelah keadaan awal, setiap perpindahan status terjadi lewat permintaan yang sama dengan yang dikirim browser, oleh role yang memang mengerjakannya. Yang tidak bisa dibuktikan test HTTP — tampilan di HP, kamera, WhatsApp dan email sungguhan — diuji manual lewat `docs/10_checklist_uat.md`.
 
-### 5.1 Skenario E2E
+### 5.1 Skenario E2E otomatis (`tests/Feature/Alur/AlurPesananTest.php`)
 
 | # | Skenario | Langkah | Verifikasi |
 |---|---|---|---|
-| 1 | **Login Flow Lengkap** | Input email → password → verifikasi anti-bot → dashboard | Dashboard tampil sesuai role |
-| 2 | **Sales: Create Order** | Login Sales → New Order → Pilih customer → Add items → Submit | Order muncul di daftar pending |
-| 3 | **Logistik: Approve Order** | Login Logistik → Pesanan → Detail → Approve | Status berubah, notification ke Sales |
-| 4 | **Operator: Picking** | Login Operator → Picking List → Ceklis items → Siap Loading | Status berubah ke ready_to_ship |
-| 5 | **Logistik: Print Delivery Note** | Login Logistik → Surat Jalan → Input supir/plat → Cetak | PDF tergenerate, status=shipping |
-| 6 | **Sales: Upload Proof** | Login Sales → Detail Order → Upload foto → Submit | Foto tersimpan, status berubah |
-| 7 | **Logistik: Verify & Complete** | Login Logistik → Verifikasi → Download → Complete | Status=completed |
-| 8 | **Full Inbound Flow** | Produksi input → Operator put-away → Logistik verify | Stok aktif bertambah |
-| 9 | **Billing Warning Flow** | Complete order tempo → Sales order lagi → **badge peringatan muncul, order tetap jalan** → Logistik confirm → badge hilang | Order selalu berhasil; hanya badge yang berubah |
-| 10 | **Cutoff Time** | Login Sales → Try submit after 15:00 | Submit button disabled, Draft tetap aktif |
-| 11 | **Progressive Lockout** | Wrong password 5x → Locked → Wait → Try again | Progressive timing |
-| 12 | **Full Return Flow** | Sales lapor retur + foto → Gudang proses fisik → pilih GR → cek Data Stok | Qty kembali ke batch asli, `production_date` tidak berubah |
-| 13 | **Expired ke DDP** | Set batch lewat expiry → jalankan sweep → buat PO SKU tsb | Batch pindah ke blok DDP; FIFO melewatinya |
-| 14 | **Put-away koreksi Qty** | Operator ubah Qty Aktual → submit → Logistik buka verifikasi | Selisih tampil & ditandai untuk Logistik |
-| 12 | **Notification Sound** | Sales submit → Logistik page open → Toast + sound | Visual + audio notification |
+| 1 | **Pesanan tunai** | Sales kirim pesanan → Logistik terima → susun daftar picking → Operator ambil & Siap Loading → impor/pasangkan Surat Jalan BC → berangkat → supir konfirmasi sampai (foto) → Sales unggah foto SJ → Logistik selesaikan | Status `completed`, stok rak berkurang, tidak ada tagihan, email hanya ke Sales pemilik |
+| 2 | **Pesanan tempo → Billing** | Alur 1 dengan termin 30 hari → Logistik konfirmasi lunas (giro) | `completed_billing` → tagihan jatuh tempo 30 hari dari tanggal sampai → `completed` setelah lunas |
+| 3 | **Produksi → rak → terjual** | Operator put-away → Logistik verifikasi → Sales pesan → picking | Batch produksi aktif dan dipakai untuk pesanan |
+| 4 | **Kurang saat picking → kirim ulang** | Operator ambil 7 dari 10 → SJ pertama → selesai → stok susulan → kirim ulang → SJ kedua → selesai | Nomor SO tetap, `qty_shipped` menumpuk jadi 10, outstanding 0, dua SJ untuk satu pesanan |
+
+Alur retur, MRF, transfer antar gudang, stocktake, dan kedaluwarsa diuji menyeluruh di test modulnya masing-masing (`CustomerRejectionTest`, `MaterialRequisitionTest`, `StockTransferTest`, `StockTakeTest`, `StockQuarantineTest`).
+
+### 5.2 Audit menyeluruh
+
+| Test | Yang dijaga |
+|---|---|
+| `SmokeRouteTest` | Setiap halaman GET dibuka oleh setiap role dan tamu — tidak ada yang 5xx |
+| `RouteSecurityTest` | Setiap rute wajib login (kecuali daftar publik), rute portal berpagar `portal:`, rute WMS berpagar `can:`, nama gate terdaftar, role tanpa hak ditolak 403, tamu diarahkan ke login, pesanan & notifikasi milik orang lain 404, header CSP, SRI aset CDN |
+| `PerformaHalamanTest` | Jumlah query halaman daftar tidak ikut naik saat datanya dilipatgandakan (N+1) |
+| `Model::preventLazyLoading()` | Di luar production, relasi yang dimuat satu per satu dilempar sebagai galat di seluruh suite |
 
 ---
 
@@ -425,7 +428,6 @@ public function test_only_manager_and_super_admin_can_edit_stock()
 | Order list (100 items) | < 2s | < 3s |
 | Create order form | < 1.5s | < 2.5s |
 | Approve order (FIFO calc) | < 3s | N/A |
-| Print delivery note (PDF) | < 5s | N/A |
 | Export Excel (1000 rows) | < 10s | N/A |
 
 ### 7.3 Concurrency Tests
@@ -468,26 +470,29 @@ public function test_only_manager_and_super_admin_can_edit_stock()
 ```
 1. Sales login dari HP, buat pesanan baru
 2. Pilih customer, tambah item, submit
-3. Verifikasi: Notifikasi muncul di dashboard Logistik (dengan suara)
+3. Verifikasi: Notifikasi muncul di lonceng Logistik
 4. Logistik approve pesanan
 5. Verifikasi: Stock teralokasi, notification ke Sales
 6. Operator kerjakan picking list
 7. Operator tandai siap loading
-8. Logistik cetak Surat Jalan
+8. Logistik impor Surat Jalan dari BC, isi supir & plat, lalu Berangkatkan
 9. Verifikasi: Status di HP Sales berubah ke "Dalam Pengiriman"
 10. Sales upload foto bukti SJ dari kamera
 11. Logistik download foto, verifikasi, klik Complete
 12. Verifikasi: Status = Complete (tanpa billing)
 ```
 
-#### Skenario 3: Siklus Order dengan Partial Fulfillment
+#### Skenario 3: Siklus Order dengan Kekurangan (Outstanding)
 ```
-1. Sales pesan 100 pcs, stok hanya 60
-2. Logistik approve
-3. Verifikasi: Qty approved = 60, Lost sales = 40
-4. Lanjutkan proses sampai complete
-5. Verifikasi: Laporan Lost Sales mencatat 40 pcs
+1. Sales pesan 10 pcs; di rak hanya ada 7
+2. Operator menandai kurang 3 beserta alasannya, Siap Loading
+3. Surat Jalan 7 pcs berangkat, sampai, diselesaikan
+4. Verifikasi: Outstanding 3 pcs tampil di halaman Outstanding
+5. Stok susulan datang → Logistik Kirim Ulang → picking → SJ kedua
+6. Verifikasi: Nomor SO sama, total terkirim 10, outstanding 0
 ```
+
+> Daftar lengkap per peran untuk sesi UAT: `docs/10_checklist_uat.md`.
 
 #### Skenario 4: Siklus Billing (Tempo 30 Hari)
 ```
@@ -588,11 +593,10 @@ php artisan test --filter=FifoAllocationServiceTest
 # Jalankan dengan coverage report
 php artisan test --coverage --min=80
 
-# Jalankan browser tests (Dusk)
-php artisan dusk
-
-# Jalankan Dusk test spesifik
-php artisan dusk --filter=FullOrderFlowTest
+# Jalan pintas proyek (lihat uji.sh): sambil kerja / satu modul / sebelum commit
+./uji.sh ubah
+./uji.sh AlurPesanan
+./uji.sh penuh
 
 # Parallel testing (lebih cepat)
 php artisan test --parallel --processes=4
@@ -663,53 +667,58 @@ tests/
 │       ├── RbacAccessTest.php
 │       ├── FileUploadSecurityTest.php
 │       └── CsrfProtectionTest.php
-└── Browser/  (Laravel Dusk)
-    ├── LoginFlowTest.php
-    ├── FullOrderFlowTest.php
-    ├── FullInboundFlowTest.php
-    ├── BillingWarningFlowTest.php
-    └── NotificationSoundTest.php
+├── Alur/
+│   └── AlurPesananTest.php        (alur lintas modul, §5.1)
+├── RouteSecurityTest.php          (audit hak akses seluruh rute)
+└── PerformaHalamanTest.php        (N+1 berbasis volume)
 ```
 
 ---
 
 ## 10. Checklist Go-Live
 
-### 10.1 Pre-Deployment Checklist
+Dicentang saat go-live. Bagian yang bisa diperiksa mesin dijalankan dengan perintah, bukan diingat: `./uji.sh penuh` untuk seluruh test, dan `php artisan wms:cek-produksi` di server untuk konfigurasi. Langkah pemasangan: `docs/9_panduan_go_live.md`.
 
-- [ ] Semua unit tests PASS
-- [ ] Semua feature tests PASS
-- [ ] Semua browser tests PASS (Dusk)
-- [ ] Code coverage ≥ 80% overall
-- [ ] RBAC: Setiap endpoint tested untuk semua 6 role
-- [ ] File upload: Semua tipe file berbahaya ditolak
-- [ ] Progressive lockout berfungsi sesuai spec (3 kali gagal, 5/10/30/60/120 menit)
-- [ ] Verifikasi anti-bot (Google reCAPTCHA) berfungsi
-- [ ] Session: Idle timeout 1 jam berfungsi
-- [ ] Session: Max 2 device berfungsi
-- [ ] Order cutoff 15:00 berfungsi
-- [ ] Penandaan customer menunggak berfungsi **dan TIDAK memblokir pembuatan order**
-- [ ] Perhitungan `expiry_date` benar dan sweep harian memindahkan batch kedaluwarsa ke DDP
-- [ ] FIFO terbukti melewati stok berstatus `ddp` dan `expired`
-- [ ] Alur retur GR/DDP mempertahankan `batch_no` dan `production_date` asli
-- [ ] Transfer stok mencatat pasangan `TRANSFER_OUT`/`TRANSFER_IN` yang seimbang
-- [ ] Operator dapat mengoreksi Qty Aktual saat put-away, selisih tampil di layar verifikasi Logistik
-- [ ] Manager dapat CRUD user **kecuali** akun ber-role Super Admin
-- [ ] Route `/sales/customers` sudah dihapus (mengembalikan 404)
-- [ ] **Role Switcher sudah dihapus dari navbar**
-- [ ] FIFO allocation menghasilkan urutan yang benar
-- [ ] Partial fulfillment dan lost sales terhitung benar
-- [ ] Pallet auto-split benar untuk semua UoM
-- [ ] Notifikasi real-time + suara berfungsi
-- [ ] Dashboard stats akurat
-- [ ] Grafik penjualan data benar
-- [ ] Excel export menghasilkan file valid
-- [ ] PDF Surat Jalan tercetak dengan benar
-- [ ] Audit log mencatat semua operasi sensitif
-- [ ] Performance: Semua halaman < 3 detik
-- [ ] Responsive: Sales portal mobile OK
-- [ ] Responsive: Warehouse portal desktop OK
-- [ ] Database migration berjalan clean (fresh + seed)
-- [ ] Docker containers berjalan stabil 24 jam tanpa restart
-- [ ] Backup database berhasil dan bisa di-restore
-- [ ] UAT signoff dari setiap role
+### 10.1 Kode & Test
+
+- [ ] `./uji.sh penuh` hijau (seluruh unit + feature test, termasuk alur lintas modul, audit rute, dan uji N+1)
+- [ ] CI "CI — Lint & Test" hijau untuk commit yang akan di-tag
+- [ ] Tag rilis dibuat dari `main` (`git tag v1.0.0`)
+
+### 10.2 Keamanan
+
+- [ ] HTTPS aktif dan sertifikat valid (gembok di browser, `http://` dialihkan ke `https://`)
+- [ ] `SESSION_SECURE_COOKIE=true`, `APP_DEBUG=false`, `APP_ENV=production`
+- [ ] Kunci reCAPTCHA production terisi dan domain terdaftar di konsol reCAPTCHA
+- [ ] Tidak ada akun aktif bersandi `password`; Super Admin sudah mengganti sandi sementara
+- [ ] Hanya port 80/443 terbuka di firewall VPS (PostgreSQL & Redis tidak terjangkau dari luar)
+- [ ] `.env` di server ber-izin `600` dan tidak pernah di-commit
+- [ ] Header `Content-Security-Policy` tampil di respons halaman (DevTools → Network)
+
+### 10.3 Layanan
+
+- [ ] `php artisan wms:cek-produksi` tanpa GAGAL; setiap PERINGATAN disetujui dengan sadar
+- [ ] `/health` menjawab `healthy` dengan `penjadwal` dan `antrean` bernilai `true`
+- [ ] Email uji terkirim ke Sales (lihat `docs/8_panduan_email_gmail.md`)
+- [ ] Mode WhatsApp diputuskan (manual / Cloud API / Fonnte) dan diuji dengan satu pesan
+- [ ] Pemantau luar (mis. UptimeRobot) memanggil `https://<domain>/health` tiap 5 menit
+
+### 10.4 Cadangan
+
+- [ ] Container `backup` berjalan; berkas `backups/db/wms-<tanggal>.dump` muncul setelah pukul 01:00 WIB
+- [ ] **Uji pulih** berhasil: `sh /skrip/pulihkan.sh <tanggal> --uji`
+- [ ] Folder `backups/` disalin ke luar VPS secara berkala
+
+### 10.5 Data Awal
+
+- [ ] `migrate --force` bersih di basis data kosong, seeder master (role, gudang, termin, lokasi) dijalankan
+- [ ] Master produk & customer diimpor dari Excel; hasil impor dicek jumlahnya
+- [ ] Stok awal diimpor per gudang dan dicocokkan dengan hitung fisik
+- [ ] Akun tim dibuat dengan email & nomor HP yang valid (Sales wajib email untuk kabar pesanan)
+
+### 10.6 Penerimaan
+
+- [ ] UAT tiap peran selesai dan ditandatangani (`docs/10_checklist_uat.md`)
+- [ ] Portal Sales dicoba di HP sungguhan (kamera foto Surat Jalan)
+- [ ] Halaman konfirmasi supir dicoba dari HP lewat tautan WhatsApp (kamera foto sampai)
+- [ ] Rencana kembali (rollback) disepakati: tag rilis sebelumnya + cadangan pra-deploy

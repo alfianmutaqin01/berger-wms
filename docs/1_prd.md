@@ -1,9 +1,9 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.3  
-> **Tanggal:** 27 Agustus 2026 *(revisi dari v1.2, 27 Agustus 2026)*  
-> **Status:** Draft — Menunggu Final Approval  
+> **Versi:** 1.4  
+> **Tanggal:** 14 September 2026 *(revisi dari v1.3, 27 Agustus 2026)*  
+> **Status:** Scope go-live dikunci — menunggu UAT sign-off  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
 
@@ -11,19 +11,31 @@
 
 ## Riwayat Revisi
 
+### Versi 1.4 — 14 September 2026 (Scope Go-Live)
+
+Mengunci scope yang dipasang pada go-live pertama dan menyelaraskan PRD dengan yang benar-benar dibangun. Keputusan pemilik produk sebelum Fase 13.
+
+| # | Perubahan | Bagian Terdampak |
+|---|---|---|
+| 1 | **Scan QR lokasi rak dikeluarkan dari scope go-live** (sebelumnya masuk scope sejak v1.1). Operator mengetik kode rak; saran rak berkapasitas tetap tampil. Scan QR kembali ke daftar Fase Berikutnya. | §3.2, §6.3 F-INB-02, §10 |
+| 2 | **Sistem tidak mencetak dokumen apa pun.** Surat Jalan resmi terbit di sistem BC; WMS menyalinnya lewat impor Excel, mencocokkannya dengan hasil picking, lalu memberangkatkannya. Tidak ada nomor Surat Jalan yang dibangkitkan dan tidak ada PDF. Laporan diunduh sebagai Excel. | §3.2, §5.2, §6.5 F-OUT-04, §6.8, §9.1 |
+| 3 | **Notifikasi lewat lonceng web + email + WhatsApp**, bukan WebSocket. Lonceng diperbarui setiap halaman dibuka; kabar penting untuk Sales juga dikirim lewat email (Gmail) dan WhatsApp. Laravel Echo/Soketi tidak dipakai. | §3.2, §6.8 F-NOTIF-01, §9.1, §9.2 |
+| 4 | **Antrean memakai `queue:work`**, bukan Laravel Horizon. Kesehatan penjadwal dan antrean dilaporkan di `/health`. | §9.1, §9.2 |
+| 5 | **Target hosting: VPS / cloud publik** dengan HTTPS otomatis (Caddy + Let's Encrypt) dan cadangan harian basis data + berkas unggahan selama 30 hari. Langkahnya: `docs/9_panduan_go_live.md`. | §9.2 |
+
 ### Versi 1.3 — 27 Agustus 2026
 
 Menyelaraskan matriks §5.2 dengan pembatasan sidebar per role yang ditetapkan pemilik produk.
 
 | # | Perubahan | Bagian Terdampak |
 |---|---|---|
-| 1 | **Manager kini boleh mengawasi alur outbound**: Approve/Reject Pesanan, Daftar Picking, Cetak Surat Jalan, Verifikasi Bukti SJ, dan Konfirmasi Pembayaran Billing berubah dari ❌ menjadi ✅. Yang tetap ❌ bagi Manager hanya **tugas tangan langsung**: Input Produksi, Put-away, Proses Picking, dan Penerimaan Retur. | §5.2 |
+| 1 | **Manager kini boleh mengawasi alur outbound**: Approve/Reject Pesanan, Daftar Picking, Surat Jalan, Verifikasi Bukti SJ, dan Konfirmasi Pembayaran Billing berubah dari ❌ menjadi ✅. Yang tetap ❌ bagi Manager hanya **tugas tangan langsung**: Input Produksi, Put-away, Proses Picking, dan Penerimaan Retur. | §5.2 |
 | 2 | **Manager juga boleh Verifikasi Inbound** (❌ → ✅), konsisten dengan peran pengawasannya. | §5.2 |
 | 3 | Ditambahkan baris **Daftar Picking (batching)** dan **Riwayat Produksi (lihat)** yang sebelumnya tidak ada di matriks padahal menunya ada di sidebar. | §5.2 |
 | 4 | Penegakan RBAC dipusatkan di `App\Support\Permission` — dipakai bersama oleh sidebar (`@can`) dan middleware route (`can:`), sehingga tampilan menu dan hak akses sebenarnya tidak bisa berbeda. | Implementasi |
 
 > [!NOTE]
-> **Prinsip pembeda Manager vs Super Admin setelah v1.3.** Manager adalah **pengawas**: boleh menyetujui, mencetak, memverifikasi, dan menutup tagihan — tetapi tidak pernah menjadi *maker* pada langkah fisik di gudang. Prinsip Maker-Checker tetap terjaga karena keempat langkah tangan-langsung tersebut tertutup baginya.
+> **Prinsip pembeda Manager vs Super Admin setelah v1.3.** Manager adalah **pengawas**: boleh menyetujui, memberangkatkan, memverifikasi, dan menutup tagihan — tetapi tidak pernah menjadi *maker* pada langkah fisik di gudang. Prinsip Maker-Checker tetap terjaga karena keempat langkah tangan-langsung tersebut tertutup baginya.
 
 ### Versi 1.2 — 27 Agustus 2026
 
@@ -133,18 +145,20 @@ Sebelum sistem ini dibangun, alur operasional PT Berger Paints Indonesia berjala
 | Expiry & Stok DDP | Masa simpan produk, pemisahan Good Stock vs stok DDP (rusak/expired) |
 | Transfer Stok | Perpindahan stok antar lokasi rak dan antar gudang |
 | Outbound (Sales Order) | Pembuatan PO (Semi-Blind), approval, FIFO allocation, picking, delivery |
-| Surat Jalan | Generate nomor otomatis, cetak dokumen, upload bukti tanda tangan |
+| Surat Jalan | Impor Surat Jalan dari BC, pencocokan dengan hasil picking, keberangkatan + konfirmasi supir, upload bukti tanda tangan |
 | Retur (Reverse Logistics) | Pelaporan penolakan barang oleh Sales, pengecekan fisik, alokasi Good Stock / DDP |
-| Scan QR Lokasi Rak | Pemindaian QR pada rak untuk mempercepat put-away dan picking |
 | Billing (Penagihan) | Manajemen piutang untuk pembayaran tempo 30/60/90 hari |
 | Dashboard & Laporan | KPI per role, grafik penjualan, ekspor Excel |
-| Notifikasi Real-time | Push notification dengan suara untuk setiap perubahan status |
+| Notifikasi | Lonceng web untuk setiap perubahan status; email dan WhatsApp untuk kabar pesanan kepada Sales |
 
 ### 3.3 Ruang Lingkup — Di Luar Scope (Fase Berikutnya)
 
 | Modul | Keterangan |
 |---|---|
 | Integrasi Keuangan | Tidak ada integrasi ke sistem accounting/ERP |
+| Scan QR Lokasi Rak | Dikeluarkan dari scope go-live (v1.4). Operator mengetik kode rak; saran rak berkapasitas tetap tersedia |
+| Cetak Dokumen / PDF | Tidak ada dokumen yang dicetak atau dibangkitkan sebagai PDF (v1.4). Surat Jalan resmi terbit di BC; laporan diunduh sebagai Excel |
+| Notifikasi WebSocket / suara | Lonceng diperbarui saat halaman dibuka, tanpa push realtime (v1.4) |
 | Backorder Management | Sisa pesanan tidak terpenuhi = Lost Sales |
 
 ---
@@ -224,7 +238,7 @@ graph TD
 | **Approve/Reject Pesanan** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Daftar Picking (batching)** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Proses Picking** | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Cetak Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Impor & Berangkatkan Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Verifikasi Bukti Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Proses Retur (Alokasi GR/DDP)** | ✅ | ❌ | ✅ | ❌ | ✅ |
 | **Konfirmasi Pembayaran Billing** | ✅ | ✅ | ✅ | ❌ | ❌ |
@@ -243,7 +257,7 @@ graph TD
 | Seluruh Master Data (termasuk User & Customer) | ✅ | ✅ |
 | Pengaturan Dokumen / nomor urut | ✅ | ✅ |
 | Membuat atau mengubah akun ber-role **Super Admin** | ❌ | ✅ |
-| Pengawasan alur outbound (approve pesanan, cetak SJ, verifikasi bukti SJ, billing) | ✅ | ✅ |
+| Pengawasan alur outbound (approve pesanan, berangkatkan SJ, verifikasi bukti SJ, billing) | ✅ | ✅ |
 | Tugas operasional **tangan langsung** (input produksi, put-away, proses picking, penerimaan retur) | ❌ | ✅ |
 | Hapus transaksi | ❌ | ✅ |
 | Pengaturan Sistem (cutoff, threshold, session, lockout) | ❌ | ✅ |
@@ -399,7 +413,7 @@ graph TD
      - Nilai awal Qty Aktual selalu disamakan dengan Qty Sistem.
      - Bila `qty_actual ≠ qty_system`, sistem mencatat **selisih** pada palet tersebut dan menandainya agar mendapat perhatian khusus saat verifikasi Logistik.
      - Operator wajib mengaktifkan tuas **Verifikasi Fisik** pada setiap palet sebagai pernyataan bahwa jumlah tersebut sudah dihitung di lapangan.
-  5. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`), atau menekan tombol **Scan QR** untuk memindai QR Code yang tertempel pada rak. Saat operator memilih kolom lokasi, sistem menampilkan **rekomendasi lokasi rak** yang masih memiliki kapasitas kosong.
+  5. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`), (Scan QR rak **di luar scope go-live** — lihat v1.4). Saat operator memilih kolom lokasi, sistem menampilkan **rekomendasi lokasi rak** yang masih memiliki kapasitas kosong.
   6. Kode lokasi divalidasi terhadap tabel `locations` — harus lokasi yang valid, terdaftar di gudang yang sesuai, dan masih memiliki kapasitas untuk menampung barang tersebut.
   7. **Auto-split kapasitas rak:** Bila Qty Aktual satu palet melebihi sisa kapasitas rak yang dipilih, sistem otomatis memecah baris — sebagian mengisi rak tersebut sampai penuh, sisanya menjadi baris baru yang harus ditempatkan operator di rak lain.
   8. Submit. Status berubah menjadi **Menunggu Verifikasi**.
@@ -539,21 +553,20 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
   6. Status PO berubah menjadi **Siap Kirim**.
   7. Notifikasi dikirim ke Logistik dan Sales.
 
-#### F-OUT-04: Cetak Surat Jalan (Tim Logistik)
+#### F-OUT-04: Surat Jalan & Keberangkatan (Tim Logistik)
+
+> [!IMPORTANT]
+> **Sistem ini TIDAK menerbitkan maupun mencetak Surat Jalan (v1.4).** Dokumen resminya terbit di sistem BC. Menyediakan cetak di WMS akan melahirkan dokumen kedua yang bersaing dengan dokumen resmi.
+
 - **Proses:**
-  1. Logistik melihat daftar PO yang sudah **Siap Kirim** dan meng klik salah satu daftar po.
-  2. logistik mengupload data barang yang ada dan tidak ada dalam bentuk exel sebagai bahan konfirmasi.
-  3. sistem akan membandingkan data barang yang ada dan tidak ada dengan data barang yang ada di sistem.
-  4. jika sudah sesuai dengan data yang dikirim kan maka bisa lanjut, namun jika ada yang tidak sesuai maka logistik bisa mengoreksi stok yang tersedia di gudang saat ini berbeda sehingga bisa menjadi bahan perbaikan/ stocktake.
-  5. jika data sudah sesuai logistik dapat mengisi data pengiriman: Nama Supir. nomer WA, Plat Nomor Kendaraan.
-  6. Menekan **"Cetak Surat Jalan"**. 
-  7. Sistem **generate nomor Surat Jalan otomatis** (melanjutkan dari starting number yang diatur Super Admin di Pengaturan).
-  8. Format nomor: Dapat dikonfigurasi (misal: `SJ-KRW-2026-00001`).
-  9. Surat Jalan dapat dicetak langsung (format PDF/print-friendly).
-  7. Status PO berubah menjadi **Dalam Pengiriman**.
-  8. **SLA Timer dimulai** — argo waktu mulai berjalan dari saat ini.
-  9. Notifikasi dikirim ke Sales: *"Pesanan Anda sedang dalam pengiriman."*
-  10. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
+  1. Logistik mengunggah **ekspor Surat Jalan harian dari BC** (Excel). Sistem memasangkan setiap Surat Jalan ke pesanannya lewat nomor SO; Surat Jalan yang nomor SO-nya tidak ketemu ditampilkan sebagai "yatim" dan dipasangkan manual (nomor SO pesanan disamakan dengan dokumen BC, dan perubahannya tercatat).
+  2. Sistem membandingkan qty Surat Jalan dengan qty yang benar-benar diambil operator saat picking. Selisih ditandai dan harus dijelaskan (mis. substitusi SKU) sebelum barang boleh berangkat.
+  3. Logistik mengisi data pengiriman: Nama Supir, nomor WA, Plat Nomor Kendaraan, lalu menekan **"Berangkatkan"**.
+  4. Stok keluar dari gudang sebanyak qty Surat Jalan; kekurangan terhadap qty yang diterima menjadi **outstanding** dan bisa dikirim ulang dengan nomor SO yang sama (Surat Jalan putaran berikutnya dipasangkan ke pesanan yang sama).
+  5. Status PO berubah menjadi **Dalam Pengiriman**.
+  6. **SLA Timer dimulai** — argo waktu mulai berjalan dari saat ini.
+  7. Notifikasi dikirim ke Sales (lonceng + email): *"Pesanan Anda sedang dalam pengiriman."*
+  8. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
 
 #### F-OUT-05: Upload Bukti & Penyelesaian
 - **Proses:**
@@ -674,12 +687,12 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 
 ---
 
-### 6.8 Modul Notifikasi Real-time
+### 6.8 Modul Notifikasi
 
 #### F-NOTIF-01: Mekanisme Notifikasi
-- **Teknologi:** Laravel Echo + WebSocket (Pusher/Soketi).
-- **Tampilan:** Bell icon di navbar dengan badge counter.
-- **Suara:** Notifikasi baru membunyikan **suara notifikasi** secara otomatis jika halaman sedang terbuka.
+- **Lonceng web:** Bell icon di navbar dengan badge counter, diperbarui setiap halaman dibuka. Tidak memakai WebSocket (v1.4).
+- **Email:** kabar pesanan (diterima, ditolak, berangkat, sampai, ringkasan selesai) dikirim hanya ke Sales pemilik pesanan lewat Gmail SMTP — lihat `docs/8_panduan_email_gmail.md`.
+- **WhatsApp:** tautan konfirmasi untuk supir, tautan persetujuan MRF untuk atasan, dan kabar barang sampai untuk Sales.
 - **Persistence:** Notifikasi disimpan di database dan bisa dibaca ulang.
 
 #### F-NOTIF-02: Daftar Event Notifikasi
@@ -691,7 +704,7 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 | PO di-reject | Sales pembuat | "Pesanan #{nomor} ditolak. Alasan: {alasan}" |
 | PO partial approved | Sales pembuat | "Pesanan #{nomor} disetujui sebagian. Cek detail." |
 | Picking selesai (Siap Kirim) | Tim Logistik, Sales | "Pesanan #{nomor} siap untuk dikirim" |
-| Surat Jalan dicetak | Sales pembuat | "Surat Jalan #{nomor} telah diterbitkan. Pesanan dalam pengiriman." |
+| Surat Jalan diberangkatkan | Sales pembuat | "Surat Jalan #{nomor} berangkat. Pesanan dalam pengiriman." |
 | Bukti Surat Jalan diupload | Tim Logistik | "Sales {nama} mengunggah bukti SJ untuk pesanan #{nomor}" |
 | **Penolakan** dilaporkan Sales | Tim Logistik, Operator Gudang | "Laporan penolakan #{nomor} untuk PO #{nomor} menunggu pengecekan fisik" |
 | **Penolakan** selesai diproses | Sales pelapor | "Penolakan #{nomor} telah diproses dan barang dialokasikan ke {Good Stock / DDP}" |
@@ -993,16 +1006,14 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | CSS Framework | Bootstrap | 5.3+ |
 | Database | PostgreSQL | 16+ |
 | Cache & Session | Redis | 7+ |
-| Queue Worker | Laravel Horizon | (latest) |
-| Real-time | Laravel Echo + Pusher/Soketi | (latest) |
+| Queue Worker | `php artisan queue:work` (Redis) | (built-in) |
+| Notifikasi | Lonceng web + email (Gmail SMTP) + WhatsApp | — |
 | Verifikasi Anti-Bot | Google reCAPTCHA v2 | `Illuminate\Support\Facades\Http` langsung ke endpoint siteverify — tanpa package tambahan |
-| Excel Export | Maatwebsite/Laravel-Excel | 3.x |
-| Charts | Chart.js atau ApexCharts | (latest) |
-| PDF Generation | DomPDF atau Snappy | (latest) |
+| Excel Impor & Ekspor | phpoffice/phpspreadsheet | 5.x |
+| Charts | Chart.js (CDN, versi terkunci + SRI) | 4.5 |
 | Containerization | Docker + Docker Compose | 24+ |
 | CI/CD | GitHub Actions | (latest) |
-| Web Server | Nginx | (latest) |
-| Process Manager | Supervisor (dalam Docker) | (latest) |
+| Web Server | Nginx di belakang Caddy (HTTPS otomatis) | (latest) |
 
 ### 9.2 Arsitektur Deployment
 
@@ -1011,14 +1022,14 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 │                   Docker Host                    │
 │                                                  │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐           │
-│  │  Nginx  │  │ Laravel │  │  Redis  │           │
-│  │ (proxy) │→ │  (PHP)  │→ │ (cache) │           │
+│  │  Caddy  │→ │  Nginx  │→ │ Laravel │           │
+│  │ (HTTPS) │  │(statis) │  │(php-fpm)│           │
 │  └─────────┘  └─────────┘  └─────────┘           │
-│                     ↓                            │
-│  ┌─────────┐  ┌─────────┐  ┌──────────┐          │
-│  │PostgreSQL│  │Horizon  │  │ Soketi/  │          │
-│  │  (DB)   │  │(queue)  │  │ Pusher   │          │
-│  └─────────┘  └─────────┘  └──────────┘          │
+│                               ↓                  │
+│  ┌──────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ │
+│  │PostgreSQL│ │  Redis  │ │ queue + │ │ backup │ │
+│  │   (DB)   │ │ (cache) │ │scheduler│ │ harian │ │
+│  └──────────┘ └─────────┘ └─────────┘ └────────┘ │
 │                                                  │
 └──────────────────────────────────────────────────┘
 ```
@@ -1045,8 +1056,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 ### Fase 3: Enhancement (Minggu 8-9)
 - **Modul Retur (Reverse Logistics)** — pelaporan Sales, pengecekan fisik, alokasi GR/DDP
 - **Modul Transfer Stok** (antar lokasi rak & antar gudang)
-- **Scan QR Lokasi Rak** (put-away & picking)
-- Notifikasi Real-time + Suara
+- Notifikasi (lonceng web, email, WhatsApp)
 - Dashboard & Grafik Analitik
 - Laporan & Ekspor Excel
 - Audit Log & Archival
