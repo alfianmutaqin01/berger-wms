@@ -11,7 +11,7 @@
         </h5>
         <p class="text-muted small mt-1 mb-0">
             Berkas: <span class="font-monospace">{{ $originalName }}</span> —
-            <strong>belum ada data yang tersimpan.</strong> Periksa dulu, lalu tekan Simpan.
+            <strong>belum ada data yang tersimpan.</strong> Periksa dulu, lalu tekan Submit.
         </p>
     </div>
 
@@ -28,6 +28,15 @@
                 <div class="border rounded-3 p-3">
                     <div class="text-muted small mb-1">Tanggal Produksi</div>
                     <div class="fw-bold text-dark">{{ $productionDate->translatedFormat('d F Y') }}</div>
+                    @if(! $productionDate->isToday())
+                        {{-- Tanggal mundur DIKATAKAN, bukan dibiarkan lewat begitu
+                             saja. Kedaluwarsa tiap batch dihitung dari tanggal ini,
+                             dan salah pilih tanggal tidak akan pernah kelihatan lagi
+                             setelah dokumennya tersimpan. --}}
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning mt-1">
+                            <i class="bi bi-clock-history me-1"></i>{{ $productionDate->diffForHumans() }}
+                        </span>
+                    @endif
                 </div>
             </div>
             <div class="col-md-3">
@@ -80,6 +89,31 @@
             </div>
         @endif
 
+        {{-- DUPLIKAT DIKATAKAN DI SINI, bukan setelah tersimpan.
+             IN-260910-001 dan -002 pernah tersimpan berurutan dengan RMO dan
+             batch yang sama persis, karena berkasnya diunggah dua kali dan
+             layar ini tidak berkata apa-apa. Paletnya ikut naik rak dan stok
+             bertambah dua kali untuk barang yang hanya dibuat sekali. --}}
+        @if($summary['terkunci'] > 0)
+            <div class="alert alert-danger border-0 small">
+                <i class="bi bi-lock-fill me-1"></i>
+                <strong>{{ $summary['terkunci'] }} baris tidak akan disimpan.</strong>
+                RMO + batch-nya sudah pernah masuk, dan paletnya sudah disentuh gudang —
+                sudah naik rak atau sudah diverifikasi. Barangnya sudah berdiri di rak dan
+                angkanya sudah dihitung, jadi menimpanya akan membuat catatan sistem berbeda
+                dari isi gudang. Kalau ada yang keliru, perbaikannya lewat Koreksi Stok.
+            </div>
+        @endif
+
+        @if($summary['bisa_ditimpa'] > 0)
+            <div class="alert alert-warning border-0 small">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                <strong>{{ $summary['bisa_ditimpa'] }} baris sudah pernah masuk</strong>
+                lewat dokumen yang paletnya belum disentuh gudang.
+                Tanpa dicentang di bawah, baris-baris itu <strong>dilewati</strong> — dokumen lamanya tetap utuh.
+            </div>
+        @endif
+
         <div class="table-responsive border rounded-3" style="max-height: 520px;">
             <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-light sticky-top">
@@ -114,11 +148,15 @@
                                 @endif
                             </td>
                             <td class="text-center">
-                                @if($row['status'] === 'siap')
-                                    <span class="badge bg-success-subtle text-success-emphasis border border-success">Siap</span>
-                                @else
+                                @if($row['status'] !== 'siap')
                                     <span class="badge bg-danger-subtle text-danger-emphasis border border-danger"
                                           title="{{ $row['message'] }}">Dilewati</span>
+                                @elseif(($row['duplikat']['keadaan'] ?? null) === 'terkunci')
+                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger">Terkunci</span>
+                                @elseif(($row['duplikat']['keadaan'] ?? null) === 'bisa_ditimpa')
+                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning">Duplikat</span>
+                                @else
+                                    <span class="badge bg-success-subtle text-success-emphasis border border-success">Siap</span>
                                 @endif
                             </td>
                         </tr>
@@ -126,6 +164,23 @@
                             <tr class="table-danger">
                                 <td colspan="8" class="small text-danger-emphasis pt-0">
                                     <i class="bi bi-exclamation-triangle me-1"></i>{{ $row['message'] }}
+                                </td>
+                            </tr>
+                        @elseif($row['duplikat'])
+                            {{-- Nomor dokumen lamanya disebut, bukan cuma "sudah ada".
+                                 Tanpa nomornya, yang membaca tidak punya cara memeriksa
+                                 sendiri apakah yang lama memang benar-benar sama. --}}
+                            <tr class="{{ $row['duplikat']['keadaan'] === 'terkunci' ? 'table-danger' : 'table-warning' }}">
+                                <td colspan="8" class="small pt-0">
+                                    <i class="bi bi-files me-1"></i>
+                                    RMO + batch ini sudah ada di dokumen
+                                    <strong class="font-monospace">{{ $row['duplikat']['dokumen'] }}</strong>
+                                    ({{ $row['duplikat']['status'] }}) — {{ $row['duplikat']['palet'] }} palet.
+                                    @if($row['duplikat']['keadaan'] === 'terkunci')
+                                        <strong>{{ $row['duplikat']['tersentuh'] }} palet sudah disentuh gudang, jadi baris ini tidak bisa ditimpa.</strong>
+                                    @else
+                                        Belum ada palet yang disentuh gudang, jadi baris ini boleh ditimpa.
+                                    @endif
                                 </td>
                             </tr>
                         @endif
@@ -143,8 +198,27 @@
                     <input type="hidden" name="token" value="{{ $token }}">
                     <input type="hidden" name="extension" value="{{ $extension }}">
                     <input type="hidden" name="warehouse_id" value="{{ $warehouse?->id }}">
+                    <input type="hidden" name="production_date" value="{{ $productionDate->toDateString() }}">
                     <label class="form-label small fw-semibold text-secondary">Catatan (opsional)</label>
                     <input type="text" name="notes" class="form-control" maxlength="500" placeholder="Catatan untuk dokumen ini...">
+
+                    @if($summary['bisa_ditimpa'] > 0)
+                        {{-- Tidak dicentang secara bawaan, dan itu disengaja. Yang
+                             mengunggah ulang karena mengira unggahan pertama gagal
+                             tidak sedang meminta apa pun ditimpa. --}}
+                        <div class="form-check mt-3 p-3 border border-warning rounded-3 bg-warning-subtle">
+                            <input class="form-check-input" type="checkbox" name="timpa" value="1" id="timpaDuplikat">
+                            <label class="form-check-label small" for="timpaDuplikat">
+                                <strong>Timpa data yang sudah ada</strong>
+                                ({{ $summary['bisa_ditimpa'] }} baris)
+                                <span class="d-block text-muted">
+                                    Palet lama pada baris itu dibuang dan digantikan yang baru; baris yang belum pernah
+                                    masuk tetap ditambahkan. Dokumen lama yang kehilangan seluruh paletnya ikut ditutup.
+                                    Baris bertanda <strong>Terkunci</strong> tetap dilewati.
+                                </span>
+                            </label>
+                        </div>
+                    @endif
                 </form>
             </div>
             <div class="col-md-4 text-md-end">
@@ -158,7 +232,7 @@
                 </form>
                 <button type="submit" form="storeForm" class="btn btn-primary px-4 fw-bold shadow-sm"
                         @disabled($summary['siap'] === 0)>
-                    <i class="bi bi-save me-1"></i> Simpan ({{ $summary['palet'] }} palet)
+                    <i class="bi bi-save me-1"></i> Submit ({{ $summary['palet'] }} palet)
                 </button>
             </div>
         </div>

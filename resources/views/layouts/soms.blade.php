@@ -162,7 +162,7 @@
      My Orders. Tidak perlu @can di sini karena seluruh rute /sales sudah
      dipagari middleware portal:sales — hanya Tim Sales yang bisa sampai
      ke layout ini sama sekali. --}}
-<nav class="navbar fixed-bottom bg-white border-top shadow-sm bottom-nav no-print">
+<nav class="navbar fixed-bottom bg-white border-top shadow-sm bottom-nav">
     <div class="container-fluid d-flex justify-content-around align-items-center px-2">
         <a href="/sales/dashboard" class="nav-link text-center text-decoration-none {{ request()->is('sales/dashboard') ? 'active' : '' }}">
             <i class="bi {{ request()->is('sales/dashboard') ? 'bi-house-fill' : 'bi-house' }}"></i>

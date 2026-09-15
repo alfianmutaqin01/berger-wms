@@ -26,7 +26,7 @@ class InboundHeader extends Model
     public const STATUS_VERIFIED = 'verified';
 
     public const STATUS_LABELS = [
-        self::STATUS_PUTAWAY_PENDING => 'Menunggu Put-away',
+        self::STATUS_PUTAWAY_PENDING => 'Menunggu PDN',
         self::STATUS_VERIFICATION_PENDING => 'Menunggu Verifikasi',
         self::STATUS_PARTIAL_VERIFIED => 'Sebagian Terverifikasi',
         self::STATUS_VERIFIED => 'Selesai',

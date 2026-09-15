@@ -6,7 +6,7 @@
 @section('content')
 <div class="row mb-4">
     <div class="col-12">
-        <div class="card shadow-sm border-0 rounded-4" id="printableArea">
+        <div class="card shadow-sm border-0 rounded-4">
             <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
                 <div>
                     <h5 class="fw-bold text-dark mb-0">
@@ -15,9 +15,6 @@
                     </h5>
                     <p class="text-muted small mt-1 mb-0">Rincian palet hasil produksi pada dokumen ini.</p>
                 </div>
-                <button class="btn btn-danger fw-bold shadow-sm d-print-none" onclick="window.print()">
-                    <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
-                </button>
             </div>
 
             <div class="card-body p-4">
@@ -90,6 +87,113 @@
                     </div>
                 </div>
 
+                {{-- PANEL SELISIH.
+                     Sebelum panel ini ada, Tim Produksi tidak punya cara tahu
+                     bahwa angka yang mereka tulis meleset: selisihnya hanya
+                     beredar antara Operator dan Logistik, sementara yang bisa
+                     memperbaiki sumbernya justru Produksi. Dipisah dari tabel
+                     besar di bawah karena pada dokumen berisi puluhan palet,
+                     "cari sendiri baris yang qty-nya beda" adalah cara paling
+                     andal membuat selisih terlewat. --}}
+                @if($berselisih->isNotEmpty())
+                    <div class="alert alert-warning border-0 rounded-3 mb-4">
+                        <h6 class="fw-bold mb-2">
+                            <i class="bi bi-exclamation-diamond-fill me-1"></i>
+                            {{ $berselisih->count() }} palet dihitung berbeda oleh Operator
+                        </h6>
+                        <p class="small mb-3">
+                            Angka di bawah ini adalah hasil hitung fisik di gudang. <strong>Stok memakai angka fisik ini</strong>,
+                            bukan angka dokumen — jadi isi rak sudah benar. Yang belum benar adalah dokumen produksinya.
+                        </p>
+
+                        <form action="{{ route('wms.inbound.history.adjust', $header->document_number) }}" method="POST">
+                            @csrf
+                            <div class="table-responsive bg-white rounded-3 border mb-3">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            @if($bolehSesuaikan)<th style="width: 40px;"></th>@endif
+                                            <th class="small text-nowrap">BATCH</th>
+                                            <th class="small text-nowrap">PALET</th>
+                                            <th class="small">PRODUK</th>
+                                            <th class="small text-end text-nowrap">DITULIS PRODUKSI</th>
+                                            <th class="small text-end text-nowrap">HITUNG FISIK</th>
+                                            <th class="small text-end text-nowrap">SELISIH</th>
+                                            <th class="small text-nowrap">KETERANGAN</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach($berselisih as $d)
+                                            <tr>
+                                                @if($bolehSesuaikan)
+                                                    <td>
+                                                        {{-- Palet yang sudah disesuaikan tidak lagi bisa dipilih:
+                                                             menyesuaikan dua kali akan menimpa angka semula dengan
+                                                             angka yang sudah disesuaikan, dan jejak aslinya hilang. --}}
+                                                        <input class="form-check-input" type="checkbox" name="pallets[]"
+                                                               value="{{ $d->id }}"
+                                                               @checked(! $d->sudah_disesuaikan)
+                                                               @disabled($d->sudah_disesuaikan)>
+                                                    </td>
+                                                @endif
+                                                <td class="font-monospace small text-nowrap">{{ $d->batch_no }}</td>
+                                                <td class="small text-nowrap">#{{ $d->pallet_no }}</td>
+                                                <td class="small">{{ $d->product?->sku }} — {{ $d->product?->name }}</td>
+                                                <td class="text-end fw-semibold">{{ number_format($d->qty_sistem_asli) }}</td>
+                                                <td class="text-end fw-semibold text-primary">{{ number_format($d->qty_actual) }}</td>
+                                                <td class="text-end fw-bold {{ $d->qty_variance > 0 ? 'text-success' : 'text-danger' }}">
+                                                    {{ $d->qty_variance > 0 ? '+' : '' }}{{ number_format($d->qty_variance) }}
+                                                </td>
+                                                <td class="small">
+                                                    @if($d->sudah_disesuaikan)
+                                                        <span class="badge bg-success-subtle text-success-emphasis border border-success">Sudah disesuaikan</span>
+                                                        <span class="d-block text-muted">
+                                                            {{ $d->qtyAdjustedBy?->full_name ?? '—' }},
+                                                            {{ $d->qty_adjusted_at?->translatedFormat('d M Y H:i') }}
+                                                            — {{ $d->qty_adjust_reason }}
+                                                        </span>
+                                                    @else
+                                                        <span class="text-muted">Belum ditanggapi</span>
+                                                    @endif
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            @if($bolehSesuaikan)
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-8">
+                                        <label class="form-label small fw-semibold" for="alasanSesuaikan">
+                                            Alasan penyesuaian <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="text" class="form-control" id="alasanSesuaikan" name="reason"
+                                               minlength="10" maxlength="500" required
+                                               placeholder="mis. salah ketik qty di berkas produksi, atau satu palet pecah saat dipindah">
+                                    </div>
+                                    <div class="col-md-4 text-md-end">
+                                        <button type="submit" class="btn btn-warning fw-bold w-100 w-md-auto">
+                                            <i class="bi bi-check2-square me-1"></i> Sesuaikan &amp; Simpan
+                                        </button>
+                                    </div>
+                                </div>
+                                <p class="small text-muted mt-2 mb-0">
+                                    Angka dokumen akan mengikuti hitungan fisik. <strong>Angka semula tetap tercatat</strong>
+                                    dan selisihnya <strong>tetap terlihat oleh Logistik</strong> saat verifikasi —
+                                    penyesuaian ini menambah keterangan, bukan menghapus temuan.
+                                </p>
+                            @elseif($header->status === \App\Models\InboundHeader::STATUS_VERIFIED)
+                                <p class="small mb-0">
+                                    <i class="bi bi-lock-fill me-1"></i>
+                                    Dokumen sudah diverifikasi Logistik dan stoknya sudah aktif, jadi angkanya tidak bisa
+                                    diubah lagi dari sini. Perbaikan setelah tahap ini dilakukan lewat Koreksi Stok.
+                                </p>
+                            @endif
+                        </form>
+                    </div>
+                @endif
+
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0 border">
                         <thead class="table-light">
@@ -113,8 +217,8 @@
                                     // sebagai satu kesatuan.
                                     $awalKelompok = $detail->production_order_no !== $nomorProduksiSebelumnya;
                                     $nomorProduksiSebelumnya = $detail->production_order_no;
-                                    $penuh = $detail->product?->max_qty_per_pallet
-                                        && $detail->pallet_qty === $detail->product->max_qty_per_pallet;
+                                    $kapasitas = $detail->product?->kapasitasPalet();
+                                    $penuh = $kapasitas && $detail->pallet_qty === $kapasitas;
                                 @endphp
                                 <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }}">
                                     <td class="font-monospace small text-muted text-nowrap">
@@ -132,7 +236,7 @@
                                         {{-- Palet penuh vs palet sisa dibedakan agar
                                              terlihat mana yang belum terisi penuh. --}}
                                         <span class="badge border px-2 py-1 {{ $penuh ? 'bg-primary-subtle text-primary border-primary' : 'bg-warning-subtle text-warning-emphasis border-warning' }}">
-                                            {{ number_format($detail->pallet_qty) }} / {{ number_format($detail->product?->max_qty_per_pallet ?? 0) }}
+                                            {{ number_format($detail->pallet_qty) }} / {{ number_format($kapasitas ?? 0) }}
                                         </span>
                                     </td>
                                     <td class="text-nowrap">
@@ -148,7 +252,7 @@
                     </table>
                 </div>
 
-                <div class="mt-4 pt-3 border-top d-flex justify-content-between d-print-none">
+                <div class="mt-4 pt-3 border-top d-flex justify-content-between">
                     <a href="{{ route('wms.inbound.history') }}" class="btn btn-outline-secondary px-4">
                         <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat
                     </a>
@@ -159,30 +263,4 @@
     </div>
 </div>
 
-<style>
-@media print {
-    body * {
-        visibility: hidden !important;
-    }
-    #printableArea, #printableArea * {
-        visibility: visible !important;
-    }
-    #printableArea {
-        position: absolute !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 100% !important;
-        border: none !important;
-        box-shadow: none !important;
-    }
-    .d-print-none, header, .sidebar, .btn {
-        display: none !important;
-    }
-    .badge {
-        border: 1px solid #000 !important;
-        color: #000 !important;
-        background: transparent !important;
-    }
-}
-</style>
 @endsection

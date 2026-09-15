@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Support\Import\CustomerImporter;
+use App\Support\Import\DeliveryNoteImporter;
 use App\Support\Import\Importer;
+use App\Support\Import\OpeningStockImporter;
 use App\Support\Import\ProductImporter;
+use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -40,7 +43,8 @@ class ImportController extends Controller
         // Nama berkas dibangkitkan sendiri, bukan memakai nama asli dari
         // pengguna, agar tidak ada jalur yang bisa diarahkan ke tempat lain.
         $token = Str::uuid()->toString();
-        $stored = self::TEMP_DIR.'/'.$token.'.'.$request->file('file')->getClientOriginalExtension();
+        $extension = self::ekstensi($request);
+        $stored = self::TEMP_DIR.'/'.$token.'.'.$extension;
 
         $saved = Storage::disk('local')->putFileAs(
             self::TEMP_DIR,
@@ -72,8 +76,14 @@ class ImportController extends Controller
             'type' => $type,
             'title' => $config['title'],
             'indexRoute' => $config['index_route'],
+            // Nama rute DIKIRIM, bukan disusun view dari slug tipe.
+            // Sebelumnya view menebak "wms.{type}.import.cancel", yang
+            // kebetulan cocok untuk products/customers tetapi meledak
+            // seketika untuk tipe yang slug dan segmen rutenya berbeda.
+            'importRoute' => route($config['import_route']),
+            'cancelRoute' => route($config['cancel_route']),
             'token' => $token,
-            'extension' => $request->file('file')->getClientOriginalExtension(),
+            'extension' => $extension,
             'originalName' => $request->file('file')->getClientOriginalName(),
             'rows' => $preview['rows'],
             'summary' => $preview['summary'],
@@ -96,8 +106,13 @@ class ImportController extends Controller
                 ->with('error', 'Berkas sementara sudah tidak tersedia. Silakan unggah ulang.');
         }
 
+        // Importernya dipegang, bukan dipanggil berantai: sebagian importer
+        // MENGUBAH hal lain di luar barisnya sendiri, dan keterangannya baru
+        // bisa diambil setelah impor berjalan (lihat catatanTambahan()).
+        $importer = $this->importerFor($type, $request);
+
         try {
-            $summary = $this->importerFor($type, $request)->import(Storage::disk('local')->path($stored));
+            $summary = $importer->import(Storage::disk('local')->path($stored));
         } catch (RuntimeException $e) {
             return redirect()->route($config['index_route'])->with('error', $e->getMessage());
         } finally {
@@ -110,8 +125,21 @@ class ImportController extends Controller
             $summary['perbarui']
         );
 
+        $catatan = $importer->catatanTambahan();
+
+        if ($catatan !== null) {
+            $message .= ' '.$catatan;
+        }
+
         if ($summary['gagal'] === 0) {
-            return redirect()->route($config['index_route'])->with('success', $message);
+            // Catatan tambahan selalu turun jadi PERINGATAN, bukan sukses
+            // hijau. Isinya menurut definisi adalah sesuatu yang berubah di
+            // luar hitungan baris — stok yang ternyata tidak jadi menambah
+            // stok bebas, atau Surat Jalan yang tidak menemukan pesanannya.
+            // Kalimat semacam itu di dalam kotak hijau bertuliskan "selesai"
+            // adalah kalimat yang tidak dibaca siapa pun.
+            return redirect()->route($config['index_route'])
+                ->with($catatan === null ? 'success' : 'warning', $message);
         }
 
         // Baris yang gagal dilaporkan berikut ALASANNYA. Sebelumnya hanya
@@ -153,15 +181,69 @@ class ImportController extends Controller
         return match ($type) {
             'products' => new ProductImporter($actorId),
             'customers' => new CustomerImporter($actorId),
+            // Produk dan pelanggan LINTAS GUDANG (keputusan pemilik produk
+            // untuk Master Produk; pelanggan tidak dimiliki gudang sama
+            // sekali). Stok awal tidak: ia menulis ke rak, dan rak selalu
+            // milik satu gudang.
+            'opening-stock' => new OpeningStockImporter(
+                $actorId,
+                warehouseId: WarehouseScope::boundary($request->user()),
+            ),
+            // Surat Jalan terikat gudang lewat PESANANNYA, bukan lewat rak.
+            // Ekspor harian BC memuat SJ seluruh perusahaan, jadi batas
+            // gudang di sini yang menyaring mana yang boleh masuk.
+            'delivery-notes' => new DeliveryNoteImporter(
+                $actorId,
+                warehouseId: WarehouseScope::boundary($request->user()),
+            ),
         };
     }
 
-    /** @return array{title: string, index_route: string} */
+    /**
+     * Ekstensi berkas Excel yang diunggah, DIBACA DARI ISINYA — 'xlsx' atau 'xls'.
+     *
+     * Bukan getClientOriginalExtension(). Nama berkas kiriman pengguna tidak
+     * bisa dipercaya dan tidak seragam: ekspor BC sering bernama DATA.XLSX,
+     * dan berkas unduhan WhatsApp kadang tanpa ekstensi sama sekali. Ekstensi
+     * itu ikut ke langkah simpan yang hanya menerima 'xlsx'/'xls' huruf kecil,
+     * sehingga berkas yang lolos pratinjau lalu GAGAL disimpan tanpa alasan
+     * yang masuk akal bagi penggunanya. Aturan `mimes:xlsx,xls` sendiri sudah
+     * menilai isi berkas, jadi yang dipakai di sini sama dengan yang lolos
+     * validasi.
+     */
+    public static function ekstensi(Request $request): string
+    {
+        return strtolower((string) $request->file('file')->guessExtension()) === 'xls' ? 'xls' : 'xlsx';
+    }
+
+    /** @return array{title:string, index_route:string, import_route:string, cancel_route:string} */
     private function configFor(string $type): array
     {
         return match ($type) {
-            'products' => ['title' => 'Master Produk', 'index_route' => 'wms.products.index'],
-            'customers' => ['title' => 'Master Pelanggan', 'index_route' => 'wms.customers.index'],
+            'products' => [
+                'title' => 'Master Produk',
+                'index_route' => 'wms.products.index',
+                'import_route' => 'wms.products.import',
+                'cancel_route' => 'wms.products.import.cancel',
+            ],
+            'customers' => [
+                'title' => 'Master Pelanggan',
+                'index_route' => 'wms.customers.index',
+                'import_route' => 'wms.customers.import',
+                'cancel_route' => 'wms.customers.import.cancel',
+            ],
+            'opening-stock' => [
+                'title' => 'Stok Awal',
+                'index_route' => 'wms.inventory.index',
+                'import_route' => 'wms.inventory.import',
+                'cancel_route' => 'wms.inventory.import.cancel',
+            ],
+            'delivery-notes' => [
+                'title' => 'Surat Jalan (BC)',
+                'index_route' => 'wms.delivery.index',
+                'import_route' => 'wms.delivery.import',
+                'cancel_route' => 'wms.delivery.import.cancel',
+            ],
             default => abort(404),
         };
     }

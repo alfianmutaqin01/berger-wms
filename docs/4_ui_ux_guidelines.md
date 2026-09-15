@@ -39,7 +39,7 @@
 | **Context-appropriate Design** | Sales di toko → UI ringan, tap-friendly. Logistik di meja → UI data-dense, keyboard-friendly |
 | **Consistent Visual Language** | Warna status, icon, dan komponen seragam di semua portal |
 | **Error Prevention** | Modal konfirmasi untuk semua aksi destruktif. Validasi real-time di form |
-| **Feedback Always** | Loading spinner saat AJAX, toast notification saat aksi berhasil/gagal, suara saat notifikasi masuk |
+| **Feedback Always** | Loading spinner saat AJAX, toast notification saat aksi berhasil/gagal, badge lonceng untuk notifikasi baru |
 
 ### 1.2 Batasan Desain
 
@@ -697,37 +697,34 @@ Fields:
 └──────────────────────────────────────────────────────┘
 ```
 
-#### 4.3.5 Halaman Cetak Surat Jalan (Tim Logistik)
+#### 4.3.5 Halaman Surat Jalan (BC) (Tim Logistik)
+
+> [!IMPORTANT]
+> **Tidak ada tombol cetak (PRD v1.4).** Surat Jalan resmi terbit di sistem BC; halaman ini menyalinnya lewat impor Excel, mencocokkan qty dengan hasil picking, lalu memberangkatkannya.
 
 ```
-┌──────────────────────────────────────────────┐
-│  Cetak Surat Jalan — PO-KRW-2026-00145     │
-├──────────────────────────────────────────────┤
-│  Customer: Toko Jaya Makmur                 │
-│  Alamat: Jl. Raya Karawang No. 123         │
-│                                              │
-│  Nama Supir *                                │
-│  ┌──────────────────────────────┐           │
-│  │ Pak Bambang                  │           │
-│  └──────────────────────────────┘           │
-│                                              │
-│  Plat Nomor Kendaraan *                      │
-│  ┌──────────────────────────────┐           │
-│  │ B 1234 XYZ                   │           │
-│  └──────────────────────────────┘           │
-│                                              │
-│  Deskripsi Kendaraan                         │
-│  ┌──────────────────────────────┐           │
-│  │ Truk CDE engkel              │           │
-│  └──────────────────────────────┘           │
-│                                              │
-│  ┌──────────────────────────────────┐       │
-│  │  🖨️ Cetak & Terbitkan Surat Jalan│       │
-│  └──────────────────────────────────┘       │
-│                                              │
-│  Nomor SJ akan di-generate otomatis:        │
-│  Preview: SJ-KRW-2026-00089                │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  Surat Jalan 206215 — SO260903                       │
+│  Toko Jaya Makmur · Gudang Karawang · Diimpor 08:12  │
+├──────────────────────────────────────────────────────┤
+│  SKU                 Qty SJ   Diambil   Status        │
+│  ID1-F0017X002820      10       10      ✅ Cocok      │
+│  ID1-F00113202225       5        4      ⚠️ Kurang 1   │
+├──────────────────────────────────────────────────────┤
+│  Nama Supir *            No. WA Supir *              │
+│  ┌────────────────┐     ┌────────────────┐           │
+│  │ Pak Bambang    │     │ 0812 3456 7890 │           │
+│  └────────────────┘     └────────────────┘           │
+│  Plat Nomor Kendaraan *                              │
+│  ┌────────────────┐                                  │
+│  │ B 1234 XYZ     │                                  │
+│  └────────────────┘                                  │
+│                                                      │
+│  ┌──────────────────────────────────┐                │
+│  │  🚚 Berangkatkan                  │                │
+│  └──────────────────────────────────┘                │
+│  Tautan konfirmasi sampai dikirim ke WhatsApp supir. │
+└──────────────────────────────────────────────────────┘
 ```
 
 #### 4.3.6 Halaman Verifikasi Bukti Surat Jalan (Tim Logistik)
@@ -911,7 +908,7 @@ Menu sidebar Admin merupakan **superset** dari menu Warehouse. Isinya berbeda an
 ✅ Terima Pesanan              (bisa kerjakan)
 📋 Daftar Picking
 📦 Proses Picking              (bisa kerjakan)
-🖨️  Cetak Surat Jalan           (bisa kerjakan)
+🚚 Surat Jalan (BC)            (bisa kerjakan)
 🛡️  Verifikasi Bukti SJ         (bisa kerjakan)
 ──────────  KEUANGAN & SISTEM
 💳 Billing & Piutang           (bisa konfirmasi lunas)
@@ -939,7 +936,7 @@ Menu sidebar Admin merupakan **superset** dari menu Warehouse. Isinya berbeda an
 ──────────  OUTBOUND
 ✅ Terima Pesanan
 📋 Daftar Picking
-🖨️  Cetak Surat Jalan
+🚚 Surat Jalan (BC)
 🛡️  Verifikasi Bukti SJ
 ──────────  KEUANGAN & SISTEM
 💳 Billing & Piutang
@@ -950,7 +947,7 @@ Menu sidebar Admin merupakan **superset** dari menu Warehouse. Isinya berbeda an
 ```
 
 > [!IMPORTANT]
-> **Perubahan v1.3.** Manager kini memperoleh menu pengawasan outbound penuh (`Terima Pesanan`, `Daftar Picking`, `Cetak Surat Jalan`, `Verifikasi Bukti SJ`, `Billing`) dan `Verifikasi Logistik`.
+> **Perubahan v1.3.** Manager kini memperoleh menu pengawasan outbound penuh (`Terima Pesanan`, `Daftar Picking`, `Surat Jalan (BC)`, `Verifikasi Bukti SJ`, `Billing`) dan `Verifikasi Logistik`.
 >
 > Empat menu berikut **tetap tertutup** bagi Manager karena merupakan tugas tangan langsung di gudang: `Input Produksi`, `Proses Put-away`, `Proses Picking`, dan `Penerimaan Retur`. Batas inilah yang menjaga prinsip Maker-Checker.
 >
@@ -968,7 +965,7 @@ Menu sidebar Admin merupakan **superset** dari menu Warehouse. Isinya berbeda an
 ──────────  OUTBOUND
 ✅ Terima Pesanan
 📋 Daftar Picking
-🖨️  Cetak Surat Jalan
+🚚 Surat Jalan (BC)
 🛡️  Verifikasi Bukti SJ
 ──────────  KEUANGAN
 💳 Billing & Piutang

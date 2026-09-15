@@ -12,7 +12,7 @@ use Illuminate\Support\Collection;
  * Sales melihat ✅ / ⚠️ / ❌, TIDAK PERNAH angkanya. Itu keputusan bisnis:
  * angka stok yang terbuka membuat Sales menyetel sendiri jumlah pesanan agar
  * "pas", sehingga permintaan yang sebenarnya tidak pernah terekam dan angka
- * Lost Sales kehilangan artinya.
+ * Outstanding kehilangan artinya.
  *
  * Dua aturan yang gampang keliru:
  *   1. HANYA Good Stock yang dihitung. Stok DDP dan yang kedaluwarsa tidak

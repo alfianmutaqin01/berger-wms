@@ -22,7 +22,7 @@ class SalesOrderDetailFactory extends Factory
             'qty_ordered' => 100,
             'qty_approved' => 0,
             'qty_shipped' => 0,
-            'lost_qty' => 0,
+            'outstanding_qty' => 0,
         ];
     }
 }

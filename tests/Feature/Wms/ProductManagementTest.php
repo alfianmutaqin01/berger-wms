@@ -157,12 +157,18 @@ class ProductManagementTest extends TestCase
         $this->post('/wms/master/products', $this->validPayload([
             'pack_code' => '225', 'pack_size' => '2.5',
         ]));
-        $this->assertSame(180, Product::where('sku', 'ID1-F00113202225')->value('max_qty_per_pallet'));
+        $this->assertSame(180, Product::where('sku', 'ID1-F00113202225')->firstOrFail()->kapasitasPalet());
 
         $this->post('/wms/master/products', $this->validPayload([
             'pack_code' => '320', 'pack_size' => '20',
         ]));
-        $this->assertSame(27, Product::where('sku', 'ID1-F00113202320')->value('max_qty_per_pallet'));
+        $this->assertSame(27, Product::where('sku', 'ID1-F00113202320')->firstOrFail()->kapasitasPalet());
+
+        // ANGKANYA TIDAK DISALIN KE PRODUKNYA. Kolom `max_qty_per_pallet`
+        // berarti PENGECUALIAN — diisi hanya bila produk ini memang berbeda
+        // dari aturan ukurannya. Dulu ia berisi salinan hasil aturan, dan
+        // akibatnya mengubah aturan tidak mengubah apa pun.
+        $this->assertNull(Product::where('sku', 'ID1-F00113202225')->value('max_qty_per_pallet'));
     }
 
     /**
@@ -186,7 +192,7 @@ class ProductManagementTest extends TestCase
 
         $product = Product::where('shade_code', 'B128')->firstOrFail();
 
-        $this->assertSame(27, $product->max_qty_per_pallet);
+        $this->assertSame(27, $product->kapasitasPalet());
         $this->assertSame('19.400', $product->unit_volume);
     }
 
@@ -209,7 +215,7 @@ class ProductManagementTest extends TestCase
         // "8500" tidak boleh tertangkap sebagai ukuran — hanya "20Ltr" di ujung nama.
         $this->assertSame('20.000', $product->pack_size);
         $this->assertSame(PalletCapacity::UNIT_LITER, $product->pack_unit);
-        $this->assertSame(27, $product->max_qty_per_pallet);
+        $this->assertSame(27, $product->kapasitasPalet());
     }
 
     /** Satuan menentukan hasil: 20 Kg -> 36 pcs, berbeda dari 20 L -> 27 pcs. */
@@ -226,7 +232,7 @@ class ProductManagementTest extends TestCase
             'net_weight' => '20',
         ]));
 
-        $this->assertSame(36, Product::where('pack_code', '820')->value('max_qty_per_pallet'));
+        $this->assertSame(36, Product::where('pack_code', '820')->firstOrFail()->kapasitasPalet());
     }
 
     /** Ukuran di luar aturan gudang dibiarkan kosong, tidak ditebak. */
@@ -254,7 +260,7 @@ class ProductManagementTest extends TestCase
             'pack_code' => '203', 'pack_size' => '0.25', 'max_qty_per_pallet' => '900',
         ]));
 
-        $this->assertSame(900, Product::where('pack_code', '203')->value('max_qty_per_pallet'));
+        $this->assertSame(900, Product::where('pack_code', '203')->firstOrFail()->kapasitasPalet());
     }
 
     /** Angka dari ERP memakai koma sebagai pemisah desimal ("4,05"). */
@@ -270,7 +276,7 @@ class ProductManagementTest extends TestCase
 
         $this->assertSame('2.500', $product->unit_volume);
         $this->assertSame('4.050', $product->gross_weight);
-        $this->assertSame(180, $product->max_qty_per_pallet);
+        $this->assertSame(180, $product->kapasitasPalet());
     }
 
     /* --------------------------------------------------------------- Update */

@@ -1,0 +1,21 @@
+# Dependabot — usulan pembaruan lewat PR, tidak pernah langsung ke cabang.
+#
+# github-actions: action di workflow dikunci ke commit SHA (lihat test.yml).
+# Tanpa Dependabot, SHA itu membeku selamanya dan perbaikan keamanan action
+# tidak pernah sampai. PR-nya mengganti SHA dan komentar versinya sekaligus.
+#
+# composer: paket PHP. PR tetap harus lolos CI dan ditinjau sebelum merge.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: composer
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

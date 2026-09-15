@@ -1,9 +1,9 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.3  
-> **Tanggal:** 27 Agustus 2026 *(revisi dari v1.2, 27 Agustus 2026)*  
-> **Status:** Draft — Menunggu Final Approval  
+> **Versi:** 1.5  
+> **Tanggal:** 15 September 2026 *(revisi dari v1.4, 14 September 2026)*  
+> **Status:** Scope go-live dikunci — menunggu UAT sign-off  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
 
@@ -11,19 +11,44 @@
 
 ## Riwayat Revisi
 
+### Versi 1.5 — 15 September 2026 (Audit Keamanan Pra-Go-Live)
+
+Hasil audit keamanan sebelum go-live. Setiap perubahan menutup serangan yang nyata, bukan sekadar pengetatan.
+
+| # | Perubahan | Alasan | Bagian Terdampak |
+|---|---|---|---|
+| 1 | **Kunci login dua lapis.** 3 kali gagal mengunci pasangan *email + IP* (5/10/30/60/120 menit). *Akun* baru terkunci setelah 10 kali gagal dari IP yang belum pernah dipakai pemiliknya untuk masuk; pemilik yang masuk dari IP yang biasa ia pakai tidak ikut terkunci. | Kunci per akun pada 3 kali gagal membuat siapa pun yang tahu email seseorang bisa mengunci akunnya dari luar — seluruh tim Logistik bisa dihentikan tanpa satu sandi pun bocor. | §6.1 F-AUTH-03, §8.2 |
+| 2 | **Verifikasi anti-bot yang gagal tidak lagi dihitung ke kunci akun**; ditolak sebelum akun disentuh. | Tiga POST tanpa centang cukup untuk mengunci akun mana pun. | §6.1 F-AUTH-02 |
+| 3 | **"Akun tidak aktif" hanya dijawab kepada yang tahu sandinya**; email terdaftar dan tidak terdaftar dijawab dengan pesan dan waktu yang sama. | Pesan berbeda membuat daftar email karyawan bisa dipetakan dari luar. | §6.1 F-AUTH-01 |
+| 4 | **Akun yang dinonaktifkan, atau sandinya direset pengelola, langsung keluar dari semua perangkat.** | Sebelumnya karyawan yang diberhentikan tetap bisa bekerja dari HP yang masih masuk. | §6.1 F-AUTH-04, §6.2 F-MASTER-01 |
+| 5 | **Tautan konfirmasi supir berlaku 72 jam**; setelah dikonfirmasi hanya menampilkan "sudah tercatat" selama 24 jam lalu mati. Logistik bisa menerbitkan tautan baru (tautan lama ikut mati). | Tautan tinggal di chat supir dari perusahaan lain dan menyebut nama pelanggan serta isi kiriman. | §6.5 F-OUT-04 |
+| 6 | **Pengguna basis data aplikasi bukan superuser; cadangan dienkripsi dengan kunci publik.** | Aplikasi yang tembus tidak membawa seluruh server basis data; cadangan yang tercecer tidak bisa dibaca. | §8.2, §8.3 |
+
+### Versi 1.4 — 14 September 2026 (Scope Go-Live)
+
+Mengunci scope yang dipasang pada go-live pertama dan menyelaraskan PRD dengan yang benar-benar dibangun. Keputusan pemilik produk sebelum Fase 13.
+
+| # | Perubahan | Bagian Terdampak |
+|---|---|---|
+| 1 | **Scan QR lokasi rak dikeluarkan dari scope go-live** (sebelumnya masuk scope sejak v1.1). Operator mengetik kode rak; saran rak berkapasitas tetap tampil. Scan QR kembali ke daftar Fase Berikutnya. | §3.2, §6.3 F-INB-02, §10 |
+| 2 | **Sistem tidak mencetak dokumen apa pun.** Surat Jalan resmi terbit di sistem BC; WMS menyalinnya lewat impor Excel, mencocokkannya dengan hasil picking, lalu memberangkatkannya. Tidak ada nomor Surat Jalan yang dibangkitkan dan tidak ada PDF. Laporan diunduh sebagai Excel. | §3.2, §5.2, §6.5 F-OUT-04, §6.8, §9.1 |
+| 3 | **Notifikasi lewat lonceng web + email + WhatsApp**, bukan WebSocket. Lonceng diperbarui setiap halaman dibuka; kabar penting untuk Sales juga dikirim lewat email (Gmail) dan WhatsApp. Laravel Echo/Soketi tidak dipakai. | §3.2, §6.8 F-NOTIF-01, §9.1, §9.2 |
+| 4 | **Antrean memakai `queue:work`**, bukan Laravel Horizon. Kesehatan penjadwal dan antrean dilaporkan di `/health`. | §9.1, §9.2 |
+| 5 | **Target hosting: VPS / cloud publik** dengan HTTPS otomatis (Caddy + Let's Encrypt) dan cadangan harian basis data + berkas unggahan selama 30 hari. Langkahnya: `docs/9_panduan_go_live.md`. | §9.2 |
+
 ### Versi 1.3 — 27 Agustus 2026
 
 Menyelaraskan matriks §5.2 dengan pembatasan sidebar per role yang ditetapkan pemilik produk.
 
 | # | Perubahan | Bagian Terdampak |
 |---|---|---|
-| 1 | **Manager kini boleh mengawasi alur outbound**: Approve/Reject Pesanan, Daftar Picking, Cetak Surat Jalan, Verifikasi Bukti SJ, dan Konfirmasi Pembayaran Billing berubah dari ❌ menjadi ✅. Yang tetap ❌ bagi Manager hanya **tugas tangan langsung**: Input Produksi, Put-away, Proses Picking, dan Penerimaan Retur. | §5.2 |
+| 1 | **Manager kini boleh mengawasi alur outbound**: Approve/Reject Pesanan, Daftar Picking, Surat Jalan, Verifikasi Bukti SJ, dan Konfirmasi Pembayaran Billing berubah dari ❌ menjadi ✅. Yang tetap ❌ bagi Manager hanya **tugas tangan langsung**: Input Produksi, Put-away, Proses Picking, dan Penerimaan Retur. | §5.2 |
 | 2 | **Manager juga boleh Verifikasi Inbound** (❌ → ✅), konsisten dengan peran pengawasannya. | §5.2 |
 | 3 | Ditambahkan baris **Daftar Picking (batching)** dan **Riwayat Produksi (lihat)** yang sebelumnya tidak ada di matriks padahal menunya ada di sidebar. | §5.2 |
 | 4 | Penegakan RBAC dipusatkan di `App\Support\Permission` — dipakai bersama oleh sidebar (`@can`) dan middleware route (`can:`), sehingga tampilan menu dan hak akses sebenarnya tidak bisa berbeda. | Implementasi |
 
 > [!NOTE]
-> **Prinsip pembeda Manager vs Super Admin setelah v1.3.** Manager adalah **pengawas**: boleh menyetujui, mencetak, memverifikasi, dan menutup tagihan — tetapi tidak pernah menjadi *maker* pada langkah fisik di gudang. Prinsip Maker-Checker tetap terjaga karena keempat langkah tangan-langsung tersebut tertutup baginya.
+> **Prinsip pembeda Manager vs Super Admin setelah v1.3.** Manager adalah **pengawas**: boleh menyetujui, memberangkatkan, memverifikasi, dan menutup tagihan — tetapi tidak pernah menjadi *maker* pada langkah fisik di gudang. Prinsip Maker-Checker tetap terjaga karena keempat langkah tangan-langsung tersebut tertutup baginya.
 
 ### Versi 1.2 — 27 Agustus 2026
 
@@ -133,18 +158,20 @@ Sebelum sistem ini dibangun, alur operasional PT Berger Paints Indonesia berjala
 | Expiry & Stok DDP | Masa simpan produk, pemisahan Good Stock vs stok DDP (rusak/expired) |
 | Transfer Stok | Perpindahan stok antar lokasi rak dan antar gudang |
 | Outbound (Sales Order) | Pembuatan PO (Semi-Blind), approval, FIFO allocation, picking, delivery |
-| Surat Jalan | Generate nomor otomatis, cetak dokumen, upload bukti tanda tangan |
+| Surat Jalan | Impor Surat Jalan dari BC, pencocokan dengan hasil picking, keberangkatan + konfirmasi supir, upload bukti tanda tangan |
 | Retur (Reverse Logistics) | Pelaporan penolakan barang oleh Sales, pengecekan fisik, alokasi Good Stock / DDP |
-| Scan QR Lokasi Rak | Pemindaian QR pada rak untuk mempercepat put-away dan picking |
 | Billing (Penagihan) | Manajemen piutang untuk pembayaran tempo 30/60/90 hari |
 | Dashboard & Laporan | KPI per role, grafik penjualan, ekspor Excel |
-| Notifikasi Real-time | Push notification dengan suara untuk setiap perubahan status |
+| Notifikasi | Lonceng web untuk setiap perubahan status; email dan WhatsApp untuk kabar pesanan kepada Sales |
 
 ### 3.3 Ruang Lingkup — Di Luar Scope (Fase Berikutnya)
 
 | Modul | Keterangan |
 |---|---|
 | Integrasi Keuangan | Tidak ada integrasi ke sistem accounting/ERP |
+| Scan QR Lokasi Rak | Dikeluarkan dari scope go-live (v1.4). Operator mengetik kode rak; saran rak berkapasitas tetap tersedia |
+| Cetak Dokumen / PDF | Tidak ada dokumen yang dicetak atau dibangkitkan sebagai PDF (v1.4). Surat Jalan resmi terbit di BC; laporan diunduh sebagai Excel |
+| Notifikasi WebSocket / suara | Lonceng diperbarui saat halaman dibuka, tanpa push realtime (v1.4) |
 | Backorder Management | Sisa pesanan tidak terpenuhi = Lost Sales |
 
 ---
@@ -224,7 +251,7 @@ graph TD
 | **Approve/Reject Pesanan** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Daftar Picking (batching)** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Proses Picking** | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Cetak Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Impor & Berangkatkan Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Verifikasi Bukti Surat Jalan** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Proses Retur (Alokasi GR/DDP)** | ✅ | ❌ | ✅ | ❌ | ✅ |
 | **Konfirmasi Pembayaran Billing** | ✅ | ✅ | ✅ | ❌ | ❌ |
@@ -243,7 +270,7 @@ graph TD
 | Seluruh Master Data (termasuk User & Customer) | ✅ | ✅ |
 | Pengaturan Dokumen / nomor urut | ✅ | ✅ |
 | Membuat atau mengubah akun ber-role **Super Admin** | ❌ | ✅ |
-| Pengawasan alur outbound (approve pesanan, cetak SJ, verifikasi bukti SJ, billing) | ✅ | ✅ |
+| Pengawasan alur outbound (approve pesanan, berangkatkan SJ, verifikasi bukti SJ, billing) | ✅ | ✅ |
 | Tugas operasional **tangan langsung** (input produksi, put-away, proses picking, penerimaan retur) | ❌ | ✅ |
 | Hapus transaksi | ❌ | ✅ |
 | Pengaturan Sistem (cutoff, threshold, session, lockout) | ❌ | ✅ |
@@ -279,17 +306,20 @@ graph TD
 - Validasi kredensial terhadap database.
 - Jika berhasil, arahkan langsung ke portal sesuai role (lihat F-AUTH-05).
 - Jika gagal, tampilkan pesan error generik ("Email atau Password salah").
+- Pesan "Akun tidak aktif" hanya ditampilkan bila sandinya **benar**. Email yang tidak terdaftar dijawab dengan pesan dan waktu respons yang sama seperti email terdaftar *(v1.5)*.
 
 #### F-AUTH-02: Verifikasi Anti-Bot (Google reCAPTCHA)
 - Form login menampilkan widget **Google reCAPTCHA v2 ("Saya bukan robot")** berdampingan dengan kolom email/password — bukan halaman terpisah setelah password.
 - Token reCAPTCHA diverifikasi ke Google (`siteverify`) bersamaan dengan pengecekan kredensial pada request yang sama.
-- Verifikasi anti-bot gagal (token tidak valid/kedaluwarsa, atau tidak dicentang) diperlakukan sama seperti kredensial salah: masuk ke counter percobaan gagal di F-AUTH-03, dengan pesan generik yang sama.
+- Verifikasi anti-bot gagal (token tidak valid/kedaluwarsa, atau tidak dicentang) **ditolak sebelum kredensial diperiksa** dan **tidak** menaikkan counter F-AUTH-03 *(v1.5)*. Kalau dihitung, siapa pun bisa mengunci akun orang lain hanya dengan mengirim form kosong.
 - **Bukan MFA** — reCAPTCHA memverifikasi bahwa yang mengakses form adalah manusia, bukan mengonfirmasi identitas pengguna. Tidak ada faktor kedua berbasis identitas (mis. TOTP) pada versi ini.
 
 #### F-AUTH-03: Progressive Lockout
-- **Batas percobaan:** Maksimal **3 kali** salah memasukkan password/username **atau** gagal verifikasi anti-bot (F-AUTH-02) — keduanya berbagi counter yang sama.
-- **Setelah 3 kali salah:** Akun terkunci selama **5 menit**.
-- **Jika salah lagi setelah unlock:** Durasi lockout bertambah secara progresif:
+Dua lapis *(v1.5)*:
+
+- **Lapis 1 — email + IP.** **3 kali** salah sandi untuk satu email dari satu IP mengunci pasangan itu selama **5 menit**. Berlaku juga untuk email yang tidak terdaftar, supaya pesan kunci tidak membocorkan email mana yang ada. Penyerang mengunci dirinya sendiri, bukan korbannya.
+- **Lapis 2 — akun.** **10 kali** salah sandi dari IP yang **belum pernah** dipakai pemilik akun untuk masuk (30 hari terakhir) mengunci akun bagi IP asing. Pemilik akun yang masuk dari IP yang biasa ia pakai tidak ikut terkunci. Lapis ini menahan tebak-sandi yang disebar ke banyak IP.
+- **Jika salah lagi setelah kunci berakhir:** Durasi lockout (kedua lapis) bertambah secara progresif:
   - Percobaan ke-4 gagal: 10 menit
   - Percobaan ke-5 gagal: 30 menit
   - Percobaan ke-6 gagal: 60 menit
@@ -399,7 +429,7 @@ graph TD
      - Nilai awal Qty Aktual selalu disamakan dengan Qty Sistem.
      - Bila `qty_actual ≠ qty_system`, sistem mencatat **selisih** pada palet tersebut dan menandainya agar mendapat perhatian khusus saat verifikasi Logistik.
      - Operator wajib mengaktifkan tuas **Verifikasi Fisik** pada setiap palet sebagai pernyataan bahwa jumlah tersebut sudah dihitung di lapangan.
-  5. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`), atau menekan tombol **Scan QR** untuk memindai QR Code yang tertempel pada rak. Saat operator memilih kolom lokasi, sistem menampilkan **rekomendasi lokasi rak** yang masih memiliki kapasitas kosong.
+  5. Untuk setiap palet, operator memasukkan **kode lokasi rak** tempat barang diletakkan (misal: `G-03-04`), (Scan QR rak **di luar scope go-live** — lihat v1.4). Saat operator memilih kolom lokasi, sistem menampilkan **rekomendasi lokasi rak** yang masih memiliki kapasitas kosong.
   6. Kode lokasi divalidasi terhadap tabel `locations` — harus lokasi yang valid, terdaftar di gudang yang sesuai, dan masih memiliki kapasitas untuk menampung barang tersebut.
   7. **Auto-split kapasitas rak:** Bila Qty Aktual satu palet melebihi sisa kapasitas rak yang dipilih, sistem otomatis memecah baris — sebagian mengisi rak tersebut sampai penuh, sisanya menjadi baris baru yang harus ditempatkan operator di rak lain.
   8. Submit. Status berubah menjadi **Menunggu Verifikasi**.
@@ -474,7 +504,7 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
 |---|---|:---:|:---:|
 | **Good Stock** (`active`) | Belum lewat `expiry_date` dan tidak ditandai rusak | ✅ | ✅ |
 | **DDP — Expired** (`expired`) | `expiry_date` sudah terlewat | ❌ | ❌ |
-| **DDP — Rusak/Karantina** (`ddp`) | Ditandai rusak dari hasil retur, write-off, atau temuan stock opname | ❌ | ❌ |
+| **DDP — Rusak/Karantina** (`ddp`) | Ditandai rusak dari hasil retur, write-off, atau temuan stocktake | ❌ | ❌ |
 
 - **Perpindahan otomatis ke DDP:** Scheduled job harian memindahkan batch yang melewati `expiry_date` dari status `active` → `expired`, dan mencatatnya di `stock_movements` (tipe `ADJUSTMENT`, alasan `EXPIRED`).
 - **Peringatan dini:** Batch yang akan kedaluwarsa dalam **90 hari** ditandai pada halaman Stok dan memicu notifikasi ke Tim Logistik & Manager.
@@ -539,21 +569,21 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
   6. Status PO berubah menjadi **Siap Kirim**.
   7. Notifikasi dikirim ke Logistik dan Sales.
 
-#### F-OUT-04: Cetak Surat Jalan (Tim Logistik)
+#### F-OUT-04: Surat Jalan & Keberangkatan (Tim Logistik)
+
+> [!IMPORTANT]
+> **Sistem ini TIDAK menerbitkan maupun mencetak Surat Jalan (v1.4).** Dokumen resminya terbit di sistem BC. Menyediakan cetak di WMS akan melahirkan dokumen kedua yang bersaing dengan dokumen resmi.
+
 - **Proses:**
-  1. Logistik melihat daftar PO yang sudah **Siap Kirim** dan meng klik salah satu daftar po.
-  2. logistik mengupload data barang yang ada dan tidak ada dalam bentuk exel sebagai bahan konfirmasi.
-  3. sistem akan membandingkan data barang yang ada dan tidak ada dengan data barang yang ada di sistem.
-  4. jika sudah sesuai dengan data yang dikirim kan maka bisa lanjut, namun jika ada yang tidak sesuai maka logistik bisa mengoreksi stok yang tersedia di gudang saat ini berbeda sehingga bisa menjadi bahan perbaikan/ stock opname.
-  5. jika data sudah sesuai logistik dapat mengisi data pengiriman: Nama Supir. nomer WA, Plat Nomor Kendaraan.
-  6. Menekan **"Cetak Surat Jalan"**. 
-  7. Sistem **generate nomor Surat Jalan otomatis** (melanjutkan dari starting number yang diatur Super Admin di Pengaturan).
-  8. Format nomor: Dapat dikonfigurasi (misal: `SJ-KRW-2026-00001`).
-  9. Surat Jalan dapat dicetak langsung (format PDF/print-friendly).
-  7. Status PO berubah menjadi **Dalam Pengiriman**.
-  8. **SLA Timer dimulai** — argo waktu mulai berjalan dari saat ini.
-  9. Notifikasi dikirim ke Sales: *"Pesanan Anda sedang dalam pengiriman."*
-  10. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
+  1. Logistik mengunggah **ekspor Surat Jalan harian dari BC** (Excel). Sistem memasangkan setiap Surat Jalan ke pesanannya lewat nomor SO; Surat Jalan yang nomor SO-nya tidak ketemu ditampilkan sebagai "yatim" dan dipasangkan manual (nomor SO pesanan disamakan dengan dokumen BC, dan perubahannya tercatat).
+  2. Sistem membandingkan qty Surat Jalan dengan qty yang benar-benar diambil operator saat picking. Selisih ditandai dan harus dijelaskan (mis. substitusi SKU) sebelum barang boleh berangkat.
+  3. Logistik mengisi data pengiriman: Nama Supir, nomor WA, Plat Nomor Kendaraan, lalu menekan **"Berangkatkan"**.
+  4. Stok keluar dari gudang sebanyak qty Surat Jalan; kekurangan terhadap qty yang diterima menjadi **outstanding** dan bisa dikirim ulang dengan nomor SO yang sama (Surat Jalan putaran berikutnya dipasangkan ke pesanan yang sama).
+  5. Status PO berubah menjadi **Dalam Pengiriman**.
+  6. **SLA Timer dimulai** — argo waktu mulai berjalan dari saat ini.
+  7. Notifikasi dikirim ke Sales (lonceng + email): *"Pesanan Anda sedang dalam pengiriman."*
+  8. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
+  9. **Masa berlaku tautan supir** *(v1.5)*: 72 jam sejak diterbitkan. Setelah dikonfirmasi, tautan hanya menampilkan "sudah tercatat" (tanpa nama pelanggan dan isi kiriman) selama 24 jam, lalu mati. Tautan yang kedaluwarsa sebelum dikonfirmasi diganti Logistik dengan tautan baru dari halaman Surat Jalan; tautan lama tidak bisa dibuka lagi.
 
 #### F-OUT-05: Upload Bukti & Penyelesaian
 - **Proses:**
@@ -581,22 +611,40 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
 
 ### 6.6 Modul Billing (Penagihan)
 
+> [!IMPORTANT]
+> **Perubahan v1.3 (14 September 2026) — keputusan pemilik produk.** Billing adalah **buku pantau piutang, bukan pembukuan**: pembayaran tidak pernah melewati sistem ini dan nominalnya hidup di BC.
+>
+> | Keputusan | Isi |
+> |---|---|
+> | Nominal | **Tidak ada sama sekali.** Yang dicatat hanya status lunas/belum. |
+> | Satuan tagihan | **Satu tagihan per invoice (nomor SO BC)**, bukan per PO. Pesanan yang digabung ke satu invoice ikut lunas bersama. |
+> | Dasar jatuh tempo | **Tanggal barang sampai** (konfirmasi supir) + hari termin — bukan tanggal complete. |
+> | Giro | Cukup dicatat **nomor gironya** (wajib). Tidak ada status "menunggu cair". |
+> | Notifikasi | **Tidak ke Sales.** Lonceng pengingat hanya ke **Manager**: H-3 sebelum jatuh tempo dan saat lewat jatuh tempo. |
+
 #### F-BILL-01: Daftar Piutang
 - **Akses:** Tim Logistik, Manager, Super Admin.
-- **Data:** Daftar semua transaksi dengan pembayaran tempo yang belum lunas.
-- **Kolom:** Nomor PO, Customer, Tanggal Order, Payment Term, Jatuh Tempo, Total Item, Status Pembayaran.
-- **Filter:** Berdasarkan status (Belum Bayar/Lunas), customer, gudang, rentang tanggal.
-- **Highlight:** Piutang yang **sudah melewati jatuh tempo** ditandai warna merah.
+- **Data:** Satu baris per invoice pesanan tempo. Tagihan terbentuk **otomatis** saat pesanan tempo dinyatakan selesai.
+- **Kolom:** No. SO BC (beserta pesanan yang tergabung), Customer, Sales, Tanggal Barang Sampai, Termin, Jatuh Tempo, Qty Terkirim, Status.
+- **Tab:** Jatuh tempo ≤ 7 hari (tab awal) · Lewat jatuh tempo · Semua belum lunas · Lunas.
+- **Pencarian:** customer, No. SO, No. PO. Dibatasi gudang pengguna.
+- **Highlight:** Invoice yang **sudah melewati jatuh tempo** ditandai merah beserta jumlah harinya.
 
 #### F-BILL-02: Konfirmasi Pembayaran
 - **Akses:** Tim Logistik, Super Admin.
 - **Proses:**
   1. Logistik menerima informasi/bukti bahwa customer sudah membayar.
-  2. Membuka data billing yang bersangkutan.
-  3. Menekan **"Konfirmasi Lunas"** + memasukkan **tanggal bukti bayar diterima** dan **metode pelunasan** (Transfer/Giro/Tunai).
-  4. Status berubah menjadi **Lunas**.
-  5. Penanda `⚠ Menunggak` pada customer tersebut hilang dengan sendirinya begitu seluruh tagihannya lunas.
-  6. Notifikasi dikirim ke Sales terkait.
+  2. Mencentang **satu atau beberapa invoice dari customer yang sama**.
+  3. Menekan **"Konfirmasi Lunas"** + memasukkan **tanggal bukti bayar diterima**, **metode pelunasan** (Transfer/Giro/Tunai), **nomor referensi** (wajib untuk giro), dan catatan opsional.
+  4. Invoice berubah menjadi **Lunas**; pesanan di dalamnya berubah dari *Complete (Menunggu Bayar)* menjadi *Complete*.
+  5. Penanda `⚠ Menunggak` pada customer hilang dengan sendirinya begitu tidak ada lagi invoice yang lewat jatuh tempo.
+  6. Tercatat di log aktivitas. **Tidak ada notifikasi ke Sales.**
+- **Pembatalan:** Manager/Super Admin dapat **membatalkan konfirmasi lunas** yang keliru (mis. giro ditolak bank) dengan alasan wajib. Konfirmasinya tidak dihapus — invoice kembali belum lunas dan riwayatnya tetap terbaca.
+
+#### F-BILL-04: Pengingat Jatuh Tempo
+- **Penerima:** **Manager** saja (lonceng web), dibatasi gudang.
+- **Jadwal:** setiap hari pukul 07:00 WIB.
+- **Isi:** satu ringkasan per gudang untuk invoice yang jatuh tempo dalam 3 hari, dan satu untuk invoice yang lewat jatuh tempo. Tiap invoice diingatkan **sekali per tahap**.
 
 #### F-BILL-03: Penandaan Customer Overdue
 
@@ -605,6 +653,7 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
 
 - **Mekanisme:**
   - Sistem menghitung status piutang setiap customer secara real-time dan menampilkannya sebagai **penanda visual** `⚠ Menunggak`.
+  - **Dua tingkat (v1.3):** `⚠ Menunggak N hari` (merah) **hanya** bila ada invoice yang **lewat** jatuh tempo; invoice yang belum jatuh tempo cukup ditampilkan sebagai *tagihan berjalan* (abu-abu) di halaman Approval. Menandai semua invoice belum lunas sebagai menunggak membuat hampir setiap customer tempo selalu merah.
   - Penanda muncul di: form Buat Pesanan (Portal Sales), halaman Approval Pesanan (Portal WMS), dan halaman Master Customer.
   - Relevan HANYA untuk customer dengan pembayaran **Tempo 30/60/90 hari**. Customer Cash/Transfer tidak pernah memiliki piutang berjalan.
   - Penanda hilang otomatis setelah Logistik mengkonfirmasi seluruh tagihan lunas.
@@ -655,12 +704,12 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 
 ---
 
-### 6.8 Modul Notifikasi Real-time
+### 6.8 Modul Notifikasi
 
 #### F-NOTIF-01: Mekanisme Notifikasi
-- **Teknologi:** Laravel Echo + WebSocket (Pusher/Soketi).
-- **Tampilan:** Bell icon di navbar dengan badge counter.
-- **Suara:** Notifikasi baru membunyikan **suara notifikasi** secara otomatis jika halaman sedang terbuka.
+- **Lonceng web:** Bell icon di navbar dengan badge counter, diperbarui setiap halaman dibuka. Tidak memakai WebSocket (v1.4).
+- **Email:** kabar pesanan (diterima, ditolak, berangkat, sampai, ringkasan selesai) dikirim hanya ke Sales pemilik pesanan lewat Gmail SMTP — lihat `docs/8_panduan_email_gmail.md`.
+- **WhatsApp:** tautan konfirmasi untuk supir, tautan persetujuan MRF untuk atasan, dan kabar barang sampai untuk Sales.
 - **Persistence:** Notifikasi disimpan di database dan bisa dibaca ulang.
 
 #### F-NOTIF-02: Daftar Event Notifikasi
@@ -672,7 +721,7 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
 | PO di-reject | Sales pembuat | "Pesanan #{nomor} ditolak. Alasan: {alasan}" |
 | PO partial approved | Sales pembuat | "Pesanan #{nomor} disetujui sebagian. Cek detail." |
 | Picking selesai (Siap Kirim) | Tim Logistik, Sales | "Pesanan #{nomor} siap untuk dikirim" |
-| Surat Jalan dicetak | Sales pembuat | "Surat Jalan #{nomor} telah diterbitkan. Pesanan dalam pengiriman." |
+| Surat Jalan diberangkatkan | Sales pembuat | "Surat Jalan #{nomor} berangkat. Pesanan dalam pengiriman." |
 | Bukti Surat Jalan diupload | Tim Logistik | "Sales {nama} mengunggah bukti SJ untuk pesanan #{nomor}" |
 | **Penolakan** dilaporkan Sales | Tim Logistik, Operator Gudang | "Laporan penolakan #{nomor} untuk PO #{nomor} menunggu pengecekan fisik" |
 | **Penolakan** selesai diproses | Sales pelapor | "Penolakan #{nomor} telah diproses dan barang dialokasikan ke {Good Stock / DDP}" |
@@ -854,18 +903,29 @@ THEN:
     
   IF payment_term = 'tempo_30' OR 'tempo_60' OR 'tempo_90':
     → Status COMPLETE (Menunggu Pembayaran)
-    → Masuk menu Billing
-    → Hitung jatuh_tempo = tanggal_complete + payment_term_days
-    → Customer DITANDAI '⚠ Menunggak' (informatif, TIDAK memblokir)
+    → Masuk menu Billing: SATU tagihan per invoice (pesanan induk
+      gabungan invoice); pesanan anak menumpang di tagihan induknya
+    → Hitung jatuh_tempo = tanggal_barang_sampai + payment_term_days   (v1.3)
+    → Bila invoice-nya sudah lunas → pesanan langsung COMPLETE
+
+RULE: PAYMENT_CONFIRM   (v1.3)
+WHEN: Logistik mengonfirmasi lunas satu/beberapa invoice SATU customer
+THEN:
+  → Tagihan lunas; pesanan COMPLETE (Menunggu Pembayaran) → COMPLETE
+  → Giro WAJIB bernomor; tanggal bukti bayar tidak boleh di masa depan
+  → Pembatalan oleh Manager: tagihan kembali belum lunas,
+    pesanan kembali COMPLETE (Menunggu Pembayaran)
 
 RULE: CUSTOMER_OVERDUE_FLAG
 WHEN: Sistem menampilkan customer di form Buat Pesanan,
       halaman Approval Pesanan, atau Master Customer
 THEN:
-  IF customer memiliki billing dengan status 'belum_lunas':
-    → Tampilkan badge '⚠ Menunggak' + tanggal jatuh tempo terlama
+  IF customer memiliki invoice belum lunas yang due_date < hari ini:   (v1.3)
+    → Tampilkan badge '⚠ Menunggak N hari' (N = invoice terlama)
     → Pesanan TETAP boleh dibuat, disimpan, dan di-submit
     → Penanda ikut terbawa ke halaman Approval Logistik
+  ELSE IF customer memiliki invoice belum lunas yang belum jatuh tempo:
+    → Halaman Approval: badge abu-abu 'N tagihan berjalan'
   ELSE:
     → Tidak ada penanda
 
@@ -924,8 +984,10 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 |---|---|
 | Autentikasi | Email/Password + Google reCAPTCHA v2 (anti-bot) |
 | Otorisasi | RBAC via Laravel Middleware + Policy |
-| Session | 1 jam idle timeout, max 2 device |
-| Rate Limiting | 3 kali gagal (password atau anti-bot) → progressive lockout |
+| Session | 1 jam idle timeout, max 2 device. Akun nonaktif atau sandi direset pengelola → semua sesi putus |
+| Rate Limiting | POST /login 20/menit per IP; 3 kali gagal → kunci email+IP; 10 kali gagal dari IP asing → kunci akun (progresif) |
+| Tautan publik | Token acak 48–64 karakter; tautan supir berlaku 72 jam |
+| Basis data | Pengguna aplikasi bukan superuser PostgreSQL |
 | File Upload | PNG/JPG only, max 5MB, validasi MIME type |
 | CSRF Protection | Laravel CSRF Token pada semua form |
 | XSS Protection | Blade auto-escaping + Content Security Policy |
@@ -937,7 +999,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | Aspek | Implementasi |
 |---|---|
 | Toleransi downtime | Backup berkala (daily) sudah cukup |
-| Backup database | PostgreSQL `pg_dump` terjadwal (daily, simpan 30 hari) |
+| Backup database | PostgreSQL `pg_dump` + berkas unggahan, harian, simpan 30 hari, **terenkripsi** (age, kunci privat di luar server) |
 | Recovery | Restore dari backup terakhir |
 | Deployment | Zero-downtime deployment via Docker + CI/CD |
 
@@ -963,16 +1025,14 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | CSS Framework | Bootstrap | 5.3+ |
 | Database | PostgreSQL | 16+ |
 | Cache & Session | Redis | 7+ |
-| Queue Worker | Laravel Horizon | (latest) |
-| Real-time | Laravel Echo + Pusher/Soketi | (latest) |
+| Queue Worker | `php artisan queue:work` (Redis) | (built-in) |
+| Notifikasi | Lonceng web + email (Gmail SMTP) + WhatsApp | — |
 | Verifikasi Anti-Bot | Google reCAPTCHA v2 | `Illuminate\Support\Facades\Http` langsung ke endpoint siteverify — tanpa package tambahan |
-| Excel Export | Maatwebsite/Laravel-Excel | 3.x |
-| Charts | Chart.js atau ApexCharts | (latest) |
-| PDF Generation | DomPDF atau Snappy | (latest) |
+| Excel Impor & Ekspor | phpoffice/phpspreadsheet | 5.x |
+| Charts | Chart.js (CDN, versi terkunci + SRI) | 4.5 |
 | Containerization | Docker + Docker Compose | 24+ |
 | CI/CD | GitHub Actions | (latest) |
-| Web Server | Nginx | (latest) |
-| Process Manager | Supervisor (dalam Docker) | (latest) |
+| Web Server | Nginx di belakang Caddy (HTTPS otomatis) | (latest) |
 
 ### 9.2 Arsitektur Deployment
 
@@ -981,14 +1041,14 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 │                   Docker Host                    │
 │                                                  │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐           │
-│  │  Nginx  │  │ Laravel │  │  Redis  │           │
-│  │ (proxy) │→ │  (PHP)  │→ │ (cache) │           │
+│  │  Caddy  │→ │  Nginx  │→ │ Laravel │           │
+│  │ (HTTPS) │  │(statis) │  │(php-fpm)│           │
 │  └─────────┘  └─────────┘  └─────────┘           │
-│                     ↓                            │
-│  ┌─────────┐  ┌─────────┐  ┌──────────┐          │
-│  │PostgreSQL│  │Horizon  │  │ Soketi/  │          │
-│  │  (DB)   │  │(queue)  │  │ Pusher   │          │
-│  └─────────┘  └─────────┘  └──────────┘          │
+│                               ↓                  │
+│  ┌──────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ │
+│  │PostgreSQL│ │  Redis  │ │ queue + │ │ backup │ │
+│  │   (DB)   │ │ (cache) │ │scheduler│ │ harian │ │
+│  └──────────┘ └─────────┘ └─────────┘ └────────┘ │
 │                                                  │
 └──────────────────────────────────────────────────┘
 ```
@@ -1015,8 +1075,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 ### Fase 3: Enhancement (Minggu 8-9)
 - **Modul Retur (Reverse Logistics)** — pelaporan Sales, pengecekan fisik, alokasi GR/DDP
 - **Modul Transfer Stok** (antar lokasi rak & antar gudang)
-- **Scan QR Lokasi Rak** (put-away & picking)
-- Notifikasi Real-time + Suara
+- Notifikasi (lonceng web, email, WhatsApp)
 - Dashboard & Grafik Analitik
 - Laporan & Ekspor Excel
 - Audit Log & Archival

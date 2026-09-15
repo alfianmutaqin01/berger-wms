@@ -13,8 +13,14 @@ use Illuminate\Support\Facades\Schema;
  * sudah memuat data pesanan sungguhan.
  *
  * lost_qty = qty_ordered - qty_approved (PRD §7.3). Disimpan, bukan dihitung
- * saat query, karena angka ini dipakai laporan Lost Sales dan harus tetap
+ * saat query, karena angka ini dipakai laporan Outstanding dan harus tetap
  * mencerminkan keputusan saat approval sekalipun qty_ordered kelak dikoreksi.
+ *
+ * NAMA KOLOMNYA SUDAH BERUBAH. Migrasi ini sengaja dibiarkan menyebut
+ * `lost_qty` karena itulah yang benar-benar dibuatnya; penggantian nama
+ * menjadi `outstanding_qty` ada di migrasi 2026_09_12_000001. Mengubah
+ * migrasi lama agar "terlihat rapi" berarti riwayatnya tidak lagi
+ * mencerminkan apa yang pernah terjadi pada database yang sudah berjalan.
  */
 return new class extends Migration
 {

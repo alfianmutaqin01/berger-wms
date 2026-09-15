@@ -95,7 +95,7 @@ class InventoryTest extends TestCase
     private function batchDiLayar(string $url = '/wms/inventory')
     {
         return collect($this->get($url)->viewData('barisSku'))
-            ->flatMap(fn (array $baris) => $baris['good']->merge($baris['ddp']));
+            ->flatMap(fn (array $baris) => $baris['good']->merge($baris['karantina'])->merge($baris['ddp']));
     }
 
     /* ---------------------------------------------------------------- Akses */
@@ -123,16 +123,41 @@ class InventoryTest extends TestCase
         $this->assertSame(180, $stock->fresh()->qty_available);
     }
 
-    public function test_produksi_dan_operator_tidak_boleh_transfer(): void
+    /**
+     * Produksi HANYA MELIHAT; Operator Gudang boleh memindahkan antar rak.
+     *
+     * Keputusan pemilik produk: Operator-lah yang benar-benar mengangkat
+     * barangnya, dan memaksa mereka memanggil Logistik hanya untuk mencatat
+     * perpindahan yang sudah terjadi membuat sistem tertinggal dari kenyataan
+     * di rak. Yang tetap tertutup bagi Operator adalah MENGUBAH JUMLAH —
+     * lihat test_produksi_dan_operator_tidak_boleh_koreksi_qty().
+     */
+    public function test_produksi_tidak_boleh_transfer_tetapi_operator_boleh(): void
     {
         $stock = $this->stock();
         $this->bin('B-01-02');
 
+        $this->loginAs(Role::PRODUCTION);
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $stock->id, 'to_location_code' => 'B-01-02',
+            'qty' => 10, 'reason' => 'percobaan tidak sah',
+        ])->assertForbidden();
+
+        $this->loginAs(Role::WAREHOUSE_OPERATOR);
+        $this->post('/wms/inventory/transfer', [
+            'stock_id' => $stock->id, 'to_location_code' => 'B-01-02',
+            'qty' => 10, 'reason' => 'merapikan rak',
+        ])->assertSessionHas('success');
+    }
+
+    public function test_produksi_dan_operator_tidak_boleh_koreksi_qty(): void
+    {
+        $stock = $this->stock();
+
         foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
             $this->loginAs($slug);
-            $this->post('/wms/inventory/transfer', [
-                'stock_id' => $stock->id, 'to_location_code' => 'B-01-02',
-                'qty' => 10, 'reason' => 'percobaan tidak sah',
+            $this->post('/wms/inventory/adjust', [
+                'stock_id' => $stock->id, 'qty_new' => 999, 'reason' => 'percobaan tidak sah',
             ])->assertForbidden();
         }
     }
@@ -343,7 +368,7 @@ class InventoryTest extends TestCase
             'batch_no' => 'TERTUA', 'location_id' => $this->bin('B-01-02')->id,
         ]);
 
-        $urutan = InventoryStock::query()->fifo()->pluck('batch_no')->all();
+        $urutan = InventoryStock::query()->urutanKeluar()->pluck('batch_no')->all();
 
         $this->assertSame(['TERTUA', 'BARU'], $urutan);
     }
@@ -358,7 +383,7 @@ class InventoryTest extends TestCase
         $this->post('/wms/inventory/adjust', [
             'stock_id' => $stock->id,
             'qty_new' => 178,
-            'reason' => 'Hasil opname 31 Agu 2026, 2 pail rusak saat penurunan.',
+            'reason' => 'Hasil stocktake 31 Agu 2026, 2 pail rusak saat penurunan.',
         ])->assertSessionHas('success');
 
         $this->assertSame(178, $stock->fresh()->qty_available);
@@ -369,7 +394,7 @@ class InventoryTest extends TestCase
         $this->assertSame(180, $ledger->qty_before);
         $this->assertSame(178, $ledger->qty_after);
         $this->assertSame($manager->id, $ledger->user_id);
-        $this->assertStringContainsString('opname', $ledger->notes);
+        $this->assertStringContainsString('stocktake', $ledger->notes);
     }
 
     public function test_koreksi_tanpa_alasan_ditolak(): void
@@ -510,7 +535,7 @@ class InventoryTest extends TestCase
         $this->loginAs();
         $stock = $this->stock();
         $this->post('/wms/inventory/adjust', [
-            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi opname.',
+            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi stocktake.',
         ]);
 
         $ledger = StockMovement::first();
@@ -524,7 +549,7 @@ class InventoryTest extends TestCase
         $this->loginAs();
         $stock = $this->stock();
         $this->post('/wms/inventory/adjust', [
-            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi opname.',
+            'stock_id' => $stock->id, 'qty_new' => 100, 'reason' => 'Koreksi stocktake.',
         ]);
 
         $ledger = StockMovement::first();
@@ -617,5 +642,223 @@ class InventoryTest extends TestCase
         $this->assertSame(178, $ledger->qty_change);
         $this->assertSame(0, $ledger->qty_before);
         $this->assertSame(StockMovement::REF_INBOUND, $ledger->reference_type);
+    }
+
+    /* ------------------------------------------- Tambah stok & baris kosong */
+
+    /**
+     * GUDANG DIPILIH, TIDAK DISIMPULKAN DARI KODE RAK.
+     *
+     * Kode rak TIDAK unik antar gudang. Sebelum perbaikan ini, "A-01-02"
+     * dicari tanpa menyebut gudangnya dan yang menang adalah baris pertama
+     * yang ditemukan — sehingga stok bisa mendarat di gudang yang sama sekali
+     * tidak dimaksud, tanpa satu pun pesan galat.
+     */
+    public function test_tambah_stok_memakai_rak_di_gudang_yang_dipilih(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+        $parts = Location::parseCode('A-01-02');
+
+        // Rak berkode SAMA di dua gudang. Yang di gudang lain sengaja dibuat
+        // LEBIH DULU supaya ia yang menang kalau gudangnya tidak dijepit.
+        $rakGudangLain = Location::create([
+            'warehouse_id' => $lain->id, 'code' => 'A-01-02',
+            'rack' => $parts['rack'], 'level' => $parts['level'], 'cell' => $parts['cell'],
+            'zone' => Location::ZONE_FAST, 'is_active' => true,
+        ]);
+        $rakGudangSaya = $this->bin('A-01-02');
+
+        $produk = Product::factory()->create(['sku' => 'ID1-UJI-001', 'is_active' => true]);
+
+        $this->post(route('wms.inventory.store'), [
+            'warehouse_id' => $this->warehouse->id,
+            'sku' => 'ID1-UJI-001',
+            'location_code' => 'A-01-02',
+            'batch_no' => 'BT-UJI-001',
+            'production_date' => now()->subMonth()->toDateString(),
+            'qty' => 12,
+            'reason' => 'Stocktake, barang sudah di rak.',
+        ])->assertSessionHas('success');
+
+        $stok = InventoryStock::where('product_id', $produk->id)->first();
+
+        $this->assertNotNull($stok);
+        $this->assertSame($rakGudangSaya->id, $stok->location_id,
+            'Rak dicari DI DALAM gudang yang dipilih, bukan yang pertama ketemu.');
+        $this->assertSame($this->warehouse->id, $stok->warehouse_id);
+        $this->assertNotSame($rakGudangLain->id, $stok->location_id);
+    }
+
+    public function test_tambah_stok_ditolak_bila_rak_tidak_ada_di_gudang_yang_dipilih(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+        $parts = Location::parseCode('A-09-09');
+        Location::create([
+            'warehouse_id' => $lain->id, 'code' => 'A-09-09',
+            'rack' => $parts['rack'], 'level' => $parts['level'], 'cell' => $parts['cell'],
+            'zone' => Location::ZONE_FAST, 'is_active' => true,
+        ]);
+
+        Product::factory()->create(['sku' => 'ID1-UJI-002', 'is_active' => true]);
+
+        // Raknya ADA, tapi di gudang lain. Dahulu ini akan berhasil dan
+        // menaruh stoknya di gudang yang salah tanpa pesan apa pun.
+        $this->post(route('wms.inventory.store'), [
+            'warehouse_id' => $this->warehouse->id,
+            'sku' => 'ID1-UJI-002',
+            'location_code' => 'A-09-09',
+            'batch_no' => 'BT-UJI-002',
+            'production_date' => now()->subMonth()->toDateString(),
+            'qty' => 12,
+            'reason' => 'Stocktake, barang sudah di rak.',
+        ])->assertSessionHasErrors('location_code');
+
+        $this->assertSame(0, InventoryStock::count());
+    }
+
+    /**
+     * Baris yang tersedia DAN teralokasi sama-sama nol bukan stok — ia sisa
+     * batch yang habis atau seluruhnya dipindah ke rak lain.
+     */
+    public function test_baris_stok_kosong_tidak_ditampilkan(): void
+    {
+        $this->loginAs();
+        $kosong = $this->stock(['qty_available' => 0, 'qty_allocated' => 0, 'batch_no' => 'BT-KOSONG']);
+        $this->stock(['qty_available' => 5, 'qty_allocated' => 0, 'batch_no' => 'BT-ISI']);
+
+        $terlihat = $this->batchDiLayar()->pluck('batch_no');
+
+        $this->assertTrue($terlihat->contains('BT-ISI'));
+        $this->assertFalse($terlihat->contains('BT-KOSONG'), 'Rak kosong tidak boleh terbaca sebagai berisi.');
+        $this->assertDatabaseHas('inventory_stocks', ['id' => $kosong->id]);
+    }
+
+    public function test_baris_yang_habis_dicadangkan_tetap_ditampilkan(): void
+    {
+        $this->loginAs();
+        $this->stock(['qty_available' => 0, 'qty_allocated' => 20, 'batch_no' => 'BT-DICADANGKAN']);
+
+        $terlihat = $this->batchDiLayar()->pluck('batch_no');
+
+        $this->assertTrue($terlihat->contains('BT-DICADANGKAN'),
+            'Barangnya masih berdiri di rak. Menyembunyikannya membuat operator picking mencari barang yang menurut layar tidak ada.');
+    }
+
+    /* ----------------------------------------------- Export Excel (F-INV-01) */
+
+    /**
+     * Tombolnya mengarah ke PRATINJAU laporan, bukan langsung mengunduh.
+     *
+     * Alurnya sengaja sama dengan kartu Pergerakan Stok di menu Laporan:
+     * lihat dulu baris pertama beserta jumlah baris sebenarnya, baru tekan
+     * unduh. Mengunduh dengan mata tertutup lalu mendapati isinya kosong atau
+     * salah gudang adalah putaran yang mahal — apalagi kalau berkasnya
+     * terlanjur diteruskan ke orang lain.
+     */
+    public function test_tombol_export_mengarah_ke_pratinjau_laporan_yang_sudah_ada(): void
+    {
+        $this->loginAs(Role::MANAGER);
+
+        $html = $this->get('/wms/inventory')->assertOk()->getContent();
+
+        $this->assertStringContainsString(route('wms.reports.show', 'posisi-stok'), $html);
+        $this->assertStringContainsString(route('wms.reports.show', 'pergerakan-stok'), $html);
+    }
+
+    /**
+     * Melihat di layar dan membawa keluar satu berkas adalah dua hal berbeda.
+     *
+     * Produksi dan Operator Gudang memang harus bisa membuka halaman ini —
+     * mereka mengecek lokasi saat put-away dan picking. Tetapi pintu yang
+     * memuntahkan seluruh isi gudang dalam satu berkas yang bisa diteruskan
+     * ke mana saja tetap tertutup bagi mereka, sama seperti di menu Laporan.
+     */
+    public function test_produksi_dan_operator_melihat_stok_tanpa_tombol_export(): void
+    {
+        $this->stock(['batch_no' => 'BT-RAHASIA']);
+
+        foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
+            $this->loginAs($slug);
+
+            $html = $this->get('/wms/inventory')->assertOk()->getContent();
+
+            $this->assertStringNotContainsString('Export Excel', $html);
+            $this->assertStringNotContainsString(route('wms.reports.show', 'posisi-stok'), $html);
+
+            // Bukan sekadar tombolnya disembunyikan — pintunya memang tertutup.
+            $this->get(route('wms.reports.show', 'posisi-stok'))->assertForbidden();
+        }
+    }
+
+    /**
+     * Gudang yang sedang dipilih ikut terbawa ke pratinjau.
+     *
+     * Super Admin yang sedang menyaring satu gudang lalu menekan Export tidak
+     * boleh mendarat di pratinjau seluruh gudang — ia akan mengunduhnya tanpa
+     * menyadari bahwa penyaringnya sudah hilang di tengah jalan.
+     */
+    public function test_gudang_yang_dipilih_ikut_ke_tautan_pratinjau(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $html = $this->get('/wms/inventory?warehouse_id='.$this->warehouse->id)->assertOk()->getContent();
+
+        $this->assertStringContainsString(
+            route('wms.reports.show', ['key' => 'posisi-stok', 'warehouse_id' => $this->warehouse->id]),
+            $html,
+        );
+    }
+
+    /* ------------------------------------------- Angka lintas gudang */
+
+    /**
+     * Satu baris = satu SKU, dan bagi akun lintas gudang itu berarti angkanya
+     * MENJUMLAHKAN GUDANG YANG BERBEDA.
+     *
+     * Pernah terbaca sebagai selisih stocktake: layar ini menunjukkan 234
+     * sementara laporan stocktake Karawang menyebut 55 — padahal 180 di
+     * antaranya sudah dipindah ke gudang lain berbulan-bulan sebelumnya dan
+     * stocktake-nya benar. Kode gudangnya sendiri nyaris kembar, jadi label
+     * kecil di tiap baris batch tidak cukup: yang dibaca lebih dulu adalah
+     * angka besar di kepala baris.
+     */
+    public function test_total_sku_menyebutkan_rinciannya_saat_lintas_gudang(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $produk = Product::factory()->create(['sku' => 'SKU-LINTAS', 'uom' => 'TIN']);
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+
+        $this->stock(['product_id' => $produk->id, 'batch_no' => 'BT-SINI', 'qty_available' => 54]);
+
+        InventoryStock::factory()->create([
+            'warehouse_id' => $lain->id,
+            'location_id' => Location::factory()->create(['warehouse_id' => $lain->id])->id,
+            'product_id' => $produk->id,
+            'batch_no' => 'BT-SANA',
+            'qty_available' => 180,
+        ]);
+
+        $baris = $this->get('/wms/inventory')->viewData('barisSku')->first();
+
+        $this->assertSame(234, $baris['total_good'], 'Totalnya memang gabungan — itu tidak diubah.');
+        $this->assertSame(['WH-01' => 54, 'WH-99' => 180], $baris['per_gudang']->all());
+    }
+
+    /** Satu gudang saja tidak perlu rincian — lencananya cuma jadi kebisingan. */
+    public function test_sku_satu_gudang_tidak_perlu_rincian(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+
+        $produk = Product::factory()->create(['sku' => 'SKU-SATU-GUDANG', 'uom' => 'TIN']);
+        $this->stock(['product_id' => $produk->id, 'qty_available' => 54]);
+
+        $baris = $this->get('/wms/inventory')->viewData('barisSku')->first();
+
+        $this->assertCount(1, $baris['per_gudang']);
     }
 }

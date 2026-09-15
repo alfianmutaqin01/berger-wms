@@ -52,6 +52,21 @@ abstract class Importer
         return [];
     }
 
+    /**
+     * Keterangan tambahan setelah impor selesai, di luar hitungan baris.
+     *
+     * Sebagian impor MENGUBAH hal lain selain barisnya sendiri — stok awal
+     * menyedot barang ke pesanan yang menunggu, impor Surat Jalan menemukan
+     * dokumen yang tidak berpasangan. Perubahan semacam itu tidak muncul di
+     * angka "sekian ditambahkan, sekian diperbarui", dan impor yang diam-diam
+     * mengubah sesuatu di tempat lain adalah persis yang paling sulit
+     * ditelusuri belakangan.
+     */
+    public function catatanTambahan(): ?string
+    {
+        return null;
+    }
+
     /** @return array{key: string, label: string, data: array}|null */
     abstract protected function mapRow(array $row): ?array;
 
@@ -124,9 +139,11 @@ abstract class Importer
      * berhenti di baris 1.731. Kini galat basis data dicatat sebagai kegagalan
      * BARIS ITU saja lalu dilaporkan.
      *
-     * Hanya QueryException yang ditangkap — kesalahan basis data memang milik
-     * datanya. Galat jenis lain tetap dibiarkan naik karena itu cacat program,
-     * bukan cacat berkas, dan menyembunyikannya justru mempersulit.
+     * Yang ditangkap hanya DUA: RowRejected (penolakan yang disengaja
+     * importer, pesannya sudah ditulis untuk pengguna) dan QueryException
+     * (kesalahan basis data memang milik datanya). Galat jenis lain tetap
+     * dibiarkan naik karena itu cacat program, bukan cacat berkas, dan
+     * menyembunyikannya justru mempersulit.
      *
      * @return array{baru:int, perbarui:int, gagal:int, galat: list<string>}
      */
@@ -153,6 +170,11 @@ abstract class Importer
                 $this->persist($mapped['key'], $mapped['data'])
                     ? $summary['baru']++
                     : $summary['perbarui']++;
+            } catch (RowRejected $e) {
+                // Penolakan yang DISENGAJA importer, dengan alasan yang sudah
+                // ditulis untuk dibaca pengguna.
+                $summary['gagal']++;
+                $summary['galat'][] = "Baris {$lineNumber} ({$mapped['key']}): {$e->getMessage()}.";
             } catch (QueryException $e) {
                 $summary['gagal']++;
                 $summary['galat'][] = "Baris {$lineNumber} ({$mapped['key']}): ditolak basis data.";

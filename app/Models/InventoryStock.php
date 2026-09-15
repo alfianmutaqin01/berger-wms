@@ -30,8 +30,19 @@ class InventoryStock extends Model
     /** Lewat masa simpan, dipindahkan otomatis oleh sweep harian. */
     public const STATUS_EXPIRED = 'expired';
 
+    /**
+     * Ditahan sementara menunggu keputusan (biasanya QC), berbasis HARI —
+     * BUKAN penandaan permanen seperti DDP. Tidak ikut alokasi FIFO selama
+     * status ini berlaku (FifoAllocator menyaring `status = active` secara
+     * langsung), dan lepas SENDIRI begitu `quarantine_until` terlewati lewat
+     * sweep harian (App\Console\Commands\SweepQuarantine) — tidak menunggu
+     * tindakan manual seperti DDP.
+     */
+    public const STATUS_QUARANTINE = 'quarantine';
+
     public const STATUS_LABELS = [
         self::STATUS_ACTIVE => 'Good Stock',
+        self::STATUS_QUARANTINE => 'Karantina',
         self::STATUS_DDP => 'Stok DDP',
         self::STATUS_EXPIRED => 'Kedaluwarsa',
     ];
@@ -48,7 +59,7 @@ class InventoryStock extends Model
         self::DDP_EXPIRED => 'Lewat masa simpan',
         self::DDP_RETURN_DAMAGED => 'Retur rusak',
         self::DDP_WRITE_OFF => 'Write-off',
-        self::DDP_OPNAME => 'Temuan opname',
+        self::DDP_OPNAME => 'Temuan stocktake',
     ];
 
     protected $fillable = [
@@ -62,6 +73,18 @@ class InventoryStock extends Model
         'expiry_date',
         'status',
         'ddp_reason',
+        'has_quality_issue',
+        'prioritize_out',
+        'prioritize_reason',
+        'prioritized_at',
+        'prioritized_by',
+        'prioritize_released_at',
+        'quarantine_days',
+        'quarantine_until',
+        'quarantined_at',
+        'quarantined_by',
+        'quarantine_note',
+        'quarantine_released_at',
         'inbound_detail_id',
         'sales_return_detail_id',
         'verified_by',
@@ -76,6 +99,14 @@ class InventoryStock extends Model
             'production_date' => 'date',
             'expiry_date' => 'date',
             'verified_at' => 'datetime',
+            'has_quality_issue' => 'boolean',
+            'prioritize_out' => 'boolean',
+            'prioritized_at' => 'datetime',
+            'prioritize_released_at' => 'datetime',
+            'quarantine_days' => 'integer',
+            'quarantine_until' => 'date',
+            'quarantined_at' => 'datetime',
+            'quarantine_released_at' => 'datetime',
         ];
     }
 
@@ -110,6 +141,16 @@ class InventoryStock extends Model
         return $this->belongsTo(User::class, 'verified_by');
     }
 
+    public function quarantinedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'quarantined_by');
+    }
+
+    public function prioritizedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'prioritized_by');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Scope
@@ -130,16 +171,59 @@ class InventoryStock extends Model
             ->whereDate('expiry_date', '>', now()->toDateString());
     }
 
-    /** Urutan FIFO: batch tertua keluar duluan. */
-    public function scopeFifo(Builder $query): Builder
+    /**
+     * URUTAN KELUAR — satu-satunya sumber urutan batch untuk SEMUA jalur
+     * keluar: alokasi pesanan (FifoAllocator), pencadangan booking
+     * (ProductBooking::reserve) dan pengeluaran kekurangan saat kirim
+     * (Shipment::keluarkanKekurangan).
+     *
+     * DULUNYA scopeFifo(), DAN NAMANYA SENGAJA DIGANTI. Sejak ada penanda
+     * "Dahulukan Keluar", urutannya bukan FIFO murni lagi — scope bernama
+     * fifo() yang ternyata tidak FIFO adalah jebakan bagi siapa pun yang
+     * membacanya nanti.
+     *
+     * BATCH BERTANDA NAIK KE DEPAN DAN DIURUTKAN TERBALIK (LIFO) — keputusan
+     * pemilik produk: "pada tanda ini FIFO berubah jadi LIFO". Yang tidak
+     * bertanda tetap FIFO seperti biasa.
+     *
+     * Dua arah dalam satu query, jadi urutan keduanya ditulis sebagai satu
+     * ekspresi: kunci LIFO hanya terisi untuk baris bertanda, dan baris yang
+     * tidak bertanda seluruhnya bernilai NULL di situ sehingga jatuh ke kunci
+     * FIFO berikutnya. Memisahkannya jadi dua query berarti ada dua tempat
+     * yang bisa berbeda pendapat tentang batch mana yang keluar duluan.
+     *
+     * KETIGA JALUR WAJIB MEMAKAI SCOPE INI. Sebelumnya masing-masing menulis
+     * orderBy sendiri — tiga salinan aturan yang sama. Kalau penandanya cuma
+     * dipasang di satu jalur, batch bertanda didahulukan saat pesanan
+     * diterima tetapi TIDAK saat barangnya dikeluarkan, dan ketimpangan
+     * seperti itu baru ketahuan berbulan-bulan kemudian.
+     */
+    public function scopeUrutanKeluar(Builder $query): Builder
     {
-        return $query->orderBy('production_date')->orderBy('id');
+        return $query
+            ->orderByDesc('prioritize_out')
+            ->orderByRaw('CASE WHEN prioritize_out THEN production_date END DESC NULLS LAST')
+            ->orderBy('production_date')
+            ->orderBy('id');
     }
 
-    /** Stok yang tidak layak jual: DDP maupun kedaluwarsa. */
-    public function scopeQuarantined(Builder $query): Builder
+    /**
+     * Stok yang tidak layak jual sama sekali: DDP maupun kedaluwarsa.
+     *
+     * BUKAN "karantina" (lihat STATUS_QUARANTINE) — namanya sengaja diganti
+     * dari scopeQuarantined() supaya tidak bentrok istilah begitu status
+     * 'quarantine' yang sesungguhnya ditambahkan. Stok karantina biasanya
+     * MASIH layak jual, hanya ditahan sementara menunggu waktu; DDP tidak.
+     */
+    public function scopeDdpOrExpired(Builder $query): Builder
     {
         return $query->whereIn('status', [self::STATUS_DDP, self::STATUS_EXPIRED]);
+    }
+
+    /** Stok yang sedang ditahan sementara, menunggu jangka waktunya lewat. */
+    public function scopeInQuarantine(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_QUARANTINE);
     }
 
     public function scopeSearch(Builder $query, ?string $term): Builder
@@ -192,6 +276,16 @@ class InventoryStock extends Model
         return $this->ddp_reason === null
             ? null
             : (self::DDP_REASON_LABELS[$this->ddp_reason] ?? $this->ddp_reason);
+    }
+
+    /** Sisa hari karantina, siap tampil. Negatif berarti sudah lewat waktunya. */
+    public function getQuarantineDaysLeftAttribute(): ?int
+    {
+        if ($this->quarantine_until === null) {
+            return null;
+        }
+
+        return (int) now()->startOfDay()->diffInDays($this->quarantine_until, false);
     }
 
     /**

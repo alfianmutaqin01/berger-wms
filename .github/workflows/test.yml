@@ -8,6 +8,18 @@ on:
     branches: [develop, main]
   push:
     branches: [develop]
+  # Dipanggil deploy.yml: rilis hanya dipasang bila test untuk tag yang sama hijau.
+  workflow_call:
+
+# Token bawaan hanya boleh membaca kode. Action pihak ketiga yang disusupi
+# tidak bisa mendorong commit atau mengubah rilis dengan token ini.
+#
+# SETIAP ACTION DIKUNCI KE COMMIT SHA, bukan tag (@v4). Tag bisa dipindahkan
+# pemilik repositori action — atau penyerang yang membobolnya — ke kode lain,
+# dan kode itu berjalan di pipeline yang memegang kunci SSH server. Pembaruan
+# SHA diusulkan Dependabot (.github/dependabot.yml) lewat PR yang ditinjau.
+permissions:
+  contents: read
 
 jobs:
   # === Job 1: PHP Lint ===
@@ -15,15 +27,15 @@ jobs:
     name: PHP Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
         with:
           php-version: '8.3'
 
       - name: Cache Composer
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: vendor
           key: composer-${{ hashFiles('composer.lock') }}
@@ -69,35 +81,22 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
         with:
           php-version: '8.3'
           extensions: pdo_pgsql, redis, gd, zip, pcntl, bcmath
 
       - name: Cache Composer
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: vendor
           key: composer-${{ hashFiles('composer.lock') }}
 
       - name: Install PHP Dependencies
         run: composer install --no-interaction --prefer-dist
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      # `npm ci` memasang persis versi yang terkunci di package-lock.json,
-      # sehingga build di CI identik dengan build di mesin lokal.
-      - name: Install & Build Frontend
-        run: |
-          npm ci
-          npm run build
 
       - name: Prepare Environment
         run: |
@@ -114,8 +113,6 @@ jobs:
           DB_USERNAME: wms_test
           DB_PASSWORD: testing
 
-      # `--parallel` membutuhkan brianium/paratest yang belum terpasang.
-      # Tambahkan paratest ke require-dev lebih dulu bila ingin mengaktifkannya.
       - name: Execute Tests
         run: php artisan test
         env:

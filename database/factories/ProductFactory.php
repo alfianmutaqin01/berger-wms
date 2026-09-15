@@ -31,7 +31,10 @@ class ProductFactory extends Factory
             'unit_volume' => 2.425,
             'net_weight' => null,
             'gross_weight' => 4.05,
-            'max_qty_per_pallet' => 180,
+            // Kolom ini PENGECUALIAN, bukan salinan: dibiarkan kosong supaya
+            // produk hasil factory berperilaku seperti produk sungguhan —
+            // mengikuti aturan ukuran di pallet_capacity_rules (2.5 L = 180).
+            'max_qty_per_pallet' => null,
             'shelf_life_months' => 30,
             'stock_threshold_low' => 50,
             'is_active' => true,
@@ -46,7 +49,6 @@ class ProductFactory extends Factory
             'pack_unit' => PalletCapacity::UNIT_LITER,
             'unit_volume' => $size,
             'net_weight' => null,
-            'max_qty_per_pallet' => PalletCapacity::resolve(PalletCapacity::UNIT_LITER, $size),
         ]);
     }
 
@@ -58,7 +60,6 @@ class ProductFactory extends Factory
             'pack_unit' => PalletCapacity::UNIT_KILOGRAM,
             'net_weight' => $size,
             'unit_volume' => null,
-            'max_qty_per_pallet' => PalletCapacity::resolve(PalletCapacity::UNIT_KILOGRAM, $size),
         ]);
     }
 
@@ -67,9 +68,20 @@ class ProductFactory extends Factory
         return $this->state(fn () => ['is_active' => false]);
     }
 
-    /** Ukuran kemasan di luar aturan gudang — kapasitas palet belum diketahui. */
+    /**
+     * Kapasitas paletnya benar-benar TIDAK DIKETAHUI siapa pun.
+     *
+     * Ukuran kemasannya ikut dikosongkan, bukan cuma kolom pengecualiannya:
+     * sejak kapasitas dibaca dari aturan ukuran, produk yang ukurannya
+     * kebetulan terdaftar tetap punya kapasitas walau kolomnya kosong — dan
+     * test yang memakai state ini justru sedang menguji keadaan sebaliknya.
+     */
     public function withoutPalletCapacity(): static
     {
-        return $this->state(fn () => ['max_qty_per_pallet' => null]);
+        return $this->state(fn () => [
+            'max_qty_per_pallet' => null,
+            'pack_size' => null,
+            'pack_unit' => null,
+        ]);
     }
 }

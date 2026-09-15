@@ -45,4 +45,50 @@ return [
         'secret_key' => env('RECAPTCHA_SECRET_KEY'),
     ],
 
+    /*
+    | WhatsApp — tautan konfirmasi untuk supir (PRD §6.5 F-OUT-04 #10).
+    |
+    | driver = manual : bawaan. Sistem menyiapkan pesan + tautan, Logistik
+    |                   yang menekan kirim lewat WhatsApp-nya sendiri. Tanpa
+    |                   langganan, tanpa risiko nomor diblokir.
+    |         = cloud  : WhatsApp Cloud API resmi Meta. Butuh SELURUH isian di
+    |                   bawah terisi; lihat CloudApiWhatsAppSender untuk apa
+    |                   yang harus disiapkan di sisi Meta lebih dulu.
+    |         = fonnte : gateway pihak ketiga lewat nomor WhatsApp biasa yang
+    |                   ditautkan. Butuh fonnte_token; lihat
+    |                   FonnteWhatsAppSender untuk risikonya.
+    |         = log    : mencatat ke log, untuk pengembangan.
+    |
+    | Berpindah penyedia TIDAK mengubah kode mana pun — hanya nilai ini.
+    */
+    'whatsapp' => [
+        'driver' => env('WHATSAPP_DRIVER', 'manual'),
+
+        // Nomor yang SEHARUSNYA tampil sebagai pengirim. Catatan, bukan
+        // pengatur: Meta menentukan pengirim dari phone_number_id, Fonnte
+        // dari tokennya. Ditampilkan di layar supaya kalau pesan keluar dari
+        // nomor lain, orang punya pembanding.
+        'sender_number' => env('WHATSAPP_SENDER_NUMBER'),
+
+        // --- Meta Cloud API
+        'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
+        'token' => env('WHATSAPP_TOKEN'),
+        'language' => env('WHATSAPP_TEMPLATE_LANGUAGE', 'id'),
+
+        /*
+         | Jenis pesan => nama template yang DISETUJUI Meta. Satu per jenis:
+         | memakai satu template untuk semuanya membuat atasan MRF menerima
+         | pesan berbunyi "konfirmasi pengiriman". Isi template yang harus
+         | diajukan ke Meta tertulis di .env.example.
+         */
+        'templates' => [
+            'konfirmasi_pengiriman' => env('WHATSAPP_TEMPLATE', 'konfirmasi_pengiriman'),
+            'persetujuan_mrf' => env('WHATSAPP_TEMPLATE_MRF', 'persetujuan_mrf'),
+            'barang_sampai_sales' => env('WHATSAPP_TEMPLATE_BARANG_SAMPAI', 'barang_sampai_sales'),
+        ],
+
+        // --- Fonnte
+        'fonnte_token' => env('WHATSAPP_FONNTE_TOKEN'),
+    ],
+
 ];

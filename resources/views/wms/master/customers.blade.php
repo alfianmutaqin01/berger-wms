@@ -174,7 +174,12 @@
                                           title="Belum terdaftar di ERP">Belum ada</span>
                                 @endif
                             </td>
-                            <td class="text-dark fw-semibold align-top">{{ $customer->name }}</td>
+                            <td class="text-dark fw-semibold align-top">
+                                {{ $customer->name }}
+                                @if(isset($piutang[$customer->id]))
+                                    <div class="mt-1">@include('partials.penanda-piutang', ['penanda' => $piutang[$customer->id]])</div>
+                                @endif
+                            </td>
                             <td class="font-monospace small text-nowrap align-top">{{ $customer->phone_label }}</td>
                             <td class="small text-nowrap align-top">{{ $customer->contact_name ?: '—' }}</td>
                             <td class="small align-top text-lowercase">{{ $customer->email ?: '—' }}</td>

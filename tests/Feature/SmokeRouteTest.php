@@ -3,18 +3,35 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\DeliveryNote;
+use App\Models\DeliveryNoteLine;
+use App\Models\DeliveryProof;
 use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\MaterialRequisition;
+use App\Models\MaterialRequisitionAllocation;
+use App\Models\MaterialRequisitionItem;
+use App\Models\Notification;
 use App\Models\PaymentTerm;
+use App\Models\PickingList;
+use App\Models\PickingListItem;
 use App\Models\Product;
+use App\Models\ProductionMaterialConsumption;
+use App\Models\ProductionMaterialHolding;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
+use App\Models\SalesReturn;
+use App\Models\StockTake;
+use App\Models\StockTakeItem;
+use App\Models\StockTransfer;
+use App\Models\StockTransferDetail;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Reporting\ReportCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
@@ -228,10 +245,196 @@ class SmokeRouteTest extends TestCase
             'product_id' => $produk->id,
         ]);
 
+        // --- Transfer antar gudang, masih di perjalanan ---
+        // Gudang tujuan dibuat terpisah: CHECK constraint menolak transfer
+        // yang asal dan tujuannya sama, dan smoke test harus memakai data
+        // yang memang bisa hidup di database.
+        $tujuan = Warehouse::factory()->create(['code' => 'WH-02', 'name' => 'Pekanbaru']);
+
+        $transfer = StockTransfer::factory()->create([
+            'from_warehouse_id' => $this->warehouse->id,
+            'to_warehouse_id' => $tujuan->id,
+            'transfer_number' => 'TF260901001',
+        ]);
+        StockTransferDetail::factory()->create([
+            'stock_transfer_id' => $transfer->id,
+            'product_id' => $produk->id,
+        ]);
+
+        // --- Daftar picking dengan satu baris pengambilan ---
+        $daftarPicking = PickingList::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'list_number' => 'PL260901001',
+        ]);
+        PickingListItem::factory()->create([
+            'picking_list_id' => $daftarPicking->id,
+            'sales_order_id' => $order->id,
+            'sales_order_detail_id' => $order->details()->first()->id,
+            'product_id' => $produk->id,
+            'location_id' => $lokasi->id,
+        ]);
+
+        // --- Surat Jalan dari BC, sudah berangkat ---
+        // Statusnya SHIPPED, bukan imported: halaman e-POD sengaja menjawab
+        // 404 untuk dokumen yang belum berangkat, dan smoke test harus
+        // memakai data yang memang bisa dibuka.
+        $suratJalan = DeliveryNote::factory()->create([
+            'document_no' => '206215',
+            'bc_so_number' => 'SO260901',
+            'sales_order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'status' => DeliveryNote::STATUS_SHIPPED,
+            'driver_name' => 'Budi',
+            'driver_phone' => '6281234567890',
+            'vehicle_plate' => 'B 1234 XYZ',
+            'shipped_at' => now(),
+            'epod_token' => Str::random(48),
+        ]);
+        DeliveryNoteLine::factory()->create([
+            'delivery_note_id' => $suratJalan->id,
+            'sku' => $produk->sku,
+            'product_id' => $produk->id,
+        ]);
+
+        // --- Bukti Surat Jalan bertanda tangan (Fase 6 tahap 5) ---
+        $bukti = DeliveryProof::factory()->create([
+            'sales_order_id' => $order->id,
+            'delivery_note_id' => $suratJalan->id,
+            'uploaded_by' => $order->user_id,
+        ]);
+
+        // --- Sesi stocktake yang sedang dihitung, dengan satu barisnya ---
+        $stocktake = StockTake::create([
+            'reference' => 'ST260901001',
+            'warehouse_id' => $this->warehouse->id,
+            'scope_type' => StockTake::SCOPE_WAREHOUSE,
+            'scope_value' => null,
+            'status' => StockTake::STATUS_COUNTING,
+            'opened_at' => now(),
+        ]);
+        StockTakeItem::create([
+            'stock_take_id' => $stocktake->id,
+            'location_id' => $lokasi->id,
+            'product_id' => $produk->id,
+            'batch_no' => 'BT-SMOKE',
+            'qty_system' => 10,
+        ]);
+
+        $retur = SalesReturn::create([
+            'reference' => 'RJ260901001',
+            'sales_order_id' => $order->id,
+            'customer_id' => $order->customer_id,
+            'warehouse_id' => $this->warehouse->id,
+            'status' => SalesReturn::STATUS_REPORTED,
+            'reason' => 'Contoh penolakan untuk uji asap.',
+            'reported_at' => now(),
+        ]);
+
+        /*
+         * Notifikasi contoh TANPA user_id yang dipakai siapa pun di uji ini.
+         * Rute membukanya menjawab 404 untuk orang lain — dan 404 memang
+         * jawaban yang benar, bukan halaman yang meledak. Uji asap ini
+         * memeriksa tidak ada 500, jadi itu sudah cukup.
+         */
+        $notifikasi = Notification::create([
+            'user_id' => User::factory()->withRole(Role::LOGISTICS)->create([
+                'warehouse_id' => $this->warehouse->id,
+            ])->id,
+            'type' => Notification::ORDER_PENDING,
+            'title' => 'Contoh notifikasi uji asap',
+            'body' => 'Baris ini hanya dipakai untuk mengisi parameter rute.',
+            'url' => '/wms/dashboard/admin',
+            'warehouse_id' => $this->warehouse->id,
+            'created_at' => now(),
+        ]);
+
+        /*
+         * MRF — DUA baris, dan keduanya memang perlu.
+         *
+         * Yang pertama berhenti di "menunggu Logistik": hanya dalam keadaan
+         * itulah layar pemilihan batch mau merender dirinya, dan layar itulah
+         * yang paling banyak mengulang baris stok berikut accessor-nya.
+         *
+         * Yang kedua sudah DITERIMA dan punya baris di buku Produksi. Ia tidak
+         * pernah ditembak lewat parameter {mrf}, tetapi halaman "Material di
+         * Tangan Produksi" merender barisnya — beserta riwayat pemakaian dan
+         * hitungan umurnya, yang semuanya accessor.
+         */
+        $mrfMenunggu = MaterialRequisition::factory()->menungguLogistik()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'requested_by' => $sales->id,
+            'mrf_number' => 'MR260901001',
+        ]);
+        MaterialRequisitionItem::factory()->create([
+            'material_requisition_id' => $mrfMenunggu->id,
+            'product_id' => $produk->id,
+            'qty_requested' => 50,
+        ]);
+
+        $mrfDiterima = MaterialRequisition::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'requested_by' => $sales->id,
+            'mrf_number' => 'MR260901002',
+            'status' => MaterialRequisition::STATUS_RECEIVED,
+            'approved_at' => now(),
+            'received_at' => now(),
+        ]);
+        $itemDiterima = MaterialRequisitionItem::factory()->create([
+            'material_requisition_id' => $mrfDiterima->id,
+            'product_id' => $produk->id,
+            'qty_requested' => 300,
+        ]);
+        $alokasi = MaterialRequisitionAllocation::create([
+            'material_requisition_id' => $mrfDiterima->id,
+            'material_requisition_item_id' => $itemDiterima->id,
+            'product_id' => $produk->id,
+            'batch_no' => 'BT-SMOKE',
+            'production_date' => now()->subMonths(2)->toDateString(),
+            'expiry_date' => now()->addYears(2)->toDateString(),
+            'status' => InventoryStock::STATUS_ACTIVE,
+            'qty_allocated' => 300,
+            'qty_picked' => 300,
+            'qty_received' => 300,
+        ]);
+        $holding = ProductionMaterialHolding::create([
+            'material_requisition_id' => $mrfDiterima->id,
+            'material_requisition_allocation_id' => $alokasi->id,
+            'product_id' => $produk->id,
+            'warehouse_id' => $this->warehouse->id,
+            'batch_no' => 'BT-SMOKE',
+            'production_date' => now()->subMonths(2)->toDateString(),
+            'expiry_date' => now()->addYears(2)->toDateString(),
+            'production_area' => 'I-01-01',
+            'qty_received' => 300,
+            'qty_consumed' => 150,
+            'received_at' => now()->subDays(40),
+        ]);
+        ProductionMaterialConsumption::create([
+            'production_material_holding_id' => $holding->id,
+            'qty' => 150,
+            'note' => 'Batch pertama reproses.',
+            'consumed_at' => now()->subDays(10),
+        ]);
+
         $this->parameter = [
+            'mrf' => $mrfMenunggu->id,
+            'proof' => $bukti->id,
+            'retur' => $retur->id,
             'order' => $order->id,
+            'stocktake' => $stocktake->id,
+            'location' => $lokasi->id,
             'doc_no' => $header->document_number,
             'po_number' => $order->order_number,
+            'transfer' => $transfer->id,
+            'list' => $daftarPicking->id,
+            'note' => $suratJalan->id,
+            'token' => $suratJalan->epod_token,
+            'notification' => $notifikasi->id,
+            // Kunci laporan, bukan id. Diambil dari katalognya sendiri supaya
+            // laporan yang suatu hari dihapus tidak meninggalkan contoh mati
+            // yang membuat smoke test menembak URL yang sudah tidak ada.
+            'key' => array_key_first(ReportCatalog::daftar()),
         ];
     }
 

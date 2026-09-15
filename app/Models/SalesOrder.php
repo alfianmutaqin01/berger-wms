@@ -68,13 +68,15 @@ class SalesOrder extends Model
 
     protected $fillable = [
         'order_number', 'customer_po_number', 'bc_so_number',
-        'customer_id', 'user_id', 'warehouse_id', 'payment_term_id',
+        'customer_id', 'user_id', 'placed_by', 'placed_reason', 'warehouse_id', 'payment_term_id',
         'status', 'order_source',
         'document_path', 'document_name', 'document_size', 'document_mime',
-        'submitted_at', 'approved_at', 'approved_by',
+        'submitted_at', 'approved_at', 'approved_by', 'approval_note',
         'rejected_at', 'rejected_by', 'rejection_reason',
+        'cancelled_at', 'cancelled_by', 'cancellation_source', 'cancellation_reason',
+        'so_merged_into_id', 'picking_list_id',
         'picking_completed_at', 'shipped_at', 'delivered_at',
-        'completed_at', 'sla_hours', 'notes',
+        'completed_at', 'completed_by', 'sla_hours', 'notes',
     ];
 
     protected function casts(): array
@@ -83,6 +85,7 @@ class SalesOrder extends Model
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
             'rejected_at' => 'datetime',
+            'cancelled_at' => 'datetime',
             'picking_completed_at' => 'datetime',
             'shipped_at' => 'datetime',
             'delivered_at' => 'datetime',
@@ -120,6 +123,26 @@ class SalesOrder extends Model
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * Siapa yang MENGETIK pesanan ini, kalau bukan Sales-nya sendiri.
+     *
+     * NULL berarti Sales membuatnya sendiri — keadaan normal. Artinya dijaga
+     * tetap beda dari `user()`: yang itu menjawab "pesanan ini milik siapa",
+     * yang ini "siapa yang duduk di depan layarnya". Meleburnya berarti
+     * catatan yang menyebut Sales membuat pesanan yang tidak pernah ia
+     * sentuh.
+     */
+    public function placedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'placed_by');
+    }
+
+    /** Dibuat lewat jalur internal Admin/Manager, bukan oleh Sales-nya. */
+    public function dibuatkanOrangLain(): bool
+    {
+        return $this->placed_by !== null;
+    }
+
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
@@ -128,6 +151,93 @@ class SalesOrder extends Model
     public function rejectedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    /** Seluruh pembatalan yang pernah terjadi pada pesanan ini. */
+    public function cancellations(): HasMany
+    {
+        return $this->hasMany(SalesOrderCancellation::class);
+    }
+
+    /**
+     * Seluruh penolakan yang pernah dialami pesanan ini.
+     *
+     * Kosong berarti belum pernah ditolak. Terisi berarti pernah — SEKALIPUN
+     * pesanannya sekarang sudah diterima dan selesai, karena inilah catatan
+     * yang menurut pemilik produk harus melekat sampai akhir.
+     */
+    public function rejections(): HasMany
+    {
+        return $this->hasMany(SalesOrderRejection::class);
+    }
+
+    /** Email kabar pesanan untuk Sales pemiliknya — lihat SalesOrderEmail. */
+    public function emails(): HasMany
+    {
+        return $this->hasMany(SalesOrderEmail::class);
+    }
+
+    /**
+     * Pesanan INDUK yang nomor SO-nya ditumpangi pesanan ini.
+     *
+     * Terisi hanya pada pesanan tambahan yang digabung ke satu invoice.
+     */
+    public function mergedInto(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'so_merged_into_id');
+    }
+
+    /** Pesanan tambahan yang menumpang nomor SO pesanan ini. */
+    public function mergedOrders(): HasMany
+    {
+        return $this->hasMany(self::class, 'so_merged_into_id');
+    }
+
+    /**
+     * Daftar picking yang sedang memuat pesanan ini.
+     *
+     * Terisi sejak Logistik menyusun daftar sampai daftarnya selesai atau
+     * dibatalkan. NULL berarti pesanan ini masih bebas dimasukkan ke daftar
+     * mana pun — itulah pemeriksaan yang mencegah satu pesanan diambil dua
+     * kali oleh dua operator.
+     */
+    public function pickingList(): BelongsTo
+    {
+        return $this->belongsTo(PickingList::class);
+    }
+
+    /** Baris pengambilan milik pesanan ini di daftar picking. */
+    public function pickingItems(): HasMany
+    {
+        return $this->hasMany(PickingListItem::class);
+    }
+
+    /** Surat Jalan BC yang terpasang ke pesanan ini (bisa lebih dari satu). */
+    public function deliveryNotes(): HasMany
+    {
+        return $this->hasMany(DeliveryNote::class);
+    }
+
+    /** Foto Surat Jalan bertanda tangan, termasuk yang pernah ditolak. */
+    public function proofs(): HasMany
+    {
+        return $this->hasMany(DeliveryProof::class);
+    }
+
+    /** Riwayat koreksi nomor SO. Kosong berarti nomornya belum pernah diubah. */
+    public function soNumberChanges(): HasMany
+    {
+        return $this->hasMany(SoNumberChange::class);
+    }
+
+    public function completedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'completed_by');
     }
 
     /* ------------------------------------------------------------ Scope */
@@ -172,6 +282,32 @@ class SalesOrder extends Model
     public function isEditable(): bool
     {
         return $this->status === self::STATUS_DRAFT;
+    }
+
+    /**
+     * Boleh diperbaiki isinya lalu diajukan lagi ke Logistik.
+     *
+     * Lebih luas daripada isEditable(): pesanan yang DITOLAK ikut masuk.
+     * Sebelumnya penolakan adalah jalan buntu, sehingga pesanan 50 baris yang
+     * ditolak karena satu item keliru memaksa Sales mengetik ulang semuanya
+     * sebagai pesanan baru — dan pesanan barunya tidak punya hubungan apa pun
+     * dengan yang ditolak, sehingga Logistik tidak pernah tahu ini pengajuan
+     * kedua atas hal yang sama.
+     *
+     * SENGAJA TIDAK DISATUKAN dengan isEditable(). Yang boleh DIHAPUS tetap
+     * hanya draft: pesanan yang pernah ditolak membawa riwayat penolakan yang
+     * harus bertahan, dan menghapusnya berarti menghapus jejak itu juga.
+     */
+    public function bolehDiperbaiki(): bool
+    {
+        return $this->status === self::STATUS_DRAFT
+            || $this->status === self::STATUS_REJECTED;
+    }
+
+    /** Pesanan yang sedang ditolak dan menunggu diperbaiki Sales. */
+    public function sedangDitolak(): bool
+    {
+        return $this->status === self::STATUS_REJECTED;
     }
 
     /** Pesanan bermetode dokumen: rincian item menyusul dari Logistik. */

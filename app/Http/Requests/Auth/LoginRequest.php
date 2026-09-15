@@ -17,8 +17,8 @@ class LoginRequest extends FormRequest
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
             // Sengaja 'nullable', bukan 'required': token kosong/tidak dicentang
-            // (PRD §6.1 F-AUTH-02) harus jatuh ke pesan generik + counter lockout
-            // yang sama dengan kredensial salah, bukan error validasi terpisah.
+            // (PRD §6.1 F-AUTH-02) ditolak di AuthController::login() dengan
+            // pesan yang sama seperti token yang ditolak Google.
             'g-recaptcha-response' => ['nullable', 'string'],
         ];
     }

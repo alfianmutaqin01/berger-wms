@@ -32,9 +32,10 @@ class SidebarAccessTest extends TestCase
         '/wms/inbound/create' => Permission::INBOUND_CREATE,
         '/wms/inbound/history' => Permission::INBOUND_HISTORY,
         '/wms/inbound/putaway' => Permission::INBOUND_PUTAWAY,
-        '/wms/inbound/returns' => Permission::INBOUND_RETURNS,
+        '/wms/inbound/returns' => Permission::RETURN_VIEW,
         '/wms/inbound/verify' => Permission::INBOUND_VERIFY,
         '/wms/inventory' => Permission::INVENTORY_VIEW,
+        '/wms/outbound/new-order' => Permission::OUTBOUND_ORDER_INTERNAL,
         '/wms/outbound/approval' => Permission::OUTBOUND_APPROVAL,
         '/wms/outbound/picking/batching' => Permission::OUTBOUND_PICKING_LIST,
         '/wms/outbound/picking' => Permission::OUTBOUND_PICKING_PROCESS,
@@ -52,21 +53,22 @@ class SidebarAccessTest extends TestCase
     private const MENU_LABELS = [
         Permission::INBOUND_CREATE => 'Input Produksi',
         Permission::INBOUND_HISTORY => 'Riwayat Produksi',
-        Permission::INBOUND_PUTAWAY => 'Proses Put-away',
-        Permission::INBOUND_RETURNS => 'Penerimaan Retur',
+        Permission::INBOUND_PUTAWAY => 'PDN',
+        Permission::RETURN_VIEW => 'Penolakan Customer',
         Permission::INBOUND_VERIFY => 'Verifikasi Logistik',
-        Permission::INVENTORY_VIEW => 'Data Stok (Inventory)',
+        Permission::INVENTORY_VIEW => 'Data Stok',
+        Permission::OUTBOUND_ORDER_INTERNAL => 'Buat Pesanan',
         Permission::OUTBOUND_APPROVAL => 'Terima Pesanan',
         Permission::OUTBOUND_PICKING_LIST => 'Daftar Picking',
         Permission::OUTBOUND_PICKING_PROCESS => 'Proses Picking',
-        Permission::OUTBOUND_DELIVERY => 'Cetak Surat Jalan',
+        Permission::OUTBOUND_DELIVERY => 'Surat Jalan (BC)',
         Permission::OUTBOUND_VERIFICATION => 'Verifikasi Bukti SJ',
         Permission::BILLING_VIEW => 'Billing & Piutang',
         Permission::MASTER_CUSTOMERS => 'Master Customers',
         Permission::MASTER_PRODUCTS => 'Master Products',
         Permission::MASTER_LOCATIONS => 'Master Lokasi Rak',
-        Permission::ADMIN_USERS => 'Manajemen User',
-        Permission::ADMIN_SEQUENCE => 'Pengaturan Dokumen',
+        Permission::ADMIN_USERS => 'User Management',
+        Permission::ADMIN_SEQUENCE => 'Penomoran Dokumen',
         Permission::REPORTS_VIEW => 'Laporan & Analisis',
     ];
 
@@ -162,12 +164,12 @@ class SidebarAccessTest extends TestCase
 
         $this->assertStringContainsString('Input Produksi', $html);
         $this->assertStringContainsString('Riwayat Produksi', $html);
-        $this->assertStringContainsString('Data Stok (Inventory)', $html);
+        $this->assertStringContainsString('Data Stok', $html);
 
         // Bukan wewenangnya: put-away, picking, retur, billing, master data.
-        $this->assertStringNotContainsString('Proses Put-away', $html);
+        $this->assertStringNotContainsString('>PDN<', $html);
         $this->assertStringNotContainsString('Proses Picking', $html);
-        $this->assertStringNotContainsString('Penerimaan Retur', $html);
+        $this->assertStringNotContainsString('Penolakan Customer', $html);
         $this->assertStringNotContainsString('Billing & Piutang', $html);
         $this->assertStringNotContainsString('Pengaturan Sistem', $html);
     }
@@ -178,25 +180,34 @@ class SidebarAccessTest extends TestCase
 
         $html = $this->get('/wms/dashboard/operator')->assertOk()->getContent();
 
-        $this->assertStringContainsString('Proses Put-away', $html);
+        $this->assertStringContainsString('>PDN<', $html);
         $this->assertStringContainsString('Proses Picking', $html);
-        $this->assertStringContainsString('Penerimaan Retur', $html);
-        $this->assertStringContainsString('Data Stok (Inventory)', $html);
+        $this->assertStringContainsString('Penolakan Customer', $html);
+        $this->assertStringContainsString('Data Stok', $html);
 
         $this->assertStringNotContainsString('Input Produksi', $html);
         $this->assertStringNotContainsString('Terima Pesanan', $html);
         $this->assertStringNotContainsString('Billing & Piutang', $html);
     }
 
-    /** Manager mengawasi, tidak ikut mengerjakan tugas operasional harian. */
-    public function test_manager_tidak_dapat_tugas_operasional_harian(): void
+    /**
+     * Manager mengawasi, tidak ikut MENGANGKAT BARANG.
+     *
+     * Garisnya bukan "operasional vs bukan" melainkan pekerjaan fisik: yang
+     * ditolak di sini semuanya menuntut orangnya berdiri di depan rak. Manager
+     * tetap boleh mengambil KEPUTUSAN atas gudangnya sendiri — itu aturan yang
+     * ditetapkan pemilik produk ("manager sama dengan admin namun terbatas di
+     * wilayah kerja sendiri"), dan karena itu menyetujui penolakan customer
+     * ada padanya sementara menaikkan barangnya ke rak tidak.
+     */
+    public function test_manager_tidak_mengerjakan_pekerjaan_fisik_gudang(): void
     {
         $user = $this->loginAs(Role::MANAGER);
 
         foreach ([
             Permission::INBOUND_CREATE,
             Permission::INBOUND_PUTAWAY,
-            Permission::INBOUND_RETURNS,
+            Permission::RETURN_PUTAWAY,
             Permission::OUTBOUND_PICKING_PROCESS,
         ] as $feature) {
             $this->assertFalse(
@@ -205,9 +216,11 @@ class SidebarAccessTest extends TestCase
             );
         }
 
+        // Sebaliknya, keputusan atas gudangnya sendiri memang wewenangnya.
+        $this->assertTrue(Permission::allows($user, Permission::RETURN_APPROVE));
+
         $this->get('/wms/inbound/create')->assertForbidden();
         $this->get('/wms/inbound/putaway')->assertForbidden();
-        $this->get('/wms/inbound/returns')->assertForbidden();
         $this->get('/wms/outbound/picking')->assertForbidden();
     }
 
@@ -223,15 +236,22 @@ class SidebarAccessTest extends TestCase
     /* --------------------------------------------------- Stok: lihat vs ubah */
 
     /** Produksi & Operator boleh MELIHAT stok, tapi tidak boleh mengubahnya. */
-    public function test_produksi_dan_operator_tidak_dapat_mengubah_stok(): void
+    /**
+     * MENGUBAH JUMLAH tetap tertutup bagi keduanya. Memindahkan antar rak
+     * TIDAK mengubah jumlah, jadi ia wewenang yang berbeda — dan sejak
+     * permintaan pemilik produk, Operator Gudang boleh melakukannya.
+     */
+    public function test_produksi_dan_operator_tidak_dapat_mengubah_jumlah_stok(): void
     {
         foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
             $this->loginAs($slug);
 
             $this->get('/wms/inventory')->assertOk();
             $this->post('/wms/inventory/adjust')->assertForbidden();
-            $this->post('/wms/inventory/transfer')->assertForbidden();
         }
+
+        $this->loginAs(Role::PRODUCTION);
+        $this->post('/wms/inventory/transfer')->assertForbidden();
     }
 
     /** Logistik boleh transfer stok antar lokasi, tapi tidak boleh adjustment. */
@@ -243,6 +263,38 @@ class SidebarAccessTest extends TestCase
         $this->assertFalse(Permission::allows($user, Permission::INVENTORY_ADJUST));
 
         $this->post('/wms/inventory/adjust')->assertForbidden();
+    }
+
+    /**
+     * Logistik MELIHAT stok, menunya pun ada.
+     *
+     * Ditulis karena keadaannya sempat diragukan, dan "kelihatannya tidak
+     * ada" adalah dugaan yang cuma bisa dijawab dengan menjalankannya. Halaman
+     * dan menunya terbukti terbuka; yang memang tertutup hanya mengubah angka
+     * stoknya — dan itu diperiksa test di atas.
+     */
+    public function test_logistik_melihat_menu_dan_halaman_data_stok(): void
+    {
+        $this->loginAs(Role::LOGISTICS);
+
+        $html = $this->get('/wms/dashboard/admin')->assertOk()->getContent();
+
+        $this->assertStringContainsString('Data Stok', $html);
+        $this->assertStringContainsString('/wms/inventory', $html);
+
+        $this->get('/wms/inventory')->assertOk();
+    }
+
+    /**
+     * Yang membatasi Logistik BUKAN menunya, melainkan tombol di dalamnya:
+     * menambah baris stok baru sama saja menciptakan angka tanpa dokumen
+     * inbound di belakangnya — sama beratnya dengan koreksi qty.
+     */
+    public function test_logistik_tidak_bisa_menambah_baris_stok_baru(): void
+    {
+        $this->loginAs(Role::LOGISTICS);
+
+        $this->post(route('wms.inventory.store'))->assertForbidden();
     }
 
     /* -------------------------------------------------- Redirect dashboard */
@@ -278,7 +330,7 @@ class SidebarAccessTest extends TestCase
 
         // Tidak boleh ada jejak menu Portal WMS di layout Sales.
         $this->assertStringNotContainsString('Berger WMS', $html);
-        $this->assertStringNotContainsString('Data Stok (Inventory)', $html);
+        $this->assertStringNotContainsString('Data Stok', $html);
         $this->assertStringNotContainsString('My Customers', $html);
     }
 }

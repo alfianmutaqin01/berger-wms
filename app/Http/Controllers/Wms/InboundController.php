@@ -3,16 +3,26 @@
 namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\InboundDetail;
 use App\Models\InboundHeader;
 use App\Models\Location;
+use App\Models\Notification;
 use App\Models\Warehouse;
+use App\Support\Activity;
 use App\Support\DocumentNumber;
 use App\Support\Inbound\BinAllocator;
+use App\Support\Inbound\DuplikatProduksi;
 use App\Support\Inbound\ProductionSheet;
 use App\Support\Inventory\StockActivator;
+use App\Support\Notifier;
+use App\Support\Outbound\PendingAllocationFiller;
+use App\Support\Permission;
+use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -23,6 +33,25 @@ class InboundController extends Controller
 {
     /** Berkas produksi sementara, disimpan di disk lokal di luar public. */
     private const TEMP_DIR = 'inbound';
+
+    /**
+     * Sejauh mana tanggal produksi boleh dimundurkan.
+     *
+     * Tanggal produksi boleh mundur karena produksi tadi malam lazim baru
+     * sempat diinput pagi ini — dan tanggal itu BUKAN sekadar keterangan: ia
+     * menjadi tanggal produksi tiap batch di rak, dan kedaluwarsanya dihitung
+     * dari situ (StockActivator). Memaksanya selalu hari ini berarti memberi
+     * umur simpan lebih panjang daripada yang sebenarnya.
+     *
+     * Batas ini bukan aturan bisnis, melainkan penangkap salah ketik. Input
+     * produksi yang tertunda lebih dari tiga bulan bukan "kemarin belum
+     * sempat" — hampir selalu tahun atau bulannya yang salah diketik, dan
+     * akibatnya adalah tanggal kedaluwarsa yang keliru dan tidak akan pernah
+     * terlihat lagi setelah dokumennya tersimpan.
+     */
+    private const MUNDUR_MAKS_HARI = 90;
+
+    public function __construct(private readonly PendingAllocationFiller $pengisi) {}
 
     /**
      * F-INB-01: Riwayat Input Produksi.
@@ -46,12 +75,12 @@ class InboundController extends Controller
         $filters = [
             'search' => $request->query('search'),
             'status' => $request->query('status'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $request->user()),
             'from' => $request->query('from'),
             'to' => $request->query('to'),
         ];
 
-        $base = InboundHeader::query()
+        $base = WarehouseScope::apply(InboundHeader::query(), $request->user())
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
         $documents = (clone $base)
@@ -59,7 +88,7 @@ class InboundController extends Controller
             // Hanya kolom batch_no yang diambil dari detail; memuat seluruh
             // kolom untuk ratusan palet hanya untuk menampilkan daftar batch
             // adalah pemborosan.
-            ->with(['warehouse:id,code,name', 'details:id,inbound_header_id,batch_no'])
+            ->with(['warehouse:id,code,name', 'creator:id,full_name', 'details:id,inbound_header_id,batch_no'])
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $status) => $q->where('status', $status))
             ->when($filters['from'], fn ($q, $from) => $q->whereDate('production_date', '>=', $from))
@@ -71,7 +100,7 @@ class InboundController extends Controller
 
         return view('wms.inbound.history', [
             'documents' => $documents,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($request->user()),
             'statuses' => InboundHeader::STATUS_LABELS,
             'stats' => [
                 'total' => (clone $base)->count(),
@@ -91,29 +120,54 @@ class InboundController extends Controller
      *
      * DATA CONTRACT (view: wms.inbound.history-detail)
      * ------------------------------------------------
-     * $header  : InboundHeader — eager-load warehouse & creator
-     * $details : Collection<InboundDetail> — eager-load product & location,
-     *            dikelompokkan per nomor produksi
-     * $totals  : array{palet:int, qty:int, produk:int, batch:int}
+     * $header          : InboundHeader — eager-load warehouse & creator
+     * $details         : Collection<InboundDetail> — eager-load product,
+     *                    location, penempat, & penyesuai qty
+     * $berselisih      : Collection<InboundDetail> — palet yang qty fisiknya
+     *                    berbeda dari yang ditulis Produksi
+     * $bolehSesuaikan  : bool — ada selisih yang belum ditanggapi DAN dokumen
+     *                    belum disahkan Logistik
+     * $totals          : array{palet:int, qty:int, produk:int, batch:int}
      *
      * Dicari berdasarkan `document_number`, bukan id, agar URL-nya terbaca
      * manusia dan cocok dengan nomor yang tercetak di dokumen fisik.
      */
-    public function historyDetail(string $doc_no): View
+    public function historyDetail(Request $request, string $doc_no): View
     {
         $header = InboundHeader::with(['warehouse', 'creator'])
             ->where('document_number', $doc_no)
             ->firstOrFail();
 
+        // Nomor dokumen terbaca manusia — dan karena itu mudah ditebak.
+        // Menyaring daftarnya saja tidak menutup apa-apa.
+        WarehouseScope::assert($header->warehouse_id, $request->user());
+
         $details = $header->details()
-            ->with(['product:id,sku,name,uom,max_qty_per_pallet', 'location:id,code'])
+            ->with([
+                'product:id,sku,name,uom,pack_unit,pack_size,max_qty_per_pallet',
+                'location:id,code',
+                'qtyAdjustedBy:id,full_name',
+                'putawayBy:id,full_name',
+            ])
             ->orderBy('production_order_no')
             ->orderBy('pallet_no')
             ->get();
 
+        // Palet berselisih dipisahkan ke panelnya sendiri di atas tabel.
+        // Menyerahkannya kepada mata pembaca — "cari sendiri baris mana yang
+        // qty-nya beda" — adalah cara paling andal membuat selisih terlewat
+        // pada dokumen berisi puluhan palet.
+        $berselisih = $details->filter(fn (InboundDetail $d) => $d->qty_variance !== null && $d->qty_variance !== 0);
+
         return view('wms.inbound.history-detail', [
             'header' => $header,
             'details' => $details,
+            'berselisih' => $berselisih->values(),
+            // Tombol "Sesuaikan" hanya muncul kalau ada yang bisa disesuaikan
+            // DAN dokumennya belum disahkan Logistik. Tombol yang selalu
+            // terlihat lalu selalu ditolak melatih orang mengabaikan layar.
+            'bolehSesuaikan' => $header->status !== InboundHeader::STATUS_VERIFIED
+                && $berselisih->contains(fn (InboundDetail $d) => ! $d->sudah_disesuaikan),
             'totals' => [
                 'palet' => $details->count(),
                 // Qty dijumlahkan dari pallet_qty, BUKAN total_qty: total_qty
@@ -139,13 +193,78 @@ class InboundController extends Controller
      * Nomor di layar ini baru pratinjau; nomor final dikunci saat menyimpan,
      * karena bisa saja ada dokumen lain tersimpan lebih dulu di sela-selanya.
      */
-    public function create(): View
+    public function create(Request $request): View
     {
+        // Hanya gudang yang punya lini produksi. Bagi Pekanbaru dan Surabaya
+        // daftarnya kosong — dan layarnya mengatakan itu apa adanya, bukan
+        // menyodorkan dropdown yang tidak bisa dipilih apa pun.
+        $gudang = WarehouseScope::options($request->user())->where('has_production', true)->values();
+
         return view('wms.inbound.create', [
             'documentNumber' => DocumentNumber::peek(DocumentNumber::PREFIX_INBOUND, 'inbound_headers'),
             'productionDate' => now(),
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'tanggalTerawal' => now()->subDays(self::MUNDUR_MAKS_HARI)->toDateString(),
+            'warehouses' => $gudang,
         ]);
+    }
+
+    /**
+     * Aturan tanggal produksi — sama persis di pratinjau dan penyimpanan.
+     *
+     * Ditulis sekali karena layar pratinjau mengirim ulang tanggalnya sebagai
+     * input tersembunyi, dan input tersembunyi tetap saja input. Kalau
+     * aturannya hanya dipasang di pratinjau, tanggal apa pun bisa masuk lewat
+     * langkah kedua.
+     *
+     * @return array<string, list<string>>
+     */
+    private function aturanTanggalProduksi(): array
+    {
+        return [
+            'production_date' => [
+                'required',
+                'date',
+                // Tidak boleh di masa depan: barang yang belum dibuat tidak
+                // bisa naik rak, dan tanggal maju memberi umur simpan yang
+                // tidak pernah dimiliki batch itu.
+                'before_or_equal:'.now()->toDateString(),
+                'after_or_equal:'.now()->subDays(self::MUNDUR_MAKS_HARI)->toDateString(),
+            ],
+        ];
+    }
+
+    /** @return array<string, string> */
+    private function pesanTanggalProduksi(): array
+    {
+        return [
+            'production_date.before_or_equal' => 'Tanggal produksi tidak boleh melewati hari ini.',
+            'production_date.after_or_equal' => 'Tanggal produksi paling jauh '.self::MUNDUR_MAKS_HARI
+                .' hari ke belakang. Periksa lagi bulan dan tahunnya — kedaluwarsa batch dihitung dari tanggal ini.',
+        ];
+    }
+
+    /**
+     * Gudang tujuan dokumen produksi harus sah DAN benar-benar berproduksi.
+     *
+     * Dua pemeriksaan berbeda yang mudah dikira satu: `warehouse_id` boleh
+     * jadi memang gudang milik user ini (lolos WarehouseScope), tetapi kalau
+     * gudang itu hanya menyimpan stok, dokumen produksi di sana adalah barang
+     * yang tidak pernah dibuat siapa pun.
+     */
+    private function pastikanGudangProduksi(Request $request): ?RedirectResponse
+    {
+        WarehouseScope::assert($request->integer('warehouse_id'), $request->user());
+
+        $gudang = Warehouse::find($request->integer('warehouse_id'));
+
+        if ($gudang === null || ! $gudang->has_production) {
+            return redirect()->route('wms.inbound.create')->with('error', sprintf(
+                'Gudang %s tidak memiliki lini produksi. Stok masuk ke sana lewat transfer dari Karawang, bukan input produksi.',
+                $gudang?->name ?? 'yang dipilih'
+            ));
+        }
+
+        return null;
     }
 
     /**
@@ -160,12 +279,19 @@ class InboundController extends Controller
         $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240'],
             'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
-        ], [], ['file' => 'berkas Excel']);
+        ] + $this->aturanTanggalProduksi(),
+            $this->pesanTanggalProduksi(),
+            ['file' => 'berkas Excel', 'production_date' => 'tanggal produksi'],
+        );
+
+        if ($tolak = $this->pastikanGudangProduksi($request)) {
+            return $tolak;
+        }
 
         // Nama berkas dibangkitkan sendiri, bukan memakai nama asli dari
         // pengguna, agar tidak ada jalur yang bisa diarahkan ke tempat lain.
         $token = Str::uuid()->toString();
-        $extension = $request->file('file')->getClientOriginalExtension();
+        $extension = ImportController::ekstensi($request);
         $stored = self::TEMP_DIR.'/'.$token.'.'.$extension;
 
         $saved = Storage::disk('local')->putFileAs(
@@ -191,15 +317,20 @@ class InboundController extends Controller
             return redirect()->route('wms.inbound.create')->with('error', $e->getMessage());
         }
 
+        // Duplikat ditandai DI PRATINJAU, bukan baru ketahuan setelah simpan.
+        // Yang menyimpan lebih dulu lalu diberi tahu "ternyata sudah ada"
+        // sudah terlanjur membuat nomor dokumen yang harus dibereskan orang.
+        $rows = (new DuplikatProduksi)->tandai($request->integer('warehouse_id'), $plan['rows']);
+
         return view('wms.inbound.preview', [
             'token' => $token,
             'extension' => $extension,
             'originalName' => $request->file('file')->getClientOriginalName(),
             'warehouse' => Warehouse::find($request->integer('warehouse_id')),
             'documentNumber' => DocumentNumber::peek(DocumentNumber::PREFIX_INBOUND, 'inbound_headers'),
-            'productionDate' => now(),
-            'rows' => $plan['rows'],
-            'summary' => $plan['summary'],
+            'productionDate' => Carbon::parse($request->input('production_date')),
+            'rows' => $rows,
+            'summary' => $plan['summary'] + DuplikatProduksi::ringkas($rows),
         ]);
     }
 
@@ -219,7 +350,21 @@ class InboundController extends Controller
             'extension' => ['required', 'in:xlsx,xls'],
             'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
             'notes' => ['nullable', 'string', 'max:500'],
-        ]);
+            // Menimpa harus DIMINTA, tidak pernah menjadi bawaan. Yang
+            // mengunggah ulang berkas yang sama karena mengira yang pertama
+            // gagal tidak sedang meminta apa pun ditimpa.
+            'timpa' => ['nullable', 'boolean'],
+        ] + $this->aturanTanggalProduksi(),
+            $this->pesanTanggalProduksi(),
+            ['production_date' => 'tanggal produksi'],
+        );
+
+        // Diperiksa LAGI di sini, bukan hanya di previewExcel(): layar
+        // pratinjau mengirim ulang warehouse_id sebagai input tersembunyi,
+        // dan input tersembunyi tetap saja input.
+        if ($tolak = $this->pastikanGudangProduksi($request)) {
+            return $tolak;
+        }
 
         $stored = self::TEMP_DIR.'/'.$validated['token'].'.'.$validated['extension'];
 
@@ -236,20 +381,51 @@ class InboundController extends Controller
             return redirect()->route('wms.inbound.create')->with('error', $e->getMessage());
         }
 
-        $ready = collect($plan['rows'])->where('status', 'siap');
+        $penjaga = new DuplikatProduksi;
+        $rows = $penjaga->tandai((int) $validated['warehouse_id'], $plan['rows']);
+
+        $siap = collect($rows)->where('status', 'siap');
+        $bolehTimpa = (bool) ($validated['timpa'] ?? false);
+
+        // Tiga tumpukan, tiga nasib berbeda — dan ketiganya disebut di pesan
+        // hasil. Baris yang hilang tanpa penjelasan adalah cara tercepat
+        // membuat orang mengunggah ulang berkas yang sama sekali lagi.
+        $baru = $siap->filter(fn (array $r) => $r['duplikat'] === null);
+        $ditimpa = $siap->filter(fn (array $r) => ($r['duplikat']['keadaan'] ?? null) === DuplikatProduksi::BISA_DITIMPA);
+        $terkunci = $siap->filter(fn (array $r) => ($r['duplikat']['keadaan'] ?? null) === DuplikatProduksi::TERKUNCI);
+
+        if (! $bolehTimpa) {
+            $terkunci = $terkunci->merge($ditimpa);
+            $ditimpa = collect();
+        }
+
+        $ready = $baru->merge($ditimpa);
 
         if ($ready->isEmpty()) {
             Storage::disk('local')->delete($stored);
 
             return redirect()->route('wms.inbound.create')
-                ->with('error', 'Tidak ada baris yang dapat disimpan. Perbaiki berkas lalu unggah ulang.');
+                ->with('error', $this->pesanTidakAdaYangBisaDisimpan($siap, $terkunci, $bolehTimpa));
         }
 
-        $header = DB::transaction(function () use ($ready, $validated, $request) {
+        $dibuang = [];
+
+        $header = DB::transaction(function () use ($ready, $ditimpa, $validated, $request, $penjaga, &$dibuang) {
+            // Palet lama dibuang DI DALAM transaksi yang sama dengan penulisan
+            // dokumen baru. Kalau penyimpanan gagal setengah jalan, gudang
+            // tidak boleh kehilangan kedua-duanya.
+            if ($ditimpa->isNotEmpty()) {
+                $dibuang = $penjaga->buang((int) $validated['warehouse_id'], $ditimpa->all());
+            }
+
             $header = InboundHeader::create([
                 'document_number' => DocumentNumber::reserve(DocumentNumber::PREFIX_INBOUND, 'inbound_headers'),
                 'warehouse_id' => $validated['warehouse_id'],
-                'production_date' => now()->toDateString(),
+                // Tanggal yang dipilih Tim Produksi, bukan hari ini. Nomor
+                // dokumennya tetap memakai tanggal PENCATATAN — keduanya
+                // memang menjawab pertanyaan yang berbeda, dan menyamakannya
+                // akan menghapus jejak bahwa inputnya terlambat.
+                'production_date' => Carbon::parse($validated['production_date'])->toDateString(),
                 'status' => InboundHeader::STATUS_PUTAWAY_PENDING,
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => $request->user()?->id,
@@ -278,17 +454,320 @@ class InboundController extends Controller
         Storage::disk('local')->delete($stored);
 
         $message = sprintf(
-            'Dokumen %s tersimpan: %d baris produksi menjadi %d palet, menunggu put-away.',
+            'Dokumen %s tersimpan: %d baris produksi menjadi %d palet, menunggu PDN.',
             $header->document_number,
             $ready->count(),
             $header->details()->count()
         );
 
+        if ($ditimpa->isNotEmpty()) {
+            $message .= sprintf(
+                ' %d baris menimpa data lama di dokumen %s — %d palet lama dibuang.',
+                $ditimpa->count(),
+                implode(', ', array_keys($dibuang)) ?: '—',
+                array_sum($dibuang),
+            );
+        }
+
+        if ($terkunci->isNotEmpty()) {
+            $message .= sprintf(
+                ' %d baris DILEWATI karena RMO + batch-nya sudah pernah masuk%s.',
+                $terkunci->count(),
+                $bolehTimpa ? ' dan paletnya sudah disentuh gudang' : '',
+            );
+        }
+
         if ($plan['summary']['gagal'] > 0) {
             $message .= sprintf(' %d baris dilewati karena datanya bermasalah.', $plan['summary']['gagal']);
         }
 
+        Activity::record(
+            ActivityLog::INBOUND_CREATE,
+            sprintf(
+                'Input produksi %s — %d baris menjadi %d palet.%s',
+                $header->document_number,
+                $ready->count(),
+                $header->details()->count(),
+                $ditimpa->isNotEmpty()
+                    ? sprintf(' Menimpa %d baris dari dokumen %s.', $ditimpa->count(), implode(', ', array_keys($dibuang)))
+                    : '',
+            ),
+            $header,
+            $header->warehouse_id,
+            [
+                'dokumen' => $header->document_number,
+                'baris' => $ready->count(),
+                'palet' => $header->details()->count(),
+                'dilewati' => $plan['summary']['gagal'],
+                'ditimpa' => $ditimpa->count(),
+                'dokumen_ditimpa' => $dibuang,
+                'duplikat_dilewati' => $terkunci->count(),
+            ],
+        );
+
+        Notifier::toPermission(
+            Permission::INBOUND_PUTAWAY,
+            $header->warehouse_id,
+            Notification::PUTAWAY_READY,
+            'Barang produksi menunggu naik rak',
+            sprintf(
+                'Dokumen %s — %d palet siap dinaikkan.',
+                $header->document_number,
+                $header->details()->count(),
+            ),
+            route('wms.inbound.putaway'),
+            $header,
+        );
+
         return redirect()->route('wms.inbound.history')->with('success', $message);
+    }
+
+    /**
+     * Kenapa tidak ada satu baris pun yang tersimpan.
+     *
+     * "Tidak ada baris yang dapat disimpan" saja akan membuat Tim Produksi
+     * memperbaiki berkasnya — padahal berkasnya benar, dan yang terjadi
+     * adalah berkas itu memang sudah pernah masuk. Mereka akan mengunggahnya
+     * lagi, dan lagi.
+     *
+     * @param  Collection<int, array<string, mixed>>  $siap
+     * @param  Collection<int, array<string, mixed>>  $terkunci
+     */
+    private function pesanTidakAdaYangBisaDisimpan($siap, $terkunci, bool $bolehTimpa): string
+    {
+        if ($terkunci->isEmpty()) {
+            return 'Tidak ada baris yang dapat disimpan. Perbaiki berkas lalu unggah ulang.';
+        }
+
+        $dokumen = $terkunci
+            ->map(fn (array $r) => $r['duplikat']['dokumen'] ?? null)
+            ->filter()
+            ->unique()
+            ->implode(', ');
+
+        // Dua sebab yang terlihat sama di layar tetapi menuntut tindakan
+        // berbeda: yang satu tinggal mencentang "timpa", yang lain tidak bisa
+        // diapa-apakan lagi lewat layar ini.
+        $adaYangMasihBisaDitimpa = ! $bolehTimpa && $siap->contains(
+            fn (array $r) => ($r['duplikat']['keadaan'] ?? null) === DuplikatProduksi::BISA_DITIMPA
+        );
+
+        if ($adaYangMasihBisaDitimpa) {
+            return sprintf(
+                'Seluruh baris pada berkas ini sudah pernah masuk lewat dokumen %s. '
+                    .'Kalau memang ingin menggantinya, unggah ulang lalu centang "Timpa data yang sudah ada" di layar pratinjau.',
+                $dokumen,
+            );
+        }
+
+        return sprintf(
+            'Seluruh baris pada berkas ini sudah pernah masuk lewat dokumen %s, dan paletnya sudah disentuh gudang '
+                .'(sudah naik rak atau sudah diverifikasi) sehingga tidak boleh ditimpa. '
+                .'Barangnya sudah berdiri di rak dan angkanya sudah dihitung — menimpanya akan membuat catatan sistem '
+                .'berbeda dari isi gudang. Kalau ada yang keliru, perbaiki lewat koreksi stok, bukan lewat unggah ulang.',
+            $dokumen,
+        );
+    }
+
+    /**
+     * F-INB-01: Tim Produksi menyesuaikan qty ke hasil hitung fisik Operator.
+     *
+     * KENAPA LAYAR INI ADA
+     * --------------------
+     * Operator boleh mengoreksi Qty Aktual saat PDN, dan selisihnya dipakai
+     * sebagai angka stok. Tetapi Tim Produksi — yang mengetik angka aslinya —
+     * tidak pernah diberi tahu. Dokumen mereka salah, barangnya sudah naik
+     * rak, dan mereka baru tahu kalau kebetulan membuka riwayat lalu
+     * membandingkan sendiri kolom demi kolom. Sekarang loncengnya berbunyi
+     * (lihat kirimKabarSelisih) dan koreksinya bisa dilakukan di tempat.
+     *
+     * YANG TIDAK DILAKUKAN TOMBOL INI
+     * -------------------------------
+     * Ia TIDAK menghapus selisihnya dari layar verifikasi Logistik. Angka
+     * semula pindah ke pallet_qty_original dan seluruh perhitungan selisih
+     * membandingkan ke sana — lihat InboundDetail::scopeBerselisih(). Kalau
+     * tidak begitu, Tim Produksi bisa merapikan sendiri bukti kesalahannya
+     * sebelum orang yang bertugas memeriksanya sempat melihat.
+     *
+     * Ia juga TIDAK menyentuh stok. Stok memakai qty_actual sejak awal
+     * (InboundDetail::effective_qty), jadi yang dibereskan di sini adalah
+     * dokumennya, bukan isinya rak.
+     *
+     * SETELAH DIVERIFIKASI, PINTUNYA TERTUTUP
+     * ---------------------------------------
+     * Begitu Logistik mengesahkan, angka itu sudah menjadi stok yang hidup di
+     * ledger. Mengubah dokumennya setelah itu membuat dokumen dan buku besar
+     * bercerita berbeda tentang kejadian yang sama.
+     */
+    public function adjustQty(Request $request, string $doc_no): RedirectResponse
+    {
+        $header = InboundHeader::where('document_number', $doc_no)->firstOrFail();
+
+        WarehouseScope::assert($header->warehouse_id, $request->user());
+
+        if ($header->status === InboundHeader::STATUS_VERIFIED) {
+            return back()->with('error',
+                'Dokumen ini sudah diverifikasi Logistik dan stoknya sudah aktif. '
+                .'Angkanya tidak bisa diubah lagi dari sini — koreksi selisih setelah verifikasi dilakukan lewat Koreksi Stok.');
+        }
+
+        $validated = $request->validate([
+            'pallets' => ['required', 'array', 'min:1'],
+            'pallets.*' => ['integer'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ], [], [
+            'pallets' => 'palet yang disesuaikan',
+            'reason' => 'alasan penyesuaian',
+        ]);
+
+        // Hanya palet MILIK dokumen ini, yang memang berselisih, dan yang
+        // belum pernah disesuaikan. Id palet datang dari formulir dan bisa
+        // diganti angka apa pun lewat peramban.
+        $terpilih = $header->details()
+            ->whereIn('id', $validated['pallets'])
+            ->selisihBelumDitanggapi()
+            ->get();
+
+        if ($terpilih->isEmpty()) {
+            return back()->with('error', 'Tidak ada palet berselisih yang bisa disesuaikan dari pilihan itu.');
+        }
+
+        DB::transaction(function () use ($terpilih, $validated, $request, $header) {
+            foreach ($terpilih as $detail) {
+                $detail->update([
+                    'pallet_qty_original' => $detail->pallet_qty,
+                    'pallet_qty' => $detail->qty_actual,
+                    'qty_adjusted_by' => $request->user()?->id,
+                    'qty_adjusted_at' => now(),
+                    'qty_adjust_reason' => $validated['reason'],
+                ]);
+            }
+
+            // total_qty menyimpan jumlah SEBELUM dipecah menjadi palet, dan
+            // dipakai layar detail untuk menampilkan "satu baris produksi
+            // 235 pcs". Membiarkannya di angka lama membuat jumlah paletnya
+            // tidak lagi berjumlah sama dengan barisnya — dan yang membaca
+            // akan mengira ada palet yang hilang.
+            foreach ($terpilih->groupBy(fn ($d) => $d->production_order_no.'|'.$d->batch_no.'|'.$d->product_id) as $grup) {
+                $contoh = $grup->first();
+
+                $baru = (int) $header->details()
+                    ->where('production_order_no', $contoh->production_order_no)
+                    ->where('batch_no', $contoh->batch_no)
+                    ->where('product_id', $contoh->product_id)
+                    ->sum('pallet_qty');
+
+                $header->details()
+                    ->where('production_order_no', $contoh->production_order_no)
+                    ->where('batch_no', $contoh->batch_no)
+                    ->where('product_id', $contoh->product_id)
+                    ->update(['total_qty' => $baru, 'updated_at' => now()]);
+            }
+        });
+
+        Activity::record(
+            ActivityLog::INBOUND_QTY_ADJUST,
+            sprintf(
+                'Menyesuaikan qty dokumen %s ke hitungan fisik — %d palet. Alasan: %s',
+                $header->document_number,
+                $terpilih->count(),
+                $validated['reason'],
+            ),
+            $header,
+            $header->warehouse_id,
+            [
+                'dokumen' => $header->document_number,
+                'palet' => $terpilih->count(),
+                'alasan' => $validated['reason'],
+                'perubahan' => $terpilih->map(fn (InboundDetail $d) => [
+                    'palet' => $d->pallet_no,
+                    'batch' => $d->batch_no,
+                    'semula' => $d->pallet_qty,
+                    'menjadi' => $d->qty_actual,
+                ])->all(),
+            ],
+        );
+
+        return back()->with('success', sprintf(
+            '%d palet disesuaikan ke hitungan fisik. Angka semula tetap tercatat dan selisihnya tetap '
+                .'terlihat oleh Logistik saat verifikasi — penyesuaian ini menambah keterangan, bukan menghapus temuan.',
+            $terpilih->count(),
+        ));
+    }
+
+    /**
+     * Memberi tahu Tim Produksi bahwa hitungan fisiknya berbeda.
+     *
+     * Dikirim ke pemegang izin INBOUND_CREATE di gudang itu — Tim Produksi
+     * dan Super Admin. Pembuat dokumennya diberi tahu terpisah kalau ternyata
+     * ia tidak tercakup: dialah yang mengetik angkanya, dan dia yang paling
+     * perlu tahu berkas buatannya meleset.
+     *
+     * Notifier tidak pernah mengirim ke diri sendiri, jadi Operator yang baru
+     * saja menekan simpan tidak menerima loncengnya sendiri.
+     */
+    private function kirimKabarSelisih(InboundHeader $header): void
+    {
+        $berselisih = $header->details()->berselisih()->get();
+
+        if ($berselisih->isEmpty()) {
+            return;
+        }
+
+        $judul = 'Qty fisik berbeda dari dokumen produksi';
+        $isi = sprintf(
+            'Dokumen %s — %d palet dihitung ulang Operator dan hasilnya berbeda (%s). '
+                .'Buka detailnya untuk menyesuaikan angka dokumen.',
+            $header->document_number,
+            $berselisih->count(),
+            $berselisih
+                ->take(3)
+                ->map(fn (InboundDetail $d) => sprintf(
+                    'batch %s: %d → %d',
+                    $d->batch_no,
+                    $d->qty_sistem_asli,
+                    $d->qty_actual,
+                ))
+                ->implode('; ').($berselisih->count() > 3 ? '; …' : ''),
+        );
+
+        $url = route('wms.inbound.history.detail', $header->document_number);
+
+        Notifier::toPermission(
+            Permission::INBOUND_CREATE,
+            $header->warehouse_id,
+            Notification::INBOUND_QTY_VARIANCE,
+            $judul,
+            $isi,
+            $url,
+            $header,
+        );
+
+        // Pembuat dokumen bisa saja TIDAK tercakup kiriman di atas: perannya
+        // berubah, akunnya dipindah gudang, atau ia dinonaktifkan lalu aktif
+        // lagi. Dia yang mengetik angkanya, jadi dia yang paling perlu tahu.
+        //
+        // Diperiksa dulu apakah ia sudah termasuk — Notifier menulis apa yang
+        // diberikan tanpa memeriksa penerima ganda, jadi memanggil keduanya
+        // begitu saja akan membunyikan dua lonceng identik untuk satu orang.
+        $pembuat = $header->creator()->first();
+
+        $sudahDapat = $pembuat !== null
+            && $pembuat->is_active
+            && Permission::allows($pembuat, Permission::INBOUND_CREATE)
+            && ($pembuat->warehouse_id === null || $pembuat->warehouse_id === $header->warehouse_id);
+
+        if (! $sudahDapat) {
+            Notifier::toUser(
+                $header->created_by,
+                Notification::INBOUND_QTY_VARIANCE,
+                $judul,
+                $isi,
+                $url,
+                $header->warehouse_id,
+                $header,
+            );
+        }
     }
 
     /** Membatalkan pratinjau: buang berkas sementara agar tidak menumpuk. */
@@ -323,10 +802,10 @@ class InboundController extends Controller
     {
         $filters = [
             'search' => $request->query('search'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $request->user()),
         ];
 
-        $base = InboundHeader::query()
+        $base = WarehouseScope::apply(InboundHeader::query(), $request->user())
             ->awaitingPutaway()
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
@@ -345,7 +824,7 @@ class InboundController extends Controller
 
         return view('wms.inbound.putaway-list', [
             'documents' => $documents,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($request->user()),
             'stats' => [
                 'dokumen' => (clone $base)->count(),
                 'palet' => (clone $paletBase)->count(),
@@ -373,15 +852,17 @@ class InboundController extends Controller
      * bin milik gudang lain — kode rak seperti "B-01-01" berulang antar gudang,
      * jadi kesalahannya tidak akan terlihat sampai barangnya dicari.
      */
-    public function putawayProcess(string $doc_no): View
+    public function putawayProcess(Request $request, string $doc_no): View
     {
         $header = InboundHeader::with('warehouse')
             ->awaitingPutaway()
             ->where('document_number', $doc_no)
             ->firstOrFail();
 
+        WarehouseScope::assert($header->warehouse_id, $request->user());
+
         $details = $header->details()
-            ->with(['product:id,sku,name,uom,max_qty_per_pallet', 'location:id,code'])
+            ->with(['product:id,sku,name,uom,pack_unit,pack_size,max_qty_per_pallet', 'location:id,code'])
             ->orderBy('production_order_no')
             ->orderBy('pallet_no')
             ->get();
@@ -429,6 +910,8 @@ class InboundController extends Controller
             ->where('document_number', $doc_no)
             ->firstOrFail();
 
+        WarehouseScope::assert($header->warehouse_id, $request->user());
+
         $validated = $request->validate([
             'pallets' => ['required', 'array'],
             'pallets.*.location_code' => ['nullable', 'string', 'max:20'],
@@ -437,7 +920,7 @@ class InboundController extends Controller
             'pallets.*.qty_actual' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
-        $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
+        $details = $header->details()->with('product:id,uom,pack_unit,pack_size,max_qty_per_pallet')->get()->keyBy('id');
         $allocator = BinAllocator::forWarehouse($header->warehouse_id, $header->warehouse?->code);
 
         $errors = [];
@@ -529,15 +1012,47 @@ class InboundController extends Controller
             return redirect()->route('wms.inbound.putaway.process', $header->document_number)->with(
                 'success',
                 sprintf(
-                    '%d palet tersimpan. Masih ada %d palet yang belum ditempatkan — dokumen tetap di daftar put-away.',
+                    '%d palet tersimpan. Masih ada %d palet yang belum ditempatkan — dokumen tetap di daftar PDN.',
                     count($penempatan),
                     $tersisa
                 )
             );
         }
 
+        Activity::record(
+            ActivityLog::INBOUND_PUTAWAY,
+            sprintf(
+                'Menaikkan dokumen %s ke rak — %d palet ditempatkan.',
+                $header->document_number,
+                $header->details()->count(),
+            ),
+            $header,
+            $header->warehouse_id,
+            ['dokumen' => $header->document_number, 'palet' => $header->details()->count()],
+        );
+
+        Notifier::toPermission(
+            Permission::INBOUND_VERIFY,
+            $header->warehouse_id,
+            Notification::INBOUND_VERIFY_READY,
+            'Barang masuk menunggu verifikasi',
+            sprintf(
+                'Dokumen %s sudah naik rak — %d palet menunggu diperiksa. Stok belum aktif sebelum diverifikasi.',
+                $header->document_number,
+                $header->details()->count(),
+            ),
+            route('wms.inbound.verify'),
+            $header,
+        );
+
+        // Tim Produksi diberi tahu kalau hitungan fisik Operator berbeda dari
+        // angka yang mereka tulis. Sebelum ini tidak ada satu pun jalur yang
+        // memberitahu mereka — selisihnya hanya beredar antara Operator dan
+        // Logistik, padahal yang bisa memperbaiki sumbernya adalah Produksi.
+        $this->kirimKabarSelisih($header);
+
         return redirect()->route('wms.inbound.putaway')->with('success', sprintf(
-            'Put-away dokumen %s selesai: %d palet ditempatkan, kini menunggu verifikasi Logistik.',
+            'PDN dokumen %s selesai: %d palet ditempatkan, kini menunggu verifikasi Logistik.',
             $header->document_number,
             $header->details()->count()
         ));
@@ -562,10 +1077,10 @@ class InboundController extends Controller
     {
         $filters = [
             'search' => $request->query('search'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $request->user()),
         ];
 
-        $base = InboundHeader::query()
+        $base = WarehouseScope::apply(InboundHeader::query(), $request->user())
             ->awaitingVerification()
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
@@ -587,15 +1102,17 @@ class InboundController extends Controller
 
         return view('wms.inbound.verify-list', [
             'documents' => $documents,
-            'warehouses' => Warehouse::orderBy('code')->get(),
+            'warehouses' => WarehouseScope::options($request->user()),
             'stats' => [
                 'dokumen' => (clone $base)->count(),
                 'palet' => (clone $paletBase)->count(),
                 'belum' => (clone $paletBase)->where('is_verified', false)->count(),
+                // berselisih() membandingkan ke angka SEMULA, bukan ke
+                // pallet_qty — penyesuaian Tim Produksi tidak boleh membuat
+                // palet ini menghilang dari perhatian Logistik.
                 'selisih' => (clone $paletBase)
                     ->where('is_verified', false)
-                    ->whereNotNull('qty_actual')
-                    ->whereColumn('qty_actual', '!=', 'pallet_qty')
+                    ->berselisih()
                     ->count(),
             ],
             'filters' => $filters,
@@ -618,16 +1135,18 @@ class InboundController extends Controller
      * Logistik boleh mengoreksi Qty dan Lokasi (PRD §6.3 F-INB-03 langkah 8),
      * TAPI TIDAK batch/SKU — lihat catatan panjang di verifyStore().
      */
-    public function verifyProcess(string $doc_no): View
+    public function verifyProcess(Request $request, string $doc_no): View
     {
         $header = InboundHeader::with('warehouse')
             ->awaitingVerification()
             ->where('document_number', $doc_no)
             ->firstOrFail();
 
+        WarehouseScope::assert($header->warehouse_id, $request->user());
+
         $details = $header->details()
             ->with([
-                'product:id,sku,name,uom,max_qty_per_pallet',
+                'product:id,sku,name,uom,pack_unit,pack_size,max_qty_per_pallet',
                 'location:id,code',
                 'putawayBy:id,full_name',
                 'verifiedBy:id,full_name',
@@ -691,6 +1210,8 @@ class InboundController extends Controller
             ->where('document_number', $doc_no)
             ->firstOrFail();
 
+        WarehouseScope::assert($header->warehouse_id, $request->user());
+
         $validated = $request->validate([
             'pallets' => ['required', 'array'],
             'pallets.*.verified' => ['nullable', 'boolean'],
@@ -698,7 +1219,7 @@ class InboundController extends Controller
             'pallets.*.qty_actual' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
-        $details = $header->details()->with('product:id,max_qty_per_pallet')->get()->keyBy('id');
+        $details = $header->details()->with('product:id,uom,pack_unit,pack_size,max_qty_per_pallet')->get()->keyBy('id');
         $allocator = BinAllocator::forWarehouse($header->warehouse_id, $header->warehouse?->code);
 
         $errors = [];
@@ -782,9 +1303,10 @@ class InboundController extends Controller
             return back()->with('error', 'Belum ada palet yang dicentang untuk diverifikasi.');
         }
 
-        DB::transaction(function () use ($header, $perubahan, $request) {
+        $susulan = DB::transaction(function () use ($header, $perubahan, $request) {
             $activator = new StockActivator;
             $userId = $request->user()?->id;
+            $produkTersentuh = [];
 
             foreach ($perubahan as $detailId => $nilai) {
                 $header->details()->whereKey($detailId)->update($nilai + [
@@ -796,17 +1318,79 @@ class InboundController extends Controller
                 // Stok RESMI AKTIF di sini (PRD §6.3 F-INB-03 langkah 9-10).
                 // Dibaca ulang dari basis data supaya memakai qty & lokasi
                 // yang baru saja disimpan, bukan nilai model yang basi.
-                $activator->activate(
-                    $header->details()->with(['product:id,shelf_life_months', 'header'])->findOrFail($detailId),
-                    $userId
-                );
+                $detail = $header->details()->with(['product:id,shelf_life_months', 'header'])->findOrFail($detailId);
+                $activator->activate($detail, $userId);
+
+                $produkTersentuh[$detail->product_id] = true;
             }
 
             $header->update(['status' => $header->resolveVerificationStatus()]);
+
+            /*
+             * JANJI YANG SUDAH ADA DILAYANI DI SINI — bukan menunggu ada yang
+             * ingat. Inilah jalur yang paling sering dilewati barang di Berger
+             * (produksi -> cek operator -> naik rak), dan dulu justru
+             * satu-satunya jalur masuk stok yang TIDAK melayani janji yang
+             * sudah menumpuk. Akibatnya barang mendarat dalam keadaan bebas,
+             * lalu pesanan lain yang kebetulan diproses lebih dulu
+             * menyambarnya lewat FIFO — sementara jatah yang sudah dijanjikan
+             * berminggu-minggu sebelumnya hilang tanpa ada yang sadar.
+             */
+            $hasil = ['terisi' => 0, 'pesanan' => [], 'booking' => []];
+
+            foreach (array_keys($produkTersentuh) as $productId) {
+                $bagian = $this->pengisi->fill($productId, $header->warehouse_id, $userId);
+
+                $hasil['terisi'] += $bagian['terisi'];
+                $hasil['pesanan'] = array_merge($hasil['pesanan'], $bagian['pesanan']);
+                $hasil['booking'] = array_merge($hasil['booking'], $bagian['booking']);
+            }
+
+            return $hasil;
         });
 
         $header->refresh();
         $tersisa = $header->details()->where('is_verified', false)->count();
+
+        // DILAPORKAN, bukan dikerjakan diam-diam. Barang baru yang sebagian
+        // langsung punya pemilik adalah hal pertama yang perlu diketahui
+        // operator: kalau tidak, ia melihat 10 unit naik rak lalu heran
+        // kenapa yang bisa dijual cuma 5.
+        $catatan = $this->pengisi->ringkasan($susulan);
+
+        /*
+         * Dicatat SEKALI PER PENEKANAN, bukan per palet. Verifikasi bisa
+         * dicicil, dan satu baris log per palet akan menenggelamkan seluruh
+         * log hari itu oleh satu dokumen berisi ratusan palet.
+         *
+         * Yang berselisih disebut terpisah: di situlah angka stok final
+         * diputuskan, dan itu justru bagian yang paling perlu bisa
+         * ditelusuri kembali.
+         */
+        Activity::record(
+            ActivityLog::INBOUND_VERIFY,
+            sprintf(
+                'Verifikasi dokumen %s — %d palet disahkan, %d belum.',
+                $header->document_number,
+                count($perubahan),
+                $tersisa,
+            ),
+            $header,
+            $header->warehouse_id,
+            [
+                'dokumen' => $header->document_number,
+                'disahkan' => count($perubahan),
+                'tersisa' => $tersisa,
+                // Dibaca dari baris yang barusan disahkan, bukan dari
+                // $perubahan — larik itu tidak memuat pallet_qty, jadi
+                // membandingkannya di sana akan menghitung SEMUANYA sebagai
+                // selisih tanpa ada yang menyadarinya.
+                'berselisih' => InboundDetail::query()
+                    ->whereIn('id', array_keys($perubahan))
+                    ->berselisih()
+                    ->count(),
+            ],
+        );
 
         if ($tersisa > 0) {
             return redirect()->route('wms.inbound.verify.process', $header->document_number)->with(
@@ -815,7 +1399,7 @@ class InboundController extends Controller
                     '%d palet terverifikasi. Masih ada %d palet yang belum diverifikasi — dokumen tetap di daftar verifikasi.',
                     count($perubahan),
                     $tersisa
-                )
+                ).($catatan ? ' '.$catatan : '')
             );
         }
 
@@ -823,41 +1407,6 @@ class InboundController extends Controller
             'Verifikasi dokumen %s selesai: %d palet terverifikasi dan stoknya kini aktif.',
             $header->document_number,
             $header->details()->count()
-        ));
-    }
-
-    /**
-     * Daftar retur menunggu pengecekan — masih kosong sampai Fase 7.
-     *
-     * Sumbernya BUKAN lagi session. Dulu halaman ini membaca
-     * session('pending_returns') yang diisi SalesOrderController::reportReturn
-     * dengan data karangan; keduanya kini sudah dilucuti, jadi membacanya
-     * hanya menyisakan jalur data palsu yang menunggu dipakai orang lain.
-     * Fase 7 mengisinya dari tabel sales_returns.
-     */
-    public function returnsIndex()
-    {
-        return view('wms.inbound.returns', ['pendingReturns' => []]);
-    }
-
-    /**
-     * BELUM TERPASANG — dijadwalkan Fase 7 (Retur).
-     *
-     * Sebelumnya method ini menjawab "Barang retur berhasil dialokasikan ke
-     * GR/DDP" sambil hanya menggeser data di SESSION: tidak ada baris
-     * inventory_stocks yang bertambah, tidak ada entri stock_movements, tidak
-     * ada apa pun yang tersimpan. Operator akan mengira barang retur sudah
-     * masuk Good Stock — lalu barang itu tidak pernah muncul saat picking.
-     *
-     * Stok yang salah lebih berbahaya daripada fitur yang belum ada, karena
-     * kekeliruannya baru ketahuan di ujung, saat barang gagal dikirim.
-     */
-    public function processReturn($id, Request $request)
-    {
-        return redirect()->back()->with(
-            'error',
-            'Pemrosesan retur belum tersedia (dijadwalkan Fase 7). '.
-            'Jangan mencatat alokasinya di luar sistem — tunggu modulnya aktif.'
-        );
+        ).($catatan ? ' '.$catatan : ''));
     }
 }

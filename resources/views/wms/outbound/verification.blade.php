@@ -1,211 +1,154 @@
 @extends('layouts.wms')
-@section('title', 'Verifikasi Logistik')
-@section('page_title', 'Verifikasi Bukti Surat Jalan (F-OUT-05)')
+
+@section('title', 'Verifikasi Bukti SJ')
+@section('page_title', 'Verifikasi Bukti Surat Jalan')
 
 @section('content')
-<div class="row mb-4">
-    <div class="col-12">
-        <p class="text-muted">Lacak seluruh pesanan yang sedang dalam perjalanan dan verifikasi dokumen Surat Jalan fisik yang diunggah oleh pihak Ekspedisi/Sales.</p>
+{{-- TIGA TAB, SATU STATUS PESANAN.
+
+     Pemilik produk memilih TIDAK menambah status baru antara "sampai tujuan"
+     dan "menunggu verifikasi bukti", supaya tampilan di HP Sales tetap satu
+     label. Konsekuensinya di sini: pesanan yang fotonya belum ada dan pesanan
+     yang fotonya sudah menunggu berstatus SAMA, jadi tab TIDAK boleh dibagi
+     menurut status — melainkan menurut ada-tidaknya foto yang menunggu. --}}
+
+@foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
+    @if(session($jenis))
+    <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} alert-dismissible fade show border-0 shadow-sm rounded-3" role="alert">
+        <i class="bi bi-{{ $ikon }} me-2"></i>{{ session($jenis) }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Tutup"></button>
     </div>
-</div>
+    @endif
+@endforeach
+
+@php
+    $tabs = [
+        \App\Http\Controllers\Wms\ProofVerificationController::TAB_PERLU_DIPERIKSA => [
+            'judul' => 'Perlu Diperiksa', 'warna' => 'danger',
+            'sub' => 'Foto sudah masuk, menunggu Anda.',
+        ],
+        \App\Http\Controllers\Wms\ProofVerificationController::TAB_MENUNGGU_BUKTI => [
+            'judul' => 'Menunggu Bukti', 'warna' => 'secondary',
+            'sub' => 'Belum ada foto dari Sales.',
+        ],
+        \App\Http\Controllers\Wms\ProofVerificationController::TAB_RIWAYAT => [
+            'judul' => 'Selesai', 'warna' => 'secondary',
+            'sub' => 'Sudah diverifikasi.',
+        ],
+    ];
+@endphp
 
 <div class="card shadow-sm border-0 rounded-4">
-    <div class="card-header bg-white border-bottom-0 pt-4 pb-2 px-4 d-flex justify-content-between align-items-center">
-        <h6 class="fw-bold text-dark mb-0"><i class="bi bi-shield-check text-primary me-2"></i>Daftar Menunggu Verifikasi & Riwayat</h6>
-        
-        <!-- Filter Tabs -->
-        <style>
-            .nav-pills .nav-link { color: #6c757d; font-weight: 500; transition: all 0.2s; }
-            .nav-pills .nav-link:hover { color: #1e3a8a; }
-            .nav-pills .nav-link.active { background-color: #1e3a8a !important; color: #ffffff !important; }
-            .nav-pills .nav-link.active:hover { background-color: #172554 !important; color: #ffffff !important; }
-        </style>
-        <ul class="nav nav-pills nav-sm" id="pills-tab" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active rounded-pill px-4 py-2 me-2 shadow-sm" id="pills-pending-tab" data-bs-toggle="pill" data-bs-target="#pills-pending" type="button" role="tab" aria-selected="true">Menunggu Verifikasi <span class="badge bg-danger ms-2">1</span></button>
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
+        <h5 class="fw-bold text-dark mb-1">
+            <i class="bi bi-shield-check text-primary me-2"></i> Bukti Surat Jalan bertanda tangan
+        </h5>
+        <small class="text-muted d-block mb-3">
+            Sales memotret Surat Jalan yang sudah ditandatangani pelanggan. Pesanan baru dinyatakan
+            selesai setelah fotonya Anda periksa.
+        </small>
+
+        <ul class="nav nav-tabs border-0 gap-1">
+            @foreach($tabs as $kunci => $t)
+            <li class="nav-item">
+                <a class="nav-link rounded-top-3 {{ $tab === $kunci ? 'active fw-semibold' : 'text-muted' }}"
+                   href="{{ route('wms.verification.index', array_filter(['tab' => $kunci, 'search' => $filters['search']])) }}">
+                    {{ $t['judul'] }}
+                    @if($jumlah[$kunci] > 0)
+                        <span class="badge bg-{{ $tab === $kunci ? $t['warna'] : 'secondary' }}-subtle text-{{ $tab === $kunci ? $t['warna'] : 'secondary' }}-emphasis ms-1">
+                            {{ $jumlah[$kunci] }}
+                        </span>
+                    @endif
+                </a>
             </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link rounded-pill px-4 py-2" id="pills-history-tab" data-bs-toggle="pill" data-bs-target="#pills-history" type="button" role="tab" aria-selected="false">Riwayat (Selesai)</button>
-            </li>
+            @endforeach
         </ul>
     </div>
-    
-    <div class="card-body p-4">
-        <div class="tab-content" id="pills-tabContent">
-            
-            <!-- Tab: Menunggu Verifikasi -->
-            <div class="tab-pane fade show active" id="pills-pending" role="tabpanel">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead class="table-light text-muted small">
-                            <tr>
-                                <th>NO. PO / SURAT JALAN</th>
-                                <th>CUSTOMER</th>
-                                <th>SUPIR & KENDARAAN</th>
-                                <th>STATUS</th>
-                                <th class="text-end">AKSI</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Item yang diupload Sales dari simulasi sebelumnya -->
-                            <tr>
-                                <td>
-                                    <span class="fw-bold text-primary d-block mb-1">PO-1508-011</span>
-                                    <small class="text-muted">SJ-00123/VIII/2026</small>
-                                </td>
-                                <td><span class="fw-semibold">PT Sentosa Abadi</span></td>
-                                <td>
-                                    <span class="d-block mb-1">Herman (0812-9988)</span>
-                                    <span class="badge bg-light text-dark border">B 9901 XX</span>
-                                </td>
-                                <td>
-    <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Menunggu Verifikasi WMS</span>
-    @if(session('po_has_return_PO-1508-011'))
-        <span class="badge bg-danger d-block mt-1"><i class="bi bi-exclamation-triangle-fill"></i> Ada Laporan Retur</span>
-    @endif
-</td>
-                                <td class="text-end">
-                                    <button class="btn btn-sm rounded-pill px-3 shadow-sm text-white" style="background-color: #1e3a8a; border-color: #1e3a8a;" onmouseover="this.style.backgroundColor='#172554'; this.style.color='#ffffff';" onmouseout="this.style.backgroundColor='#1e3a8a'; this.style.color='#ffffff';" data-bs-toggle="modal" data-bs-target="#modalVerifikasi"><i class="bi bi-check2-circle me-1"></i> Periksa Dokumen</button>
-                                </td>
-                            </tr>
-                            <!-- Item Masih di jalan -->
-                            <tr>
-                                <td>
-                                    <span class="fw-bold text-primary d-block mb-1">PO-2608-001</span>
-                                    <small class="text-muted">SJ-00124/VIII/2026</small>
-                                </td>
-                                <td><span class="fw-semibold">CV Bangun Jaya</span></td>
-                                <td>
-                                    <span class="d-block mb-1">Budi (0811-2233)</span>
-                                    <span class="badge bg-light text-dark border">D 1234 ABC</span>
-                                </td>
-                                <td><span class="badge bg-secondary"><i class="bi bi-truck me-1"></i>Dalam Perjalanan</span></td>
-                                <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" disabled>Menunggu Upload Sales</button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <!-- Tab: Riwayat (Selesai) -->
-            <div class="tab-pane fade" id="pills-history" role="tabpanel">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead class="table-light text-muted small">
-                            <tr>
-                                <th>NO. PO / SURAT JALAN</th>
-                                <th>CUSTOMER</th>
-                                <th>TANGGAL SELESAI</th>
-                                <th>STATUS TERAKHIR</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>
-                                    <span class="fw-bold text-primary d-block mb-1">PO-1008-055</span>
-                                    <small class="text-muted">SJ-00110/VIII/2026</small>
-                                </td>
-                                <td><span class="fw-semibold">Toko Maju Terus</span></td>
-                                <td>11 Ags 2026, 16:30</td>
-                                <td><span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Selesai & Diverifikasi</span></td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <span class="fw-bold text-primary d-block mb-1">PO-0908-012</span>
-                                    <small class="text-muted">SJ-00098/VIII/2026</small>
-                                </td>
-                                <td><span class="fw-semibold">PT Warna Indah</span></td>
-                                <td>10 Ags 2026, 10:15</td>
-                                <td><span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Selesai & Diverifikasi</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
 
+    <div class="card-body p-4">
+        <form method="GET" class="row g-2 mb-3">
+            <input type="hidden" name="tab" value="{{ $tab }}">
+            <div class="col-12 col-md-6">
+                <input type="search" name="search" value="{{ $filters['search'] }}" class="form-control rounded-3"
+                       placeholder="Cari nomor pesanan, nomor SO, atau pelanggan…">
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary rounded-3"><i class="bi bi-search me-1"></i> Cari</button>
+            </div>
+            @if($filters['search'])
+            <div class="col-auto d-flex align-items-center">
+                <a href="{{ route('wms.verification.index', ['tab' => $tab]) }}" class="small">Tampilkan semua</a>
+            </div>
+            @endif
+        </form>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Pesanan</th>
+                        <th>No. SO (BC)</th>
+                        <th>Pelanggan</th>
+                        <th>Surat Jalan</th>
+                        <th>Sampai</th>
+                        <th>Bukti</th>
+                        <th class="text-end">Tindakan</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @forelse($orders as $order)
+                    <tr>
+                        <td>
+                            <div class="fw-semibold font-monospace">{{ $order->order_number }}</div>
+                            <small class="text-muted">{{ $order->paymentTerm?->name }}</small>
+                        </td>
+                        <td class="font-monospace fw-semibold">{{ $order->bc_so_number ?? '—' }}</td>
+                        <td>
+                            <div>{{ $order->customer?->name ?? '—' }}</div>
+                            <small class="text-muted font-monospace">{{ $order->customer?->code }}</small>
+                        </td>
+                        <td class="font-monospace">
+                            {{ $order->deliveryNotes->pluck('document_no')->join(', ') ?: '—' }}
+                        </td>
+                        <td>{{ $order->delivered_at?->format('d M Y H:i') ?? '—' }}</td>
+                        <td>
+                            @if($order->bukti_menunggu > 0)
+                                <span class="badge bg-danger-subtle text-danger-emphasis">
+                                    {{ $order->bukti_menunggu }} foto menunggu
+                                </span>
+                            @elseif($order->bukti_ditolak > 0)
+                                {{-- Yang membedakan "belum kirim" dari "sudah kirim tapi salah":
+                                     tanpa penanda ini keduanya terlihat identik, padahal yang kedua
+                                     berarti Sales sedang menunggu kabar dari kita. --}}
+                                <span class="badge bg-warning-subtle text-warning-emphasis">
+                                    Ditolak, menunggu foto ulang
+                                </span>
+                            @elseif(in_array($order->status, [\App\Models\SalesOrder::STATUS_COMPLETED, \App\Models\SalesOrder::STATUS_COMPLETED_BILLING], true))
+                                <span class="badge bg-success-subtle text-success-emphasis">Terverifikasi</span>
+                            @else
+                                <span class="text-muted small">Belum ada</span>
+                            @endif
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ route('wms.verification.show', $order) }}"
+                               class="btn btn-sm rounded-3 {{ $order->bukti_menunggu > 0 ? 'btn-primary' : 'btn-outline-secondary' }}">
+                                {{ $order->bukti_menunggu > 0 ? 'Periksa' : 'Lihat' }}
+                            </a>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox display-6 d-block mb-2 opacity-50"></i>
+                            {{ $tabs[$tab]['sub'] }} Tidak ada yang perlu ditampilkan di sini.
+                        </td>
+                    </tr>
+                @endforelse
+                </tbody>
+            </table>
         </div>
+
+        <div class="mt-3">{{ $orders->links() }}</div>
     </div>
 </div>
 @endsection
-
-@push('modals')
-<!-- Modal Verifikasi -->
-<div class="modal fade" id="modalVerifikasi" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content rounded-4 border-0 shadow-lg">
-            <div class="modal-header border-bottom-0 pt-4 pb-0 px-4">
-                <h5 class="modal-title fw-bold text-dark">Verifikasi Bukti SJ: <span class="text-primary">PO-1508-011</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            
-            <form action="/wms/outbound/verify-bukti/PO-1508-011" method="POST" id="verifyForm">
-                @csrf
-                <div class="modal-body p-4">
-                    <div class="row">
-                        <!-- Sisi Kiri: Info SJ -->
-                        <div class="col-md-5">
-                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-3">Informasi Pengiriman</h6>
-                            <table class="table table-sm table-borderless small mb-4">
-                                <tr><td class="text-muted" width="100">Customer</td><td class="fw-bold text-dark">PT Sentosa Abadi</td></tr>
-                                <tr><td class="text-muted">Total Qty</td><td>150 (3 SKU)</td></tr>
-                                <tr><td class="text-muted">Supir</td><td>Herman</td></tr>
-                                <tr><td class="text-muted">Plat</td><td><span class="badge bg-light text-dark border">B 9901 XX</span></td></tr>
-                            </table>
-
-                            <h6 class="fw-bold text-dark mb-2">Tindakan Admin</h6>
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="check1" required>
-                                <label class="form-check-label small" for="check1">Surat Jalan memiliki stempel/tanda tangan toko yang sah.</label>
-                            </div>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="check2" required>
-                                <label class="form-check-label small" for="check2">Jumlah barang (150 Qty) diterima penuh tanpa komplain fisik.</label>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label small text-muted">Catatan (Opsional)</label>
-                                <textarea class="form-control" rows="2" placeholder="Tidak ada catatan..."></textarea>
-                            </div>
-                        </div>
-
-                        <!-- Sisi Kanan: Bukti Foto -->
-                        <div class="col-md-7">
-                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-3">Foto Unggahan Sales / Supir</h6>
-                            <div class="border rounded-3 p-2 bg-light text-center position-relative" style="height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden;">
-                                <img src="https://images.unsplash.com/photo-1615538337583-0570b6d2da56?auto=format&fit=crop&q=80&w=400&h=300" alt="Bukti Surat Jalan" class="img-fluid rounded shadow-sm" style="max-height: 90%; object-fit: contain;">
-                                <div class="mt-2 text-center w-100">
-                                    <span class="badge bg-dark opacity-75">bukti_sj_sentosa.jpg</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="modal-footer bg-light border-top-0 rounded-bottom-4 px-4 py-3">
-                    <button type="button" class="btn btn-outline-danger px-4 rounded-pill" onclick="alert('Bukti ditolak. Notifikasi perbaikan dikirim ke Sales.')"><i class="bi bi-x-circle me-1"></i> Tolak Dokumen</button>
-                    <button type="submit" class="btn btn-success px-4 rounded-pill fw-bold shadow-sm"><i class="bi bi-check-all me-1"></i> Verifikasi & Selesaikan Pesanan</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-@endpush
-
-@push('scripts')
-<script>
-    document.getElementById('verifyForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        Swal.fire({
-            title: 'Siklus Selesai!',
-            text: 'Dokumen berhasil diverifikasi. Pesanan resmi ditutup dan siap untuk diteruskan ke tim Finance (Penagihan/Billing).',
-            icon: 'success',
-            confirmButtonColor: '#198754'
-        }).then(() => {
-            window.location.reload();
-        });
-    });
-</script>
-@endpush

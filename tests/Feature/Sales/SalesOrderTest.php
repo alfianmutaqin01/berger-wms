@@ -183,17 +183,39 @@ class SalesOrderTest extends TestCase
     public function test_form_tidak_pernah_mengirim_angka_stok(): void
     {
         $this->loginAs();
-        $produk = $this->produk();
-        $this->stok($produk, 137);
 
-        $this->get('/sales/new-order')->assertOk()->assertDontSee('137');
+        /*
+         * ANGKA STOKNYA SENGAJA DIBUAT TIDAK MUNGKIN TERTUKAR.
+         *
+         * Dulu angkanya 137 dan SKU-nya dari factory — yang berbentuk
+         * ID1-F00##3###2## dengan digit acak. "137" bisa muncul di dalam SKU
+         * itu, atau di dalam `id` produk yang ikut terkirim di JSON, murni
+         * kebetulan: test-nya gagal bukan karena angka stok bocor, melainkan
+         * karena tiga digit yang kebetulan sama muncul di tempat lain. Nomor
+         * urut produk memang merangkak naik sepanjang suite (rollback
+         * transaksi tidak mengembalikan sequence Postgres), jadi kelas test
+         * baru saja sudah cukup memindahkannya ke kisaran yang bertabrakan.
+         *
+         * SKU dipatok dan angka stoknya dibuat enam digit yang tidak akan
+         * pernah jadi id maupun bagian SKU, sehingga yang tersisa hanya satu
+         * kemungkinan: angka itu memang bocor ke layar.
+         */
+        $produk = $this->produk(['sku' => 'ID1-F00990099009', 'name' => 'Royale Semi Blind Putih']);
+        $this->stok($produk, 987654);
+
+        $this->get('/sales/new-order')->assertOk()->assertDontSee('987654');
 
         // Endpoint pencarian adalah SATU-SATUNYA tempat Sales melihat
         // ketersediaan, jadi aturan Semi-Blind ditegakkan di sana juga.
         $hasil = $this->getJson('/sales/lookup/products?q='.$produk->sku.'&warehouse_id='.$this->warehouse->id);
 
-        $hasil->assertOk()->assertDontSee('137');
+        $hasil->assertOk()->assertDontSee('987654');
         $this->assertSame('available', $hasil->json('0.indicator'));
+
+        // Dan tidak ada satu pun kunci yang membawa angkanya, apa pun namanya.
+        foreach (['qty', 'qty_available', 'available', 'stock', 'qty_on_hand'] as $kunci) {
+            $this->assertArrayNotHasKey($kunci, $hasil->json('0'));
+        }
     }
 
     /* -------------------------------------------------------- Pencarian */
@@ -245,16 +267,26 @@ class SalesOrderTest extends TestCase
     public function test_pencarian_customer_hanya_mengembalikan_yang_cocok(): void
     {
         $this->loginAs();
-        Customer::factory()->create(['name' => 'Toko Jaya Makmur', 'is_active' => true]);
-        Customer::factory()->create(['name' => 'Toko Sinar Abadi', 'is_active' => true]);
+
+        // EMAIL DIISI EKSPLISIT, dan itu bukan kerapian belaka.
+        // Customer::scopeSearch ikut mencari kolom email, sedangkan faker
+        // proyek ini berlocale id_ID (config/app.php) sehingga emailnya lazim
+        // memuat nama seperti "wijaya" atau "harjaya" — keduanya cocok dengan
+        // "%Jaya%". Test ini dahulu gagal sekitar satu dari tiga kali karena
+        // itu, dan kegagalannya terbaca seolah pencariannya yang rusak.
+        Customer::factory()->create([
+            'name' => 'Toko Jaya Makmur', 'email' => 'makmur@contoh.test', 'is_active' => true,
+        ]);
+        Customer::factory()->create([
+            'name' => 'Toko Sinar Abadi', 'email' => 'sinar@contoh.test', 'is_active' => true,
+        ]);
 
         $nama = collect($this->getJson('/sales/lookup/customers?q=Jaya')->assertOk()->json())
             ->pluck('name');
 
         // Diperiksa dari ISI hasilnya, bukan jumlahnya: setUp dan factory lain
-        // membuat customer bernama acak dari faker, yang sewaktu-waktu bisa
-        // mengandung kata kunci ini juga dan menggagalkan test tanpa ada yang
-        // rusak. Yang diuji adalah aturannya — yang tidak cocok tidak muncul.
+        // tetap membuat customer bernama acak yang sewaktu-waktu bisa ikut
+        // cocok. Yang diuji adalah aturannya — yang tidak cocok tidak muncul.
         $this->assertContains('Toko Jaya Makmur', $nama->all());
         $this->assertNotContains('Toko Sinar Abadi', $nama->all());
     }
@@ -726,39 +758,65 @@ class SalesOrderTest extends TestCase
         $this->get('/sales/orders/'.$order->id)->assertOk()->assertDontSee('KALENG');
     }
 
-    /** Sebelum disetujui, qty_approved 0 berarti "belum dinilai", bukan "nol". */
-    public function test_qty_disetujui_belum_ditampilkan_sebelum_approval(): void
+    public function test_istilah_disetujui_tidak_dipakai_di_halaman_sales(): void
     {
         $sales = $this->loginAs();
         $order = SalesOrder::factory()->submitted()->create(['user_id' => $sales->id]);
         SalesOrderDetail::factory()->create(['sales_order_id' => $order->id, 'qty_ordered' => 42]);
 
-        // "Disetujui 0" akan terbaca sebagai "tidak ada yang disetujui",
-        // padahal artinya pesanan ini belum dinilai Logistik.
+        // Sales tidak menagih dengan angka persetujuan. Yang ia butuhkan
+        // adalah berapa yang berangkat dan berapa yang masih terutang.
         $this->get('/sales/orders/'.$order->id)
             ->assertOk()
-            ->assertDontSee('Disetujui')
-            ->assertDontSee('Tidak terpenuhi');
+            ->assertDontSee('Disetujui');
     }
 
-    /** Sesudah approval, qty disetujui dan Lost Sales barulah muncul. */
-    public function test_qty_disetujui_muncul_setelah_approval(): void
+    /**
+     * Sisa yang belum berangkat disebut OUTSTANDING, bukan "tidak terpenuhi":
+     * kata itu terdengar seperti kasus yang sudah ditutup, padahal sisanya
+     * masih utang ke pelanggan dan menunggu dijadwalkan Pengiriman Ulang.
+     */
+    public function test_sisa_yang_belum_berangkat_disebut_outstanding(): void
     {
         $sales = $this->loginAs();
         $order = SalesOrder::factory()->submitted()->create([
             'user_id' => $sales->id,
-            'status' => SalesOrder::STATUS_APPROVED,
-            'approved_at' => now(),
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'approved_at' => now()->subDay(),
+            'shipped_at' => now(),
         ]);
         SalesOrderDetail::factory()->create([
             'sales_order_id' => $order->id,
-            'qty_ordered' => 100, 'qty_approved' => 80, 'lost_qty' => 20,
+            'qty_ordered' => 5, 'qty_approved' => 5, 'qty_shipped' => 3,
+            'outstanding_qty' => 2,
         ]);
 
         $this->get('/sales/orders/'.$order->id)
             ->assertOk()
-            ->assertSee('Disetujui')
-            ->assertSee('80')
-            ->assertSee('Tidak terpenuhi');
+            // Angka besar di kanan adalah yang benar-benar berangkat.
+            ->assertSee('terkirim')
+            ->assertSee('Outstanding 2')
+            ->assertSee('dari 5 dipesan');
+    }
+
+    /** Baris yang berangkat utuh tidak boleh memunculkan baris outstanding. */
+    public function test_baris_yang_berangkat_utuh_tidak_menampilkan_outstanding(): void
+    {
+        $sales = $this->loginAs();
+        $order = SalesOrder::factory()->submitted()->create([
+            'user_id' => $sales->id,
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'approved_at' => now()->subDay(),
+            'shipped_at' => now(),
+        ]);
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'qty_ordered' => 5, 'qty_approved' => 5, 'qty_shipped' => 5,
+            'outstanding_qty' => 0,
+        ]);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertDontSee('Outstanding');
     }
 }

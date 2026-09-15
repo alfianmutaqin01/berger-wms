@@ -40,6 +40,17 @@ for dir in storage bootstrap/cache; do
     fi
 done
 
+# Berkas cache di AKAR proyek, bukan di dalam storage/. Terlewat oleh loop di
+# atas, dan begitu jadi milik root, `php artisan test` mengeluh
+# "file_put_contents(.phpunit.result.cache): Permission denied" pada SETIAP
+# jalannya — peringatan yang mudah dianggap wajar padahal menandakan berkas
+# milik root sedang menumpuk lagi.
+for file in .phpunit.result.cache; do
+    if [ -f "/var/www/html/$file" ]; then
+        chown www-data:www-data "/var/www/html/$file" 2>/dev/null || true
+    fi
+done
+
 # Diteruskan ke entrypoint bawaan image php resmi, bukan langsung ke "$@" —
 # entrypoint itulah yang menangani argumen bergaya `php ...` dan penyiapan
 # lain milik image. Melewatinya berarti diam-diam mengubah perilaku image.

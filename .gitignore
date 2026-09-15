@@ -17,6 +17,8 @@
 .env
 .env.backup
 .env.production
+.env.postgres
+/kunci-pemulihan
 
 # IDE
 .idea/
@@ -51,3 +53,6 @@ docker/data/
 # Legacy
 Homestead.json
 Homestead.yaml
+
+# Cadangan production (container `backup`) — berisi data operasional.
+/backups

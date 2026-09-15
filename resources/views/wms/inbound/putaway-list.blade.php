@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Daftar Put-away')
-@section('page_title', 'Daftar Put-away')
+@section('title', 'Daftar PDN')
+@section('page_title', 'Daftar PDN')
 
 @section('content')
 @if(session('success'))
@@ -48,7 +48,7 @@
 
 <div class="card shadow-sm border-0 rounded-4">
     <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
-        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-box-seam text-primary me-2"></i> Daftar Menunggu Put-away</h5>
+        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-box-seam text-primary me-2"></i> Daftar Menunggu PDN</h5>
         <p class="text-muted small mt-1 mb-0">Pilih dokumen untuk menempatkan paletnya ke rak. Dokumen yang baru selesai sebagian tetap tampil di sini.</p>
     </div>
 
@@ -131,7 +131,7 @@
                         <tr>
                             <td colspan="6" class="text-center py-5 text-muted">
                                 <i class="bi bi-check2-circle fs-1 d-block mb-3 opacity-50"></i>
-                                Tidak ada dokumen yang menunggu put-away.
+                                Tidak ada dokumen yang menunggu PDN.
                             </td>
                         </tr>
                     @endforelse

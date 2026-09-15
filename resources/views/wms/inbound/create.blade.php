@@ -51,12 +51,30 @@
                             <div class="form-text">Dibuat otomatis oleh sistem.</div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold text-secondary small">Tanggal Produksi</label>
+                            {{-- BOLEH DIMUNDURKAN. Produksi tadi malam yang baru
+                                 sempat diinput pagi ini bukan produksi hari ini —
+                                 dan tanggal ini BUKAN sekadar keterangan: ia
+                                 menjadi tanggal produksi tiap batch di rak, dan
+                                 kedaluwarsanya dihitung dari situ. Memaksanya
+                                 selalu hari ini berarti memberi umur simpan
+                                 lebih panjang daripada yang sebenarnya. --}}
+                            <label class="form-label fw-semibold text-secondary small" for="tanggalProduksi">
+                                Tanggal Produksi <span class="text-danger">*</span>
+                            </label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-calendar-check text-primary"></i></span>
-                                <input type="text" class="form-control bg-light fw-semibold" value="{{ $productionDate->translatedFormat('d F Y') }}" readonly>
+                                <input type="date" id="tanggalProduksi" name="production_date"
+                                       class="form-control fw-semibold @error('production_date') is-invalid @enderror"
+                                       value="{{ old('production_date', $productionDate->toDateString()) }}"
+                                       min="{{ $tanggalTerawal }}" max="{{ $productionDate->toDateString() }}" required>
                             </div>
-                            <div class="form-text">Mengikuti tanggal pengisian.</div>
+                            @error('production_date')
+                                <div class="text-danger small mt-1">{{ $message }}</div>
+                            @enderror
+                            <div class="form-text">
+                                Bawaannya hari ini. Mundurkan bila barangnya dibuat sebelum hari ini —
+                                <strong>kedaluwarsa batch dihitung dari tanggal ini</strong>.
+                            </div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold text-secondary small">Gudang Tujuan <span class="text-danger">*</span></label>
@@ -76,8 +94,14 @@
                 </div>
 
                 <div class="card-footer bg-light border-top-0 rounded-bottom-4 text-end py-3 px-4">
+                    {{-- "Check", bukan "Check & Submit": tombol ini TIDAK
+                         menyimpan apa pun. Ia membaca berkas lalu menampilkan
+                         hasilnya. Yang menyimpan adalah "Submit" di layar
+                         berikutnya. Tombol yang menyebut submit padahal belum
+                         menyimpan membuat orang menutup layar berikutnya dan
+                         mengira pekerjaannya sudah selesai. --}}
                     <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm">
-                        <i class="bi bi-search me-1"></i> Baca &amp; Pratinjau
+                        <i class="bi bi-search me-1"></i> Check
                     </button>
                 </div>
             </form>
@@ -110,7 +134,7 @@
                     <div class="col-md-6 col-lg-3">
                         <div class="d-flex align-items-start">
                             <span class="badge bg-primary rounded-circle me-2 mt-1 flex-shrink-0 d-flex align-items-center justify-content-center" style="width:24px;height:24px;">4</span>
-                            <span class="small text-muted">Tekan Simpan. Dokumen masuk antrean <strong>Menunggu Put-away</strong>.</span>
+                            <span class="small text-muted">Tekan Submit. Dokumen masuk antrean <strong>Menunggu PDN</strong>.</span>
                         </div>
                     </div>
                 </div>

@@ -127,6 +127,14 @@ class User extends Authenticatable
      * Manager boleh mengelola semua role KECUALI Super Admin. Aturan ini menutup
      * celah eskalasi hak akses: tanpa pemeriksaan ini, seorang Manager dapat
      * menyunting akun Super Admin mana pun dan mengambil alih sistem.
+     *
+     * SEJAK MULTI-GUDANG ada batas kedua: Manager hanya mengelola akun di
+     * gudang yang ia kendalikan. Manager Karawang yang bisa menyunting akun
+     * Logistik Surabaya sama saja dengan bisa mengambil alih gudang itu —
+     * cukup dengan mengganti kata sandinya.
+     *
+     * Akun tanpa gudang (warehouse_id NULL, lintas gudang) TIDAK bisa dikelola
+     * Manager mana pun: tidak ada satu gudang yang bisa mengklaimnya.
      */
     public function canManage(User $target): bool
     {
@@ -138,7 +146,12 @@ class User extends Authenticatable
             return true;
         }
 
-        return ! $target->isSuperAdmin();
+        if ($target->isSuperAdmin()) {
+            return false;
+        }
+
+        return $this->warehouse_id === null
+            || $this->warehouse_id === $target->warehouse_id;
     }
 
     /*
@@ -153,10 +166,22 @@ class User extends Authenticatable
     }
 
     /**
-     * Catat satu percobaan gagal (password salah ATAU verifikasi anti-bot
-     * gagal — keduanya berbagi counter yang sama, PRD §6.1 F-AUTH-03). Mengunci
-     * akun begitu counter mencapai 3, dengan durasi yang meningkat setiap kali
-     * akun terkunci lagi setelah unlock sebelumnya (5 -> 10 -> 30 -> 60 -> 120 menit).
+     * Gagal login dari IP yang BELUM DIKENAL sebelum AKUN dikunci.
+     *
+     * Jauh di atas 3 dan itu disengaja (PRD v1.5, audit keamanan). Tiga kali
+     * gagal sudah mengunci pasangan email+IP-nya di App\Support\Auth\
+     * PenjagaLogin; ambang akun ini menahan tebak-sandi yang disebar ke banyak
+     * IP. Kalau ambangnya 3, siapa pun yang tahu email seseorang bisa mengunci
+     * akunnya dengan tiga permintaan.
+     */
+    public const AMBANG_KUNCI_AKUN = 10;
+
+    /**
+     * Catat satu kali sandi salah dari IP yang belum dikenal (PRD §6.1
+     * F-AUTH-03). Verifikasi anti-bot yang gagal TIDAK lagi dihitung — ia
+     * ditolak sebelum akun disentuh. Mengunci akun begitu counter mencapai
+     * AMBANG_KUNCI_AKUN, dengan durasi yang meningkat setiap kali akun
+     * terkunci lagi (5 -> 10 -> 30 -> 60 -> 120 menit).
      *
      * `lockout_count` sengaja TIDAK direset di sini — itu riwayat berapa kali
      * akun ini pernah terkunci, dan hanya Super Admin yang boleh menuntaskannya
@@ -164,11 +189,29 @@ class User extends Authenticatable
      */
     public function registerFailedLogin(): void
     {
+        /*
+         * PENGHITUNG DIMULAI ULANG SETIAP PUTARAN KUNCI.
+         *
+         * Tanpa ini, penghitungnya tetap di ambang sesudah kuncinya habis —
+         * sehingga SATU kali salah berikutnya langsung menyentuh ambang dan
+         * mengunci lagi, dengan durasi yang naik terus (5 -> 10 -> 30 ->
+         * 60 -> 120 menit).
+         *
+         * `lockout_count` TIDAK ikut direset: itu riwayat berapa kali akun ini
+         * pernah terkunci, dan justru itu yang membuat durasinya meningkat
+         * bagi akun yang berulang kali diserang. Hanya Super Admin yang boleh
+         * menuntaskannya lewat unlock manual.
+         */
+        if ($this->locked_until !== null && $this->locked_until->isPast()) {
+            $this->failed_login_attempts = 0;
+            $this->locked_until = null;
+        }
+
         $this->failed_login_attempts++;
 
-        if ($this->failed_login_attempts >= 3) {
+        if ($this->failed_login_attempts >= self::AMBANG_KUNCI_AKUN) {
             $this->lockout_count++;
-            $this->locked_until = now()->addMinutes(self::lockoutDurationMinutes($this->lockout_count));
+            $this->locked_until = now()->addMinutes(self::durasiKunciMenit($this->lockout_count));
             $this->last_lockout_at = now();
         }
 
@@ -182,7 +225,8 @@ class User extends Authenticatable
         $this->save();
     }
 
-    private static function lockoutDurationMinutes(int $lockoutCount): int
+    /** Durasi kunci per tingkat — dipakai kunci akun dan kunci email+IP. */
+    public static function durasiKunciMenit(int $lockoutCount): int
     {
         return match (true) {
             $lockoutCount <= 1 => 5,

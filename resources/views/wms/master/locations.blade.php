@@ -30,7 +30,7 @@
     <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-body">
-                <h6 class="text-muted fw-normal mb-2">Total Bin</h6>
+                <h6 class="text-muted fw-normal mb-2">Total Rak</h6>
                 <h3 class="mb-0 fw-bold text-dark">{{ number_format($stats['total']) }}</h3>
             </div>
         </div>
@@ -79,7 +79,7 @@
             <div class="col-12 col-md-3">
                 <div class="input-group h-100">
                     <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" name="search" value="{{ $filters['search'] }}" class="form-control bg-white border-start-0" placeholder="Cari kode bin...">
+                    <input type="text" name="search" value="{{ $filters['search'] }}" class="form-control bg-white border-start-0" placeholder="Cari kode rak...">
                 </div>
             </div>
             <div class="col-6 col-md-2">
@@ -125,7 +125,7 @@
                 <thead class="table-light">
                     <tr>
                         <th class="text-secondary small fw-semibold text-center text-nowrap" style="width: 60px;">NO</th>
-                        <th class="text-secondary small fw-semibold text-nowrap">KODE BIN</th>
+                        <th class="text-secondary small fw-semibold text-nowrap">KODE RAK</th>
                         <th class="text-secondary small fw-semibold text-nowrap">GUDANG</th>
                         <th class="text-secondary small fw-semibold text-center text-nowrap">RAK</th>
                         <th class="text-secondary small fw-semibold text-center text-nowrap">LEVEL</th>
@@ -235,7 +235,7 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label small fw-semibold text-secondary">Kode Bin *</label>
+                        <label class="form-label small fw-semibold text-secondary">Kode Rak *</label>
                         <input type="text" name="code" id="inpCode" class="form-control font-monospace text-uppercase" placeholder="B-01-01" required>
                         <div class="form-text">
                             Format <span class="font-monospace">[Rak]-[Level]-[Sel]</span>.
@@ -252,14 +252,14 @@
                                 <option value="{{ $zone }}">{{ $zone }}</option>
                             @endforeach
                         </select>
-                        <div class="form-text">Menentukan strategi put-away: barang cepat laku ditempatkan di zona terdekat jalur keluar.</div>
+                        <div class="form-text">Menentukan strategi PDN: barang cepat laku ditempatkan di zona terdekat jalur keluar.</div>
                     </div>
 
                     <div class="form-check">
                         <input type="hidden" name="is_active" value="0">
                         <input class="form-check-input" type="checkbox" name="is_active" id="inpActive" value="1" checked>
                         <label class="form-check-label" for="inpActive">Lokasi aktif</label>
-                        <div class="form-text">Bin non-aktif tidak akan dipilih proses put-away.</div>
+                        <div class="form-text">Rak non-aktif tidak akan dipilih proses PDN.</div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
@@ -344,7 +344,7 @@
 
                 Swal.fire({
                     title: 'Ubah status lokasi?',
-                    text: 'Anda akan ' + btn.dataset.action + ' bin ' + btn.dataset.code + '.',
+                    text: 'Anda akan ' + btn.dataset.action + ' rak ' + btn.dataset.code + '.',
                     icon: 'question',
                     showCancelButton: true,
                     confirmButtonText: 'Ya, lanjutkan',

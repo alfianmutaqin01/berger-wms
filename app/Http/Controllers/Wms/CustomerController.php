@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreCustomerRequest;
 use App\Http\Requests\Wms\UpdateCustomerRequest;
+use App\Models\ActivityLog;
 use App\Models\Customer;
+use App\Models\CustomerBilling;
+use App\Support\Activity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -45,6 +48,8 @@ class CustomerController extends Controller
 
         return view('wms.master.customers', [
             'customers' => $customers,
+            // F-BILL-03: satu query untuk seluruh halaman, bukan satu per baris.
+            'piutang' => CustomerBilling::penandaCustomer($customers->pluck('id')->all()),
             'territories' => Customer::query()
                 ->whereNotNull('territory_code')
                 ->distinct()
@@ -67,6 +72,16 @@ class CustomerController extends Controller
 
         $customer = Customer::create($data);
 
+        Activity::record(
+            ActivityLog::MASTER_CREATE,
+            sprintf('Menambah pelanggan %s — %s.', $customer->code, $customer->name),
+            $customer,
+            // Pelanggan tidak dimiliki satu gudang; wilayahnya diatur
+            // terpisah lewat warehouse_territories.
+            null,
+            ['kode' => $customer->code],
+        );
+
         return redirect()->route('wms.customers.index')
             ->with('success', "Pelanggan {$customer->name} berhasil ditambahkan.");
     }
@@ -74,6 +89,16 @@ class CustomerController extends Controller
     public function update(UpdateCustomerRequest $request, Customer $customer): RedirectResponse
     {
         $customer->update($request->customerData());
+
+        Activity::record(
+            ActivityLog::MASTER_UPDATE,
+            sprintf('Mengubah pelanggan %s — %s.', $customer->code, $customer->name),
+            $customer,
+            // Pelanggan tidak dimiliki satu gudang; wilayahnya diatur
+            // terpisah lewat warehouse_territories.
+            null,
+            ['kode' => $customer->code, 'kolom_berubah' => array_keys($customer->getChanges())],
+        );
 
         return redirect()->route('wms.customers.index')
             ->with('success', "Pelanggan {$customer->name} berhasil diperbarui.");
@@ -89,6 +114,19 @@ class CustomerController extends Controller
     public function toggleStatus(Customer $customer): RedirectResponse
     {
         $customer->update(['is_active' => ! $customer->is_active]);
+
+        Activity::record(
+            ActivityLog::MASTER_DEACTIVATE,
+            sprintf(
+                'Pelanggan %s (%s) %s.',
+                $customer->name,
+                $customer->code,
+                $customer->is_active ? 'diaktifkan' : 'dinonaktifkan',
+            ),
+            $customer,
+            null,
+            ['kode' => $customer->code, 'aktif' => $customer->is_active],
+        );
 
         return back()->with('success', sprintf(
             'Pelanggan %s berhasil %s.',

@@ -28,6 +28,15 @@ class TrackUserSession
             return $next($request);
         }
 
+        // Diperiksa di SETIAP permintaan, bukan hanya saat login: akun yang
+        // dinonaktifkan di tengah shift harus berhenti bekerja di permintaan
+        // berikutnya, bukan saat sesinya kebetulan kedaluwarsa.
+        if (! Auth::user()->is_active) {
+            UserSession::where('user_id', Auth::id())->delete();
+
+            return $this->forceLogout($request, 'Akun Anda dinonaktifkan. Hubungi Administrator.');
+        }
+
         $token = $request->cookie(self::DEVICE_COOKIE);
         $session = $token ? UserSession::where('session_id', $token)->first() : null;
 

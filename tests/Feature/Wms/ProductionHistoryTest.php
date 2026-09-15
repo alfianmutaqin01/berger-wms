@@ -299,7 +299,7 @@ class ProductionHistoryTest extends TestCase
         $this->get('/wms/inbound/history')
             ->assertOk()
             ->assertSee('IN-260828-001')
-            ->assertSee('Menunggu Put-away');
+            ->assertSee('Menunggu PDN');
 
         $this->assertSame(InboundHeader::STATUS_PUTAWAY_PENDING, $header->status);
     }

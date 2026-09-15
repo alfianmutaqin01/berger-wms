@@ -2,23 +2,22 @@
 
 namespace App\Support;
 
-use App\Models\Role;
 use App\Models\User;
 
 /**
- * Menentukan user yang sedang bertindak.
+ * Menentukan user yang sedang bertindak: user yang login, atau null.
  *
- * Sejak Fase 1 (Autentikasi Nyata), `auth()->user()` sudah bisa diandalkan —
- * kelas ini tetap dipertahankan sebagai SATU-SATUNYA tempat penentuan aktor,
- * supaya controller, Form Request, dan Blade tidak perlu memanggil `auth()`
- * secara langsung tersebar di banyak tempat.
+ * Dipertahankan sebagai SATU-SATUNYA tempat penentuan aktor, supaya
+ * controller, Form Request, dan Blade tidak memanggil `auth()` tersebar di
+ * banyak tempat.
  *
- * Urutan penentuan:
- *   1. `auth()->user()` bila sudah login — jalur utama sejak Fase 1.
- *   2. Parameter `?as=<slug-role>` — sisa alat bantu dev, dipagari
- *      `app()->environment('production')`. Praktis tidak terjangkau lewat
- *      HTTP karena rute wms/sales sudah dibungkus middleware `auth`.
- *   3. Super Admin hasil seed sebagai fallback (juga hanya di luar production).
+ * TIDAK ADA LAGI JALUR CADANGAN. Dulu, di luar production, tamu diperlakukan
+ * sebagai Super Admin hasil seed dan `?as=<role>` bisa menyamar menjadi role
+ * lain — sisa alat bantu sebelum login nyata ada. Pagarnya hanya
+ * `APP_ENV=production`: satu salah ketik di .env server (mis. `staging`)
+ * sudah cukup membuat siapa pun yang tidak login bertindak sebagai Super
+ * Admin. Pengaman yang bergantung pada satu nilai konfigurasi yang benar
+ * bukan pengaman, jadi jalurnya dihapus.
  *
  * @see dokumen arsitektur §5.3 — Role Switcher sudah dihapus.
  */
@@ -32,33 +31,9 @@ class CurrentActor
             return self::$cached;
         }
 
-        if ($user = auth()->user()) {
-            return self::$cached = $user->loadMissing('role');
-        }
+        $user = auth()->user();
 
-        $query = User::with('role')->where('is_active', true);
-
-        // Jalur ini praktis sudah tidak terjangkau lewat HTTP sejak Fase 1:
-        // rute wms/sales kini dibungkus middleware `auth`, sehingga tamu
-        // ditolak sebelum sempat mencapai baris ini. Pagar environment ini
-        // adalah lapis pertahanan kedua, bukan satu-satunya pengaman.
-        if (app()->environment('production')) {
-            return self::$cached = null;
-        }
-
-        if ($slug = request()->query('as')) {
-            $impersonated = (clone $query)
-                ->whereHas('role', fn ($q) => $q->where('slug', $slug))
-                ->first();
-
-            if ($impersonated) {
-                return self::$cached = $impersonated;
-            }
-        }
-
-        return self::$cached = (clone $query)
-            ->whereHas('role', fn ($q) => $q->where('slug', Role::SUPER_ADMIN))
-            ->first();
+        return $user === null ? null : self::$cached = $user->loadMissing('role');
     }
 
     /** Dipakai oleh test untuk menetapkan aktor secara eksplisit. */

@@ -1,14 +1,25 @@
 @extends('layouts.soms')
 
-@section('title', $order ? 'Ubah Draft Pesanan' : 'Buat Pesanan Baru')
-@section('page_title', $order ? 'Ubah Draft Pesanan' : 'Buat Pesanan Baru')
+@php
+    // Tiga keadaan, tiga judul. Layar yang menyebut "Ubah Draft" padahal Sales
+    // sedang memperbaiki pesanan yang ditolak membuat orang ragu apakah ia
+    // membuka pesanan yang benar.
+    $sedangDitolak = $order?->sedangDitolak() ?? false;
+    $judulHalaman = match (true) {
+        $sedangDitolak => 'Perbaiki Pesanan yang Ditolak',
+        $order !== null => 'Ubah Draft Pesanan',
+        default => 'Buat Pesanan Baru',
+    };
+@endphp
+
+@section('title', $judulHalaman)
+@section('page_title', $judulHalaman)
 
 @php
     // Nilai awal: isian lama (setelah validasi gagal), lalu draft yang
     // sedang diubah, baru nilai kosong. Urutan ini yang membuat isian Sales
     // tidak hilang saat ada satu kolom yang salah.
     $vSource = old('order_source', $order?->order_source ?? \App\Models\SalesOrder::SOURCE_MANUAL);
-    $vWarehouse = old('warehouse_id', $order?->warehouse_id);
     $itemLama = old('items', $order
         ? $order->details->map(fn ($d) => ['product_id' => $d->product_id, 'qty' => $d->qty_ordered])->values()->all()
         : []);
@@ -30,6 +41,30 @@
             <ul class="mb-0 mt-2 small">
                 @foreach($errors->all() as $pesan)<li>{{ $pesan }}</li>@endforeach
             </ul>
+        </div>
+        @endif
+
+        {{-- Alasan penolakannya dibawa KE DALAM formulir. Sales yang harus
+             mengingat-ingat apa yang salah sambil menyunting akan memperbaiki
+             barang yang keliru, dan pengajuan keduanya ditolak lagi. --}}
+        @if($sedangDitolak && $order->rejections->isNotEmpty())
+        <div class="alert alert-danger border-0 shadow-sm rounded-3">
+            <strong class="d-block mb-2">
+                <i class="bi bi-x-octagon-fill me-2"></i>Pesanan ini ditolak Logistik
+            </strong>
+            @foreach($order->rejections as $tolak)
+                <div class="small {{ ! $loop->last ? 'border-bottom pb-2 mb-2' : '' }}">
+                    <span class="fw-semibold">Pengajuan ke-{{ $tolak->attempt_no }}:</span>
+                    {{ $tolak->reason }}
+                    <span class="text-muted">
+                        ({{ $tolak->rejected_at?->translatedFormat('d M Y') }},
+                        {{ $tolak->rejectedBy?->full_name ?? '—' }})
+                    </span>
+                </div>
+            @endforeach
+            <div class="small mt-2 fst-italic">
+                Perbaiki itemnya di bawah, lalu tekan <strong>Ajukan Ulang</strong>. Nomor pesanannya tetap sama.
+            </div>
         </div>
         @endif
 
@@ -77,21 +112,37 @@
                                      style="z-index: 1050; max-height: 260px; overflow-y: auto;"></div>
                             </div>
                             <small class="text-muted">Ketik minimal 2 huruf untuk mencari.</small>
+                            {{-- F-BILL-03: INFORMASI, bukan larangan. Pesanan tetap
+                                 bisa diajukan; Logistik yang memutuskan. --}}
+                            <div id="peringatanPiutang"
+                                 class="alert alert-warning border-0 rounded-3 small py-2 mt-2 mb-0 {{ ($customerTerpilih['menunggak'] ?? 0) > 0 ? '' : 'd-none' }}">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                Customer ini <strong>menunggak</strong> — ada invoice lewat jatuh tempo
+                                <span id="hariPiutang">{{ $customerTerpilih['menunggak'] ?? 0 }}</span> hari.
+                                Pesanan tetap bisa diajukan.
+                            </div>
                         </div>
 
                         <div class="col-12 col-md-6">
-                            <label class="form-label small fw-semibold">Gudang Tujuan <span class="text-danger">*</span></label>
-                            <select name="warehouse_id" id="warehouseSelect" class="form-select" required>
-                                <option value="">— Pilih gudang —</option>
-                                @foreach($warehouses as $w)
-                                    {{-- Nama kotanya, bukan kode. "Karawang"
-                                         langsung dikenali Sales; "WH-01"
-                                         menuntut hafalan yang tidak ada
-                                         gunanya di layar ini. --}}
-                                    <option value="{{ $w->id }}" @selected($vWarehouse == $w->id)>{{ $w->name }}</option>
-                                @endforeach
-                            </select>
-                            <small class="text-muted">Indikator ketersediaan mengikuti gudang ini.</small>
+                            {{-- BUKAN PILIHAN LAGI. Sales terkunci ke gudang
+                                 akunnya, jadi gudang diisi server dan tidak
+                                 dikirim dari formulir sama sekali. Tetap
+                                 ditampilkan sebagai keterangan: Sales harus
+                                 tahu gudang mana yang akan memprosesnya, dan
+                                 mengapa pelanggan di luar wilayah itu tidak
+                                 muncul saat dicari. --}}
+                            <label class="form-label small fw-semibold">Gudang Pemroses</label>
+                            <div class="form-control bg-light d-flex align-items-center gap-2" style="cursor: default;">
+                                <i class="bi bi-building text-muted"></i>
+                                <span class="fw-semibold">{{ $gudangSales?->name ?? 'Belum ditentukan' }}</span>
+                            </div>
+                            <small class="text-muted">
+                                @if($gudangSales)
+                                    Mengikuti gudang akun Anda. Indikator ketersediaan dan daftar pelanggan mengikuti gudang ini.
+                                @else
+                                    Akun Anda belum ditempatkan di satu gudang. Hubungi Super Admin sebelum membuat pesanan.
+                                @endif
+                            </small>
                         </div>
 
                         <div class="col-12 col-md-6">
@@ -172,11 +223,13 @@
 
                 <div class="card-footer bg-white border-top-0 p-4 d-flex flex-column flex-md-row gap-2">
                     <button type="submit" name="action" value="draft" class="btn btn-outline-secondary flex-grow-1">
-                        <i class="bi bi-save me-1"></i> Simpan Draft
+                        <i class="bi bi-save me-1"></i>
+                        {{ $sedangDitolak ? 'Simpan Perbaikan' : 'Simpan Draft' }}
                     </button>
                     <button type="submit" name="action" value="submit" class="btn btn-primary flex-grow-1 fw-bold"
                             @disabled(! $cutoffOpen)>
-                        <i class="bi bi-send me-1"></i> Submit Order
+                        <i class="bi {{ $sedangDitolak ? 'bi-arrow-repeat' : 'bi-send' }} me-1"></i>
+                        {{ $sedangDitolak ? 'Ajukan Ulang' : 'Submit Order' }}
                     </button>
                 </div>
             </form>

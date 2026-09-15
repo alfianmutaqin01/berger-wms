@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Inbound\DuplikatProduksi;
 use App\Support\PalletCapacity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -42,7 +43,21 @@ class ProductionInputTest extends TestCase
         // permintaan HTTP sungguhan jadi gagal menulis ke folder yang sama.
         Storage::fake('local');
 
-        $this->warehouse = Warehouse::factory()->create(['code' => 'WH-01']);
+        // WAKTU DIBEKUKAN, dan ini bukan kerapian.
+        //
+        // Nomor dokumen memuat tanggal (IN-260910-001), dan beberapa test di
+        // berkas ini menagihnya dengan now()->format('ymd') yang dihitung
+        // ULANG saat assert. Suite penuh berjalan sepuluh menit: dokumen yang
+        // dibuat pukul 23:59 ditagih sebagai tanggal berikutnya, dan testnya
+        // gagal satu kali lalu lolos di setiap percobaan berikutnya — bentuk
+        // kegagalan yang paling mudah dianggap "ah, flaky" lalu diabaikan
+        // sampai ia menyembunyikan bug sungguhan.
+        //
+        // Terjadi betulan pada 10 September 2026: satu test gagal karena
+        // suite-nya melewati tengah malam.
+        $this->freezeTime();
+
+        $this->warehouse = Warehouse::factory()->withProduction()->create(['code' => 'WH-01']);
     }
 
     private function loginAs(string $roleSlug = Role::PRODUCTION): User
@@ -100,16 +115,20 @@ class ProductionInputTest extends TestCase
             'name' => $name,
             'pack_size' => $size,
             'pack_unit' => $unit,
-            'max_qty_per_pallet' => PalletCapacity::resolve($unit, $size),
+            // Kapasitasnya sengaja TIDAK disalin ke kolom produk: yang diuji
+            // berkas produksi ini justru apakah aturan ukuran benar-benar
+            // dipakai saat palet dibentuk.
+            'max_qty_per_pallet' => null,
         ]);
     }
 
-    private function preview(UploadedFile $file)
+    private function preview(UploadedFile $file, array $overrides = [])
     {
-        return $this->post('/wms/inbound/preview', [
+        return $this->post('/wms/inbound/preview', array_merge([
             'file' => $file,
             'warehouse_id' => $this->warehouse->id,
-        ]);
+            'production_date' => now()->toDateString(),
+        ], $overrides));
     }
 
     private function submit($preview, array $overrides = [])
@@ -118,6 +137,7 @@ class ProductionInputTest extends TestCase
             'token' => $preview->viewData('token'),
             'extension' => $preview->viewData('extension'),
             'warehouse_id' => $this->warehouse->id,
+            'production_date' => $preview->viewData('productionDate')->toDateString(),
         ], $overrides));
     }
 
@@ -227,7 +247,7 @@ class ProductionInputTest extends TestCase
         $this->loginAs();
         $product = $this->makeProduct('ID1-FHR161000705', 'LUXATHERM 1600 BINDER 5Ltr', PalletCapacity::UNIT_LITER, 5);
 
-        $this->assertSame(180, $product->max_qty_per_pallet);
+        $this->assertSame(180, $product->kapasitasPalet());
 
         $preview = $this->preview($this->sheet([
             $this->row('RMO26080300', $product->sku, $product->name, 95, 'I126080056'),
@@ -404,10 +424,324 @@ class ProductionInputTest extends TestCase
         $header = InboundHeader::firstOrFail();
 
         $this->assertSame(InboundHeader::STATUS_PUTAWAY_PENDING, $header->status);
-        $this->assertSame('Menunggu Put-away', $header->status_label);
+        $this->assertSame('Menunggu PDN', $header->status_label);
         $this->assertSame($this->warehouse->id, $header->warehouse_id);
         $this->assertSame($actor->id, $header->created_by);
         $this->assertSame('Produksi pagi', $header->notes);
         $this->assertTrue($header->production_date->isToday());
+    }
+
+    /* ------------------------------------------------- Duplikat RMO + batch */
+
+    /**
+     * Kejadian sungguhan yang melahirkan aturan ini.
+     *
+     * IN-260910-001 dan -002 tersimpan berurutan dengan RMO dan batch yang
+     * sama persis, karena berkasnya diunggah dua kali dan tidak ada satu pun
+     * layar yang berkata apa-apa. Paletnya ikut naik rak dan stok bertambah
+     * dua kali untuk barang yang hanya dibuat sekali.
+     */
+    public function test_rmo_dan_batch_yang_sama_tidak_tersimpan_dua_kali(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $baris = fn () => $this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ]);
+
+        $this->submit($this->preview($baris()));
+
+        $this->submit($this->preview($baris()))
+            ->assertSessionHas('error');
+
+        $this->assertSame(1, InboundHeader::count(), 'Berkas yang sama tidak boleh melahirkan dokumen kedua.');
+        $this->assertSame(1, InboundDetail::where('batch_no', 'I126090022')->count());
+    }
+
+    /** Batch lain di bawah RMO yang sama tetap boleh masuk. */
+    public function test_batch_berbeda_pada_rmo_yang_sama_tetap_diterima(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090020'),
+        ])));
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090037'),
+        ])))->assertSessionHas('success');
+
+        $this->assertSame(2, InboundHeader::count());
+    }
+
+    /** Huruf besar-kecil dan spasi tidak boleh jadi celah lolos. */
+    public function test_beda_spasi_dan_huruf_besar_tetap_terbaca_duplikat(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('id11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'i126090022'),
+        ])));
+
+        $this->submit($this->preview($this->sheet([
+            $this->row(' ID11_1001 ', 'ID11-1001', 'Apko 5 Liter', 100, ' I126090022 '),
+        ])))->assertSessionHas('error');
+
+        $this->assertSame(1, InboundHeader::count());
+    }
+
+    /** Pratinjau mengatakannya sebelum disimpan, bukan sesudah. */
+    public function test_pratinjau_menandai_baris_duplikat(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ])));
+
+        $preview = $this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ]));
+
+        $ringkas = $preview->viewData('summary');
+        $this->assertSame(1, $ringkas['bisa_ditimpa']);
+        $this->assertSame(0, $ringkas['terkunci']);
+
+        $baris = $preview->viewData('rows')[0];
+        $this->assertSame(DuplikatProduksi::BISA_DITIMPA, $baris['duplikat']['keadaan']);
+        $this->assertSame('IN-'.now()->format('ymd').'-001', $baris['duplikat']['dokumen']);
+    }
+
+    /** Menimpa harus DIMINTA. Mengunggah ulang bukan permintaan menimpa. */
+    public function test_menimpa_hanya_terjadi_bila_dicentang(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ])));
+
+        $lama = InboundHeader::first();
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 250, 'I126090022'),
+        ])), ['timpa' => 1])->assertSessionHas('success');
+
+        // Dokumen lama kehilangan seluruh paletnya, jadi ia ditutup.
+        $this->assertSoftDeleted('inbound_headers', ['id' => $lama->id]);
+        $this->assertSame(0, InboundDetail::where('inbound_header_id', $lama->id)->count());
+
+        $baru = InboundHeader::latest('id')->first();
+        $this->assertSame(250, (int) $baru->details()->sum('pallet_qty'));
+    }
+
+    /** Baris yang belum pernah masuk tetap ditambahkan saat menimpa. */
+    public function test_menimpa_juga_menambahkan_baris_yang_belum_ada(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ])));
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090037'),
+        ])), ['timpa' => 1])->assertSessionHas('success');
+
+        $baru = InboundHeader::latest('id')->first();
+
+        $this->assertEqualsCanonicalizing(
+            ['I126090022', 'I126090037'],
+            $baru->details()->pluck('batch_no')->unique()->sort()->values()->all(),
+        );
+    }
+
+    /**
+     * Palet yang sudah naik rak TIDAK boleh ditimpa.
+     *
+     * Barangnya sudah berdiri di rak dan angkanya sudah dihitung. Menimpanya
+     * membuat catatan sistem berbeda dari isi gudang, dan tidak ada yang akan
+     * tahu — setiap langkahnya sah bila dilihat sendiri-sendiri.
+     */
+    public function test_baris_yang_paletnya_sudah_naik_rak_tidak_bisa_ditimpa(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ])));
+
+        $lama = InboundHeader::first();
+        $lama->details()->update(['putaway_at' => now()]);
+
+        $preview = $this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 250, 'I126090022'),
+        ]));
+
+        $this->assertSame(1, $preview->viewData('summary')['terkunci']);
+        $this->assertSame(0, $preview->viewData('summary')['bisa_ditimpa']);
+
+        // Dicentang pun tetap ditolak — pagarnya di server, bukan di layar.
+        $this->submit($preview, ['timpa' => 1])->assertSessionHas('error');
+
+        $this->assertSame(1, InboundHeader::count());
+        $this->assertSame(100, (int) $lama->details()->sum('pallet_qty'));
+    }
+
+    /** Gudang berbeda boleh memakai penomoran RMO yang sama tanpa hubungan. */
+    public function test_rmo_yang_sama_di_gudang_lain_bukan_duplikat(): void
+    {
+        $this->loginAs(Role::SUPER_ADMIN);
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->submit($this->preview($this->sheet([
+            $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ])));
+
+        $lain = Warehouse::factory()->withProduction()->create(['code' => 'WH-02']);
+
+        $preview = $this->post('/wms/inbound/preview', [
+            'file' => $this->sheet([
+                $this->row('ID11_1001', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+            ]),
+            'warehouse_id' => $lain->id,
+            'production_date' => now()->toDateString(),
+        ]);
+
+        $this->assertSame(0, $preview->viewData('summary')['bisa_ditimpa']);
+        $this->assertSame(0, $preview->viewData('summary')['terkunci']);
+    }
+
+    /* ------------------------------------------------------ Tanggal produksi */
+
+    /** Bawaannya hari ini — yang lazim, tetap yang paling mudah. */
+    public function test_tanggal_produksi_bawaannya_hari_ini(): void
+    {
+        $this->loginAs();
+
+        $this->assertTrue($this->get('/wms/inbound/create')->viewData('productionDate')->isToday());
+    }
+
+    /**
+     * Produksi tadi malam yang baru sempat diinput pagi ini.
+     *
+     * Tanggalnya bukan sekadar keterangan: ia menjadi tanggal produksi tiap
+     * batch di rak, dan kedaluwarsanya dihitung dari situ.
+     */
+    public function test_tanggal_produksi_boleh_dimundurkan(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $kemarin = now()->subDay()->toDateString();
+
+        $preview = $this->preview(
+            $this->sheet([$this->row('RMO01', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022')]),
+            ['production_date' => $kemarin],
+        )->assertOk();
+
+        $this->submit($preview)->assertSessionHas('success');
+
+        $this->assertSame($kemarin, InboundHeader::first()->production_date->toDateString());
+    }
+
+    /** Barang yang belum dibuat tidak bisa naik rak. */
+    public function test_tanggal_produksi_di_masa_depan_ditolak(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->preview(
+            $this->sheet([$this->row('RMO01', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022')]),
+            ['production_date' => now()->addDay()->toDateString()],
+        )->assertSessionHasErrors('production_date');
+
+        $this->assertSame(0, InboundHeader::count());
+    }
+
+    /** Penangkap salah ketik tahun/bulan, bukan aturan bisnis. */
+    public function test_tanggal_produksi_terlalu_jauh_ke_belakang_ditolak(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->preview(
+            $this->sheet([$this->row('RMO01', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022')]),
+            ['production_date' => now()->subDays(120)->toDateString()],
+        )->assertSessionHasErrors('production_date');
+    }
+
+    /**
+     * Pagarnya di server, bukan di layar.
+     *
+     * Layar pratinjau mengirim ulang tanggalnya sebagai input tersembunyi —
+     * dan input tersembunyi tetap saja input.
+     */
+    public function test_tanggal_tidak_sah_tetap_ditolak_di_langkah_simpan(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $preview = $this->preview($this->sheet([
+            $this->row('RMO01', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ]));
+
+        $this->submit($preview, ['production_date' => now()->addYear()->toDateString()])
+            ->assertSessionHasErrors('production_date');
+
+        $this->assertSame(0, InboundHeader::count());
+    }
+
+    /** Tanggal pilihan Produksi ikut ke layar pratinjau, bukan diganti hari ini. */
+    public function test_pratinjau_menampilkan_tanggal_yang_dipilih(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $kemarin = now()->subDays(3)->toDateString();
+
+        $preview = $this->preview(
+            $this->sheet([$this->row('RMO01', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022')]),
+            ['production_date' => $kemarin],
+        );
+
+        $this->assertSame($kemarin, $preview->viewData('productionDate')->toDateString());
+    }
+
+    /* ------------------------------------------------------------- Tombol */
+
+    /**
+     * Tombol langkah pertama TIDAK boleh menyebut submit.
+     *
+     * Ia tidak menyimpan apa pun. Menyebutnya "submit" membuat orang menutup
+     * layar berikutnya dan mengira pekerjaannya sudah selesai — padahal
+     * dokumennya tidak pernah ada.
+     */
+    public function test_tombol_langkah_pertama_bernama_check_bukan_submit(): void
+    {
+        $this->loginAs();
+
+        $this->get('/wms/inbound/create')
+            ->assertOk()
+            ->assertSee('Check')
+            ->assertDontSee('Baca &amp; Pratinjau', false);
+    }
+
+    public function test_tombol_penyimpan_bernama_submit(): void
+    {
+        $this->loginAs();
+        $this->makeProduct('ID11-1001', 'Apko 5 Liter', PalletCapacity::UNIT_LITER, 5);
+
+        $this->preview($this->sheet([
+            $this->row('RMO01', 'ID11-1001', 'Apko 5 Liter', 100, 'I126090022'),
+        ]))->assertOk()->assertSee('Submit');
     }
 }

@@ -75,11 +75,17 @@ class StoreProductRequest extends FormRequest
     }
 
     /**
-     * Data siap simpan, lengkap dengan kapasitas palet.
+     * Data siap simpan.
      *
-     * Kapasitas dihitung otomatis dari aturan gudang bila Manager tidak
-     * mengisinya manual. Bila ukurannya tidak terdaftar di aturan, nilainya
-     * dibiarkan NULL — bukan ditebak — dan produk akan ditandai di layar.
+     * KAPASITAS PALET TIDAK DISALIN KE SINI. Kolom `max_qty_per_pallet`
+     * berarti PENGECUALIAN — angka yang berlaku khusus untuk produk ini dan
+     * mengalahkan aturan ukurannya. Dikosongkan berarti "ikut aturan", dan
+     * aturannya dibaca saat dibutuhkan.
+     *
+     * Dulu kolom ini diisi otomatis dari aturan yang sama, sebagai salinan.
+     * Akibatnya mengubah aturan tidak mengubah apa pun: tiap produk memegang
+     * angka lamanya sendiri, dan setelan kapasitas palet jadi tidak ada
+     * gunanya. Lihat Product::kapasitasPalet().
      */
     public function productData(): array
     {
@@ -87,7 +93,7 @@ class StoreProductRequest extends FormRequest
 
         $data['max_qty_per_pallet'] = $this->filled('max_qty_per_pallet')
             ? (int) $this->input('max_qty_per_pallet')
-            : PalletCapacity::resolve($this->input('pack_unit'), $this->input('pack_size'));
+            : null;
 
         $data['is_active'] = $this->boolean('is_active');
 

@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Proses Put-away')
-@section('page_title', 'Proses Put-away')
+@section('title', 'Proses PDN')
+@section('page_title', 'Proses PDN')
 
 @section('content')
 @if(session('error'))
@@ -36,7 +36,7 @@
                 <div>
                     <h5 class="fw-bold text-dark mb-0">
                         <a href="{{ route('wms.inbound.putaway') }}" class="text-muted text-decoration-none me-2"><i class="bi bi-arrow-left"></i></a>
-                        Put-away: <span class="text-primary font-monospace">{{ $header->document_number }}</span>
+                        PDN: <span class="text-primary font-monospace">{{ $header->document_number }}</span>
                     </h5>
                     <p class="text-muted small mt-1 ms-4 mb-0">Tentukan lokasi rak untuk masing-masing palet di bawah ini.</p>
                 </div>
@@ -53,7 +53,7 @@
                     <i class="bi bi-info-circle-fill fs-4 me-3"></i>
                     <div class="small">
                         Palet yang belum sempat ditempatkan boleh dikosongkan — yang sudah terisi tetap tersimpan dan dokumen ini
-                        tetap ada di daftar put-away sampai seluruh paletnya punya lokasi.
+                        tetap ada di daftar PDN sampai seluruh paletnya punya lokasi.
                         Satu rak boleh diisi beberapa palet dari <strong>SKU yang sama</strong> sampai kapasitasnya penuh; SKU
                         berbeda tidak bisa berbagi rak. <strong>Qty Aktual</strong> boleh dikoreksi sesuai hitungan fisik;
                         SKU dan batch tidak dapat diubah di sini.
@@ -86,7 +86,7 @@
                                     @endphp
                                     <tr class="{{ $awalKelompok && ! $loop->first ? 'border-top border-2' : '' }}"
                                         data-product-id="{{ $detail->product_id }}"
-                                        data-capacity="{{ $detail->product?->max_qty_per_pallet }}"
+                                        data-capacity="{{ $detail->product?->kapasitasPalet() }}"
                                         data-uom="{{ $detail->product?->uom }}">
                                         <td class="text-center text-nowrap">
                                             <span class="fw-bold">#{{ $detail->pallet_no }}</span>
@@ -136,7 +136,7 @@
                     <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
                         <a href="{{ route('wms.inbound.putaway') }}" class="btn btn-outline-secondary px-4">Batal</a>
                         <button type="submit" class="btn btn-success px-5 fw-bold shadow-sm">
-                            <i class="bi bi-check-circle me-1"></i> Simpan Put-away
+                            <i class="bi bi-check-circle me-1"></i> Simpan PDN
                         </button>
                     </div>
                 </form>
@@ -447,7 +447,7 @@
 
             Swal.fire({
                 icon: selisih.length > 0 ? 'warning' : 'question',
-                title: 'Simpan put-away?',
+                title: 'Simpan PDN?',
                 text: pesan,
                 showCancelButton: true,
                 cancelButtonText: 'Periksa Lagi',
@@ -461,7 +461,7 @@
             });
         });
 
-        // Render awal: nilai yang sudah dimuat dari server (put-away
+        // Render awal: nilai yang sudah dimuat dari server (PDN
         // sebagian sebelumnya) langsung ditandai.
         perbaruiSemuaBaris();
     });

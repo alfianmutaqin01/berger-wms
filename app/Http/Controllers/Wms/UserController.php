@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\StoreUserRequest;
 use App\Http\Requests\Wms\UpdateUserRequest;
+use App\Models\ActivityLog;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
-use App\Models\Warehouse;
+use App\Support\Activity;
 use App\Support\CurrentActor;
+use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -47,11 +49,16 @@ class UserController extends Controller
         $filters = [
             'search' => $request->query('search'),
             'role_id' => $request->query('role_id'),
-            'warehouse_id' => $request->query('warehouse_id'),
+            'warehouse_id' => WarehouseScope::resolveFilter($request, $actor),
             'status' => $request->query('status'),
         ];
 
-        $users = User::query()
+        // Manager hanya melihat akun gudangnya. Akun lintas gudang (Super
+        // Admin, warehouse_id NULL) ikut tersaring keluar — itu memang benar:
+        // ia bukan akun yang boleh disentuh Manager mana pun.
+        $terlihat = fn () => WarehouseScope::apply(User::query(), $actor);
+
+        $users = $terlihat()
             // Eager loading mencegah N+1: tanpa ini, tabel 15 baris memicu
             // 60+ query tambahan untuk role, departemen, gudang, dan atasan.
             ->with(['role', 'department', 'warehouse', 'manager'])
@@ -68,13 +75,13 @@ class UserController extends Controller
             'users' => $users,
             'roles' => Role::query()->assignableBy($actor)->get(),
             'departments' => Department::active()->orderBy('name')->get(),
-            'warehouses' => Warehouse::active()->orderBy('code')->get(),
-            'managers' => User::active()->orderBy('full_name')->get(['id', 'full_name', 'employee_id']),
+            'warehouses' => WarehouseScope::options($actor)->where('is_active', true)->values(),
+            'managers' => $terlihat()->active()->orderBy('full_name')->get(['id', 'full_name', 'employee_id']),
             'actor' => $actor,
             'stats' => [
-                'total' => User::count(),
-                'active' => User::where('is_active', true)->count(),
-                'inactive' => User::where('is_active', false)->count(),
+                'total' => $terlihat()->count(),
+                'active' => $terlihat()->where('is_active', true)->count(),
+                'inactive' => $terlihat()->where('is_active', false)->count(),
             ],
             'filters' => $filters,
         ]);
@@ -82,8 +89,14 @@ class UserController extends Controller
 
     public function store(StoreUserRequest $request): RedirectResponse
     {
+        $actor = CurrentActor::get();
+
+        // Akun baru harus lahir di dalam kewenangan pembuatnya. Tanpa ini,
+        // Manager Karawang bisa membuat akun Manager Surabaya lalu memakainya.
+        WarehouseScope::assert($request->validated('warehouse_id'), $actor);
+
         $data = $request->validated();
-        $data['created_by'] = CurrentActor::get()?->id;
+        $data['created_by'] = $actor?->id;
 
         if ($request->hasFile('avatar')) {
             $data['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
@@ -92,6 +105,19 @@ class UserController extends Controller
 
         $user = User::create($data);
 
+        Activity::record(
+            ActivityLog::USER_CREATE,
+            sprintf(
+                'Membuat akun %s (%s) sebagai %s.',
+                $user->full_name,
+                $user->employee_id,
+                $user->role?->name ?? 'tanpa peran',
+            ),
+            $user,
+            $user->warehouse_id,
+            ['employee_id' => $user->employee_id, 'peran' => $user->role?->slug],
+        );
+
         return redirect()
             ->route('wms.users.index')
             ->with('success', "Akun {$user->full_name} ({$user->employee_id}) berhasil dibuat.");
@@ -99,6 +125,11 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
+        // Gudang TUJUAN diperiksa terpisah dari akun yang disunting: tanpa
+        // ini, Manager bisa memindahkan akun keluar dari gudangnya sendiri
+        // dan kehilangan kendali atasnya (atau menanam akun di gudang lain).
+        WarehouseScope::assert($request->validated('warehouse_id'), CurrentActor::get());
+
         $data = $request->validated();
 
         // Password kosong berarti pengelola tidak bermaksud menggantinya.
@@ -116,7 +147,48 @@ class UserController extends Controller
         }
         unset($data['avatar']);
 
+        /*
+         * Kolom mana yang BERUBAH dicatat, isinya tidak. Cukup untuk
+         * menjawab "siapa yang memindahkan akun ini ke gudang lain" atau
+         * "siapa yang menaikkan perannya", tanpa menyalin data pribadi
+         * karyawan ke tabel yang dibaca Super Admin sehari-hari.
+         *
+         * Kata sandi disebut sebagai FAKTA bahwa ia diganti, tidak pernah
+         * isinya — dan `password` sudah dikeluarkan dari $data di atas kalau
+         * memang tidak diganti.
+         */
+        $berubah = array_keys(array_filter(
+            $data,
+            fn ($nilai, $kolom) => $kolom !== 'password' && $user->getOriginal($kolom) != $nilai,
+            ARRAY_FILTER_USE_BOTH,
+        ));
+
+        if (array_key_exists('password', $data)) {
+            $berubah[] = 'password';
+        }
+
         $user->update($data);
+
+        // Sandi yang direset pengelola hampir selalu berarti "akun ini
+        // dicurigai" atau "pemiliknya lupa". Pada kemungkinan pertama, sesi
+        // yang sedang berjalan adalah sesi penyusupnya — tanpa diputus di
+        // sini, ia tetap masuk dengan sandi lama sampai idle satu jam.
+        if (array_key_exists('password', $data)) {
+            $user->sessions()->delete();
+        }
+
+        Activity::record(
+            ActivityLog::USER_UPDATE,
+            sprintf(
+                'Mengubah akun %s (%s)%s.',
+                $user->full_name,
+                $user->employee_id,
+                $berubah === [] ? '' : ' — '.implode(', ', $berubah),
+            ),
+            $user,
+            $user->warehouse_id,
+            ['employee_id' => $user->employee_id, 'kolom_berubah' => $berubah],
+        );
 
         return redirect()
             ->route('wms.users.index')
@@ -148,7 +220,23 @@ class UserController extends Controller
 
         $user->update(['is_active' => ! $user->is_active]);
 
+        // Menonaktifkan akun tanpa memutus sesinya hanya mencegah login
+        // BERIKUTNYA: karyawan yang diberhentikan pukul 10:00 tetap bisa
+        // memindahkan stok dari HP yang masih masuk. TrackUserSession ikut
+        // menolak akun nonaktif, jadi ini lapis kedua, bukan satu-satunya.
+        if (! $user->is_active) {
+            $user->sessions()->delete();
+        }
+
         $state = $user->is_active ? 'diaktifkan' : 'dinonaktifkan';
+
+        Activity::record(
+            ActivityLog::USER_DEACTIVATE,
+            sprintf('Akun %s (%s) %s.', $user->full_name, $user->employee_id, $state),
+            $user,
+            $user->warehouse_id,
+            ['employee_id' => $user->employee_id, 'aktif' => $user->is_active],
+        );
 
         return back()->with('success', "Akun {$user->full_name} berhasil {$state}.");
     }

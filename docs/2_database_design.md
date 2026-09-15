@@ -558,9 +558,9 @@ Rincian per item per palet dalam satu inbound.
 > **Keputusan pemilik produk (dikonfirmasi, untuk dibangun di Fase 4):**
 >
 > 1. **Satu bin boleh memuat beberapa produk DAN beberapa batch sekaligus.** Struktur tabel ini sudah mendukungnya — tiap kombinasi produk × lokasi × batch adalah satu baris tersendiri. Jangan menambahkan constraint unik `(location_id)` atau `(location_id, product_id)`; keduanya akan mematahkan aturan ini sekaligus merusak FIFO, yang justru menuntut batch tersimpan terpisah agar stok tertua bisa keluar duluan.
-> 2. **Koreksi stock opname WAJIB menyertakan alasan.** Perubahan qty hasil opname dicatat sebagai `stock_movements` bertipe `ADJUSTMENT` dengan `notes` wajib terisi dan `user_id` pencatat. Baris ledger tidak boleh diubah atau dihapus — ini jejak audit keuangan untuk stok.
+> 2. **Koreksi stocktake WAJIB menyertakan alasan.** Perubahan qty hasil stocktake dicatat sebagai `stock_movements` bertipe `ADJUSTMENT` dengan `notes` wajib terisi dan `user_id` pencatat. Baris ledger tidak boleh diubah atau dihapus — ini jejak audit keuangan untuk stok.
 >
-> Halaman **Denah Gudang** (`/wms/master/locations/map`) sudah disiapkan sebagai antarmuka opname: tiap kotak bin punya slot indikator keterisian yang tinggal diisi begitu tabel ini ada, tanpa perlu menyusun ulang denahnya.
+> Halaman **Denah Gudang** (`/wms/master/locations/map`) sudah disiapkan sebagai antarmuka stocktake: tiap kotak bin punya slot indikator keterisian yang tinggal diisi begitu tabel ini ada, tanpa perlu menyusun ulang denahnya.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
@@ -592,7 +592,7 @@ Rincian per item per palet dalam satu inbound.
 | `status` | Ikut FIFO? | Muncul di Picking List? | Keterangan |
 |---|:---:|:---:|---|
 | `active` | ✅ | ✅ | Good Stock, layak jual |
-| `ddp` | ❌ | ❌ | Rusak / karantina (retur, write-off, temuan opname) |
+| `ddp` | ❌ | ❌ | Rusak / karantina (retur, write-off, temuan stocktake) |
 | `expired` | ❌ | ❌ | Lewat `expiry_date`, dipindahkan otomatis oleh scheduled job |
 
 > [!WARNING]
@@ -677,7 +677,7 @@ Header pesanan penjualan.
 | Ditolak | `rejected` | Logistik menolak PO |
 | Proses Picking | `picking` | Operator sedang mengambil barang |
 | Siap Kirim | `ready_to_ship` | Barang sudah di loading dock |
-| Dalam Pengiriman | `shipping` | Surat Jalan sudah dicetak |
+| Dalam Pengiriman | `shipping` | Surat Jalan (salinan dokumen BC) sudah diberangkatkan |
 | Menunggu Verifikasi Bukti | `proof_uploaded` | Sales sudah upload bukti SJ |
 | Complete | `completed` | Logistik sudah verifikasi bukti |
 | Complete (Menunggu Bayar) | `completed_billing` | Complete tapi menunggu pembayaran tempo |
@@ -712,20 +712,30 @@ Detail alokasi FIFO per item pesanan — menghubungkan order detail ke inventory
 | `created_at` | TIMESTAMP | | |
 
 #### `delivery_notes`
-Surat Jalan.
+Surat Jalan — **salinan dokumen yang terbit di sistem BC**, bukan dokumen yang diterbitkan atau dicetak sistem ini (PRD v1.4 F-OUT-04). Satu pesanan bisa punya lebih dari satu Surat Jalan bila kekurangannya dikirim ulang; yang dibatasi hanya satu Surat Jalan yang **belum berangkat** per putaran.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
-| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `sales_order_id` | BIGINT UNSIGNED | FK → sales_orders.id | PO terkait |
-| `delivery_number` | VARCHAR(30) | NOT NULL, UNIQUE | Nomor SJ otomatis |
-| `driver_name` | VARCHAR(100) | NOT NULL | Nama supir |
-| `vehicle_plate` | VARCHAR(20) | NOT NULL | Plat nomor kendaraan |
-| `vehicle_description` | VARCHAR(100) | NULLABLE | Deskripsi kendaraan |
-| `printed_at` | TIMESTAMP | NOT NULL | Waktu cetak |
-| `printed_by` | BIGINT UNSIGNED | FK → users.id | Logistik yang mencetak |
-| `created_at` | TIMESTAMP | | |
-| `updated_at` | TIMESTAMP | | |
+| `id` | BIGINT | PK | |
+| `document_no` | VARCHAR(30) | NOT NULL, UNIQUE | "Document No." dari BC |
+| `bc_so_number` | VARCHAR(50) | NOT NULL, INDEX | Nomor SO di dokumen BC — dipakai memasangkan ke pesanan |
+| `sales_order_id` | BIGINT | FK → sales_orders.id, NULLABLE | Kosong = "yatim", menunggu dipasangkan manual |
+| `customer_code` / `customer_id` | VARCHAR(30) / BIGINT | NULLABLE | Pelanggan menurut dokumen BC |
+| `warehouse_id` | BIGINT | FK, NULLABLE | Gudang pesanan pasangannya |
+| `bc_location_code`, `shipment_date` | VARCHAR(30), DATE | NULLABLE | Salinan kolom BC |
+| `status` | VARCHAR(20) | `imported` → `shipped` → `delivered` | |
+| `imported_at`, `imported_by` | TIMESTAMP, FK users | | Jejak impor |
+| `driver_name`, `driver_phone`, `vehicle_plate` | VARCHAR | Wajib saat berangkat | Data pengiriman |
+| `shipped_at`, `shipped_by` | TIMESTAMP, FK users | | Waktu berangkat — awal SLA |
+| `epod_token` | VARCHAR(64) | UNIQUE, NULLABLE | Tautan konfirmasi supir tanpa login |
+| `delivered_at`, `received_by_name` | TIMESTAMP, VARCHAR(100) | | Konfirmasi sampai |
+| `arrival_photo_path/mime/size/source/taken_at` | | CHECK: lengkap bersama; source `camera`/`file` | Foto barang sampai dari supir |
+| `substitution_confirmed_at/by`, `substitution_reason`, `substitution_note` | | | Konfirmasi SKU pengganti |
+| `notify_status/attempts/error`, `notified_at` | | | Status WhatsApp ke supir |
+| `sales_notify_status/error/phone`, `sales_notified_at` | | | Status WhatsApp barang sampai ke Sales |
+| `created_at`, `updated_at` | TIMESTAMP | | |
+
+Baris barangnya ada di `delivery_note_lines` (`delivery_note_id`, `sku`, `product_id`, `description`, `qty`, `qty_invoiced`, `uom_code`; UNIQUE `delivery_note_id + sku`).
 
 #### `delivery_proofs`
 Bukti foto Surat Jalan yang ditandatangani.
@@ -793,32 +803,47 @@ Rincian barang yang diretur beserta keputusan alokasinya.
 
 ### 3.6 Tabel Billing (Penagihan)
 
+> [!IMPORTANT]
+> **Revisi Fase 8 (14 September 2026), disetujui pemilik produk.** Rancangan awal diubah di empat hal — lihat migrasi `2026_10_14_000001_create_billing_tables.php` untuk alasan lengkapnya:
+> 1. **Satu tagihan per invoice** (pesanan induk gabungan invoice), bukan per PO.
+> 2. **Jatuh tempo dari tanggal barang sampai** (`delivered_on`), bukan tanggal complete.
+> 3. **Satu pembayaran bisa melunasi banyak tagihan** — relasinya dibalik: tagihan menunjuk pembayaran.
+> 4. **Tidak ada kolom status.** Lunas = `billing_payment_id` terisi; lewat jatuh tempo dihitung dari `due_date` saat dibaca.
+>
+> Tidak ada kolom nominal di tabel mana pun: pembayaran tidak melewati sistem ini.
+
 #### `customer_billings`
-Catatan piutang untuk pembayaran tempo.
+Satu invoice pesanan tempo yang sudah sampai.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
-| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `sales_order_id` | BIGINT UNSIGNED | FK → sales_orders.id, UNIQUE | 1 PO = 1 billing |
-| `customer_id` | BIGINT UNSIGNED | FK → customers.id | Customer yang ditagih |
-| `payment_term` | ENUM | NOT NULL | 'tempo_30', 'tempo_60', 'tempo_90' |
-| `billing_date` | DATE | NOT NULL | Tanggal billing dibuat (= tanggal order complete) |
-| `due_date` | DATE | NOT NULL | Tanggal jatuh tempo |
-| `status` | ENUM | NOT NULL, DEFAULT 'unpaid' | 'unpaid', 'paid', 'overdue' |
-| `created_at` | TIMESTAMP | | |
-| `updated_at` | TIMESTAMP | | |
+| `id` | BIGINT | PK | |
+| `sales_order_id` | BIGINT | FK → sales_orders.id, UNIQUE | Pesanan **induk** invoice; anak gabungan (`so_merged_into_id`) menumpang |
+| `customer_id` | BIGINT | FK → customers.id | Customer yang ditagih |
+| `warehouse_id` | BIGINT | FK → warehouses.id | Pembatas gudang |
+| `payment_term_id` | BIGINT | FK → payment_terms.id, NULLABLE | Termin saat tagihan dibuat |
+| `term_days` | SMALLINT | NOT NULL | Disalin — perubahan master termin tidak menggeser jatuh tempo |
+| `delivered_on` | DATE | NOT NULL | Tanggal barang sampai (WIB) |
+| `due_date` | DATE | NOT NULL | `delivered_on + term_days` |
+| `billing_payment_id` | BIGINT | FK → billing_payments.id, NULLABLE | Terisi = lunas |
+| `reminded_due_soon_at` | TIMESTAMP | NULLABLE | Pengingat H-3 ke Manager sudah dikirim |
+| `reminded_overdue_at` | TIMESTAMP | NULLABLE | Pengingat lewat jatuh tempo sudah dikirim |
+| `created_at` / `updated_at` | TIMESTAMP | | |
 
 #### `billing_payments`
-Konfirmasi pembayaran oleh Logistik.
+Satu konfirmasi pelunasan oleh Logistik — bisa untuk beberapa invoice satu customer.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|
-| `id` | BIGINT UNSIGNED | PK, AUTO INCREMENT | |
-| `customer_billing_id` | BIGINT UNSIGNED | FK → customer_billings.id | Billing yang dibayar |
-| `paid_date` | DATE | NOT NULL | Tanggal pembayaran diterima |
-| `confirmed_by` | BIGINT UNSIGNED | FK → users.id | Logistik yang konfirmasi |
-| `notes` | TEXT | NULLABLE | Catatan pembayaran |
-| `created_at` | TIMESTAMP | | |
+| `id` | BIGINT | PK | |
+| `customer_id` | BIGINT | FK → customers.id | |
+| `paid_on` | DATE | NOT NULL | Tanggal bukti bayar diterima |
+| `method` | VARCHAR(10) | CHECK IN ('transfer','giro','tunai') | |
+| `reference` | VARCHAR(60) | NULLABLE; CHECK wajib bila `method = 'giro'` | No. giro / referensi transfer |
+| `notes` | TEXT | NULLABLE | |
+| `confirmed_by` | BIGINT | FK → users.id, NULLABLE | |
+| `voided_at` / `voided_by` / `void_reason` | | NULLABLE; CHECK lengkap bersama | Pembatalan oleh Manager — tidak dihapus |
+| `created_at` / `updated_at` | TIMESTAMP | | |
 
 ---
 
