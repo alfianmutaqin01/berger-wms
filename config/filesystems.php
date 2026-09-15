@@ -33,7 +33,12 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // MATI. Bila hidup, Laravel membuka rute /storage/{path} (GET dan
+            // PUT) di luar middleware aplikasi. Disk ini menyimpan foto Surat
+            // Jalan, foto barang sampai, dan dokumen PO customer — semuanya
+            // sudah disajikan lewat controller yang memeriksa hak akses dan
+            // gudang. Tidak ada yang memakai temporaryUrl().
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

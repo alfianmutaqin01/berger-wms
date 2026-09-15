@@ -139,11 +139,24 @@ class PickingList extends Model
      * Begitu operator mengambil barang pertama dari rak, membatalkan daftar
      * hanya menghapus catatannya — barangnya tetap sudah turun dan tergeletak
      * di dock, dan tidak ada lagi yang menjelaskan kenapa ia di sana.
+     *
+     * Halaman daftar memuat `items_tersentuh_count` lewat withCount supaya
+     * tombol Batal tidak menjalankan satu query per daftar. Tanpa hitungan
+     * itu — termasuk di dalam transaksi pembatalan yang mengunci barisnya —
+     * yang dipakai tetap query langsung, supaya keputusan membatalkan tidak
+     * pernah bersandar pada angka yang sudah basi.
      */
     public function bolehDibatalkan(): bool
     {
-        return in_array($this->status, [self::STATUS_OPEN, self::STATUS_PICKING], true)
-            && ! $this->items()->where('status', '<>', PickingListItem::STATUS_PENDING)->exists();
+        if (! in_array($this->status, [self::STATUS_OPEN, self::STATUS_PICKING], true)) {
+            return false;
+        }
+
+        if (array_key_exists('items_tersentuh_count', $this->attributes)) {
+            return (int) $this->attributes['items_tersentuh_count'] === 0;
+        }
+
+        return ! $this->items()->where('status', '<>', PickingListItem::STATUS_PENDING)->exists();
     }
 
     public function getStatusLabelAttribute(): string

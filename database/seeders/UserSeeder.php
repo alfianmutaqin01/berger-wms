@@ -8,9 +8,18 @@ use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 /**
  * User awal untuk pengembangan.
+ *
+ * DI PRODUCTION HANYA SATU SUPER ADMIN, BERSANDI ACAK. Akun contoh di bawah
+ * bersandi `password` dan alamatnya mudah ditebak — di server yang terbuka ke
+ * internet, itu pintu yang tidak terkunci. Sandi acaknya ditampilkan SEKALI
+ * di layar; Super Admin menggantinya lewat halaman Profil, lalu membuat akun
+ * tim sungguhan lewat Manajemen Pengguna. Menjalankan seeder lagi TIDAK
+ * menyentuh Super Admin yang sudah ada (versi pengembangan justru
+ * mengembalikan sandinya ke `password` tiap kali dijalankan).
  *
  * Nama dan email sengaja mengikuti data mock yang selama ini tampil di halaman
  * Manajemen User, supaya tampilan setelah beralih ke database tetap familier
@@ -23,6 +32,12 @@ class UserSeeder extends Seeder
         $roles = Role::pluck('id', 'slug');
         $departments = Department::pluck('id', 'slug');
         $warehouses = Warehouse::pluck('id', 'code');
+
+        if (app()->environment('production')) {
+            $this->superAdminProduksi($roles[Role::SUPER_ADMIN], $departments['it']);
+
+            return;
+        }
 
         $superAdmin = User::updateOrCreate(
             ['email' => 'superadmin@berger.co.id'],
@@ -116,5 +131,31 @@ class UserSeeder extends Seeder
 
         User::whereIn('email', ['nisa.logistics@berger.co.id', 'operator.krw@berger.co.id'])
             ->update(['manager_id' => $manager->id]);
+    }
+
+    private function superAdminProduksi(int $roleId, int $departmentId): void
+    {
+        if (User::where('role_id', $roleId)->exists()) {
+            $this->command?->info('Super Admin sudah ada — tidak diubah.');
+
+            return;
+        }
+
+        $sandi = Str::password(16, symbols: false);
+
+        User::create([
+            'employee_id' => 'EMP-ADMIN-001',
+            'full_name' => 'Super Administrator',
+            'email' => 'superadmin@berger.co.id',
+            'password' => Hash::make($sandi),
+            'role_id' => $roleId,
+            'department_id' => $departmentId,
+            'warehouse_id' => null,
+            'is_active' => true,
+        ]);
+
+        $this->command?->warn('Super Admin dibuat: superadmin@berger.co.id');
+        $this->command?->warn('Sandi sementara (TAMPIL SEKALI INI SAJA): '.$sandi);
+        $this->command?->warn('Segera login dan ganti sandi lewat halaman Profil.');
     }
 }

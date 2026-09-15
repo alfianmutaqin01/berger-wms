@@ -88,7 +88,7 @@ class InboundController extends Controller
             // Hanya kolom batch_no yang diambil dari detail; memuat seluruh
             // kolom untuk ratusan palet hanya untuk menampilkan daftar batch
             // adalah pemborosan.
-            ->with(['warehouse:id,code,name', 'details:id,inbound_header_id,batch_no'])
+            ->with(['warehouse:id,code,name', 'creator:id,full_name', 'details:id,inbound_header_id,batch_no'])
             ->search($filters['search'])
             ->when($filters['status'], fn ($q, $status) => $q->where('status', $status))
             ->when($filters['from'], fn ($q, $from) => $q->whereDate('production_date', '>=', $from))
@@ -291,7 +291,7 @@ class InboundController extends Controller
         // Nama berkas dibangkitkan sendiri, bukan memakai nama asli dari
         // pengguna, agar tidak ada jalur yang bisa diarahkan ke tempat lain.
         $token = Str::uuid()->toString();
-        $extension = $request->file('file')->getClientOriginalExtension();
+        $extension = ImportController::ekstensi($request);
         $stored = self::TEMP_DIR.'/'.$token.'.'.$extension;
 
         $saved = Storage::disk('local')->putFileAs(

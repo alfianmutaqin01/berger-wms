@@ -1,0 +1,31 @@
+# ==============================================================
+# Berger WMS — Caddy (HTTPS otomatis)
+# ==============================================================
+#
+# Caddy meminta dan memperpanjang sertifikat Let's Encrypt sendiri untuk
+# APP_DOMAIN. Syaratnya hanya dua:
+#   1. DNS APP_DOMAIN sudah mengarah ke IP VPS.
+#   2. Port 80 dan 443 VPS terbuka dari internet.
+#
+# Semua lalu lintas HTTP dialihkan ke HTTPS. Aplikasi di belakangnya (nginx ->
+# php-fpm) tetap bicara HTTP biasa di jaringan internal Docker; Laravel tahu
+# permintaan aslinya HTTPS dari header X-Forwarded-Proto yang dikirim Caddy
+# (lihat trustProxies di bootstrap/app.php).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# Setahun. Setelah browser melihat header ini, ia menolak membuka
+		# domain ini lewat HTTP biasa — termasuk bila ada yang mencoba
+		# menyadap di Wi-Fi gudang.
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	reverse_proxy nginx:80
+}

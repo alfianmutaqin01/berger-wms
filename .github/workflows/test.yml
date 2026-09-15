@@ -8,6 +8,8 @@ on:
     branches: [develop, main]
   push:
     branches: [develop]
+  # Dipanggil deploy.yml: rilis hanya dipasang bila test untuk tag yang sama hijau.
+  workflow_call:
 
 jobs:
   # === Job 1: PHP Lint ===
@@ -86,19 +88,6 @@ jobs:
       - name: Install PHP Dependencies
         run: composer install --no-interaction --prefer-dist
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      # `npm ci` memasang persis versi yang terkunci di package-lock.json,
-      # sehingga build di CI identik dengan build di mesin lokal.
-      - name: Install & Build Frontend
-        run: |
-          npm ci
-          npm run build
-
       - name: Prepare Environment
         run: |
           cp .env.ci .env
@@ -114,8 +103,6 @@ jobs:
           DB_USERNAME: wms_test
           DB_PASSWORD: testing
 
-      # `--parallel` membutuhkan brianium/paratest yang belum terpasang.
-      # Tambahkan paratest ke require-dev lebih dulu bila ingin mengaktifkannya.
       - name: Execute Tests
         run: php artisan test
         env:

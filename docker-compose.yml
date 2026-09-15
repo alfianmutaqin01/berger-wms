@@ -1,5 +1,5 @@
 # ===========================================
-# Berger WMS â€” Docker Compose (Development)
+# Berger WMS — Docker Compose (Development)
 # ===========================================
 
 services:
@@ -56,7 +56,7 @@ services:
       - backend
     restart: unless-stopped
 
-  # --- Queue Worker (use queue:work until Horizon is installed) ---
+  # --- Queue Worker (queue:work; Horizon tidak dipakai) ---
   queue:
     build:
       context: .
@@ -137,21 +137,6 @@ services:
       retries: 5
     networks:
       - backend
-    restart: unless-stopped
-
-  # --- Soketi (WebSocket Server) ---
-  soketi:
-    image: quay.io/soketi/soketi:1.6-16-alpine
-    ports:
-      - "6001:6001"
-    environment:
-      SOKETI_DEBUG: "1"
-      SOKETI_DEFAULT_APP_ID: "berger-wms"
-      SOKETI_DEFAULT_APP_KEY: "app-key"
-      SOKETI_DEFAULT_APP_SECRET: "app-secret"
-    networks:
-      - backend
-      - frontend
     restart: unless-stopped
 
 volumes:

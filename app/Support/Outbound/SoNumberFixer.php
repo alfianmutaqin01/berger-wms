@@ -197,8 +197,8 @@ class SoNumberFixer
             ->whereIn('status', self::TAHAP_BISA_DIPASANGKAN)
             ->whereNull('cancelled_at')
             ->whereNull('so_merged_into_id')
-            // Pesanan yang SJ-nya sudah ada tidak butuh SJ kedua.
-            ->whereDoesntHave('deliveryNotes')
+            // Pesanan yang putarannya sudah punya SJ tidak butuh SJ kedua.
+            ->whereDoesntHave('deliveryNotes', self::sjBelumBerangkat(...))
             ->when($note->customer_id, fn ($q, $id) => $q->where('customer_id', $id))
             ->when(
                 $note->customer_id === null && filled($note->customer_code),
@@ -245,7 +245,7 @@ class SoNumberFixer
             'punya_pesanan' => $milikPelanggan()->count(),
             'sudah_punya_sj' => $milikPelanggan()
                 ->whereIn('status', self::TAHAP_BISA_DIPASANGKAN)
-                ->whereHas('deliveryNotes')
+                ->whereHas('deliveryNotes', self::sjBelumBerangkat(...))
                 ->count(),
             'di_luar_tahap' => $milikPelanggan()
                 ->whereNotIn('status', self::TAHAP_BISA_DIPASANGKAN)
@@ -254,6 +254,21 @@ class SoNumberFixer
     }
 
     /* ------------------------------------------------------------- Dalam */
+
+    /**
+     * SJ milik putaran yang SEDANG berjalan: sudah dipasangkan, belum berangkat.
+     *
+     * Hanya SJ seperti ini yang membuat pesanan tidak butuh SJ lagi. SJ yang
+     * sudah berangkat milik putaran sebelumnya — pesanan yang kekurangannya
+     * dikirim ulang (OutstandingReshipment) kembali ke tahap diterima dan
+     * MEMANG butuh SJ kedua. Dulu semua SJ dihitung, sehingga SJ putaran
+     * kedua yang nomor SO-nya salah ketik di BC tidak bisa dipasangkan ke
+     * mana pun, dan kekurangannya tidak pernah bisa berangkat.
+     */
+    private static function sjBelumBerangkat($query): void
+    {
+        $query->where('status', DeliveryNote::STATUS_IMPORTED);
+    }
 
     private function pastikanSjBolehDipasangkan(DeliveryNote $sj): void
     {
@@ -294,7 +309,7 @@ class SoNumberFixer
             ));
         }
 
-        if ($pesanan->deliveryNotes()->exists()) {
+        if ($pesanan->deliveryNotes()->where(self::sjBelumBerangkat(...))->exists()) {
             throw new RuntimeException(sprintf(
                 'Pesanan %s sudah punya Surat Jalan.',
                 $pesanan->order_number,

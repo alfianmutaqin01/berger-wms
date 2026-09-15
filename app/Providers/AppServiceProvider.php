@@ -10,9 +10,11 @@ use App\Support\Messaging\LogWhatsAppSender;
 use App\Support\Messaging\ManualWhatsAppSender;
 use App\Support\Messaging\WhatsAppSender;
 use App\Support\Permission;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -72,6 +74,22 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // N+1 DITANGKAP SAAT DIKEMBANGKAN, BUKAN SAAT LAMBAT DI SERVER.
+        // Relasi yang dimuat satu per satu di dalam perulangan (daftar 1.800
+        // customer, 300 baris stok) tidak terasa dengan data uji yang sedikit,
+        // lalu membuat halaman butuh puluhan detik dengan data sungguhan.
+        // Di luar production pemuatan seperti itu dilempar sebagai galat —
+        // seluruh suite test ikut menjaganya. Di production dibiarkan: halaman
+        // yang lambat masih lebih baik daripada halaman yang mati.
+        Model::preventLazyLoading(! $this->app->isProduction());
+
+        // Tautan dan redirect selalu https bila aplikasinya dipasang di https,
+        // termasuk yang dibangkitkan dari antrean (tautan WhatsApp supir,
+        // email ke Sales) yang tidak punya permintaan HTTP untuk ditiru.
+        if (str_starts_with((string) config('app.url'), 'https://')) {
+            URL::forceScheme('https');
+        }
+
         Paginator::useBootstrapFive();
         $this->registerPermissionGates();
         $this->registerNotificationBell();

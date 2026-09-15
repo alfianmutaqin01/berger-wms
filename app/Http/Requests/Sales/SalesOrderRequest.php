@@ -24,8 +24,14 @@ class SalesOrderRequest extends FormRequest
 
     public function authorize(): bool
     {
-        // Penjagaan sesungguhnya ada di middleware portal:sales dan pada
-        // pemeriksaan kepemilikan di controller.
+        // Pesanan milik Sales lain dijawab 404 SEBELUM validasi. Controller
+        // juga memeriksanya, tetapi Form Request berjalan lebih dulu — tanpa
+        // baris ini, isian yang tidak lengkap untuk pesanan orang lain dijawab
+        // dengan pesan validasi, yang sama saja mengakui pesanannya ada.
+        $order = $this->route('order');
+
+        abort_if($order instanceof SalesOrder && $order->user_id !== $this->user()?->id, 404);
+
         return true;
     }
 

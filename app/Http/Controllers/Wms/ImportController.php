@@ -43,7 +43,8 @@ class ImportController extends Controller
         // Nama berkas dibangkitkan sendiri, bukan memakai nama asli dari
         // pengguna, agar tidak ada jalur yang bisa diarahkan ke tempat lain.
         $token = Str::uuid()->toString();
-        $stored = self::TEMP_DIR.'/'.$token.'.'.$request->file('file')->getClientOriginalExtension();
+        $extension = self::ekstensi($request);
+        $stored = self::TEMP_DIR.'/'.$token.'.'.$extension;
 
         $saved = Storage::disk('local')->putFileAs(
             self::TEMP_DIR,
@@ -82,7 +83,7 @@ class ImportController extends Controller
             'importRoute' => route($config['import_route']),
             'cancelRoute' => route($config['cancel_route']),
             'token' => $token,
-            'extension' => $request->file('file')->getClientOriginalExtension(),
+            'extension' => $extension,
             'originalName' => $request->file('file')->getClientOriginalName(),
             'rows' => $preview['rows'],
             'summary' => $preview['summary'],
@@ -196,6 +197,23 @@ class ImportController extends Controller
                 warehouseId: WarehouseScope::boundary($request->user()),
             ),
         };
+    }
+
+    /**
+     * Ekstensi berkas Excel yang diunggah, DIBACA DARI ISINYA — 'xlsx' atau 'xls'.
+     *
+     * Bukan getClientOriginalExtension(). Nama berkas kiriman pengguna tidak
+     * bisa dipercaya dan tidak seragam: ekspor BC sering bernama DATA.XLSX,
+     * dan berkas unduhan WhatsApp kadang tanpa ekstensi sama sekali. Ekstensi
+     * itu ikut ke langkah simpan yang hanya menerima 'xlsx'/'xls' huruf kecil,
+     * sehingga berkas yang lolos pratinjau lalu GAGAL disimpan tanpa alasan
+     * yang masuk akal bagi penggunanya. Aturan `mimes:xlsx,xls` sendiri sudah
+     * menilai isi berkas, jadi yang dipakai di sini sama dengan yang lolos
+     * validasi.
+     */
+    public static function ekstensi(Request $request): string
+    {
+        return strtolower((string) $request->file('file')->guessExtension()) === 'xls' ? 'xls' : 'xlsx';
     }
 
     /** @return array{title:string, index_route:string, import_route:string, cancel_route:string} */

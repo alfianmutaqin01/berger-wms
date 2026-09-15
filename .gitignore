@@ -51,3 +51,6 @@ docker/data/
 # Legacy
 Homestead.json
 Homestead.yaml
+
+# Cadangan production (container `backup`) — berisi data operasional.
+/backups

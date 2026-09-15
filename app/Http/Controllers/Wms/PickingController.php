@@ -87,7 +87,9 @@ class PickingController extends Controller
                 'transfer:id,picking_list_id,transfer_number,to_warehouse_id',
                 'transfer.toWarehouse:id,code,name',
                 'requisition:id,picking_list_id,mrf_number,request_type'])
-            ->withCount(['orders', 'items'])
+            ->withCount(['orders', 'items',
+                // Dibaca PickingList::bolehDibatalkan() untuk tombol Batal.
+                'items as items_tersentuh_count' => fn ($q) => $q->where('status', '<>', PickingListItem::STATUS_PENDING)])
             // Yang masih perlu dikerjakan selalu di atas.
             ->orderByRaw("CASE WHEN status IN ('open', 'picking') THEN 0 ELSE 1 END")
             ->latest('id')

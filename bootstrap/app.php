@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsurePortalAccess;
+use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrackUserSession;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -14,6 +15,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo('/login');
+
+        // Di production aplikasi duduk di belakang Caddy (HTTPS) -> nginx. Tanpa
+        // ini Laravel mengira permintaannya HTTP biasa: tautan dan redirect
+        // dibangkitkan sebagai http://, dan IP di log login adalah IP container.
+        // Aman memercayai semua proxy karena php-fpm tidak pernah terbuka ke
+        // luar — satu-satunya jalan masuk adalah Caddy, yang menimpa header
+        // X-Forwarded-* kiriman pengguna.
+        $middleware->trustProxies(at: '*');
+
+        $middleware->web(append: [SecurityHeaders::class]);
 
         $middleware->alias([
             'session.track' => TrackUserSession::class,

@@ -13,6 +13,7 @@ use App\Models\SoNumberChange;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Outbound\SoNumberFixer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -214,6 +215,41 @@ class SoNumberFixTest extends TestCase
 
         $this->post(route('wms.delivery.pair', $sj), ['sales_order_id' => $order->id])
             ->assertSessionHas('error');
+    }
+
+    /**
+     * Pesanan yang sedang mengirim ulang kekurangannya MENERIMA SJ kedua.
+     *
+     * SJ putaran pertama sudah berangkat; pesanan kembali ke tahap diterima
+     * untuk putaran kedua dan memang butuh dokumen baru. Dulu SJ lama itu
+     * ikut dihitung, sehingga SJ putaran kedua yang nomor SO-nya salah ketik
+     * di BC tidak bisa dipasangkan ke mana pun.
+     */
+    public function test_pesanan_kirim_ulang_menerima_sj_putaran_berikutnya(): void
+    {
+        $order = $this->pesanan('SO260903');
+        $this->sjYatim('SO260903', null, '206100')->forceFill([
+            'sales_order_id' => $order->id,
+            'warehouse_id' => $this->karawang->id,
+            'status' => DeliveryNote::STATUS_DELIVERED,
+            'driver_name' => 'Asep', 'driver_phone' => '6281234567890', 'vehicle_plate' => 'T 1 AB',
+            'shipped_at' => now()->subDays(3), 'epod_token' => Str::random(48),
+            'delivered_at' => now()->subDays(2), 'arrival_photo_path' => 'arrival-photos/a.jpg',
+            'arrival_photo_source' => 'camera', 'arrival_photo_taken_at' => now()->subDays(2),
+        ])->save();
+
+        // Putaran kedua: nomor SO di dokumen BC salah ketik, jadi impor tidak
+        // menemukan pasangannya.
+        $kedua = $this->sjYatim('SO260930', null, '206299');
+
+        $this->login();
+
+        $this->assertTrue(app(SoNumberFixer::class)->kandidat($kedua)->contains('id', $order->id));
+
+        $this->post(route('wms.delivery.pair', $kedua), ['sales_order_id' => $order->id])
+            ->assertSessionHas('success');
+
+        $this->assertSame($order->id, $kedua->fresh()->sales_order_id);
     }
 
     public function test_kandidat_hanya_pesanan_pelanggan_yang_sama(): void

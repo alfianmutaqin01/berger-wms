@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Sales;
 
 use App\Models\DeliveryProof;
+use App\Models\SalesOrder;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -20,8 +21,14 @@ class UploadDeliveryProofRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Kepemilikan pesanan diperiksa controller (404, bukan 403, supaya
-        // nomor pesanan Sales lain tidak bocor).
+        // Pesanan Sales lain dijawab 404 SEBELUM validasi (bukan 403, supaya
+        // nomor pesanan Sales lain tidak bocor). Controller juga memeriksanya,
+        // tetapi Form Request berjalan lebih dulu: tanpa ini, berkas yang
+        // salah untuk pesanan orang lain dijawab dengan pesan validasi.
+        $order = $this->route('order');
+
+        abort_if($order instanceof SalesOrder && $order->user_id !== $this->user()?->id, 404);
+
         return true;
     }
 

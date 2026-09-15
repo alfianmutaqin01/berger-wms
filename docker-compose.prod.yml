@@ -1,71 +1,187 @@
 # ===========================================
-# Berger WMS — Docker Compose (Production Override)
-# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Berger WMS — Docker Compose (Production, VPS)
 # ===========================================
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# BERKAS MANDIRI, BUKAN OVERRIDE DARI docker-compose.yml
+# ------------------------------------------------------
+# Versi sebelumnya ditumpuk di atas berkas pengembangan dan mengandalkan
+# `ports: []` / `volumes: []` untuk menutup port dan bind mount. Compose TIDAK
+# bekerja begitu: daftar ports dan volumes DIGABUNG, bukan ditimpa. Akibatnya
+# PostgreSQL (5432) dan Redis (6379, tanpa sandi) tetap terbuka ke internet,
+# dan folder kode di server tetap menimpa isi image. Ia juga menjalankan
+# layanan `horizon` padahal Horizon tidak terpasang — antrean tidak pernah
+# jalan, sehingga email dan WhatsApp tidak pernah terkirim.
+#
+# Karena itu production punya berkasnya sendiri, dan yang tertulis di sini
+# adalah SELURUH yang berjalan.
+#
+# YANG TERBUKA KE INTERNET HANYA CADDY (80, 443). Semua layanan lain hanya
+# bisa dicapai dari jaringan internal Docker.
+#
+# Isi .env: lihat .env.production.example. Langkah lengkap:
+# docs/9_panduan_go_live.md.
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+    target: production
+  image: berger-wms-app:latest
+  volumes:
+    - ./.env:/var/www/html/.env:ro
+    - app_storage:/var/www/html/storage
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks:
+    - backend
+  restart: always
+
 services:
-  nginx:
+  # --- Pintu masuk HTTPS (sertifikat Let's Encrypt otomatis) ---
+  caddy:
+    image: caddy:2.8-alpine
     ports:
       - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN wajib diisi di .env}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL wajib diisi di .env}
     volumes:
-      - app_public:/var/www/html/public:ro
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - nginx
+    networks:
+      - frontend
     restart: always
 
-  php-fpm:
+  # --- Nginx (internal): berkas statis + FastCGI ke php-fpm ---
+  nginx:
     build:
-      target: production
-    volumes: []
-    environment:
-      - APP_ENV=production
-      - APP_DEBUG=false
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    image: berger-wms-nginx:latest
+    volumes:
+      - app_storage:/var/www/html/storage:ro
+    depends_on:
+      - php-fpm
+    networks:
+      - frontend
+      - backend
+    restart: always
+
+  # --- Aplikasi ---
+  php-fpm:
+    <<: *app
+    command: ["php-fpm"]
     deploy:
       resources:
         limits:
           cpus: '2.0'
           memory: 1G
-    restart: always
 
-  horizon:
-    build:
-      target: production
-    volumes: []
+  # --- Antrean: email ke Sales, WhatsApp, pengingat ---
+  # queue:work, bukan Horizon (tidak terpasang). --max-time membuat worker
+  # berhenti sendiri tiap jam lalu dihidupkan lagi oleh `restart: always`,
+  # supaya kebocoran memori kecil tidak menumpuk berminggu-minggu.
+  queue:
+    <<: *app
+    user: www-data
+    command: ["php", "artisan", "queue:work", "redis", "--sleep=3", "--tries=3", "--timeout=60", "--max-time=3600"]
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 512M
-    restart: always
 
+  # --- Penjadwal: sapu stok kedaluwarsa, pengingat billing, pembersihan ---
   scheduler:
-    build:
-      target: production
-    volumes: []
+    <<: *app
+    user: www-data
+    command: ["php", "artisan", "schedule:work", "--no-interaction"]
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
-    restart: always
 
   postgres:
-    ports: []
+    image: postgres:16-alpine
     environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE:?DB_DATABASE wajib diisi di .env}
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME wajib diisi di .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi di .env}
+      TZ: Asia/Jakarta
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
           cpus: '2.0'
           memory: 2G
+    networks:
+      - backend
     restart: always
 
   redis:
-    ports: []
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD wajib diisi di .env}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks:
+      - backend
     restart: always
 
-  soketi:
+  # --- Cadangan harian: basis data + berkas unggahan, disimpan 30 hari ---
+  backup:
+    image: postgres:16-alpine
+    command: ["sh", "/skrip/cadangkan.sh"]
     environment:
-      SOKETI_DEBUG: "0"
+      PGHOST: postgres
+      PGUSER: ${DB_USERNAME}
+      PGPASSWORD: ${DB_PASSWORD}
+      DB_DATABASE: ${DB_DATABASE}
+      BACKUP_JAM: ${BACKUP_JAM:-01}
+      BACKUP_HARI: ${BACKUP_HARI:-30}
+    volumes:
+      - ./docker/backup:/skrip:ro
+      - ./backups:/backups
+      - app_storage:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      php-fpm:
+        condition: service_started
+    networks:
+      - backend
     restart: always
 
 volumes:
-  app_public:
-    driver: local
+  app_storage:
+  pg_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  frontend:
+  backend:

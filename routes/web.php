@@ -33,6 +33,7 @@ use App\Http\Controllers\Wms\ReportController;
 use App\Http\Controllers\Wms\StockTakeController;
 use App\Http\Controllers\Wms\StockTransferController;
 use App\Http\Controllers\Wms\UserController;
+use App\Support\Detak;
 use App\Support\Permission;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
@@ -46,8 +47,8 @@ Route::get('/', function () {
 |--------------------------------------------------------------------------
 | Autentikasi (PRD §6.1 F-AUTH-01/03/04/05)
 |--------------------------------------------------------------------------
-| Verifikasi Anti-Bot (F-AUTH-02, reCAPTCHA) belum terpasang — akan menyatu di
-| POST /login yang sama, bukan rute terpisah. Lihat catatan di AuthController.
+| Verifikasi Anti-Bot (F-AUTH-02, reCAPTCHA) menyatu di POST /login yang sama,
+| bukan rute terpisah. Lihat catatan di AuthController.
 */
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
@@ -58,10 +59,14 @@ Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 | Health Check
 |--------------------------------------------------------------------------
 | Dipanggil oleh health check pada pipeline deploy (.github/workflows/deploy.yml)
-| dan oleh scripts/health-check.sh di server. Lihat docs/6_cicd_docker_setup.md §9.1.
+| dan oleh pemantau luar (mis. UptimeRobot). Lihat docs/9_panduan_go_live.md.
 |
 | Mengembalikan 200 bila seluruh dependensi sehat, 503 bila ada yang gagal —
 | sehingga `curl -f` pada pipeline otomatis menggagalkan deploy yang bermasalah.
+|
+| penjadwal & antrean: null berarti BELUM PERNAH berdetak (beberapa menit
+| pertama setelah pemasangan) dan tidak menggagalkan; false berarti detaknya
+| basi — prosesnya berhenti. Lihat App\Support\Detak.
 */
 Route::get('/health', function () {
     $checks = [
@@ -85,6 +90,8 @@ Route::get('/health', function () {
     }
 
     $checks['storage'] = is_writable(storage_path());
+    $checks['penjadwal'] = Detak::segar(Detak::PENJADWAL);
+    $checks['antrean'] = Detak::segar(Detak::ANTREAN);
 
     $allHealthy = ! in_array(false, $checks, true);
 
@@ -385,9 +392,6 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.stocktake.show');
         Route::get('/stocktake/{stocktake}/report', [StockTakeController::class, 'report'])
             ->name('wms.stocktake.report');
-        // Laporannya diunduh sebagai Excel, bukan dicetak: ia dibaca untuk
-        // DICOCOKKAN — dijejerkan dengan catatan gudang, disaring, dijumlahkan
-        // — dan lembar tercetak tidak bisa diapa-apakan selain dibaca.
         Route::get('/stocktake/{stocktake}/report/excel', [StockTakeController::class, 'download'])
             ->name('wms.stocktake.report.download');
     });
@@ -792,9 +796,8 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.release');
 
-        // SURAT JALAN (Fase 6 tahap 4). TIDAK ada rute "cetak": dokumen
-        // resminya terbit di sistem BC, dan yang dikerjakan di sini adalah
-        // menyalin lalu mencocokkannya.
+        // SURAT JALAN (Fase 6 tahap 4). Dokumen resminya terbit di sistem BC;
+        // yang dikerjakan di sini adalah menyalin lalu mencocokkannya.
         Route::middleware('can:'.Permission::OUTBOUND_DELIVERY)->group(function () {
             Route::get('/delivery', [DeliveryController::class, 'index'])
                 ->name('wms.delivery.index');

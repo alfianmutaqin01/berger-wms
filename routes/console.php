@@ -1,5 +1,7 @@
 <?php
 
+use App\Jobs\DetakAntrean;
+use App\Support\Detak;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -120,4 +122,22 @@ Schedule::command('billing:ingatkan')
     ->dailyAt('07:00')
     ->timezone('Asia/Jakarta')
     ->withoutOverlapping()
+    ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
+| Detak penjadwal dan antrean (Fase 13)
+|--------------------------------------------------------------------------
+|
+| Dilaporkan di /health. Tanpa ini, penjadwal atau worker antrean yang mati
+| tidak kelihatan dari mana pun — lihat App\Support\Detak.
+*/
+Schedule::call(fn () => Detak::catat(Detak::PENJADWAL))
+    ->name('detak:penjadwal')
+    ->everyMinute()
+    ->onOneServer();
+
+Schedule::job(new DetakAntrean)
+    ->name('detak:antrean')
+    ->everyFiveMinutes()
     ->onOneServer();
