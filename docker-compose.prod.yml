@@ -112,15 +112,21 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # SUPERUSER DAN PENGGUNA APLIKASI DIPISAH. POSTGRES_USER/POSTGRES_PASSWORD
+  # (superuser) dibaca dari .env.postgres, yang TIDAK di-mount ke container
+  # aplikasi — aplikasi yang tembus tidak bisa membaca sandinya. Aplikasi masuk
+  # sebagai DB_USERNAME yang dibuat docker/postgres/init saat volume kosong.
   postgres:
     image: postgres:16-alpine
+    env_file: ./.env.postgres
     environment:
       POSTGRES_DB: ${DB_DATABASE:?DB_DATABASE wajib diisi di .env}
-      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME wajib diisi di .env}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi di .env}
+      WMS_DB_USER: ${DB_USERNAME:?DB_USERNAME wajib diisi di .env}
+      WMS_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi di .env}
       TZ: Asia/Jakarta
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -151,21 +157,27 @@ services:
       - backend
     restart: always
 
-  # --- Cadangan harian: basis data + berkas unggahan, disimpan 30 hari ---
+  # --- Cadangan harian terenkripsi: basis data + berkas unggahan, 30 hari ---
   backup:
-    image: postgres:16-alpine
+    build:
+      context: ./docker/backup
+    image: berger-wms-backup:latest
     command: ["sh", "/skrip/cadangkan.sh"]
+    env_file: ./.env.postgres
     environment:
       PGHOST: postgres
-      PGUSER: ${DB_USERNAME}
-      PGPASSWORD: ${DB_PASSWORD}
       DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
       BACKUP_JAM: ${BACKUP_JAM:-01}
       BACKUP_HARI: ${BACKUP_HARI:-30}
+      # Kunci PUBLIK age. Kunci privatnya tidak pernah disimpan di server.
+      BACKUP_KUNCI_PUBLIK: ${BACKUP_KUNCI_PUBLIK:?BACKUP_KUNCI_PUBLIK wajib diisi di .env (docs/9 §9)}
     volumes:
       - ./docker/backup:/skrip:ro
       - ./backups:/backups
       - app_storage:/data/storage
+      # Kosong sehari-hari. Kunci privat ditaruh di sini HANYA saat memulihkan.
+      - ./kunci-pemulihan:/kunci:ro
     depends_on:
       postgres:
         condition: service_healthy

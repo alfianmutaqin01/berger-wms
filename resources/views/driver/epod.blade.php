@@ -40,10 +40,17 @@
 
     <div class="card border-0 shadow-sm rounded-4">
         <div class="card-body p-4">
+            @php($sudahSampai = $note->status === \App\Models\DeliveryNote::STATUS_DELIVERED)
+
             <dl class="row mb-3">
                 <dt class="col-5 text-muted fw-normal small">Surat Jalan</dt>
                 <dd class="col-7 fw-bold font-monospace">{{ $note->document_no }}</dd>
 
+                {{-- Pelanggan, kendaraan, dan isi kiriman hanya tampil selama
+                     masih ada yang harus dikonfirmasi. Sesudahnya supir tidak
+                     butuh apa pun selain "sudah tercatat" — dan tautannya
+                     masih bisa diteruskan ke siapa saja. --}}
+                @unless($sudahSampai)
                 <dt class="col-5 text-muted fw-normal small">Tujuan</dt>
                 <dd class="col-7 fw-semibold">{{ $note->customer?->name ?? '—' }}</dd>
 
@@ -51,8 +58,10 @@
                 <dt class="col-5 text-muted fw-normal small">Kendaraan</dt>
                 <dd class="col-7">{{ $note->vehicle_plate }}</dd>
                 @endif
+                @endunless
             </dl>
 
+            @unless($sudahSampai)
             <h6 class="fw-bold small text-muted text-uppercase">Barang</h6>
             <ul class="list-group list-group-flush mb-3">
                 @foreach($note->lines as $line)
@@ -65,8 +74,9 @@
                 </li>
                 @endforeach
             </ul>
+            @endunless
 
-            @if($note->status === \App\Models\DeliveryNote::STATUS_DELIVERED)
+            @if($sudahSampai)
                 {{-- Sudah dikonfirmasi. Tombolnya HILANG, bukan sekadar
                      dinonaktifkan: supir yang membuka tautannya lagi untuk
                      memastikan tidak boleh menemukan tombol yang menggoda

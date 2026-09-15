@@ -338,6 +338,9 @@ class Shipment
                 // menjadi kunci, dan token yang bisa ditebak dari nomor urut
                 // membuat siapa pun bisa mengonfirmasi kiriman orang lain.
                 'epod_token' => $terkunci->epod_token ?? Str::random(48),
+                // ...tetapi tidak berlaku selamanya: tautannya tinggal di chat
+                // supir dari perusahaan lain. Lihat config wms.epod.
+                'epod_expires_at' => now()->addHours((int) config('wms.epod.berlaku_jam')),
                 'notify_status' => DeliveryNote::NOTIFY_PENDING,
                 'notify_attempts' => 0,
                 'notify_error' => null,

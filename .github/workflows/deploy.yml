@@ -18,12 +18,24 @@
 # memakai hanya menambah tempat untuk rusak. Satu VPS, satu jalur.
 #
 # Secret yang dibutuhkan (Settings -> Environments -> production):
-#   SERVER_HOST, SERVER_USER, SERVER_SSH_KEY
+#   SERVER_HOST, SERVER_USER, SERVER_SSH_KEY, SERVER_SSH_FINGERPRINT
+#
+# PENGAMANAN PIPELINE (audit keamanan)
+#   - Environment `production` WAJIB diberi "Required reviewers": tag yang
+#     didorong siapa pun tidak langsung terpasang tanpa persetujuan orang
+#     kedua. Diatur di GitHub, bukan di berkas ini — docs/9 §11.
+#   - SERVER_SSH_FINGERPRINT: sidik jari kunci host server. Tanpanya klien
+#     SSH menerima server mana pun yang menjawab di alamat itu, termasuk
+#     penyadap di tengah jalan.
+#   - Action dikunci ke commit SHA — alasannya di test.yml.
 name: CD — Test & Deploy
 
 on:
   push:
     tags: ['v*']
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -42,11 +54,12 @@ jobs:
 
     steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          fingerprint: ${{ secrets.SERVER_SSH_FINGERPRINT }}
           command_timeout: 30m
           script: |
             set -e

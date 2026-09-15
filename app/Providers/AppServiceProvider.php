@@ -10,10 +10,13 @@ use App\Support\Messaging\LogWhatsAppSender;
 use App\Support\Messaging\ManualWhatsAppSender;
 use App\Support\Messaging\WhatsAppSender;
 use App\Support\Permission;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -89,6 +92,12 @@ class AppServiceProvider extends ServiceProvider
         if (str_starts_with((string) config('app.url'), 'https://')) {
             URL::forceScheme('https');
         }
+
+        // BATAS POST /login PER IP DI LARAVEL, bukan hanya di nginx. Batas
+        // nginx hilang begitu aplikasi dipasang di belakang proxy lain atau
+        // dijalankan tanpa nginx; batas ini ikut ke mana pun kodenya pergi.
+        // 20/menit: satu IP kantor dipakai seluruh gudang saat ganti shift.
+        RateLimiter::for('login', fn (Request $request) => Limit::perMinute(20)->by((string) $request->ip()));
 
         Paginator::useBootstrapFive();
         $this->registerPermissionGates();

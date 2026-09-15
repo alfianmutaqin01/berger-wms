@@ -114,6 +114,15 @@ class CekProduksi extends Command
             $sudah = $migrator->getRepository()->repositoryExists() ? $migrator->getRepository()->getRan() : [];
             $tertunda = count(array_diff($berkas, $sudah));
             $this->catat($tertunda === 0, 'Migrasi', $tertunda === 0 ? 'Semua sudah dijalankan.' : "{$tertunda} migrasi belum dijalankan (php artisan migrate --force).");
+
+            // Pengguna basis data aplikasi BUKAN superuser: aplikasi yang
+            // tembus hanya membawa tabel WMS, bukan seluruh server PostgreSQL
+            // (superuser bisa membaca berkas server dan menjalankan perintah
+            // sistem lewat COPY ... PROGRAM). Lihat docker/postgres/init.
+            $super = (bool) DB::scalar('SELECT rolsuper FROM pg_roles WHERE rolname = current_user');
+            $this->catat(! $super, 'Hak pengguna basis data', $super
+                ? 'DB_USERNAME adalah superuser PostgreSQL. Pakai pengguna aplikasi terpisah (docs/9 langkah 4).'
+                : 'Bukan superuser.');
         } catch (Throwable $e) {
             $this->catat(false, 'Basis data', 'Tidak tersambung: '.$e->getMessage());
         }

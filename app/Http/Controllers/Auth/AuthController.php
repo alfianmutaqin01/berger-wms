@@ -8,10 +8,13 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginAttempt;
 use App\Models\User;
 use App\Models\UserSession;
+use App\Support\Auth\PenjagaLogin;
+use DateTimeInterface;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -21,8 +24,8 @@ use Illuminate\View\View;
  *
  * Verifikasi Anti-Bot (F-AUTH-02, Google reCAPTCHA v2) menyatu di form login
  * yang sama — BUKAN halaman verifikasi terpisah seperti rancangan MFA lama.
- * Kegagalannya (token tidak valid/kedaluwarsa/kosong) masuk ke counter lockout
- * yang sama dengan password salah, lihat User::registerFailedLogin().
+ * Kegagalannya (token tidak valid/kedaluwarsa/kosong) ditolak SEBELUM akun
+ * disentuh dan tidak menaikkan penghitung kunci — lihat urutan di login().
  */
 class AuthController extends Controller
 {
@@ -38,14 +41,65 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
+    /**
+     * URUTAN PEMERIKSAAN INI ADALAH KONTROL KEAMANANNYA (audit keamanan
+     * pra-go-live, PRD v1.5). Setiap langkah dipindah ke tempatnya karena satu
+     * serangan yang nyata:
+     *
+     *   1. reCAPTCHA PALING AWAL, dan kegagalannya TIDAK menyentuh akun.
+     *      Sebelumnya token kosong ikut menaikkan penghitung kunci akun, jadi
+     *      tiga POST tanpa centang cukup untuk mengunci akun siapa pun.
+     *
+     *   2. Kunci EMAIL+IP sebelum email dicari. Pesannya sama untuk email yang
+     *      ada maupun tidak — lihat App\Support\Auth\PenjagaLogin.
+     *
+     *   3. Kunci AKUN hanya berlaku bagi IP yang belum pernah dipakai pemilik
+     *      akun untuk masuk. Pemilik yang masuk dari kantornya tidak ikut
+     *      terkunci oleh penyerang dari luar.
+     *
+     *   4. Sandi dicocokkan SEBELUM status aktif diperiksa, dan selalu lewat
+     *      satu bcrypt. Sebelumnya "Akun Anda tidak aktif" dijawab kepada siapa
+     *      pun yang mengetik emailnya — tanpa sandi — sehingga daftar email
+     *      karyawan (termasuk yang sudah keluar) bisa dipetakan dari luar.
+     *      Kini pesan itu hanya sampai ke orang yang tahu sandinya.
+     */
     public function login(LoginRequest $request): RedirectResponse
     {
         $credentials = $request->validated();
+        $email = $credentials['email'];
+        $ip = (string) $request->ip();
 
-        $user = User::with('role')->where('email', $credentials['email'])->first();
+        if (! $this->verifyRecaptcha((string) $request->input('g-recaptcha-response'))) {
+            $this->logAttempt($email, false, 'recaptcha_failed', $request);
 
-        if (! $user) {
-            $this->logAttempt($credentials['email'], false, 'wrong_password', $request);
+            return back()->withErrors([
+                'email' => 'Verifikasi "Saya bukan robot" gagal atau kedaluwarsa. Centang ulang, lalu coba lagi.',
+            ])->onlyInput('email');
+        }
+
+        if ($sampai = PenjagaLogin::terkunciSampai($email, $ip)) {
+            $this->logAttempt($email, false, 'locked', $request);
+
+            return $this->lockedResponse($sampai);
+        }
+
+        $user = User::with('role')->where('email', $email)->first();
+        $ipDikenal = $user !== null && PenjagaLogin::ipDikenal($user, $ip);
+
+        if ($user !== null && ! $ipDikenal && $user->isCurrentlyLocked()) {
+            $this->logAttempt($user->email, false, 'locked', $request);
+
+            return $this->lockedResponse($user->locked_until);
+        }
+
+        if (! PenjagaLogin::sandiCocok($user, $credentials['password'])) {
+            PenjagaLogin::catatGagal($email, $ip);
+
+            if ($user !== null && ! $ipDikenal) {
+                $user->registerFailedLogin();
+            }
+
+            $this->logAttempt($email, false, 'wrong_password', $request);
 
             return $this->invalidCredentialsResponse();
         }
@@ -58,29 +112,7 @@ class AuthController extends Controller
             ])->onlyInput('email');
         }
 
-        if ($user->isCurrentlyLocked()) {
-            $this->logAttempt($user->email, false, 'locked', $request);
-
-            return back()->withErrors([
-                'email' => 'Akun terkunci sampai pukul '.$user->locked_until->translatedFormat('H:i').
-                    ' karena terlalu banyak percobaan gagal.',
-            ])->onlyInput('email');
-        }
-
-        if (! $this->verifyRecaptcha((string) $request->input('g-recaptcha-response'))) {
-            $user->registerFailedLogin();
-            $this->logAttempt($user->email, false, 'recaptcha_failed', $request);
-
-            return $this->invalidCredentialsResponse();
-        }
-
-        if (! Hash::check($credentials['password'], $user->password)) {
-            $user->registerFailedLogin();
-            $this->logAttempt($user->email, false, 'wrong_password', $request);
-
-            return $this->invalidCredentialsResponse();
-        }
-
+        PenjagaLogin::bersihkan($email, $ip);
         $user->registerSuccessfulLogin();
         $this->logAttempt($user->email, true, null, $request);
 
@@ -157,11 +189,10 @@ class AuthController extends Controller
     /**
      * PRD §6.1 F-AUTH-02: verifikasi token widget "Saya bukan robot" ke Google
      * siteverify. Dipanggil dari request POST /login yang sama — bukan rute
-     * terpisah — sehingga kegagalannya bisa langsung masuk ke alur lockout.
+     * terpisah.
      *
      * Secret key kosong DIANGGAP LULUS di luar production, supaya development
-     * lokal tanpa kredensial reCAPTCHA sendiri tidak ikut terkunci (mengikuti
-     * pola pagar environment yang sama dengan CurrentActor). Di production,
+     * lokal tanpa kredensial reCAPTCHA sendiri tidak ikut tertahan. Di production,
      * secret key kosong berarti verifikasi ke Google gagal terkirim -> token
      * tidak pernah tervalidasi -> login tertahan, bukan diam-diam dilewati.
      */
@@ -177,10 +208,18 @@ class AuthController extends Controller
             return false;
         }
 
-        $response = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
-            'secret' => $secret,
-            'response' => $token,
-        ]);
+        // Batas waktu: tanpanya, Google yang lambat membuat setiap POST /login
+        // menahan satu worker php-fpm — sedikit permintaan saja sudah cukup
+        // untuk menghabiskan seluruh worker dan menjatuhkan aplikasi.
+        try {
+            $response = Http::asForm()->timeout(5)->post('https://www.google.com/recaptcha/api/siteverify', [
+                'secret' => $secret,
+                'response' => $token,
+            ]);
+        } catch (ConnectionException) {
+            // Tidak terverifikasi = tidak lulus. Gagal tertutup, bukan halaman 500.
+            return false;
+        }
 
         return $response->successful() && $response->json('success') === true;
     }
@@ -195,6 +234,15 @@ class AuthController extends Controller
             'failure_reason' => $reason,
             'created_at' => now(),
         ]);
+    }
+
+    /** Kunci email+IP dan kunci akun dijawab dengan kalimat yang sama. */
+    private function lockedResponse(DateTimeInterface $sampai): RedirectResponse
+    {
+        return back()->withErrors([
+            'email' => 'Terlalu banyak percobaan gagal. Coba lagi setelah pukul '
+                .Carbon::instance($sampai)->translatedFormat('H:i').'.',
+        ])->onlyInput('email');
     }
 
     /** Pesan generik disengaja — supaya tidak membocorkan email mana yang terdaftar. */

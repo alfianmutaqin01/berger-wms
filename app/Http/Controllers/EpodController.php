@@ -35,6 +35,9 @@ use RuntimeException;
  *     daftar, tidak ada pencarian, tidak ada data pelanggan lain.
  *   - Yang ditampilkan seperlunya saja untuk supir memastikan ia membuka
  *     kiriman yang benar — bukan seluruh isi pesanan berikut harganya.
+ *   - Tautannya MATI SENDIRI (audit keamanan): 72 jam sejak diterbitkan, dan
+ *     24 jam sesudah dikonfirmasi — dalam 24 jam itu pun hanya "sudah
+ *     tercatat" yang tampil, tanpa pelanggan dan isi kiriman.
  */
 class EpodController extends Controller
 {
@@ -191,19 +194,19 @@ class EpodController extends Controller
     /**
      * Dokumen pemegang token ini.
      *
-     * 404 untuk token yang tidak dikenal MAUPUN dokumen yang belum berangkat:
-     * keduanya dijawab sama supaya halaman publik ini tidak bisa dipakai
-     * menebak-nebak token mana yang ada.
+     * 404 untuk token yang tidak dikenal, dokumen yang belum berangkat, MAUPUN
+     * tautan yang sudah kedaluwarsa: semuanya dijawab sama supaya halaman
+     * publik ini tidak bisa dipakai menebak-nebak token mana yang pernah ada.
+     * Masa berlakunya: DeliveryNote::tautanEpodBerlaku().
      */
     private function cari(string $token): DeliveryNote
     {
         $note = DeliveryNote::query()
             ->with(['lines.product:id,sku,name,uom', 'customer:id,name'])
             ->where('epod_token', $token)
-            ->whereIn('status', [DeliveryNote::STATUS_SHIPPED, DeliveryNote::STATUS_DELIVERED])
             ->first();
 
-        abort_if($note === null, 404);
+        abort_unless($note?->tautanEpodBerlaku() === true, 404);
 
         return $note;
     }

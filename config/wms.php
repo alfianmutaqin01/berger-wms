@@ -34,4 +34,20 @@ return [
         'max_kb' => 5120,
         'mimes' => ['pdf', 'xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg'],
     ],
+
+    /*
+     * Tautan konfirmasi supir (halaman publik /epod/{token}).
+     *
+     * berlaku_jam: sejak diterbitkan. Kiriman di wilayah gudang sampai dalam
+     * hari yang sama atau esoknya; 72 jam memberi ruang untuk kendaraan yang
+     * tertahan tanpa membiarkan tautannya hidup selamanya di chat orang lain.
+     *
+     * tampil_setelah_sampai_jam: supir yang membuka tautannya lagi masih
+     * melihat "sudah tercatat" — tanpa nama pelanggan dan isi kiriman —
+     * lalu tautannya mati.
+     */
+    'epod' => [
+        'berlaku_jam' => (int) env('WMS_EPOD_BERLAKU_JAM', 72),
+        'tampil_setelah_sampai_jam' => 24,
+    ],
 ];

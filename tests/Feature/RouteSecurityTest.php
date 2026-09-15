@@ -125,6 +125,26 @@ class RouteSecurityTest extends TestCase
         $this->assertSame([], $terbuka, "Rute berikut bisa dibuka TANPA login:\n".implode("\n", $terbuka));
     }
 
+    /**
+     * `session.track` bukan sekadar pencatat: di sanalah akun nonaktif, sesi
+     * yang dicabut, dan idle 1 jam ditolak. Rute login tanpa middleware ini
+     * tetap bisa dipakai karyawan yang sudah dinonaktifkan.
+     */
+    public function test_setiap_rute_login_melewati_pelacak_sesi(): void
+    {
+        $bocor = [];
+
+        foreach ($this->ruteAplikasi() as $rute) {
+            $mw = $rute->gatherMiddleware();
+
+            if (in_array('auth', $mw, true) && ! in_array('session.track', $mw, true)) {
+                $bocor[] = implode('|', $rute->methods()).' '.$rute->uri();
+            }
+        }
+
+        $this->assertSame([], $bocor, "Rute berikut tidak memeriksa sesi & status akun:\n".implode("\n", $bocor));
+    }
+
     public function test_rute_portal_dijaga_middleware_portalnya(): void
     {
         $bocor = [];

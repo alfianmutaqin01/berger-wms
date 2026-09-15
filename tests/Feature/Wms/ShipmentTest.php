@@ -867,6 +867,61 @@ class ShipmentTest extends TestCase
         $this->get(route('epod.show', $note->epod_token))->assertNotFound();
     }
 
+    /* ------------------------------------ Masa berlaku tautan (audit keamanan) */
+
+    /** Tautan tinggal di chat supir perusahaan lain; ia tidak boleh hidup selamanya. */
+    public function test_tautan_supir_mati_setelah_masa_berlakunya(): void
+    {
+        $token = $this->siapDikonfirmasi();
+
+        $this->travel(71)->hours();
+        $this->get(route('epod.show', $token))->assertOk();
+
+        $this->travel(2)->hours();
+        $this->get(route('epod.show', $token))->assertNotFound();
+        $this->post(route('epod.confirm', $token), ['photo' => $this->fotoSampai()])->assertNotFound();
+    }
+
+    public function test_sesudah_dikonfirmasi_halaman_supir_tidak_lagi_menyebut_pelanggan_dan_isi(): void
+    {
+        $token = $this->siapDikonfirmasi();
+        $note = DeliveryNote::where('epod_token', $token)->with('customer', 'lines')->first();
+
+        $this->post(route('epod.confirm', $token), ['photo' => $this->fotoSampai()]);
+
+        $this->get(route('epod.show', $token))
+            ->assertOk()
+            ->assertSee('Sudah dikonfirmasi sampai')
+            ->assertDontSee($note->customer->name)
+            ->assertDontSee($note->lines->first()->sku);
+
+        $this->travel(25)->hours();
+        $this->get(route('epod.show', $token))->assertNotFound();
+    }
+
+    /** Tautan baru MENGGANTI yang lama: salinan yang pernah diteruskan ikut mati. */
+    public function test_logistik_menerbitkan_tautan_baru_untuk_tautan_kedaluwarsa(): void
+    {
+        $token = $this->siapDikonfirmasi();
+        $note = DeliveryNote::where('epod_token', $token)->first();
+
+        $this->travel(73)->hours();
+        $this->loginAt($this->karawang);
+
+        $this->get(route('wms.delivery.show', $note))->assertSee('Terbitkan tautan baru');
+
+        $this->post(route('wms.delivery.resend', $note))->assertSessionHas('success');
+
+        $baru = $note->fresh()->epod_token;
+        $this->assertNotSame($token, $baru);
+
+        auth()->logout();
+        $this->flushSession();
+
+        $this->get(route('epod.show', $token))->assertNotFound();
+        $this->get(route('epod.show', $baru))->assertOk()->assertSee('Barang Sudah Sampai');
+    }
+
     public function test_konfirmasi_supir_menandai_sampai_dan_menunggu_verifikasi(): void
     {
         $order = $this->pesananSudahDipicking(10, 10);

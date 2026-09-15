@@ -17,6 +17,7 @@ use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -339,7 +340,14 @@ class DeliveryController extends Controller
         ));
     }
 
-    /** Mencoba mengirim ulang pesan yang gagal. */
+    /**
+     * Mencoba mengirim ulang pesan yang gagal — atau menerbitkan tautan baru
+     * bila tautan supir sudah kedaluwarsa sebelum barangnya dikonfirmasi.
+     *
+     * TOKENNYA DIGANTI, bukan hanya diperpanjang. Tautan lama sudah beredar
+     * di chat; memperpanjangnya menghidupkan kembali setiap salinan yang
+     * pernah diteruskan ke orang lain.
+     */
     public function resend(Request $request, DeliveryNote $note): RedirectResponse
     {
         WarehouseScope::assert($note->warehouse_id, $request->user());
@@ -348,14 +356,21 @@ class DeliveryController extends Controller
             return back()->with('error', 'Surat Jalan ini belum dinyatakan berangkat, jadi belum ada tautan untuk dikirim.');
         }
 
-        $note->forceFill([
+        $tautanBaru = $note->tautanEpodKedaluwarsa();
+
+        $note->forceFill(array_merge([
             'notify_status' => DeliveryNote::NOTIFY_PENDING,
             'notify_error' => null,
-        ])->save();
+        ], $tautanBaru ? [
+            'epod_token' => Str::random(48),
+            'epod_expires_at' => now()->addHours((int) config('wms.epod.berlaku_jam')),
+        ] : []))->save();
 
         SendDeliveryNotification::dispatch($note->id);
 
-        return back()->with('success', 'Pengiriman pesan dicoba lagi.');
+        return back()->with('success', $tautanBaru
+            ? 'Tautan baru diterbitkan dan dikirim ke supir. Tautan lama tidak bisa dibuka lagi.'
+            : 'Pengiriman pesan dicoba lagi.');
     }
 
     /* --------------------------------------------------------------- Dalam */

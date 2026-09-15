@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Wms;
 
+use App\Http\Middleware\TrackUserSession;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
@@ -313,6 +314,61 @@ class UserManagementTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $target->id, 'deleted_at' => null]);
     }
 
+    /* ------------------------------------------- Pemutusan sesi (audit keamanan) */
+
+    private function sesiAktif(User $user): void
+    {
+        UserSession::create([
+            'user_id' => $user->id, 'session_id' => Str::random(64), 'ip_address' => '10.1.1.1',
+            'user_agent' => 'HP karyawan', 'last_activity_at' => now(), 'created_at' => now(),
+        ]);
+    }
+
+    /** Karyawan yang dinonaktifkan tidak boleh tetap bekerja dari HP yang masih masuk. */
+    public function test_menonaktifkan_user_memutus_seluruh_sesinya(): void
+    {
+        $this->actingAsRole(Role::SUPER_ADMIN);
+        $target = User::factory()->withRole(Role::LOGISTICS)->create(['department_id' => $this->department->id]);
+        $this->sesiAktif($target);
+        $this->sesiAktif($target);
+
+        $this->patch("/wms/admin/users/{$target->id}/status")->assertSessionHas('success');
+
+        $this->assertSame(0, UserSession::where('user_id', $target->id)->count());
+    }
+
+    /** Sandi yang direset pengelola: sesi penyusup yang memakai sandi lama ikut putus. */
+    public function test_reset_sandi_oleh_pengelola_memutus_sesi_pemilik_akun(): void
+    {
+        $this->actingAsRole(Role::SUPER_ADMIN);
+        $target = User::factory()->withRole(Role::SALES)->create(['department_id' => $this->department->id]);
+        $this->sesiAktif($target);
+
+        $this->put("/wms/admin/users/{$target->id}", $this->validPayload([
+            'employee_id' => $target->employee_id,
+            'email' => $target->email,
+            'password' => 'sandibaru456',
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame(0, UserSession::where('user_id', $target->id)->count());
+    }
+
+    public function test_menyunting_tanpa_mengganti_sandi_tidak_memutus_sesi(): void
+    {
+        $this->actingAsRole(Role::SUPER_ADMIN);
+        $target = User::factory()->withRole(Role::SALES)->create(['department_id' => $this->department->id]);
+        $this->sesiAktif($target);
+
+        $this->put("/wms/admin/users/{$target->id}", $this->validPayload([
+            'employee_id' => $target->employee_id,
+            'email' => $target->email,
+            'full_name' => 'Nama Baru',
+            'password' => '',
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame(1, UserSession::where('user_id', $target->id)->count());
+    }
+
     public function test_tidak_dapat_menonaktifkan_akun_sendiri(): void
     {
         $actor = $this->actingAsRole(Role::SUPER_ADMIN);
@@ -337,6 +393,12 @@ class UserManagementTest extends TestCase
 
         // Nonaktifkan aktor lewat model agar hanya tersisa satu Super Admin aktif.
         $actor->update(['is_active' => false]);
+
+        // Lewat HTTP biasa aktor nonaktif sudah ditolak TrackUserSession
+        // sebelum sampai ke sini (audit keamanan). Pelacak sesinya dilepas
+        // supaya yang diuji tetap aturan Super Admin terakhir itu sendiri —
+        // pagar kedua bila suatu hari ada jalan lain menuju controller ini.
+        $this->withoutMiddleware(TrackUserSession::class);
 
         $this->patch("/wms/admin/users/{$lastActive->id}/status")
             ->assertSessionHas('error');

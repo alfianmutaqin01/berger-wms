@@ -166,10 +166,22 @@ class User extends Authenticatable
     }
 
     /**
-     * Catat satu percobaan gagal (password salah ATAU verifikasi anti-bot
-     * gagal — keduanya berbagi counter yang sama, PRD §6.1 F-AUTH-03). Mengunci
-     * akun begitu counter mencapai 3, dengan durasi yang meningkat setiap kali
-     * akun terkunci lagi setelah unlock sebelumnya (5 -> 10 -> 30 -> 60 -> 120 menit).
+     * Gagal login dari IP yang BELUM DIKENAL sebelum AKUN dikunci.
+     *
+     * Jauh di atas 3 dan itu disengaja (PRD v1.5, audit keamanan). Tiga kali
+     * gagal sudah mengunci pasangan email+IP-nya di App\Support\Auth\
+     * PenjagaLogin; ambang akun ini menahan tebak-sandi yang disebar ke banyak
+     * IP. Kalau ambangnya 3, siapa pun yang tahu email seseorang bisa mengunci
+     * akunnya dengan tiga permintaan.
+     */
+    public const AMBANG_KUNCI_AKUN = 10;
+
+    /**
+     * Catat satu kali sandi salah dari IP yang belum dikenal (PRD §6.1
+     * F-AUTH-03). Verifikasi anti-bot yang gagal TIDAK lagi dihitung — ia
+     * ditolak sebelum akun disentuh. Mengunci akun begitu counter mencapai
+     * AMBANG_KUNCI_AKUN, dengan durasi yang meningkat setiap kali akun
+     * terkunci lagi (5 -> 10 -> 30 -> 60 -> 120 menit).
      *
      * `lockout_count` sengaja TIDAK direset di sini — itu riwayat berapa kali
      * akun ini pernah terkunci, dan hanya Super Admin yang boleh menuntaskannya
@@ -180,11 +192,10 @@ class User extends Authenticatable
         /*
          * PENGHITUNG DIMULAI ULANG SETIAP PUTARAN KUNCI.
          *
-         * Tanpa ini, `failed_login_attempts` tetap 3 sesudah kuncinya habis —
-         * sehingga SATU kali salah ketik berikutnya langsung menyentuh ambang
-         * 3 dan mengunci lagi, dengan durasi yang naik terus (5 -> 10 -> 30 ->
-         * 60 -> 120 menit). PRD menulis "3 kali gagal", bukan "sekali gagal
-         * bagi siapa pun yang pernah terkunci".
+         * Tanpa ini, penghitungnya tetap di ambang sesudah kuncinya habis —
+         * sehingga SATU kali salah berikutnya langsung menyentuh ambang dan
+         * mengunci lagi, dengan durasi yang naik terus (5 -> 10 -> 30 ->
+         * 60 -> 120 menit).
          *
          * `lockout_count` TIDAK ikut direset: itu riwayat berapa kali akun ini
          * pernah terkunci, dan justru itu yang membuat durasinya meningkat
@@ -198,9 +209,9 @@ class User extends Authenticatable
 
         $this->failed_login_attempts++;
 
-        if ($this->failed_login_attempts >= 3) {
+        if ($this->failed_login_attempts >= self::AMBANG_KUNCI_AKUN) {
             $this->lockout_count++;
-            $this->locked_until = now()->addMinutes(self::lockoutDurationMinutes($this->lockout_count));
+            $this->locked_until = now()->addMinutes(self::durasiKunciMenit($this->lockout_count));
             $this->last_lockout_at = now();
         }
 
@@ -214,7 +225,8 @@ class User extends Authenticatable
         $this->save();
     }
 
-    private static function lockoutDurationMinutes(int $lockoutCount): int
+    /** Durasi kunci per tingkat — dipakai kunci akun dan kunci email+IP. */
+    public static function durasiKunciMenit(int $lockoutCount): int
     {
         return match (true) {
             $lockoutCount <= 1 => 5,

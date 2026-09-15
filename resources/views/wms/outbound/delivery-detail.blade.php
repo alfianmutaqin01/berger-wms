@@ -510,6 +510,7 @@
                      mengonfirmasi apa pun. --}}
                 @php($gagal = $note->notify_status === \App\Models\DeliveryNote::NOTIFY_FAILED)
                 @php($manual = $note->notify_status === \App\Models\DeliveryNote::NOTIFY_MANUAL)
+                @php($kedaluwarsa = $note->tautanEpodKedaluwarsa())
 
                 <div class="alert alert-{{ $gagal ? 'danger' : ($manual ? 'warning' : 'success') }} border-0 rounded-3 small">
                     <div class="fw-semibold mb-1">
@@ -518,6 +519,17 @@
                     @if($note->notify_error)
                         <div class="mb-2">{{ $note->notify_error }}</div>
                     @endif
+                    @if($kedaluwarsa)
+                        {{-- Tautan supir mati sendiri (audit keamanan). Tombol
+                             WhatsApp dan salin disembunyikan: yang dikirim lewat
+                             sana hanyalah halaman 404. --}}
+                        <div class="mb-2 text-danger fw-semibold">
+                            <i class="bi bi-clock-history me-1"></i>
+                            Tautan supir kedaluwarsa {{ $note->epod_expires_at?->translatedFormat('d M, H:i') }}. Terbitkan tautan baru bila barangnya belum dikonfirmasi sampai.
+                        </div>
+                    @elseif($note->epod_expires_at && $note->status === \App\Models\DeliveryNote::STATUS_SHIPPED)
+                        <div class="mb-2 text-muted">Tautan supir berlaku sampai {{ $note->epod_expires_at->translatedFormat('d M, H:i') }}.</div>
+                    @endif
                     @if($manual)
                         <div class="mb-2">
                             Sistem belum tersambung ke penyedia WhatsApp, jadi pesannya dikirim dari WhatsApp Anda sendiri.
@@ -525,7 +537,7 @@
                     @endif
 
                     <div class="d-flex flex-wrap gap-2 mt-2">
-                        @if($note->driver_phone)
+                        @if($note->driver_phone && ! $kedaluwarsa)
                         <a class="btn btn-sm btn-success rounded-3"
                            href="https://wa.me/{{ $note->driver_phone }}?text={{ rawurlencode($note->pesanUntukSupir()) }}"
                            target="_blank" rel="noopener">
@@ -533,16 +545,18 @@
                         </a>
                         @endif
 
+                        @unless($kedaluwarsa)
                         <button type="button" class="btn btn-sm btn-outline-secondary rounded-3" id="salinTautan"
                                 data-tautan="{{ $note->epodUrl() }}">
                             <i class="bi bi-clipboard me-1"></i> Salin tautan
                         </button>
+                        @endunless
 
-                        @if($gagal)
+                        @if($gagal || $kedaluwarsa)
                         <form method="POST" action="{{ route('wms.delivery.resend', $note) }}" class="d-inline">
                             @csrf
                             <button class="btn btn-sm btn-outline-danger rounded-3">
-                                <i class="bi bi-arrow-clockwise me-1"></i> Kirim ulang
+                                <i class="bi bi-arrow-clockwise me-1"></i> {{ $kedaluwarsa ? 'Terbitkan tautan baru' : 'Kirim ulang' }}
                             </button>
                         </form>
                         @endif

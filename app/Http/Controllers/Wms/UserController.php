@@ -169,6 +169,14 @@ class UserController extends Controller
 
         $user->update($data);
 
+        // Sandi yang direset pengelola hampir selalu berarti "akun ini
+        // dicurigai" atau "pemiliknya lupa". Pada kemungkinan pertama, sesi
+        // yang sedang berjalan adalah sesi penyusupnya — tanpa diputus di
+        // sini, ia tetap masuk dengan sandi lama sampai idle satu jam.
+        if (array_key_exists('password', $data)) {
+            $user->sessions()->delete();
+        }
+
         Activity::record(
             ActivityLog::USER_UPDATE,
             sprintf(
@@ -211,6 +219,14 @@ class UserController extends Controller
         }
 
         $user->update(['is_active' => ! $user->is_active]);
+
+        // Menonaktifkan akun tanpa memutus sesinya hanya mencegah login
+        // BERIKUTNYA: karyawan yang diberhentikan pukul 10:00 tetap bisa
+        // memindahkan stok dari HP yang masih masuk. TrackUserSession ikut
+        // menolak akun nonaktif, jadi ini lapis kedua, bukan satu-satunya.
+        if (! $user->is_active) {
+            $user->sessions()->delete();
+        }
 
         $state = $user->is_active ? 'diaktifkan' : 'dinonaktifkan';
 

@@ -60,7 +60,7 @@ class DeliveryNote extends Model
         'bc_location_code', 'shipment_date', 'status',
         'imported_at', 'imported_by',
         'driver_name', 'driver_phone', 'vehicle_plate',
-        'shipped_at', 'shipped_by', 'epod_token',
+        'shipped_at', 'shipped_by', 'epod_token', 'epod_expires_at',
         'delivered_at', 'received_by_name',
         'arrival_photo_path', 'arrival_photo_mime', 'arrival_photo_size',
         'arrival_photo_source', 'arrival_photo_taken_at',
@@ -76,6 +76,7 @@ class DeliveryNote extends Model
             'shipment_date' => 'date',
             'imported_at' => 'datetime',
             'shipped_at' => 'datetime',
+            'epod_expires_at' => 'datetime',
             'delivered_at' => 'datetime',
             'arrival_photo_taken_at' => 'datetime',
             'arrival_photo_size' => 'integer',
@@ -190,6 +191,36 @@ class DeliveryNote extends Model
     public function epodUrl(): ?string
     {
         return $this->epod_token === null ? null : url('/epod/'.$this->epod_token);
+    }
+
+    /**
+     * Tautan supir masih bisa dibuka dari luar.
+     *
+     * Satu tempat untuk halaman publik dan halaman Logistik: kalau keduanya
+     * menghitung sendiri, Logistik bisa melihat "masih berlaku" untuk tautan
+     * yang sudah dijawab 404 kepada supirnya.
+     */
+    public function tautanEpodBerlaku(): bool
+    {
+        if ($this->epod_token === null) {
+            return false;
+        }
+
+        return match ($this->status) {
+            self::STATUS_SHIPPED => $this->epod_expires_at?->isFuture() === true,
+            self::STATUS_DELIVERED => $this->delivered_at?->gt(
+                now()->subHours((int) config('wms.epod.tampil_setelah_sampai_jam'))
+            ) === true,
+            default => false,
+        };
+    }
+
+    /** Barang berangkat, tetapi tautan supirnya sudah mati sebelum dikonfirmasi. */
+    public function tautanEpodKedaluwarsa(): bool
+    {
+        return $this->status === self::STATUS_SHIPPED
+            && $this->epod_token !== null
+            && ! $this->tautanEpodBerlaku();
     }
 
     /**
