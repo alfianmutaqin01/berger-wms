@@ -278,9 +278,9 @@ class WarehouseTransfer
             'user_id' => $userId,
         ]);
 
-        // Barisnya di kertas yang dibawa operator. Rak, batch, dan tanggal
+        // Barisnya di daftar yang dibawa operator. Rak, batch, dan tanggal
         // produksinya DISALIN — kalau baris stoknya berubah setelah daftar
-        // dicetak, yang tercetak harus tetap terbaca apa adanya.
+        // terbit, isi daftarnya harus tetap terbaca apa adanya.
         $daftar->items()->create([
             'stock_transfer_detail_id' => $detail->id,
             'product_id' => $stok->product_id,

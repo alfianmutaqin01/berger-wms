@@ -148,7 +148,7 @@ class PendingAllocationFiller
      * Statusnya dibatasi pada pesanan yang SUDAH diterima tetapi BELUM
      * dipicking. Pesanan yang sudah lewat picking tidak boleh ditambahi
      * alokasi diam-diam: barangnya sudah diambil dari rak dan daftar
-     * pickingnya sudah dicetak, jadi alokasi susulan tidak akan pernah
+     * pickingnya sudah diterbitkan, jadi alokasi susulan tidak akan pernah
      * ikut terkirim.
      *
      * @return Collection<int, SalesOrderDetail>
@@ -161,9 +161,8 @@ class PendingAllocationFiller
                 ->where('warehouse_id', $warehouseId)
                 ->whereIn('status', [SalesOrder::STATUS_APPROVED, SalesOrder::STATUS_PICKING])
                 // Pesanan yang sudah masuk daftar picking TIDAK ditambahi
-                // alokasi lagi. Isi daftar dibekukan saat disusun dan sudah
-                // dicetak; alokasi susulan tidak akan pernah muncul di kertas
-                // yang dibawa operator, jadi barangnya tidak akan ikut
+                // alokasi lagi. Isi daftar dibekukan saat disusun; alokasi
+                // susulan tidak akan pernah muncul di daftar yang dibawa operator, jadi barangnya tidak akan ikut
                 // terambil — tetapi angkanya sudah terlanjur dicadangkan.
                 ->whereNull('picking_list_id'))
             ->join('sales_orders', 'sales_orders.id', '=', 'sales_order_details.sales_order_id')

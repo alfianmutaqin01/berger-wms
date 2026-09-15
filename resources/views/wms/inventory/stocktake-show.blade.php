@@ -46,9 +46,8 @@
                         <button class="btn btn-outline-secondary rounded-3">Batalkan Sesi</button>
                     </form>
                     {{-- DUA LANGKAH, bukan satu.
-                         Dulu tombol ini langsung mengesahkan sekaligus mencetak,
-                         sehingga yang menekannya mengesahkan angka yang belum
-                         pernah ia lihat berjejer. Stocktake lazim dikerjakan
+                         Pengesahan tidak ada di layar ini, supaya tidak ada yang
+                         mengesahkan angka yang belum pernah ia lihat berjejer. Stocktake lazim dikerjakan
                          beberapa orang, dan kesalahan satu orang baru kelihatan
                          saat seluruh SKU berbaris dalam satu halaman.
 

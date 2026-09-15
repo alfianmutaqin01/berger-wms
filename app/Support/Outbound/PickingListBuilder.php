@@ -21,10 +21,10 @@ use RuntimeException;
  * -------------------------
  * Isi daftar dihitung SEKALI, saat daftar dibuat, lalu disimpan sebagai baris
  * picking_list_items. Ia TIDAK dihitung ulang dari alokasi tiap kali layar
- * dibuka. Alasannya: daftar ini dicetak dan dibawa berjalan. Kalau isinya
+ * dibuka. Alasannya: daftar ini dipegang operator sambil berjalan. Kalau isinya
  * bisa berubah di belakang layar — misalnya karena stok susulan masuk dan
- * alokasi bertambah — kertas di tangan operator dan layar di kantor
- * menunjukkan dua hal berbeda, dan yang dipercaya operator adalah kertasnya.
+ * alokasi bertambah — daftar di tangan operator dan layar di kantor
+ * menunjukkan dua hal berbeda.
  *
  * PORSI YANG MENUNGGU STOK TIDAK IKUT. Baris pesanan yang disetujui melebihi
  * stok tercatat (lihat FifoAllocator) belum punya batch maupun rak; tidak ada

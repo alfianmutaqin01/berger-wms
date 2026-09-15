@@ -3,34 +3,16 @@
 @section('title', 'Laporan Stocktake '.$sesi->reference)
 @section('page_title', 'Laporan Stocktake '.$sesi->reference)
 
-@push('styles')
-<style>
-    /* Yang dicetak hanya laporannya. Sidebar, tombol, dan menu tidak punya
-       arti di atas kertas dan hanya memakan halaman. */
-    @media print {
-        .sidebar, .navbar, .btn, .alert-dismissible .btn-close, .no-print { display: none !important; }
-        .card { border: 0 !important; box-shadow: none !important; }
-        main, .main-content, body { margin: 0 !important; padding: 0 !important; }
-        table { font-size: 11px; }
-    }
-</style>
-@endpush
-
 @section('content')
 {{-- Laporan stok global hasil stocktake — PER SKU, bukan per rak.
      Yang ditanyakan pembacanya adalah "SKU ini sekarang berapa", dan
      jawabannya tidak boleh berupa daftar rak yang harus dijumlahkan sendiri.
      Rincian per raknya tetap ada di layar penghitungan. --}}
 
-<div class="no-print mb-3 d-flex flex-wrap gap-2">
+<div class="mb-3 d-flex flex-wrap gap-2">
     <a href="{{ route('wms.stocktake.index') }}" class="btn btn-sm btn-light rounded-3">
         <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar stocktake
     </a>
-    {{-- EXCEL, bukan cetak. Laporan ini dibaca untuk DICOCOKKAN: dijejerkan
-         dengan catatan gudang, disaring per SKU, dijumlahkan per kategori.
-         Lembar tercetak berisi puluhan baris tidak bisa diapa-apakan selain
-         dibaca — dan yang butuh kertas tetap bisa mencetak dari Excel,
-         sedangkan yang butuh angkanya tidak bisa mengeluarkannya dari kertas. --}}
     <a href="{{ route('wms.stocktake.report.download', $sesi) }}" class="btn btn-sm btn-success rounded-3">
         <i class="bi bi-file-earmark-excel me-1"></i> Unduh Excel
     </a>
@@ -38,7 +20,7 @@
 
 @foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
     @if(session($jenis))
-    <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} border-0 shadow-sm rounded-3 no-print" role="alert">
+    <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} border-0 shadow-sm rounded-3" role="alert">
         <i class="bi bi-{{ $ikon }} me-2"></i>{{ session($jenis) }}
     </div>
     @endif
@@ -169,12 +151,11 @@
      dikerjakan beberapa orang; kesalahan satu orang baru kelihatan saat
      seluruh SKU berbaris dalam satu halaman seperti ini.
 
-     Urutannya sekarang: hitung -> periksa laporan ini -> baru sahkan.
-     d-print-none karena ini bagian layar, bukan bagian dokumen. --}}
+     Urutannya sekarang: hitung -> periksa laporan ini -> baru sahkan. --}}
 @unless($sesi->sudahDisahkan())
     @if($sesi->sedangDihitung())
         @can(\App\Support\Permission::STOCKTAKE_MANAGE)
-        <div class="card border-0 shadow-sm rounded-4 mt-3 d-print-none">
+        <div class="card border-0 shadow-sm rounded-4 mt-3">
             <div class="card-body p-4">
                 <h6 class="fw-bold text-dark mb-2">
                     <i class="bi bi-clipboard-check text-success me-2"></i>Sudah diperiksa?
@@ -211,7 +192,7 @@
             </div>
         </div>
         @else
-        <div class="alert alert-secondary border-0 rounded-3 mt-3 d-print-none small">
+        <div class="alert alert-secondary border-0 rounded-3 mt-3 small">
             <i class="bi bi-info-circle me-1"></i>
             Laporan ini masih pratinjau. Pengesahannya wewenang Manager atau Super Admin —
             beritahu mereka setelah seluruh rak selesai dihitung.

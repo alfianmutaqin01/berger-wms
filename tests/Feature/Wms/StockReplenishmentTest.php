@@ -281,7 +281,7 @@ class StockReplenishmentTest extends TestCase
 
     /**
      * Pesanan yang sudah lewat picking TIDAK ditambahi alokasi susulan:
-     * barangnya sudah diambil dari rak dan daftar pickingnya sudah dicetak,
+     * barangnya sudah diambil dari rak dan daftar pickingnya sudah diterbitkan,
      * jadi alokasi susulan tidak akan pernah ikut terkirim.
      */
     public function test_pesanan_yang_sudah_lewat_picking_tidak_diisi_lagi(): void

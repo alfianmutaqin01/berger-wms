@@ -938,8 +938,8 @@ class StockTakeTest extends TestCase
     /**
      * Layar penghitungan TIDAK lagi punya tombol pengesahan.
      *
-     * Dulu satu tombol mengesahkan sekaligus mencetak, sehingga yang
-     * menekannya mengesahkan angka yang belum pernah ia lihat berjejer.
+     * Pengesahan dipisah dari layar penghitungan, supaya yang
+     * menekannya tidak mengesahkan angka yang belum pernah ia lihat berjejer.
      * Stocktake lazim dikerjakan beberapa orang, dan kesalahan satu orang baru
      * kelihatan saat seluruh SKU berbaris dalam satu halaman.
      */
@@ -1027,13 +1027,7 @@ class StockTakeTest extends TestCase
         return ['teks' => $teks, 'sheet' => $sheet];
     }
 
-    /**
-     * Laporannya diunduh, bukan dicetak.
-     *
-     * Ia dibaca untuk DICOCOKKAN — dijejerkan dengan catatan gudang, disaring
-     * per SKU, dijumlahkan. Lembar tercetak tidak bisa diapa-apakan selain
-     * dibaca.
-     */
+    /** Laporan stocktake bisa diunduh sebagai Excel dengan angka bertipe bilangan. */
     public function test_laporan_bisa_diunduh_sebagai_excel(): void
     {
         $this->loginAs();
@@ -1056,21 +1050,6 @@ class StockTakeTest extends TestCase
         $this->assertSame(12, $isi['sheet']->getCell('E5')->getValue());
         $this->assertSame(2, $isi['sheet']->getCell('F5')->getValue());
         $this->assertSame('n', $isi['sheet']->getCell('D5')->getDataType());
-    }
-
-    /** Tombolnya Excel, bukan cetak. */
-    public function test_layar_laporan_menawarkan_unduhan_bukan_cetak(): void
-    {
-        $this->loginAs();
-        $this->stok(10);
-        $this->bukaSesi();
-
-        $sesi = StockTake::first();
-
-        $html = $this->get(route('wms.stocktake.report', $sesi))->assertOk()->getContent();
-
-        $this->assertStringContainsString(route('wms.stocktake.report.download', $sesi), $html);
-        $this->assertStringNotContainsString('window.print()', $html);
     }
 
     /**

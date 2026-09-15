@@ -17,8 +17,6 @@ use Illuminate\Support\Facades\Schema;
  *     "Document No." milik BC, dan karena itu tidak ada urutan dokumen baru
  *     yang perlu diatur Super Admin.
  *   - Qty yang berlaku adalah qty BC, bukan qty hasil picking kami.
- *   - Kolom `printed_at`/`printed_by` pada rancangan lama tidak dipakai:
- *     yang terjadi di sini bukan pencetakan melainkan PENYALINAN.
  *
  * Peran sistem ini adalah MENDUKUNG TRANSPARANSI — mencocokkan apa yang
  * benar-benar diambil dari rak dengan apa yang tertulis di dokumen resmi,

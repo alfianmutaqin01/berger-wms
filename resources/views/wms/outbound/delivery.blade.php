@@ -7,10 +7,7 @@
 {{-- SISTEM INI TIDAK MENERBITKAN SURAT JALAN. Dokumen resminya keluar dari
      sistem BC (keputusan pemilik produk); di sini ia disalin, dicocokkan
      dengan hasil picking, lalu dinyatakan berangkat.
-
-     Karena itu tidak ada tombol "Cetak Surat Jalan" di halaman ini, dan tidak
-     ada nomor dokumen yang dibangkitkan sistem. Menyediakan tombol cetak akan
-     melahirkan dokumen kedua yang bersaing dengan dokumen resminya. --}}
+     Karena itu tidak ada nomor dokumen yang dibangkitkan sistem. --}}
 
 @foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
     @if(session($jenis))

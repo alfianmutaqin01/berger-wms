@@ -1,4 +1,4 @@
-<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm border-0 py-0 no-print">
+<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm border-0 py-0">
               <div class="container-fluid px-4">
                   
                   <button type="button" id="sidebarToggle" class="btn btn-light d-lg-none me-3 rounded-circle border-0 text-dark">

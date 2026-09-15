@@ -32,8 +32,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *      operator dari rak.
  *   3. MENYATAKAN barang berangkat, lalu mengirim tautan konfirmasi ke supir.
  *
- * Karena itu tidak ada nomor dokumen yang dibangkitkan di sini, dan tidak
- * ada tombol cetak. Perannya mendukung transparansi, bukan menerbitkan.
+ * Karena itu tidak ada nomor dokumen yang dibangkitkan di sini. Perannya mendukung transparansi, bukan menerbitkan.
  *
  * DATA CONTRACT
  * -------------

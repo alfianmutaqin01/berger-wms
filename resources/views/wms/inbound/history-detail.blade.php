@@ -6,7 +6,7 @@
 @section('content')
 <div class="row mb-4">
     <div class="col-12">
-        <div class="card shadow-sm border-0 rounded-4" id="printableArea">
+        <div class="card shadow-sm border-0 rounded-4">
             <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
                 <div>
                     <h5 class="fw-bold text-dark mb-0">
@@ -15,9 +15,6 @@
                     </h5>
                     <p class="text-muted small mt-1 mb-0">Rincian palet hasil produksi pada dokumen ini.</p>
                 </div>
-                <button class="btn btn-danger fw-bold shadow-sm d-print-none" onclick="window.print()">
-                    <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
-                </button>
             </div>
 
             <div class="card-body p-4">
@@ -99,7 +96,7 @@
                      "cari sendiri baris yang qty-nya beda" adalah cara paling
                      andal membuat selisih terlewat. --}}
                 @if($berselisih->isNotEmpty())
-                    <div class="alert alert-warning border-0 rounded-3 mb-4 d-print-none">
+                    <div class="alert alert-warning border-0 rounded-3 mb-4">
                         <h6 class="fw-bold mb-2">
                             <i class="bi bi-exclamation-diamond-fill me-1"></i>
                             {{ $berselisih->count() }} palet dihitung berbeda oleh Operator
@@ -255,7 +252,7 @@
                     </table>
                 </div>
 
-                <div class="mt-4 pt-3 border-top d-flex justify-content-between d-print-none">
+                <div class="mt-4 pt-3 border-top d-flex justify-content-between">
                     <a href="{{ route('wms.inbound.history') }}" class="btn btn-outline-secondary px-4">
                         <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat
                     </a>
@@ -266,30 +263,4 @@
     </div>
 </div>
 
-<style>
-@media print {
-    body * {
-        visibility: hidden !important;
-    }
-    #printableArea, #printableArea * {
-        visibility: visible !important;
-    }
-    #printableArea {
-        position: absolute !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 100% !important;
-        border: none !important;
-        box-shadow: none !important;
-    }
-    .d-print-none, header, .sidebar, .btn {
-        display: none !important;
-    }
-    .badge {
-        border: 1px solid #000 !important;
-        color: #000 !important;
-        background: transparent !important;
-    }
-}
-</style>
 @endsection

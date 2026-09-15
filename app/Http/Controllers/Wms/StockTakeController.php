@@ -371,9 +371,8 @@ class StockTakeController extends Controller
     /**
      * Mengesahkan laporan. INILAH yang mengubah stok.
      *
-     * Sesudahnya pengguna dibawa ke halaman laporan, yang langsung membuka
-     * dialog cetak — sesuai permintaan pemilik produk, stok terbaru berlaku
-     * bersamaan dengan terbitnya laporan itu.
+     * Sesudahnya pengguna dibawa kembali ke halaman laporan; stok terbaru
+     * berlaku bersamaan dengan disahkannya laporan itu.
      */
     public function finalize(Request $request, StockTake $stocktake): RedirectResponse
     {
@@ -423,9 +422,6 @@ class StockTakeController extends Controller
             );
         }
 
-        // Tidak lagi membuka dialog cetak sendiri. Laporannya sekarang diunduh
-        // sebagai Excel lewat tombolnya, dan berkas yang terunduh tanpa
-        // diminta adalah hal yang justru dicurigai peramban.
         return redirect()->route('wms.stocktake.report', $stocktake)
             ->with($hasil['belum'] > 0 ? 'warning' : 'success', $pesan);
     }
@@ -509,14 +505,6 @@ class StockTakeController extends Controller
 
     /**
      * Laporan stocktake sebagai berkas .xlsx.
-     *
-     * KENAPA EXCEL, BUKAN CETAK
-     * -------------------------
-     * Laporan ini dibaca untuk dicocokkan: dijejerkan dengan catatan gudang,
-     * disaring per SKU, dijumlahkan per kategori. Lembar tercetak berisi
-     * puluhan baris tidak bisa diapa-apakan selain dibaca — dan yang butuh
-     * kertas tetap bisa mencetak dari Excel, sedangkan yang butuh angkanya
-     * tidak bisa mengeluarkannya kembali dari kertas.
      *
      * PRATINJAU BOLEH DIUNDUH, TETAPI MENGAKU DI DALAM BERKASNYA
      * ----------------------------------------------------------

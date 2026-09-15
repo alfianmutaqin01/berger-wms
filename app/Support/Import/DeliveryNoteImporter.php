@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  * MENGAPA IMPOR, BUKAN DIKETIK — DAN MENGAPA BUKAN KAMI YANG MENERBITKAN
  * ---------------------------------------------------------------------
  * Surat Jalan resmi diterbitkan sistem BC (keputusan pemilik produk). Sistem
- * ini tidak mencetak dokumen apa pun; ia menyalin dokumen yang sudah terbit
+ * ini tidak menerbitkan dokumen apa pun; ia menyalin dokumen yang sudah terbit
  * supaya bisa dicocokkan dengan apa yang benar-benar diambil dari rak.
  *
  * Logistik mengunggah ekspor per hari atau per container yang akan berangkat

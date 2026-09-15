@@ -13,17 +13,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 /**
  * Menulis satu tabel menjadi berkas .xlsx yang langsung terunduh.
  *
- * KENAPA HANYA XLSX, TIDAK ADA PDF
- * --------------------------------
- * Halaman Laporan yang lama menawarkan "Unduh PDF" di tiap kartu. Keduanya
- * cuma memanggil alert(), jadi tidak ada yang hilang — tetapi PDF memang
- * bukan bentuk yang tepat untuk laporan ini. Yang mengunduh laporan penjualan
- * ingin menyaring, mengurutkan, dan mem-pivot; PDF berisi 4.000 baris tidak
- * bisa diapa-apakan selain dicetak. Yang butuh kertas bisa mencetak dari
- * Excel, sedangkan yang butuh angka tidak bisa mengeluarkannya kembali dari
- * PDF. Satu format yang benar lebih baik daripada dua yang salah satunya
- * hanya ada supaya kartunya terlihat lengkap.
- *
  * BARIS JUDUL BUKAN HIASAN
  * ------------------------
  * Tiga baris pertama memuat nama laporan, rentang tanggal, gudang, dan waktu
