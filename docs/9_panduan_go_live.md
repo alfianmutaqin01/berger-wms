@@ -1,7 +1,7 @@
 # Panduan Go-Live di VPS
 ## Sistem WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.0 — 15 September 2026
+> **Versi:** 1.1 — 15 September 2026 *(audit keamanan: SSH, pengguna basis data, cadangan terenkripsi, pipeline)*
 > **Untuk:** yang memasang sistem ini pertama kali di server, dan yang memeliharanya sesudahnya.
 > **Rujukan teknis:** `docs/6_cicd_docker_setup.md` (mengapa dan bagaimana), `docker-compose.prod.yml` (apa yang berjalan).
 
@@ -39,9 +39,45 @@ usermod -aG docker deploy
 
 # Zona waktu server
 timedatectl set-timezone Asia/Jakarta
+
+# Pembaruan keamanan OS terpasang sendiri tiap hari
+apt-get update && apt-get install -y unattended-upgrades fail2ban
+dpkg-reconfigure -f noninteractive unattended-upgrades
+systemctl enable --now fail2ban      # memblokir IP yang menebak-nebak sandi SSH
 ```
 
-**Periksa:** `docker compose version` menampilkan v2.x; `ufw status` hanya menampilkan 22, 80, 443.
+### 1a. Kunci Pintu SSH
+
+SSH adalah pintu ke seluruh server. Tebak-sandi SSH dari internet mulai dalam hitungan menit setelah VPS menyala.
+
+1. **Dari laptop Anda**, pasang kunci SSH untuk `deploy` (sandi tidak akan dipakai lagi):
+   ```bash
+   ssh-copy-id deploy@<ip-vps>
+   ssh deploy@<ip-vps>          # HARUS berhasil tanpa ditanya sandi sebelum lanjut
+   ```
+2. **Di server**, matikan login dengan sandi dan login root:
+   ```bash
+   sudo tee /etc/ssh/sshd_config.d/99-berger.conf <<'EOF'
+   PasswordAuthentication no
+   KbdInteractiveAuthentication no
+   PermitRootLogin no
+   MaxAuthTries 3
+   EOF
+   sudo sshd -t && sudo systemctl reload ssh
+   ```
+3. **Buka jendela terminal BARU** dan pastikan `ssh deploy@<ip-vps>` masih bisa masuk sebelum menutup sesi lama. Kalau gagal, sesi lama masih bisa memperbaikinya.
+
+> [!WARNING]
+> **Grup `docker` setara root.** Siapa pun yang bisa menjalankan `docker` bisa membaca seluruh isi server, termasuk `.env` dan cadangan. Hanya `deploy` yang boleh ada di grup itu, dan kunci SSH `deploy` diperlakukan seperti kunci root.
+
+**Periksa:**
+- `docker compose version` menampilkan v2.x.
+- `ufw status` hanya menampilkan 22, 80, 443.
+- `ssh root@<ip-vps>` ditolak.
+- `ssh -o PubkeyAuthentication=no deploy@<ip-vps>` ditolak tanpa menanyakan sandi.
+- `sudo fail2ban-client status sshd` menampilkan jail aktif.
+
+> Docker membuka port container **melewati** ufw. Itu sebabnya `docker-compose.prod.yml` hanya mem-publish port Caddy. Jangan menambahkan `ports:` ke layanan lain.
 
 ---
 
@@ -71,13 +107,35 @@ git checkout v1.0.0                               # selalu tag rilis, bukan caba
 
 ```bash
 cp .env.production.example .env
-chmod 600 .env
+cp .env.postgres.example .env.postgres
+chmod 600 .env .env.postgres
 nano .env
+nano .env.postgres
+mkdir -m 700 kunci-pemulihan          # kosong; dipakai hanya saat memulihkan cadangan
 ```
 
-Ganti **setiap** `<ISI>`. Bangkitkan sandi acak dengan `openssl rand -base64 32` untuk `DB_PASSWORD` dan `REDIS_PASSWORD`.
+Ganti **setiap** `<ISI>`. Bangkitkan sandi acak dengan `openssl rand -base64 32` untuk `DB_PASSWORD`, `REDIS_PASSWORD`, dan `POSTGRES_PASSWORD`. Ketiganya harus berbeda.
 
-`APP_KEY` dibangkitkan setelah image ada (langkah 5). Sampai saat itu biarkan `<ISI>`.
+**Dua pengguna basis data, dua berkas.**
+
+| Berkas | Pengguna | Dipakai oleh |
+|---|---|---|
+| `.env` → `DB_USERNAME` | Pengguna aplikasi, **bukan superuser** | php-fpm, queue, scheduler |
+| `.env.postgres` → `POSTGRES_USER` | Superuser PostgreSQL | Container `postgres` dan `backup` saja |
+
+`.env` di-mount ke container aplikasi. Kalau aplikasinya tembus, penyerang bisa membaca isinya, dan karena itulah sandi superuser tidak boleh ada di sana. Pengguna aplikasi dibuat otomatis oleh `docker/postgres/init` saat container postgres pertama kali dijalankan. Sebagai pemilik basis data biasa, ia bisa menjalankan migrasi tetapi tidak bisa membaca berkas server atau menjalankan perintah sistem.
+
+`APP_KEY` dibangkitkan setelah image ada (langkah 5). Sampai saat itu biarkan `<ISI>`. `BACKUP_KUNCI_PUBLIK` diisi di langkah 5 juga.
+
+> [!NOTE]
+> **Server yang terlanjur dipasang dengan `DB_USERNAME` superuser.** Skrip init hanya berjalan pada volume kosong. Untuk server semacam itu, buat superuser terpisah lalu turunkan hak pengguna aplikasi:
+> ```bash
+> docker compose -f docker-compose.prod.yml exec postgres psql -U <DB_USERNAME> -d <DB_DATABASE> \
+>   -c "CREATE ROLE <POSTGRES_USER> LOGIN SUPERUSER PASSWORD '<POSTGRES_PASSWORD>';"
+> docker compose -f docker-compose.prod.yml exec postgres psql -U <POSTGRES_USER> -d <DB_DATABASE> \
+>   -c "ALTER ROLE <DB_USERNAME> NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+> ```
+> `wms:cek-produksi` menandai GAGAL selama pengguna aplikasi masih superuser.
 
 > [!CAUTION]
 > `.env` berisi sandi basis data, App Password Gmail, dan kunci reCAPTCHA. Jangan dikirim lewat chat, jangan di-commit, jangan disalin ke laptop pribadi. **`APP_KEY` tidak boleh diganti** setelah ada data — sesi dan data terenkripsi menjadi tak terbaca.
@@ -92,8 +150,18 @@ docker compose -f docker-compose.prod.yml build
 # APP_KEY — salin hasilnya ke .env
 docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint php php-fpm artisan key:generate --show
 
+# Kunci cadangan — lihat kotak di bawah SEBELUM menjalankan ini
+docker compose -f docker-compose.prod.yml run --rm --no-deps backup age-keygen
+
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+> [!CAUTION]
+> **Kunci cadangan.** `age-keygen` mencetak dua baris:
+> - `# public key: age1…` → salin ke `.env` sebagai `BACKUP_KUNCI_PUBLIK`. Kunci ini tidak rahasia.
+> - `AGE-SECRET-KEY-1…` → **kunci privat**. Simpan di password manager perusahaan, dipegang minimal dua orang (mis. IT dan Manager). **Jangan disimpan di server, jangan dikirim lewat chat atau email.**
+>
+> Cadangan hanya bisa dibuka dengan kunci privat ini. **Kunci hilang berarti seluruh cadangan tidak bisa dipakai.** Setelah dicatat, bersihkan layar terminal (`clear`).
 
 **Periksa:**
 
@@ -146,15 +214,20 @@ Lalu kirim satu email uji (`docs/8_panduan_email_gmail.md` bagian uji kirim) dan
 
 ## 9. Cadangan
 
-Container `backup` membuat cadangan otomatis tiap hari setelah pukul 01:00 WIB ke `/opt/berger-wms/backups/`, dan menyimpannya 30 hari.
+Container `backup` membuat cadangan otomatis tiap hari setelah pukul 01:00 WIB ke `/opt/berger-wms/backups/`, dan menyimpannya 30 hari. Setiap berkas **dienkripsi** dengan `BACKUP_KUNCI_PUBLIK` (`*.dump.age`, `*.tgz.age`). Server hanya memegang kunci publik: penyerang yang menguasai VPS bisa menghapus cadangan, tetapi tidak bisa membaca isinya. Tanpa `BACKUP_KUNCI_PUBLIK`, container `backup` berhenti dan tidak membuat cadangan tanpa enkripsi.
 
-**Buat satu sekarang dan uji pulihkan** — cadangan yang belum pernah dicoba dipulihkan hanya harapan:
+**Buat satu sekarang dan uji pulihkan** — cadangan yang belum pernah dicoba dipulihkan hanya harapan. Uji pulih butuh kunci privat, yang ditaruh di server **hanya selama perintah ini berjalan**:
 
 ```bash
 B="docker compose -f docker-compose.prod.yml exec backup"
 $B sh /skrip/cadangkan.sh sekarang
-$B sh /skrip/pulihkan.sh $(date +%F) --uji           # harus berakhir "UJI PULIH BERHASIL."
+
+install -m 600 /dev/stdin kunci-pemulihan/cadangan.key    # tempel AGE-SECRET-KEY-1…, Enter, Ctrl+D
+$B sh /skrip/pulihkan.sh $(date +%F) --uji                 # harus berakhir "UJI PULIH BERHASIL."
+shred -u kunci-pemulihan/cadangan.key                     # WAJIB — jangan tinggalkan kuncinya
 ```
+
+Ulangi uji pulih **sebulan sekali**. Uji ini sekaligus membuktikan bahwa kunci privat di password manager masih yang benar.
 
 **Salin ke luar VPS.** Cadangan di disk yang sama tidak menolong bila VPS rusak atau terhapus. Paling sederhana, dari komputer kantor seminggu sekali:
 
@@ -162,7 +235,9 @@ $B sh /skrip/pulihkan.sh $(date +%F) --uji           # harus berakhir "UJI PULIH
 rsync -avz deploy@<ip-vps>:/opt/berger-wms/backups/ ./cadangan-berger-wms/
 ```
 
-Isi cadangan adalah data operasional lengkap (termasuk data pelanggan). Simpan di tempat yang aksesnya terbatas.
+Lebih baik lagi: object storage dengan **Object Lock / versioning** (mis. S3, Backblaze B2, Wasabi) sehingga salinan tidak bisa dihapus dari server. Tanpa itu, penyerang yang menguasai VPS bisa menghapus cadangan lokal *dan* salinan yang bisa dijangkau server.
+
+Berkasnya terenkripsi, tetapi tetap simpan di tempat yang aksesnya terbatas. Kunci privat **tidak pernah** disimpan di folder yang sama dengan cadangan.
 
 ---
 
@@ -175,13 +250,23 @@ Isi cadangan adalah data operasional lengkap (termasuk data pelanggan). Simpan d
 
 ## 11. Deploy Otomatis (setelah go-live)
 
-Di GitHub → Settings → Environments → buat `production`, isi secret:
+Di GitHub → Settings → Environments → buat `production`:
+
+1. **Required reviewers**: centang, lalu pilih minimal satu orang **selain** yang biasa membuat tag rilis. Deploy menunggu persetujuannya. Tanpa ini, siapa pun yang bisa push tag bisa memasang kode ke server produksi.
+2. **Deployment branches and tags**: batasi ke tag `v*`.
+3. Isi secret:
 
 | Secret | Isi |
 |---|---|
 | `SERVER_HOST` | IP VPS |
 | `SERVER_USER` | `deploy` |
-| `SERVER_SSH_KEY` | Private key yang public key-nya ada di `~deploy/.ssh/authorized_keys` |
+| `SERVER_SSH_KEY` | Private key **khusus pipeline** (bukan kunci laptop siapa pun). Buat dengan `ssh-keygen -t ed25519 -f berger-deploy -N ""`, tambahkan `berger-deploy.pub` ke `~deploy/.ssh/authorized_keys`, lalu hapus berkas privatnya dari laptop setelah ditempel ke GitHub |
+| `SERVER_SSH_FINGERPRINT` | Sidik jari kunci host server. Jalankan **di server** `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` dan salin bagian `SHA256:…`. Tanpanya pipeline menerima server mana pun yang menjawab di IP itu |
+
+> [!WARNING]
+> Kunci `SERVER_SSH_KEY` membuka akun `deploy`, yang ada di grup `docker` dan karena itu setara root. Batasi siapa yang boleh mengubah secret dan workflow di repositori (Settings → Collaborators, branch protection untuk `.github/`). Bila kunci ini diduga bocor, hapus barisnya dari `authorized_keys` **hari itu juga**.
+
+Action di workflow dikunci ke commit SHA, bukan tag. Dependabot mengusulkan pembaruannya lewat PR (`.github/dependabot.yml`); tinjau PR itu seperti PR kode biasa.
 
 Rilis berikutnya cukup: merge ke `main`, lalu `git tag v1.0.1 && git push origin v1.0.1`. Pipeline menjalankan test, membuat cadangan pra-deploy, membangun, migrasi, dan memeriksa `/health`. Rincian dan rollback: `docs/6_cicd_docker_setup.md` §6–7.
 
@@ -194,3 +279,4 @@ Rilis berikutnya cukup: merge ke `main`, lalu `git tag v1.0.1 && git push origin
 - [ ] Tim tahu alamat login dan cara ganti sandi
 - [ ] Satu orang ditunjuk memantau `/health` dan kotak email UptimeRobot di minggu pertama
 - [ ] Nomor tag rilis dan tanggal cadangan terakhir dicatat — itulah titik kembali bila ada masalah
+- [ ] Minimal dua orang tahu cara membuka kunci privat cadangan di password manager

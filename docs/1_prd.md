@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.4  
-> **Tanggal:** 14 September 2026 *(revisi dari v1.3, 27 Agustus 2026)*  
+> **Versi:** 1.5  
+> **Tanggal:** 15 September 2026 *(revisi dari v1.4, 14 September 2026)*  
 > **Status:** Scope go-live dikunci — menunggu UAT sign-off  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
@@ -10,6 +10,19 @@
 ---
 
 ## Riwayat Revisi
+
+### Versi 1.5 — 15 September 2026 (Audit Keamanan Pra-Go-Live)
+
+Hasil audit keamanan sebelum go-live. Setiap perubahan menutup serangan yang nyata, bukan sekadar pengetatan.
+
+| # | Perubahan | Alasan | Bagian Terdampak |
+|---|---|---|---|
+| 1 | **Kunci login dua lapis.** 3 kali gagal mengunci pasangan *email + IP* (5/10/30/60/120 menit). *Akun* baru terkunci setelah 10 kali gagal dari IP yang belum pernah dipakai pemiliknya untuk masuk; pemilik yang masuk dari IP yang biasa ia pakai tidak ikut terkunci. | Kunci per akun pada 3 kali gagal membuat siapa pun yang tahu email seseorang bisa mengunci akunnya dari luar — seluruh tim Logistik bisa dihentikan tanpa satu sandi pun bocor. | §6.1 F-AUTH-03, §8.2 |
+| 2 | **Verifikasi anti-bot yang gagal tidak lagi dihitung ke kunci akun**; ditolak sebelum akun disentuh. | Tiga POST tanpa centang cukup untuk mengunci akun mana pun. | §6.1 F-AUTH-02 |
+| 3 | **"Akun tidak aktif" hanya dijawab kepada yang tahu sandinya**; email terdaftar dan tidak terdaftar dijawab dengan pesan dan waktu yang sama. | Pesan berbeda membuat daftar email karyawan bisa dipetakan dari luar. | §6.1 F-AUTH-01 |
+| 4 | **Akun yang dinonaktifkan, atau sandinya direset pengelola, langsung keluar dari semua perangkat.** | Sebelumnya karyawan yang diberhentikan tetap bisa bekerja dari HP yang masih masuk. | §6.1 F-AUTH-04, §6.2 F-MASTER-01 |
+| 5 | **Tautan konfirmasi supir berlaku 72 jam**; setelah dikonfirmasi hanya menampilkan "sudah tercatat" selama 24 jam lalu mati. Logistik bisa menerbitkan tautan baru (tautan lama ikut mati). | Tautan tinggal di chat supir dari perusahaan lain dan menyebut nama pelanggan serta isi kiriman. | §6.5 F-OUT-04 |
+| 6 | **Pengguna basis data aplikasi bukan superuser; cadangan dienkripsi dengan kunci publik.** | Aplikasi yang tembus tidak membawa seluruh server basis data; cadangan yang tercecer tidak bisa dibaca. | §8.2, §8.3 |
 
 ### Versi 1.4 — 14 September 2026 (Scope Go-Live)
 
@@ -293,17 +306,20 @@ graph TD
 - Validasi kredensial terhadap database.
 - Jika berhasil, arahkan langsung ke portal sesuai role (lihat F-AUTH-05).
 - Jika gagal, tampilkan pesan error generik ("Email atau Password salah").
+- Pesan "Akun tidak aktif" hanya ditampilkan bila sandinya **benar**. Email yang tidak terdaftar dijawab dengan pesan dan waktu respons yang sama seperti email terdaftar *(v1.5)*.
 
 #### F-AUTH-02: Verifikasi Anti-Bot (Google reCAPTCHA)
 - Form login menampilkan widget **Google reCAPTCHA v2 ("Saya bukan robot")** berdampingan dengan kolom email/password — bukan halaman terpisah setelah password.
 - Token reCAPTCHA diverifikasi ke Google (`siteverify`) bersamaan dengan pengecekan kredensial pada request yang sama.
-- Verifikasi anti-bot gagal (token tidak valid/kedaluwarsa, atau tidak dicentang) diperlakukan sama seperti kredensial salah: masuk ke counter percobaan gagal di F-AUTH-03, dengan pesan generik yang sama.
+- Verifikasi anti-bot gagal (token tidak valid/kedaluwarsa, atau tidak dicentang) **ditolak sebelum kredensial diperiksa** dan **tidak** menaikkan counter F-AUTH-03 *(v1.5)*. Kalau dihitung, siapa pun bisa mengunci akun orang lain hanya dengan mengirim form kosong.
 - **Bukan MFA** — reCAPTCHA memverifikasi bahwa yang mengakses form adalah manusia, bukan mengonfirmasi identitas pengguna. Tidak ada faktor kedua berbasis identitas (mis. TOTP) pada versi ini.
 
 #### F-AUTH-03: Progressive Lockout
-- **Batas percobaan:** Maksimal **3 kali** salah memasukkan password/username **atau** gagal verifikasi anti-bot (F-AUTH-02) — keduanya berbagi counter yang sama.
-- **Setelah 3 kali salah:** Akun terkunci selama **5 menit**.
-- **Jika salah lagi setelah unlock:** Durasi lockout bertambah secara progresif:
+Dua lapis *(v1.5)*:
+
+- **Lapis 1 — email + IP.** **3 kali** salah sandi untuk satu email dari satu IP mengunci pasangan itu selama **5 menit**. Berlaku juga untuk email yang tidak terdaftar, supaya pesan kunci tidak membocorkan email mana yang ada. Penyerang mengunci dirinya sendiri, bukan korbannya.
+- **Lapis 2 — akun.** **10 kali** salah sandi dari IP yang **belum pernah** dipakai pemilik akun untuk masuk (30 hari terakhir) mengunci akun bagi IP asing. Pemilik akun yang masuk dari IP yang biasa ia pakai tidak ikut terkunci. Lapis ini menahan tebak-sandi yang disebar ke banyak IP.
+- **Jika salah lagi setelah kunci berakhir:** Durasi lockout (kedua lapis) bertambah secara progresif:
   - Percobaan ke-4 gagal: 10 menit
   - Percobaan ke-5 gagal: 30 menit
   - Percobaan ke-6 gagal: 60 menit
@@ -567,6 +583,7 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
   6. **SLA Timer dimulai** — argo waktu mulai berjalan dari saat ini.
   7. Notifikasi dikirim ke Sales (lonceng + email): *"Pesanan Anda sedang dalam pengiriman."*
   8. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
+  9. **Masa berlaku tautan supir** *(v1.5)*: 72 jam sejak diterbitkan. Setelah dikonfirmasi, tautan hanya menampilkan "sudah tercatat" (tanpa nama pelanggan dan isi kiriman) selama 24 jam, lalu mati. Tautan yang kedaluwarsa sebelum dikonfirmasi diganti Logistik dengan tautan baru dari halaman Surat Jalan; tautan lama tidak bisa dibuka lagi.
 
 #### F-OUT-05: Upload Bukti & Penyelesaian
 - **Proses:**
@@ -967,8 +984,10 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 |---|---|
 | Autentikasi | Email/Password + Google reCAPTCHA v2 (anti-bot) |
 | Otorisasi | RBAC via Laravel Middleware + Policy |
-| Session | 1 jam idle timeout, max 2 device |
-| Rate Limiting | 3 kali gagal (password atau anti-bot) → progressive lockout |
+| Session | 1 jam idle timeout, max 2 device. Akun nonaktif atau sandi direset pengelola → semua sesi putus |
+| Rate Limiting | POST /login 20/menit per IP; 3 kali gagal → kunci email+IP; 10 kali gagal dari IP asing → kunci akun (progresif) |
+| Tautan publik | Token acak 48–64 karakter; tautan supir berlaku 72 jam |
+| Basis data | Pengguna aplikasi bukan superuser PostgreSQL |
 | File Upload | PNG/JPG only, max 5MB, validasi MIME type |
 | CSRF Protection | Laravel CSRF Token pada semua form |
 | XSS Protection | Blade auto-escaping + Content Security Policy |
@@ -980,7 +999,7 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | Aspek | Implementasi |
 |---|---|
 | Toleransi downtime | Backup berkala (daily) sudah cukup |
-| Backup database | PostgreSQL `pg_dump` terjadwal (daily, simpan 30 hari) |
+| Backup database | PostgreSQL `pg_dump` + berkas unggahan, harian, simpan 30 hari, **terenkripsi** (age, kunci privat di luar server) |
 | Recovery | Restore dari backup terakhir |
 | Deployment | Zero-downtime deployment via Docker + CI/CD |
 

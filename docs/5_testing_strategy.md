@@ -215,11 +215,11 @@ Feature tests mengirim HTTP request ke endpoint dan memverifikasi response, data
 | # | Test | Method | URL | Expected |
 |---|---|---|---|---|
 | 1 | Login berhasil (email + password + reCAPTCHA) | POST | /login | Redirect ke dashboard sesuai role |
-| 2 | Login gagal — email salah | POST | /login | Error message, failed_login_attempts +1 |
-| 3 | Login gagal — password salah | POST | /login | Error message, failed_login_attempts +1 |
-| 4 | Login lockout setelah 3x gagal | POST | /login (x3) | Account locked 5 menit |
-| 5 | Progressive lockout | POST | /login (x4) | Locked 10 menit |
-| 6 | Verifikasi anti-bot gagal | POST | /login | Error message, counter yang sama dengan #2/#3 |
+| 2 | Login gagal — email salah | POST | /login | Pesan generik yang sama dengan sandi salah |
+| 3 | Login gagal — password salah | POST | /login | Error message, failed_login_attempts +1 (IP asing) |
+| 4 | 3x gagal dari satu IP | POST | /login (x3) | Email+IP terkunci 5 menit; akun tetap bisa masuk dari IP lain |
+| 5 | Progressive lockout | POST | /login | Kunci berikutnya 10 menit; 10x gagal dari IP asing mengunci akun |
+| 6 | Verifikasi anti-bot gagal | POST | /login | Ditolak, counter TIDAK naik |
 | 7 | *(dicadangkan)* | | | |
 | 8 | Akses halaman tanpa login | GET | /wms/dashboard/admin | Redirect ke /login |
 | 9 | *(dicadangkan — tidak ada langkah verifikasi terpisah setelah password)* | | | |
@@ -537,7 +537,7 @@ public function test_only_manager_and_super_admin_can_edit_stock()
 ```
 1. Sales coba akses URL warehouse → 403
 2. Logistik coba edit stok → 403
-3. Login salah 3 kali → akun terkunci
+3. Login salah 3 kali → terkunci dari perangkat itu; dari jaringan lain pemilik akun masih bisa masuk
 4. Login dengan kredensial + reCAPTCHA benar → berhasil
 5. Buka di device ke-3 → device pertama logout
 ```
@@ -705,9 +705,16 @@ Dicentang saat go-live. Bagian yang bisa diperiksa mesin dijalankan dengan perin
 
 ### 10.4 Cadangan
 
-- [ ] Container `backup` berjalan; berkas `backups/db/wms-<tanggal>.dump` muncul setelah pukul 01:00 WIB
-- [ ] **Uji pulih** berhasil: `sh /skrip/pulihkan.sh <tanggal> --uji`
+- [ ] Container `backup` berjalan; berkas `backups/db/wms-<tanggal>.dump.age` muncul setelah pukul 01:00 WIB
+- [ ] Kunci privat cadangan tersimpan di password manager perusahaan, dipegang minimal dua orang, **tidak** ada di server
+- [ ] **Uji pulih** berhasil dengan kunci privat itu: `sh /skrip/pulihkan.sh <tanggal> --uji`, lalu kuncinya dihapus dari server
 - [ ] Folder `backups/` disalin ke luar VPS secara berkala
+
+### 10.4a Server & Pipeline
+
+- [ ] SSH: login sandi dan login root ditolak; fail2ban dan unattended-upgrades aktif (`docs/9` §1a)
+- [ ] `.env` dan `.env.postgres` ber-mode 600; `wms:cek-produksi` menyatakan pengguna basis data **bukan superuser**
+- [ ] GitHub environment `production`: Required reviewers aktif; secret `SERVER_SSH_FINGERPRINT` terisi
 
 ### 10.5 Data Awal
 

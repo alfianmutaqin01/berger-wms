@@ -37,7 +37,8 @@ Alur yang sama sudah diuji otomatis (`tests/Feature/Alur/AlurPesananTest.php`). 
 |---|---|---|---|
 | 1.1 | Buka alamat dengan `http://` | Dialihkan ke `https://`, ada ikon gembok | ☐ |
 | 1.2 | Login tanpa mencentang "Saya bukan robot" | Ditolak | ☐ |
-| 1.3 | Login dengan sandi salah 3 kali | Akun terkunci sementara, ada keterangan waktu tunggu | ☐ |
+| 1.3 | Login dengan sandi salah 3 kali | Terkunci sementara dari perangkat itu, ada keterangan jam boleh mencoba lagi | ☐ |
+| 1.3a | Super Admin menonaktifkan akun yang sedang login di HP lain, lalu HP itu membuka menu | HP itu langsung keluar dengan pesan "Akun Anda dinonaktifkan" | ☐ |
 | 1.4 | Login benar | Masuk ke dashboard sesuai peran | ☐ |
 | 1.5 | Profil → ganti sandi | Berhasil; perangkat lain yang login ikut keluar | ☐ |
 | 1.6 | Login di perangkat ke-3 | Perangkat terlama keluar (maks. 2 perangkat) | ☐ |

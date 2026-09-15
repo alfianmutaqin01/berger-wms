@@ -535,7 +535,7 @@ sequenceDiagram
 | Redis | AOF (`appendonly yes`) | Terus-menerus | — (hanya cache, sesi, antrean) |
 | Kode | Git + tag rilis | Setiap rilis | Tanpa batas |
 
-Skrip: `docker/backup/cadangkan.sh`. Cadangan ada di disk VPS yang sama — **salin `backups/` ke luar VPS** secara berkala (lihat `docs/9_panduan_go_live.md`).
+Skrip: `docker/backup/cadangkan.sh`. Cadangan **dienkripsi** dengan kunci publik `age`; kunci privatnya disimpan di luar server, sehingga server yang dikuasai penyerang tidak bisa membaca cadangannya. Cadangan ada di disk VPS yang sama — **salin `backups/` ke luar VPS** secara berkala (lihat `docs/9_panduan_go_live.md`).
 
 ### 9.2 Recovery Procedures
 
@@ -546,7 +546,8 @@ Level 1 — Rilis bermasalah:
 
 Level 2 — Data rusak:
   → Hentikan php-fpm, queue, scheduler
-  → sh /skrip/pulihkan.sh <tanggal>  (basis data + berkas unggahan)
+  → Taruh kunci privat sementara di kunci-pemulihan/cadangan.key
+  → sh /skrip/pulihkan.sh <tanggal>  (basis data + berkas unggahan), lalu hapus kuncinya
   → Kehilangan data: sejak cadangan terakhir (maks. ±24 jam, atau sejak deploy terakhir)
 
 Level 3 — VPS hilang:

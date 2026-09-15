@@ -38,7 +38,10 @@
 | `docker/php/prod-entrypoint.sh` | Production: membangun cache config/route/view/event sebagai www-data lalu menjalankan perintahnya |
 | `docker/nginx/Dockerfile`, `default.conf`, `nginx.conf` | Nginx: berkas statis + FastCGI; IP asli dari proxy; batas laju POST /login |
 | `docker/caddy/Caddyfile` | HTTPS otomatis (Let's Encrypt) + HSTS untuk `APP_DOMAIN` |
-| `docker/backup/cadangkan.sh`, `pulihkan.sh` | Cadangan harian basis data + berkas unggahan; pemulihan dan uji pulih |
+| `docker/backup/Dockerfile`, `cadangkan.sh`, `pulihkan.sh` | Cadangan harian basis data + berkas unggahan, terenkripsi `age`; pemulihan dan uji pulih (butuh kunci privat) |
+| `docker/postgres/init/` | Membuat pengguna basis data aplikasi (bukan superuser) saat volume masih kosong |
+| `.env.postgres.example` | Superuser PostgreSQL — dibaca container postgres & backup saja, tidak di-mount ke aplikasi |
+| `.github/dependabot.yml` | Usulan pembaruan action (dikunci ke SHA) dan paket Composer |
 | `.env.example` | Template pengembangan |
 | `.env.production.example` | Template production — setiap `<ISI>` wajib diganti |
 | `.env.ci` | Lingkungan GitHub Actions (kunci reCAPTCHA dummy agar test gagal-reCAPTCHA benar-benar diuji) |
@@ -168,9 +171,13 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ```bash
 docker compose -f docker-compose.prod.yml stop php-fpm queue scheduler
+install -m 600 /dev/stdin kunci-pemulihan/cadangan.key      # tempel kunci privat dari password manager
 docker compose -f docker-compose.prod.yml exec backup sh /skrip/pulihkan.sh <YYYY-MM-DD>
+shred -u kunci-pemulihan/cadangan.key
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+Cadangan dienkripsi dengan kunci publik (`BACKUP_KUNCI_PUBLIK`); kunci privatnya sengaja tidak ada di server. Siapkan akses ke password manager **sebelum** deploy rilis yang punya migrasi berisiko.
 
 Cadangan harian dan cadangan pra-deploy pada hari yang sama menulis berkas yang sama; yang tersimpan adalah yang terakhir.
 
