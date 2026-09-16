@@ -32,6 +32,7 @@ class ProductionMaterialHolding extends Model
         'batch_no', 'production_date', 'expiry_date', 'production_area',
         'qty_received', 'qty_consumed',
         'received_at', 'received_by', 'finished_at',
+        'area_moved_at', 'area_moved_by',
     ];
 
     protected function casts(): array
@@ -43,6 +44,7 @@ class ProductionMaterialHolding extends Model
             'qty_consumed' => 'integer',
             'received_at' => 'datetime',
             'finished_at' => 'datetime',
+            'area_moved_at' => 'datetime',
         ];
     }
 
@@ -71,6 +73,12 @@ class ProductionMaterialHolding extends Model
     public function receivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'received_by');
+    }
+
+    /** Yang terakhir memindahkan material ini ke area lain. */
+    public function areaMovedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'area_moved_by');
     }
 
     public function consumptions(): HasMany

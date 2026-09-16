@@ -489,6 +489,10 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::prefix('material-produksi')->middleware('can:'.Permission::MRF_RECEIVE)->group(function () {
         Route::get('/', [ProductionMaterialController::class, 'index'])
             ->name('wms.material-produksi.index');
+        // Didaftarkan SEBELUM rute ber-{holding}: "riwayat" bukan angka, tetapi
+        // urutannya tetap dijaga supaya tidak ada yang tertangkap sebagai id.
+        Route::get('/riwayat', [ProductionMaterialController::class, 'riwayat'])
+            ->name('wms.material-produksi.riwayat');
         Route::post('/{holding}/pakai', [ProductionMaterialController::class, 'consume'])
             ->name('wms.material-produksi.consume');
         // Area yang ditulis operator saat serah terima hanya keterangan awal;

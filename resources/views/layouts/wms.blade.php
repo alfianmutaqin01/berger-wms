@@ -192,8 +192,16 @@
                                  dari stok gudang; yang tahu berapa yang benar-
                                  benar masuk mixer hari ini cuma orang di lantai
                                  produksi. --}}
-                            <li class="nav-item {{ request()->is('wms/material-produksi*') ? 'active' : '' }}">
+                            <li class="nav-item {{ request()->is('wms/material-produksi') ? 'active' : '' }}">
                                 <a href="/wms/material-produksi" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>MRF Picked</span></a>
+                            </li>
+                            {{-- Menu tersendiri, bukan lipatan di dalam MRF
+                                 Picked: daftar itu menjawab apa yang MASIH ada,
+                                 dan yang sudah habis wajar hilang dari sana.
+                                 Penelusuran berbulan-bulan kemudian bertanya
+                                 hal yang berbeda. --}}
+                            <li class="nav-item {{ request()->is('wms/material-produksi/riwayat') ? 'active' : '' }}">
+                                <a href="/wms/material-produksi/riwayat" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Pemakaian MRF</span></a>
                             </li>
                         @endcan
                     </ul>

@@ -843,6 +843,110 @@ class MaterialRequisitionTest extends TestCase
         $this->assertNotSame('Lantai 2 Tinting', $holding->refresh()->production_area);
     }
 
+    /* ================================= Siapa mengerjakan apa di Produksi */
+
+    /**
+     * Produksi bukan satu orang.
+     *
+     * Yang meminta, yang menerima, yang memindahkan, dan yang mencatat
+     * pemakaian bisa empat orang berbeda — dan pertanyaan yang muncul
+     * berbulan-bulan kemudian selalu berbentuk "siapa yang memegang ini".
+     */
+    public function test_setiap_tindakan_di_produksi_tercatat_pelakunya(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $pemindah = $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.move', $holding), ['production_area' => 'Lantai 2 Tinting']);
+
+        $pencatat = $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 10, 'note' => 'Batch pertama.']);
+
+        $holding->refresh();
+
+        $this->assertSame($pemindah->id, $holding->area_moved_by);
+        $this->assertNotNull($holding->area_moved_at);
+        $this->assertSame($pencatat->id, $holding->consumptions()->latest('id')->firstOrFail()->consumed_by);
+        // Pemindah dan pencatat memang orang yang berbeda — itu intinya.
+        $this->assertNotSame($pemindah->id, $pencatat->id);
+    }
+
+    public function test_layar_mrf_picked_menyebut_nama_pencatat_pemakaian(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $pencatat = $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 10]);
+
+        $this->get(route('wms.material-produksi.index'))
+            ->assertOk()
+            ->assertSee($pencatat->full_name);
+    }
+
+    /* ============================================= Riwayat pemakaian MRF */
+
+    /**
+     * Material yang sudah HABIS tetap bisa ditelusuri.
+     *
+     * Daftar MRF Picked menjawab "apa yang masih ada di tangan Produksi", dan
+     * baris yang habis wajar menghilang dari sana. Riwayatnya menjawab
+     * pertanyaan yang berbeda, dan jawabannya tidak boleh ikut hilang.
+     */
+    public function test_pemakaian_material_yang_sudah_habis_tetap_terbaca_di_riwayat(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $pencatat = $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 300, 'note' => 'Habis sekali jalan.']);
+
+        $this->assertNotNull($holding->refresh()->finished_at, 'Materialnya memang sudah habis.');
+
+        $this->get(route('wms.material-produksi.riwayat'))
+            ->assertOk()
+            ->assertSee('BT-2601')
+            ->assertSee($pencatat->full_name)
+            ->assertSee('Habis sekali jalan.')
+            ->assertViewHas('stats', fn (array $s) => $s['baris'] === 1 && $s['unit'] === 300);
+    }
+
+    public function test_riwayat_pemakaian_bisa_disaring_dan_menolak_tanggal_mustahil(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 50, 'note' => 'Uji warna.']);
+
+        $this->get(route('wms.material-produksi.riwayat', ['search' => 'BT-2601']))
+            ->assertOk()->assertSee('Uji warna.');
+
+        $this->get(route('wms.material-produksi.riwayat', ['search' => 'TIDAK-ADA-SKU']))
+            ->assertOk()->assertDontSee('Uji warna.');
+
+        // Tanggal mustahil diabaikan, bukan menjatuhkan halaman.
+        foreach (['2026-13-45', 'abc', "' OR 1=1 --"] as $salah) {
+            $this->get(route('wms.material-produksi.riwayat', ['dari' => $salah, 'sampai' => $salah]))
+                ->assertOk()
+                ->assertViewHas('filters', fn (array $f) => $f['dari'] === null && $f['sampai'] === null);
+        }
+    }
+
+    /** Riwayat gudang lain bukan urusan siapa pun di gudang ini. */
+    public function test_riwayat_pemakaian_gudang_lain_tidak_terbaca(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 50, 'note' => 'Uji warna.']);
+
+        $lain = Warehouse::factory()->withProduction()->create(['code' => 'WH-88']);
+        $this->loginAt(Role::PRODUCTION, $lain);
+
+        $this->get(route('wms.material-produksi.riwayat'))
+            ->assertOk()
+            ->assertDontSee('Uji warna.')
+            ->assertViewHas('stats', fn (array $s) => $s['baris'] === 0);
+    }
+
     /* ================================================== Pengajuan ulang */
 
     /** Ditolak atasan lalu diperbaiki: nomornya tetap, alurnya diulang. */
