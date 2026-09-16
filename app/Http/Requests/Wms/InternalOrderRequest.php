@@ -163,6 +163,13 @@ class InternalOrderRequest extends FormRequest
      */
     private function pastikanSalesnyaSah(Validator $validator): void
     {
+        // Aturan dasar field ini sudah gagal (bukan angka, array, dll.):
+        // mencarinya ke basis data hanya mengubah pesan validasi menjadi
+        // galat 500. Temuan SQA.
+        if ($validator->errors()->hasAny(['sales_user_id', 'warehouse_id'])) {
+            return;
+        }
+
         $gudang = $this->gudangTujuan();
         $sales = User::with('role')->find($this->input('sales_user_id'));
 
@@ -203,6 +210,13 @@ class InternalOrderRequest extends FormRequest
      */
     private function pastikanCustomerTercakup(Validator $validator): void
     {
+        // Aturan dasar field ini sudah gagal (bukan angka, array, dll.):
+        // mencarinya ke basis data hanya mengubah pesan validasi menjadi
+        // galat 500. Temuan SQA.
+        if ($validator->errors()->hasAny(['customer_id', 'warehouse_id'])) {
+            return;
+        }
+
         $gudang = Warehouse::find($this->gudangTujuan());
         $customer = Customer::find($this->input('customer_id'), ['id', 'name', 'territory_code']);
 

@@ -30,6 +30,7 @@ use App\Support\Messaging\PesanWhatsApp;
 use App\Support\Messaging\WhatsAppSender;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\Shipment;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -897,6 +898,88 @@ class ShipmentTest extends TestCase
 
         $this->travel(25)->hours();
         $this->get(route('epod.show', $token))->assertNotFound();
+    }
+
+    /** Temuan SQA: nomor HP supir berbentuk array dulu dijawab galat 500. */
+    public function test_nomor_supir_bukan_teks_dijawab_validasi(): void
+    {
+        $order = $this->pesananSudahDipicking(10, 10);
+        $note = $this->suratJalan($order, 10);
+        $this->loginAt($this->karawang);
+
+        $this->kirim($note, ['driver_phone' => ['0812', '0813']])
+            ->assertStatus(302)
+            ->assertSessionHasErrors('driver_phone');
+
+        $this->assertSame(DeliveryNote::STATUS_IMPORTED, $note->fresh()->status);
+    }
+
+    /* ------------------------- Surat jalan lama tanpa foto (temuan SQA) */
+
+    /**
+     * Surat jalan yang sudah sampai SEBELUM foto diwajibkan. Dibuat dengan
+     * trigger dimatikan sesaat, persis keadaan baris lama di basis data yang
+     * sudah berjalan.
+     */
+    private function suratJalanLamaTanpaFoto(): DeliveryNote
+    {
+        $token = $this->siapDikonfirmasi();
+        $note = DeliveryNote::where('epod_token', $token)->firstOrFail();
+
+        DB::statement('ALTER TABLE delivery_notes DISABLE TRIGGER delivery_notes_sampai_wajib_berfoto');
+        $note->forceFill([
+            'status' => DeliveryNote::STATUS_DELIVERED,
+            'delivered_at' => now()->subMonths(2),
+            'notify_status' => DeliveryNote::NOTIFY_FAILED,
+        ])->save();
+        DB::statement('ALTER TABLE delivery_notes ENABLE TRIGGER delivery_notes_sampai_wajib_berfoto');
+
+        return $note->fresh();
+    }
+
+    /**
+     * CHECK ... NOT VALID dulu memeriksa ulang baris lama pada SETIAP update,
+     * sehingga "Kirim ulang" pada surat jalan lama dijawab galat 500.
+     */
+    public function test_surat_jalan_lama_tanpa_foto_tetap_bisa_diperbarui(): void
+    {
+        $note = $this->suratJalanLamaTanpaFoto();
+        $this->loginAt($this->karawang);
+
+        $this->post(route('wms.delivery.resend', $note))->assertSessionHas('success');
+
+        // Antrean di test berjalan sinkron: status sudah bergerak dari FAILED
+        // ke hasil pengiriman berikutnya. Yang diuji: pembaruannya tidak ditolak.
+        $this->assertNotSame(DeliveryNote::NOTIFY_FAILED, $note->fresh()->notify_status);
+    }
+
+    /** Aturannya sendiri tetap dijaga basis data untuk setiap perubahan baru. */
+    public function test_basis_data_menolak_status_sampai_tanpa_foto(): void
+    {
+        $token = $this->siapDikonfirmasi();
+        $note = DeliveryNote::where('epod_token', $token)->firstOrFail();
+
+        try {
+            $note->forceFill(['status' => DeliveryNote::STATUS_DELIVERED, 'delivered_at' => now()])->save();
+            $this->fail('Status delivered tanpa foto seharusnya ditolak basis data.');
+        } catch (QueryException $e) {
+            $this->assertStringContainsString('delivery_notes_sampai_wajib_berfoto', $e->getMessage());
+        }
+    }
+
+    public function test_basis_data_menolak_foto_dihapus_dari_surat_jalan_yang_sampai(): void
+    {
+        $token = $this->siapDikonfirmasi();
+        $this->post(route('epod.confirm', $token), ['photo' => $this->fotoSampai()]);
+        $note = DeliveryNote::where('epod_token', $token)->firstOrFail();
+        $this->assertSame(DeliveryNote::STATUS_DELIVERED, $note->status);
+
+        $this->expectException(QueryException::class);
+
+        $note->forceFill([
+            'arrival_photo_path' => null, 'arrival_photo_source' => null,
+            'arrival_photo_taken_at' => null, 'arrival_photo_mime' => null, 'arrival_photo_size' => null,
+        ])->save();
     }
 
     /** Tautan baru MENGGANTI yang lama: salinan yang pernah diteruskan ikut mati. */

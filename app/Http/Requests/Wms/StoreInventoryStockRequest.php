@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Wms;
 
+use App\Http\Requests\Concerns\MembacaTeks;
 use App\Models\Location;
 use App\Models\Product;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,6 +29,8 @@ use Illuminate\Validation\Validator;
  */
 class StoreInventoryStockRequest extends FormRequest
 {
+    use MembacaTeks;
+
     /** Diisi withValidator() supaya controller tidak mencarinya lagi. */
     public ?Product $produk = null;
 
@@ -42,11 +45,9 @@ class StoreInventoryStockRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
-            'sku' => filled($this->input('sku')) ? strtoupper(trim($this->input('sku'))) : null,
-            'location_code' => filled($this->input('location_code'))
-                ? strtoupper(trim($this->input('location_code')))
-                : null,
-            'batch_no' => filled($this->input('batch_no')) ? strtoupper(trim($this->input('batch_no'))) : null,
+            'sku' => $this->teksBesar('sku'),
+            'location_code' => $this->teksBesar('location_code'),
+            'batch_no' => $this->teksBesar('batch_no'),
         ]);
     }
 

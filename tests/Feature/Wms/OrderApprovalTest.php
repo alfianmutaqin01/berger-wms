@@ -441,6 +441,25 @@ class OrderApprovalTest extends TestCase
         ])->assertSessionHasErrors('bc_so_number');
     }
 
+    /** Temuan SQA: nomor SO berbentuk array dulu menjatuhkan halaman (Array to string). */
+    public function test_nomor_so_bukan_teks_dijawab_validasi(): void
+    {
+        $this->loginAs();
+        $this->stok(50, now()->subMonth()->toDateString());
+
+        $order = $this->pesanan();
+        SalesOrderDetail::factory()->create([
+            'sales_order_id' => $order->id,
+            'product_id' => $this->produk->id,
+            'qty_ordered' => 10,
+        ]);
+
+        $this->post("/wms/outbound/approval/{$order->id}/accept", [
+            'bc_so_number' => ['SO-1', 'SO-2'],
+            'item' => [['product_id' => $this->produk->id, 'qty_approved' => 10, 'qty_ordered' => 10]],
+        ])->assertStatus(302)->assertSessionHasErrors('bc_so_number');
+    }
+
     /** Nomor SO terulang berarti pesanan ini belum benar-benar masuk BC. */
     public function test_nomor_so_yang_sudah_dipakai_ditolak(): void
     {

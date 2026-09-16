@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Support\FilterTanggal;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -39,8 +40,8 @@ class ActivityLogController extends Controller
             'action' => $request->query('action'),
             'user_id' => $request->query('user_id'),
             'warehouse_id' => $request->query('warehouse_id'),
-            'dari' => $request->query('dari'),
-            'sampai' => $request->query('sampai'),
+            'dari' => FilterTanggal::bersih($request->query('dari')),
+            'sampai' => FilterTanggal::bersih($request->query('sampai')),
         ];
 
         $logs = ActivityLog::query()

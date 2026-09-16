@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Wms;
 
+use App\Http\Requests\Concerns\MembacaTeks;
 use App\Models\Product;
 use App\Support\PackSize;
 use App\Support\PalletCapacity;
@@ -10,6 +11,8 @@ use Illuminate\Validation\Rule;
 
 class StoreProductRequest extends FormRequest
 {
+    use MembacaTeks;
+
     public function authorize(): bool
     {
         // Otorisasi ditegakkan middleware can:master.products pada route.
@@ -26,7 +29,7 @@ class StoreProductRequest extends FormRequest
         // Ukuran kemasan nominal dibaca dari nama produk ("20Ltr") bila tidak
         // diisi, karena kolom itulah dasar aturan palet — bukan unit_volume
         // yang berisi volume isi sebenarnya (pail 20 L bisa berisi 19.4 L).
-        $parsed = PackSize::parse($this->input('name'));
+        $parsed = PackSize::parse($this->teks('name'));
 
         $this->merge([
             'pack_size' => $this->normalizeDecimal($this->input('pack_size')) ?? ($parsed['size'] ?? null),
@@ -103,24 +106,24 @@ class StoreProductRequest extends FormRequest
     /** SKU boleh diketik manual (mis. saat menyalin dari ERP); bila kosong, dibentuk dari tiga kode. */
     protected function resolveSku(): ?string
     {
-        if (filled($this->input('sku'))) {
-            return strtoupper(trim($this->input('sku')));
+        if (filled($this->teks('sku'))) {
+            return $this->teksBesar('sku');
         }
 
-        if (blank($this->input('product_code')) || blank($this->input('shade_code')) || blank($this->input('pack_code'))) {
+        if (blank($this->teks('product_code')) || blank($this->teks('shade_code')) || blank($this->teks('pack_code'))) {
             return null;
         }
 
         return Product::buildSku(
-            $this->input('product_code'),
-            $this->input('shade_code'),
-            $this->input('pack_code'),
+            $this->teks('product_code'),
+            $this->teks('shade_code'),
+            $this->teks('pack_code'),
         );
     }
 
     protected function normalizeDecimal(mixed $value): ?string
     {
-        if ($value === null || $value === '') {
+        if (! is_scalar($value) || $value === '') {
             return null;
         }
 
