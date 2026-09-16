@@ -69,18 +69,44 @@
             {{-- Diberi id supaya ikut diperbarui setiap kali satu baris
                  disimpan. Angka ringkas yang diam-diam basi lebih buruk
                  daripada tidak ada angka sama sekali. --}}
+            {{-- Kartu yang punya penyaringnya sendiri dibuat BISA DIKLIK.
+                 "Ada selisih: 4" adalah pertanyaan yang belum selesai — yang
+                 ditanyakan berikutnya selalu "yang mana", dan jawabannya
+                 seharusnya satu klik, bukan menggulir seluruh gudang. --}}
             @php($kartu = [
-                ['Baris dihitung', $ringkasan['dihitung'].' / '.$ringkasan['baris'], 'primary', 'kartuDihitung'],
-                ['Cocok', $ringkasan['cocok'], 'success', 'kartuCocok'],
-                ['Ada selisih', $ringkasan['selisih'], 'danger', 'kartuSelisih'],
-                ['Belum dihitung', $ringkasan['belum'], 'secondary', 'kartuBelum'],
+                ['Baris dihitung', $ringkasan['dihitung'].' / '.$ringkasan['baris'], 'primary', 'kartuDihitung', null],
+                ['Cocok', $ringkasan['cocok'], 'success', 'kartuCocok', 'cocok'],
+                ['Ada selisih', $ringkasan['selisih'], 'danger', 'kartuSelisih', 'selisih'],
+                ['Belum dihitung', $ringkasan['belum'], 'secondary', 'kartuBelum', 'belum'],
             ])
-            @foreach($kartu as [$judul, $nilai, $warna, $id])
+            @foreach($kartu as [$judul, $nilai, $warna, $id, $saring])
+                {{-- Bentuk sebaris, sama seperti $kartu di atas. Mencampurnya
+                     dengan bentuk blok dalam satu berkas membuat Blade gagal
+                     parse, dan galatnya menunjuk baris yang tidak bersalah. --}}
+                @php($aktif = $saring !== null && $filter['hasil'] === $saring)
+                @php($kelas = 'd-block border rounded-3 p-3 text-decoration-none text-reset'
+                    .($aktif ? ' border-'.$warna.' border-2 bg-body-secondary' : ''))
                 <div class="col-6 col-lg-3">
-                    <div class="border rounded-3 p-3">
-                        <div class="text-muted small">{{ $judul }}</div>
-                        <div class="fs-5 fw-bold text-{{ $warna }}" id="{{ $id }}">{{ $nilai }}</div>
-                    </div>
+                    @if($saring === null)
+                        <div class="{{ $kelas }}">
+                            <div class="text-muted small">{{ $judul }}</div>
+                            <div class="fs-5 fw-bold text-{{ $warna }}" id="{{ $id }}">{{ $nilai }}</div>
+                        </div>
+                    @else
+                        <a class="{{ $kelas }}"
+                           title="{{ $aktif ? 'Hapus penyaring ini' : 'Tampilkan hanya baris: '.$judul }}"
+                           href="{{ route('wms.stocktake.show', ['stocktake' => $sesi] + array_filter([
+                               'rak' => $filter['rak'],
+                               'q' => $filter['q'],
+                               'hasil' => $aktif ? '' : $saring,
+                           ])) }}">
+                            <div class="text-muted small">
+                                {{ $judul }}
+                                <i class="bi bi-funnel{{ $aktif ? '-fill' : '' }} ms-1 opacity-50"></i>
+                            </div>
+                            <div class="fs-5 fw-bold text-{{ $warna }}" id="{{ $id }}">{{ $nilai }}</div>
+                        </a>
+                    @endif
                 </div>
             @endforeach
         </div>
@@ -117,24 +143,41 @@
                     @endforeach
                 </select>
             </div>
-            <div class="col-6 col-md-5">
+            {{-- PENYARING HASIL. Pertanyaan yang paling sering diajukan di
+                 tengah stocktake adalah "yang selisih itu SKU mana, rak mana"
+                 — dan tanpa penyaring, jawabannya adalah menggulir seluruh
+                 gudang sambil berharap tidak ada yang terlewat. --}}
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="filterHasil">Hasil hitungan</label>
+                <select name="hasil" id="filterHasil" class="form-select form-select-sm">
+                    <option value="">Semua hasil</option>
+                    <option value="selisih" @selected($filter['hasil'] === 'selisih')>Hanya yang ada selisih</option>
+                    <option value="cocok" @selected($filter['hasil'] === 'cocok')>Hanya yang cocok</option>
+                    <option value="belum" @selected($filter['hasil'] === 'belum')>Belum dihitung</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
                 <label class="form-label small fw-semibold text-secondary mb-1" for="filterSku">Cari SKU / nama produk</label>
                 <input type="search" name="q" id="filterSku" class="form-control form-control-sm"
                        value="{{ $filter['q'] }}" placeholder="mis. ID11 atau Apko">
             </div>
-            <div class="col-12 col-md-4 d-flex gap-2">
+            <div class="col-12 col-md-3 d-flex gap-2">
                 <button class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Terapkan</button>
-                @if($filter['rak'] !== '' || $filter['q'] !== '')
+                @if($filter['rak'] !== '' || $filter['q'] !== '' || $filter['hasil'] !== '')
                     <a href="{{ route('wms.stocktake.show', $sesi) }}" class="btn btn-sm btn-outline-secondary">Reset</a>
                 @endif
             </div>
         </form>
 
-        @if($filter['rak'] !== '' || $filter['q'] !== '')
+        @if($filter['rak'] !== '' || $filter['q'] !== '' || $filter['hasil'] !== '')
             <div class="small text-muted mt-2">
                 <i class="bi bi-info-circle me-1"></i>
                 Layar sedang disaring. Angka ringkas di atas tetap menghitung <strong>seluruh sesi</strong>,
                 bukan hanya yang tampil — supaya tidak ada yang menutup sesi karena mengira sudah selesai.
+                @if($filter['hasil'] !== '')
+                    Baris yang hitungannya diperbaiki di sini <strong>tetap tinggal</strong> sampai halaman
+                    dimuat ulang, sekalipun angkanya sudah tidak lagi masuk penyaring.
+                @endif
             </div>
         @endif
     </div>
@@ -345,7 +388,7 @@
     <div class="card shadow-sm border-0 rounded-4">
         <div class="card-body text-center py-5 text-muted">
             <i class="bi bi-inbox display-6 d-block mb-2 opacity-50"></i>
-            @if($filter['rak'] !== '' || $filter['q'] !== '')
+            @if($filter['rak'] !== '' || $filter['q'] !== '' || $filter['hasil'] !== '')
                 {{-- Dibedakan dari sesi yang memang kosong. "Tidak ada baris"
                      pada layar yang sedang disaring terbaca seperti raknya
                      memang kosong, dan orang menutup pekerjaan yang belum

@@ -1286,6 +1286,116 @@ class StockTakeTest extends TestCase
         $this->assertSame(0, StockTakeItem::where('is_found', true)->count());
     }
 
+    /* ===================================== Penyaring hasil hitungan */
+
+    /**
+     * Menyiapkan tiga baris dengan tiga nasib berbeda: selisih, cocok, dan
+     * belum dihitung.
+     *
+     * @return array{StockTake, array<string, StockTakeItem>}
+     */
+    private function tigaNasib(): array
+    {
+        $this->loginAs();
+
+        $rakB = $this->rakDi('B-02-01', 'B-02');
+        $rakC = $this->rakDi('C-01-01', 'C-01');
+
+        $this->stok(30);
+        $this->stok(20, 0, $rakB);
+        $this->stok(10, 0, $rakC);
+        $this->bukaSesi();
+
+        $baris = StockTakeItem::with('location')->get()->keyBy(fn ($i) => $i->location->code);
+
+        $this->hitung($baris['B-01-01'], 25);   // selisih -5
+        $this->hitung($baris['B-02-01'], 20);   // cocok
+        // C-01-01 sengaja tidak dihitung.
+
+        return [StockTake::firstOrFail(), $baris->all()];
+    }
+
+    /**
+     * Rak yang benar-benar tampil di daftar hitungan.
+     *
+     * Dibaca dari data view, bukan dari isi HTML: kode rak yang sama juga
+     * muncul sebagai pilihan di formulir temuan, jadi mencarinya di halaman
+     * akan selalu ketemu sekalipun barisnya sudah tersaring habis.
+     *
+     * @return list<string>
+     */
+    private function rakTampil(StockTake $sesi, array $query = []): array
+    {
+        $deret = $this->get(route('wms.stocktake.show', ['stocktake' => $sesi] + $query))
+            ->assertOk()
+            ->viewData('deret');
+
+        return collect($deret)->flatMap(fn ($perRak) => array_keys($perRak->all()))->sort()->values()->all();
+    }
+
+    public function test_penyaring_hanya_menampilkan_baris_yang_ada_selisih(): void
+    {
+        [$sesi] = $this->tigaNasib();
+
+        $this->assertSame(['B-01-01'], $this->rakTampil($sesi, ['hasil' => 'selisih']));
+    }
+
+    public function test_penyaring_cocok_dan_belum_dihitung(): void
+    {
+        [$sesi] = $this->tigaNasib();
+
+        $this->assertSame(['B-02-01'], $this->rakTampil($sesi, ['hasil' => 'cocok']));
+        $this->assertSame(['C-01-01'], $this->rakTampil($sesi, ['hasil' => 'belum']));
+        $this->assertSame(['B-01-01', 'B-02-01', 'C-01-01'], $this->rakTampil($sesi));
+    }
+
+    /** Penyaring hasil bisa dipadukan dengan penyaring deret. */
+    public function test_penyaring_selisih_bisa_dipadu_dengan_deret(): void
+    {
+        [$sesi] = $this->tigaNasib();
+
+        $this->assertSame([], $this->rakTampil($sesi, ['hasil' => 'selisih', 'rak' => 'B-02']));
+        $this->assertSame(['B-01-01'], $this->rakTampil($sesi, ['hasil' => 'selisih', 'rak' => 'B-01']));
+
+        $this->get(route('wms.stocktake.show', ['stocktake' => $sesi, 'hasil' => 'selisih', 'rak' => 'B-02']))
+            ->assertSee('Tidak ada baris yang cocok dengan penyaring ini');
+    }
+
+    /**
+     * Angka ringkas TIDAK ikut tersaring, sama seperti penyaring deret.
+     * "1 dari 3 dihitung" yang diam-diam berarti "1 dari 1 yang selisih" akan
+     * membuat orang menutup sesi yang belum selesai.
+     */
+    public function test_penyaring_hasil_tidak_mengubah_angka_ringkas(): void
+    {
+        [$sesi] = $this->tigaNasib();
+
+        $this->get(route('wms.stocktake.show', ['stocktake' => $sesi, 'hasil' => 'selisih']))
+            ->assertOk()
+            ->assertViewHas('ringkasan', fn (array $r) => $r['baris'] === 3
+                && $r['dihitung'] === 2 && $r['selisih'] === 1 && $r['belum'] === 1);
+    }
+
+    /** Nilai penyaring yang tidak dikenal diabaikan, bukan menjatuhkan halaman. */
+    public function test_penyaring_hasil_yang_tidak_dikenal_diabaikan(): void
+    {
+        [$sesi] = $this->tigaNasib();
+
+        foreach (['xyz', '1', "' OR 1=1 --"] as $salah) {
+            $this->get(route('wms.stocktake.show', ['stocktake' => $sesi, 'hasil' => $salah]))
+                ->assertOk()
+                ->assertViewHas('filter', fn (array $f) => $f['hasil'] === '');
+
+            $this->assertSame(
+                ['B-01-01', 'B-02-01', 'C-01-01'],
+                $this->rakTampil($sesi, ['hasil' => $salah]),
+                'Nilai yang tidak dikenal harus diabaikan, bukan menyaring diam-diam.',
+            );
+        }
+
+        $this->get(route('wms.stocktake.show', ['stocktake' => $sesi]).'?hasil[]=selisih')->assertOk();
+    }
+
     public function test_pembacaan_tanggal_dari_nomor_batch(): void
     {
         $this->assertSame('2026-08-01', BatchProduksi::tanggal('I126080071'));

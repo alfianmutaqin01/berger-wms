@@ -54,6 +54,15 @@ class StockTakeController extends Controller
     /** Batas saran yang dikirim ke layar. */
     private const MAKS_SARAN = 10;
 
+    /** Penyaring hasil hitungan di layar penghitungan. */
+    private const HASIL_SELISIH = 'selisih';
+
+    private const HASIL_COCOK = 'cocok';
+
+    private const HASIL_BELUM = 'belum';
+
+    private const HASIL = [self::HASIL_SELISIH, self::HASIL_COCOK, self::HASIL_BELUM];
+
     public function __construct(private readonly StockTakeRun $stocktake) {}
 
     public function index(Request $request): View
@@ -155,6 +164,10 @@ class StockTakeController extends Controller
         $filter = [
             'rak' => trim((string) $request->query('rak')),
             'q' => trim((string) $request->query('q')),
+            // Hanya tiga nilai yang dikenal; sisanya dianggap "semua".
+            'hasil' => in_array($request->query('hasil'), self::HASIL, true)
+                ? $request->query('hasil')
+                : '',
         ];
 
         $items = $stocktake->items()
@@ -162,6 +175,16 @@ class StockTakeController extends Controller
             ->when($filter['rak'] !== '', fn ($q, $ada) => $q->whereHas(
                 'location', fn ($l) => $l->where('rack', $filter['rak']),
             ))
+            // PENYARING SELISIH. Pada sesi berisi ratusan baris, yang perlu
+            // ditindaklanjuti hanya baris yang angkanya tidak cocok — dan
+            // mencarinya dengan menggulir seluruh gudang berarti ada yang
+            // terlewat. Dibandingkan di basis data, bukan di PHP, supaya
+            // penyaringnya tetap benar sekalipun barisnya ribuan.
+            ->when($filter['hasil'] === self::HASIL_SELISIH, fn ($q) => $q
+                ->whereNotNull('qty_physical')->whereColumn('qty_physical', '!=', 'qty_system'))
+            ->when($filter['hasil'] === self::HASIL_COCOK, fn ($q) => $q
+                ->whereNotNull('qty_physical')->whereColumn('qty_physical', '=', 'qty_system'))
+            ->when($filter['hasil'] === self::HASIL_BELUM, fn ($q) => $q->whereNull('qty_physical'))
             ->when($filter['q'] !== '', fn ($q) => $q->whereHas(
                 'product',
                 fn ($p) => $p->where('sku', 'ILIKE', '%'.$filter['q'].'%')
