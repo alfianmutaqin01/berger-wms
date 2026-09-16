@@ -11,6 +11,7 @@ use App\Models\StockTakeItem;
 use App\Models\Warehouse;
 use App\Support\Activity;
 use App\Support\Export\XlsxWriter;
+use App\Support\Inventory\BatchProduksi;
 use App\Support\Inventory\StockTakeRun;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -217,10 +218,14 @@ class StockTakeController extends Controller
             'location_id' => ['required', 'integer', 'exists:locations,id'],
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'batch_no' => ['required', 'string', 'max:50'],
+            // TIDAK LAGI WAJIB: tanggal produksi dibaca dari nomor batchnya
+            // sendiri (lihat BatchProduksi). Isian ini hanya jalan cadangan
+            // untuk batch lama yang tidak mengikuti pola itu.
+            //
             // Tidak boleh di masa depan: kedaluwarsa dihitung dari tanggal
             // ini, dan tanggal maju memberi umur simpan yang tidak pernah
             // dimiliki palet itu.
-            'production_date' => ['required', 'date', 'before_or_equal:'.now()->toDateString()],
+            'production_date' => ['nullable', 'date', 'before_or_equal:'.now()->toDateString()],
             'qty' => ['required', 'integer', 'min:1', 'max:1000000'],
             'note' => ['nullable', 'string', 'max:500'],
         ], [], [
@@ -231,12 +236,26 @@ class StockTakeController extends Controller
             'qty' => 'jumlah',
         ]);
 
+        // Nomor batchnya yang menentukan. Isian manual hanya dipakai kalau
+        // nomor itu memang tidak memuat tanggal — bukan untuk menimpanya,
+        // supaya tidak ada dua keterangan yang saling bertentangan tentang
+        // palet yang sama.
+        $tanggal = BatchProduksi::tanggal($data['batch_no']) ?? ($data['production_date'] ?? null);
+
+        if ($tanggal === null) {
+            return back()->withInput()->with('error', sprintf(
+                'Nomor batch %s tidak memuat tahun dan bulan produksi, jadi tanggalnya tidak bisa dibaca '.
+                'otomatis. Isi tanggal produksinya dari label palet.',
+                trim($data['batch_no']),
+            ));
+        }
+
         try {
             $item = $this->stocktake->catatTemuan($stocktake, [
                 'location_id' => (int) $data['location_id'],
                 'product_id' => (int) $data['product_id'],
                 'batch_no' => $data['batch_no'],
-                'production_date' => $data['production_date'],
+                'production_date' => $tanggal,
                 'qty' => (int) $data['qty'],
                 'note' => $data['note'] ?? null,
             ], $request->user()?->id);
@@ -265,12 +284,16 @@ class StockTakeController extends Controller
             ],
         );
 
+        // Tanggal produksinya ikut disebut. Ia dibaca otomatis dari nomor
+        // batch, dan pembacaan yang tidak pernah diperlihatkan adalah
+        // pembacaan yang tidak pernah dikoreksi kalau salah.
         return back()->with('success', sprintf(
-            'Temuan tercatat: %d unit batch %s di rak %s. Stok BELUM bertambah — barang ini baru masuk sistem '.
-            'saat laporan sesi ini disahkan, sama seperti hitungan lainnya.',
+            'Temuan tercatat: %d unit batch %s di rak %s, produksi %s. Stok BELUM bertambah — barang ini baru '.
+            'masuk sistem saat laporan sesi ini disahkan, sama seperti hitungan lainnya.',
             $item->qty_physical,
             $item->batch_no,
             $item->location?->code ?? '—',
+            $item->found_production_date?->translatedFormat('F Y') ?? '—',
         ));
     }
 
@@ -478,13 +501,26 @@ class StockTakeController extends Controller
             ->with('product:id,sku,name,uom')
             ->get()
             ->groupBy('product_id')
-            ->map(function ($isi) {
+            ->map(function ($isi) use ($stocktake) {
                 $pertama = $isi->first();
 
-                // Baris yang belum dihitung menyumbang qty_after = qty_system:
-                // stoknya memang tidak disentuh, jadi selisihnya nol dan
-                // totalnya tetap jujur.
-                $sesudah = $isi->sum(fn (StockTakeItem $i) => $i->qty_after ?? $i->qty_system);
+                // SEBELUM DISAHKAN, angka "sesudah" adalah RAMALAN dari hasil
+                // hitungan; sesudah disahkan, ia angka yang benar-benar
+                // diterapkan (qty_after).
+                //
+                // Dulu keduanya sama-sama membaca qty_after — padahal kolom itu
+                // baru terisi saat pengesahan. Akibatnya pratinjau SELALU
+                // menunjukkan sesudah = sebelum, selisih 0, dan +0/-0, bahkan
+                // ketika layar penghitungan sudah menemukan selisih. Justru di
+                // pratinjau itulah orang memeriksa sebelum menekan "Sahkan",
+                // jadi laporan yang selalu bersih membuat pemeriksaannya sia-sia.
+                //
+                // Baris yang belum dihitung tetap menyumbang qty_system: stoknya
+                // memang tidak akan disentuh, jadi selisihnya nol dan totalnya
+                // tetap jujur.
+                $sesudah = $isi->sum(fn (StockTakeItem $i) => $stocktake->sudahDisahkan()
+                    ? ($i->qty_after ?? $i->qty_system)
+                    : ($i->qty_physical ?? $i->qty_system));
                 $sebelum = $isi->sum('qty_system');
 
                 return [

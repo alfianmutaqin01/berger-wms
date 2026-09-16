@@ -58,8 +58,9 @@
             <div class="alert alert-warning border-0 rounded-3">
                 <i class="bi bi-exclamation-triangle-fill me-2"></i>
                 <strong>Ini baru pratinjau.</strong> Sesi belum disahkan, sehingga
-                <strong>stok di gudang belum berubah</strong> dan kolom "sesudah" di bawah
-                belum berlaku.
+                <strong>stok di gudang belum berubah</strong>. Kolom "sesudah" di bawah adalah
+                <strong>perkiraan</strong> — angka yang akan berlaku kalau laporan ini disahkan
+                sekarang juga.
             </div>
         @endunless
 
@@ -79,8 +80,8 @@
                 $kartu = [
                     ['SKU diperiksa', number_format(count($baris)), 'dark'],
                     ['Baris dihitung', number_format($ringkasan['dihitung']).' / '.number_format($ringkasan['baris']), 'primary'],
-                    ['Unit bertambah', '+'.number_format($naik), 'success'],
-                    ['Unit berkurang', '-'.number_format($turun), 'danger'],
+                    ['Unit bertambah'.($sesi->sudahDisahkan() ? '' : ' (perkiraan)'), '+'.number_format($naik), 'success'],
+                    ['Unit berkurang'.($sesi->sudahDisahkan() ? '' : ' (perkiraan)'), '-'.number_format($turun), 'danger'],
                 ];
             @endphp
             @foreach($kartu as [$judul, $nilai, $warna])
@@ -100,7 +101,7 @@
                         <th>SKU</th>
                         <th>Deskripsi</th>
                         <th class="text-end">Stok Sebelum</th>
-                        <th class="text-end">Stok Sesudah</th>
+                        <th class="text-end">Stok Sesudah{{ $sesi->sudahDisahkan() ? '' : ' (perkiraan)' }}</th>
                         <th class="text-end">Selisih</th>
                         <th class="text-center">Ket.</th>
                     </tr>

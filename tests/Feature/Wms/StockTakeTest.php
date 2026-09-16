@@ -13,6 +13,7 @@ use App\Models\StockTakeItem;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Inventory\BatchProduksi;
 use App\Support\Inventory\StockTakeRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -1119,5 +1120,190 @@ class StockTakeTest extends TestCase
         $this->actingAs($penyusup);
 
         $this->get(route('wms.stocktake.report.download', $sesi))->assertForbidden();
+    }
+
+    /* ================================================= Pratinjau laporan */
+
+    /*
+     * Pratinjau laporan HARUS menunjukkan selisih yang sudah ditemukan.
+     *
+     * Dulu kolom "sesudah" membaca qty_after, padahal kolom itu baru terisi
+     * saat pengesahan — jadi pratinjau selalu menunjukkan sesudah = sebelum
+     * dan selisih 0, sekalipun layar penghitungan sudah menghitung 4 baris
+     * berselisih. Justru di pratinjau itulah orang memeriksa sebelum menekan
+     * "Sahkan", dan laporan yang selalu bersih membuat pemeriksaannya sia-sia.
+     */
+    public function test_pratinjau_laporan_menunjukkan_selisih_sebelum_disahkan(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->bukaSesi();
+        $this->hitung(StockTakeItem::firstOrFail(), 25);
+
+        $baris = $this->get(route('wms.stocktake.report', StockTake::firstOrFail()))
+            ->assertOk()
+            ->viewData('baris');
+
+        $this->assertSame(30, $baris[0]['sebelum']);
+        $this->assertSame(25, $baris[0]['sesudah'], 'Pratinjau harus meramalkan hasil hitungan.');
+        $this->assertSame(-5, $baris[0]['selisih']);
+    }
+
+    /** Barang temuan adalah PENAMBAHAN, dan itu harus terbaca sejak pratinjau. */
+    public function test_pratinjau_laporan_memuat_temuan_sebagai_penambahan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $sesi = StockTake::firstOrFail();
+        $this->catatTemuan($sesi);
+        $this->hitung(StockTakeItem::where('is_found', false)->firstOrFail(), 10);
+
+        $baris = collect($this->get(route('wms.stocktake.report', $sesi))->viewData('baris'))
+            ->firstWhere('sku', 'APKO-001');
+
+        $this->assertSame(10, $baris['sebelum']);
+        $this->assertSame(50, $baris['sesudah']);
+        $this->assertSame(40, $baris['selisih']);
+    }
+
+    /**
+     * Baris yang belum dihitung menyumbang angka sistemnya, bukan nol.
+     *
+     * Kalau ia dihitung nol, pratinjau akan melaporkan kekurangan besar yang
+     * tidak pernah terjadi — dan orang mengejar barang yang sebenarnya ada di
+     * rak yang belum sempat diperiksa.
+     */
+    public function test_pratinjau_tidak_menganggap_baris_yang_belum_dihitung_sebagai_nol(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->stok(40);
+        $this->bukaSesi();
+
+        $this->hitung(StockTakeItem::orderBy('id')->firstOrFail(), 28);
+
+        $baris = $this->get(route('wms.stocktake.report', StockTake::firstOrFail()))->viewData('baris');
+
+        $this->assertSame(70, $baris[0]['sebelum']);
+        $this->assertSame(68, $baris[0]['sesudah'], '40 unit yang belum dihitung tetap dihitung utuh.');
+        $this->assertSame(-2, $baris[0]['selisih']);
+    }
+
+    /** Angka pratinjau dan angka sesudah pengesahan harus sama. */
+    public function test_angka_pratinjau_sama_dengan_angka_setelah_disahkan(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->bukaSesi();
+        $this->hitung(StockTakeItem::firstOrFail(), 25);
+
+        $sesi = StockTake::firstOrFail();
+        $pratinjau = $this->get(route('wms.stocktake.report', $sesi))->viewData('baris');
+
+        $this->post(route('wms.stocktake.finalize', $sesi));
+
+        $this->assertSame($pratinjau, $this->get(route('wms.stocktake.report', $sesi))->viewData('baris'));
+    }
+
+    /* ======================================= Tanggal produksi dari batch */
+
+    /**
+     * Nomor batch pabrik memuat tahun dan bulan produksinya: I1|26|08|0071.
+     * Selama tanggalnya diketik terpisah, dua keterangan tentang palet yang
+     * sama bisa saling bertentangan — dan yang salah justru yang menentukan
+     * kedaluwarsa serta urutan FIFO.
+     */
+    public function test_tanggal_produksi_dibaca_dari_nomor_batch(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $this->catatTemuan(StockTake::firstOrFail(), [
+            'batch_no' => 'I126080071',
+            'production_date' => null,
+        ])->assertSessionHas('success');
+
+        $this->assertSame(
+            '2026-08-01',
+            StockTakeItem::where('is_found', true)->firstOrFail()->found_production_date->toDateString(),
+        );
+    }
+
+    /** Nomor batch menang atas isian manual: satu palet, satu keterangan. */
+    public function test_nomor_batch_mengalahkan_tanggal_yang_diketik(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $this->catatTemuan(StockTake::firstOrFail(), [
+            'batch_no' => 'I126080071',
+            'production_date' => '2020-01-01',
+        ])->assertSessionHas('success');
+
+        $this->assertSame(
+            '2026-08-01',
+            StockTakeItem::where('is_found', true)->firstOrFail()->found_production_date->toDateString(),
+        );
+    }
+
+    /**
+     * Batch lama yang tidak berpola (mis. "642346774") tetap bisa dicatat
+     * lewat isian manual. Menolak barangnya sama sekali akan mengembalikan
+     * operator ke catatan kertas yang hilang.
+     */
+    public function test_batch_tak_berpola_masih_bisa_memakai_tanggal_manual(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $this->catatTemuan(StockTake::firstOrFail(), [
+            'batch_no' => '642346774',
+            'production_date' => '2026-07-05',
+        ])->assertSessionHas('success');
+
+        $this->assertSame(
+            '2026-07-05',
+            StockTakeItem::where('is_found', true)->firstOrFail()->found_production_date->toDateString(),
+        );
+    }
+
+    public function test_batch_tak_berpola_tanpa_tanggal_ditolak_dengan_alasan(): void
+    {
+        $this->loginAs();
+        $this->stok(10);
+        $this->bukaSesi();
+
+        $this->catatTemuan(StockTake::firstOrFail(), [
+            'batch_no' => '642346774',
+            'production_date' => null,
+        ])->assertSessionHas('error');
+
+        $this->assertSame(0, StockTakeItem::where('is_found', true)->count());
+    }
+
+    public function test_pembacaan_tanggal_dari_nomor_batch(): void
+    {
+        $this->assertSame('2026-08-01', BatchProduksi::tanggal('I126080071'));
+        $this->assertSame('2026-09-01', BatchProduksi::tanggal('I126090015'));
+        $this->assertSame('2026-08-01', BatchProduksi::tanggal('  i126080145  '));
+
+        foreach ([
+            '642346774',        // tanpa awalan huruf
+            'I126130071',       // bulan 13
+            'I126000071',       // bulan 00
+            'I199010001',       // 2099: masih di masa depan
+            'BT-TEMUAN',
+            'I12608',           // terlalu pendek
+            '',
+            null,
+            ['I126080071'],
+        ] as $salah) {
+            $this->assertNull(BatchProduksi::tanggal($salah), var_export($salah, true));
+        }
     }
 }

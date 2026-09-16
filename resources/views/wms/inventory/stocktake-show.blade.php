@@ -181,9 +181,21 @@
                            value="{{ old('batch_no') }}" class="form-control form-control-sm font-monospace">
                 </div>
 
+                {{-- TANGGAL PRODUKSI TIDAK DIKETIK LAGI: nomor batch sudah
+                     memuat tahun dan bulannya (I1|26|08|0071). Selama ia
+                     diketik terpisah, dua keterangan tentang palet yang sama
+                     bisa saling bertentangan — dan yang salah justru yang
+                     menentukan kedaluwarsa serta urutan FIFO.
+
+                     Hasil bacaannya DIPERLIHATKAN, bukan diam-diam dipakai.
+                     Isian manualnya hanya muncul untuk batch lama yang tidak
+                     mengikuti pola itu; menolak barangnya sama sekali akan
+                     membuat operator kembali mencatat di kertas. --}}
                 <div class="col-6 col-md-3">
-                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanTanggal">Tgl produksi <span class="text-danger">*</span></label>
-                    <input type="date" name="production_date" id="temuanTanggal" required
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanTanggal">Tgl produksi</label>
+                    <div id="temuanTanggalBaca" class="form-control form-control-sm bg-body-secondary d-none"
+                         aria-live="polite"></div>
+                    <input type="date" name="production_date" id="temuanTanggal"
                            value="{{ old('production_date') }}" max="{{ now()->toDateString() }}"
                            class="form-control form-control-sm">
                 </div>
@@ -209,8 +221,11 @@
 
                 <div class="col-12">
                     <p class="small text-muted mb-0 mt-1">
-                        <strong>Tanggal produksi dibaca dari palet</strong>, bukan hari ini — kedaluwarsanya
-                        dihitung dari situ, dan salah isi membuat barang lama justru dijual paling akhir.
+                        <strong>Tanggal produksi dibaca dari nomor batch</strong> — pada
+                        <span class="font-monospace">I1<strong>26</strong><strong>08</strong>0071</span>,
+                        <strong>26</strong> adalah tahunnya dan <strong>08</strong> bulannya, jadi tanggalnya
+                        1 Agustus 2026. Kedaluwarsa dan urutan FIFO dihitung dari situ. Kalau nomor batchnya
+                        tidak berpola seperti itu, isian tanggalnya muncul untuk diisi dari label palet.
                         Stok belum bertambah sampai laporan sesi ini disahkan.
                     </p>
                 </div>
@@ -238,8 +253,15 @@
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
+                                {{-- SKU dan deskripsi BERDAMPINGAN, bukan
+                                     bertumpuk. Ditumpuk, deskripsinya harus
+                                     dicetak kecil agar muat dan barisnya jadi
+                                     dua kali lebih tinggi — padahal layar ini
+                                     dibaca sambil berdiri di depan rak,
+                                     mencocokkan label. --}}
                                 <tr class="small text-muted">
-                                    <th>Produk</th>
+                                    <th style="width:170px">SKU</th>
+                                    <th>Deskripsi</th>
                                     <th>Batch</th>
                                     <th class="text-end">Sistem</th>
                                     <th style="width:220px">Hitungan fisik</th>
@@ -249,10 +271,8 @@
                             <tbody>
                             @foreach($baris as $item)
                                 <tr id="baris-{{ $item->id }}">
-                                    <td>
-                                        <div class="fw-semibold font-monospace small">{{ $item->product?->sku ?? '—' }}</div>
-                                        <div class="text-muted" style="font-size:.72rem">{{ $item->product?->name }}</div>
-                                    </td>
+                                    <td class="fw-semibold font-monospace small text-nowrap">{{ $item->product?->sku ?? '—' }}</td>
+                                    <td class="small">{{ $item->product?->name }}</td>
                                     <td class="font-monospace small">
                                         {{ $item->batch_no ?? '—' }}
                                         @if($item->is_found)
@@ -354,6 +374,70 @@ document.addEventListener('DOMContentLoaded', function () {
         label: function (p) { return p.teks; },
         kosong: 'SKU tidak terdaftar di Master Produk.',
     });
+
+    /*
+     * Membaca tanggal produksi dari nomor batch sambil diketik.
+     *
+     * Aturannya SAMA PERSIS dengan App\Support\Inventory\BatchProduksi di sisi
+     * server, dan servernya tetap membaca ulang sendiri — yang di sini hanya
+     * memperlihatkan hasilnya supaya operator bisa menangkap salah ketik
+     * sebelum menekan simpan. Kalau JavaScript-nya gagal dimuat, isian
+     * tanggalnya tetap terlihat dan formulirnya tetap jalan.
+     */
+    const bulanIndo = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+    function bacaTanggalBatch(nilai) {
+        const cocok = /^[A-Za-z]{1,3}\d(\d{2})(\d{2})\d{3,4}$/.exec(String(nilai).trim());
+
+        if (! cocok) {
+            return null;
+        }
+
+        const tahun = 2000 + Number(cocok[1]);
+        const bulan = Number(cocok[2]);
+
+        if (bulan < 1 || bulan > 12) {
+            return null;
+        }
+
+        const tanggal = new Date(Date.UTC(tahun, bulan - 1, 1));
+        const hariIni = new Date();
+
+        if (tanggal > hariIni) {
+            return null;
+        }
+
+        return {
+            iso: tahun + '-' + String(bulan).padStart(2, '0') + '-01',
+            label: '1 ' + bulanIndo[bulan - 1] + ' ' + tahun,
+        };
+    }
+
+    const isianBatch = document.getElementById('temuanBatch');
+    const isianTanggal = document.getElementById('temuanTanggal');
+    const bacaan = document.getElementById('temuanTanggalBaca');
+
+    function segarkanTanggal() {
+        const hasil = bacaTanggalBatch(isianBatch.value);
+
+        if (hasil === null) {
+            bacaan.classList.add('d-none');
+            isianTanggal.classList.remove('d-none');
+            isianTanggal.required = true;
+
+            return;
+        }
+
+        bacaan.textContent = hasil.label;
+        bacaan.classList.remove('d-none');
+        isianTanggal.classList.add('d-none');
+        isianTanggal.required = false;
+        isianTanggal.value = hasil.iso;
+    }
+
+    isianBatch.addEventListener('input', segarkanTanggal);
+    segarkanTanggal();
 });
 </script>
 @endcan
