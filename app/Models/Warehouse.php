@@ -129,4 +129,20 @@ class Warehouse extends Model
     {
         return "{$this->code} ({$this->name})";
     }
+
+    /**
+     * Kode gudang tanpa akhiran cabangnya: ID11_1001 -> ID11.
+     *
+     * Akhiran "_1001" sama untuk ketiga gudang, jadi ia tidak membedakan apa
+     * pun — ia hanya memperpanjang setiap baris pilihan dan mendorong nama
+     * gudangnya keluar layar pada HP. Yang dipakai orang gudang untuk menyebut
+     * cabangnya memang empat huruf di depan: ID11, ID1B, ID1I.
+     *
+     * Kode PENUH tetap dipakai di tempat yang harus cocok dengan sistem lain
+     * (impor, ekspor, dokumen) — yang dipendekkan hanya yang dibaca manusia.
+     */
+    public function getKodePendekAttribute(): string
+    {
+        return strtok((string) $this->code, '_') ?: (string) $this->code;
+    }
 }

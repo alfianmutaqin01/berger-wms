@@ -156,6 +156,14 @@ class Location extends Model
         return $query->where('is_active', true);
     }
 
+    /** Titik transit dikenali orang dari zonanya, rak biasa dari kodenya. */
+    public function getNamaSerahTerimaAttribute(): string
+    {
+        return in_array($this->zone, self::ZONES_TRANSIT, true)
+            ? (string) $this->zone
+            : (string) $this->code;
+    }
+
     /** Hanya rak transit serah terima. */
     public function scopeTransit(Builder $query): Builder
     {

@@ -542,7 +542,7 @@ class MaterialRequisitionRun
 
         $masuk = $this->wujudkanDiTanganProduksi(
             $terkunci,
-            $lokasiSerah?->zone ?? $lokasiSerah?->code ?? self::AREA_BAWAAN,
+            $lokasiSerah?->nama_serah_terima ?? self::AREA_BAWAAN,
             $userId,
         );
 

@@ -735,6 +735,34 @@ class MaterialRequisitionTest extends TestCase
      * dalam nomornya tidak pernah menjawab pertanyaan siapa pun — permintaan
      * material diajukan sekitar tiga bulan sekali.
      */
+    /**
+     * Kode gudang dipendekkan untuk yang dibaca manusia: ID11_1001 -> ID11.
+     *
+     * Akhiran "_1001" sama untuk ketiga gudang, jadi ia tidak membedakan apa
+     * pun — ia hanya mendorong nama gudangnya keluar layar pada HP.
+     */
+    public function test_kode_gudang_dipendekkan_di_formulir_mrf(): void
+    {
+        $this->karawang->update(['code' => 'ID11_1001']);
+
+        $this->loginAt(Role::SUPER_ADMIN);
+
+        $this->get(route('wms.mrf.create'))
+            ->assertOk()
+            ->assertSee('ID11')
+            ->assertDontSee('ID11_1001');
+
+        $this->assertSame('ID11', $this->karawang->refresh()->kode_pendek);
+        // Kode penuh tidak ikut berubah: ia yang dipakai impor dan ekspor.
+        $this->assertSame('ID11_1001', $this->karawang->code);
+    }
+
+    /** Gudang tanpa akhiran tetap terbaca utuh, bukan terpotong. */
+    public function test_kode_gudang_tanpa_akhiran_tidak_berubah(): void
+    {
+        $this->assertSame('WH-01', $this->karawang->kode_pendek);
+    }
+
     public function test_nomor_mrf_memakai_awalan_mrf_tanpa_tanggal(): void
     {
         $mrf = $this->ajukan(100);
@@ -787,8 +815,15 @@ class MaterialRequisitionTest extends TestCase
         );
     }
 
-    /** Operator hanya boleh menyerahkan ke salah satu dari dua titik transit. */
-    public function test_serah_terima_ke_rak_penyimpanan_ditolak(): void
+    /**
+     * Rak biasa tetap boleh dipilih, dan areanya memakai KODE raknya.
+     *
+     * Titik transit didahulukan di layar karena ke situlah barangnya hampir
+     * selalu pergi, tetapi kenyataan di lantai gudang tidak selalu begitu —
+     * dan daftar yang menolak menyebutkan tempat sebenarnya hanya melahirkan
+     * catatan yang tidak cocok dengan keadaan.
+     */
+    public function test_serah_terima_ke_rak_biasa_memakai_kode_raknya(): void
     {
         $mrf = $this->disetujuiAtasan($this->ajukan(300));
         $stok = $this->stok(500);
@@ -804,8 +839,38 @@ class MaterialRequisitionTest extends TestCase
         }
 
         $this->post(route('wms.picking.complete', $daftar), [
-            // Rak penyimpanan biasa — bukan titik serah terima.
+            // Rak penyimpanan biasa, bukan titik transit.
             'handover_location_id' => $this->rak->id,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(MaterialRequisition::STATUS_RECEIVED, $mrf->refresh()->status);
+        $this->assertSame($this->rak->id, $mrf->handover_location_id);
+        // Rak biasa disebut dengan kodenya, bukan dengan nama zonanya —
+        // "Fast Moving Area" bukan alamat yang bisa didatangi siapa pun.
+        $this->assertSame('A-01-01', ProductionMaterialHolding::firstOrFail()->production_area);
+    }
+
+    /** Rak gudang lain tetap ditolak: yang dijaga adalah batas gudangnya. */
+    public function test_serah_terima_ke_rak_gudang_lain_ditolak(): void
+    {
+        $mrf = $this->disetujuiAtasan($this->ajukan(300));
+        $stok = $this->stok(500);
+        $mrf = $this->disetujuiLogistik($mrf, $stok, 300);
+
+        $lain = Warehouse::factory()->create(['code' => 'WH-99']);
+        $rakLain = Location::factory()->create(['warehouse_id' => $lain->id, 'is_active' => true]);
+
+        $operator = $this->loginAt(Role::WAREHOUSE_OPERATOR);
+        $daftar = PickingList::findOrFail($mrf->picking_list_id);
+        $picking = app(PickingRun::class);
+
+        $picking->claim($daftar, $operator);
+        foreach ($daftar->items as $baris) {
+            $picking->pick($baris, $operator);
+        }
+
+        $this->post(route('wms.picking.complete', $daftar), [
+            'handover_location_id' => $rakLain->id,
         ])->assertSessionHasErrors('handover_location_id');
 
         $this->assertSame(MaterialRequisition::STATUS_PENDING_PICKING, $mrf->refresh()->status);

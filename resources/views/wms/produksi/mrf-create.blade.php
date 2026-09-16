@@ -91,12 +91,12 @@
                         <label class="form-label">Gudang yang diminta <span class="text-danger">*</span></label>
                         @if($gudang)
                             <input type="hidden" name="warehouse_id" value="{{ $gudang->id }}">
-                            <input type="text" class="form-control rounded-3 bg-light" value="{{ $gudang->code }} — {{ $gudang->name }}" disabled>
+                            <input type="text" class="form-control rounded-3 bg-light" value="{{ $gudang->kode_pendek }}" disabled>
                         @else
                             <select name="warehouse_id" class="form-select rounded-3" required>
                                 <option value="">Pilih gudang…</option>
                                 @foreach($gudangOptions as $g)
-                                    <option value="{{ $g->id }}" @selected(old('warehouse_id') == $g->id)>{{ $g->code }} — {{ $g->name }}</option>
+                                    <option value="{{ $g->id }}" @selected(old('warehouse_id') == $g->id)>{{ $g->kode_pendek }}</option>
                                 @endforeach
                             </select>
                         @endif

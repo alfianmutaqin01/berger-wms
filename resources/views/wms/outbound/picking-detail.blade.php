@@ -157,21 +157,31 @@
                      tempat. Menekan tombol ini memindahkan kepemilikannya ke
                      Produksi seketika, tanpa konfirmasi susulan dari sana.
 
-                     Pilihannya hanya dua titik transit. Rak penyimpanan tidak
-                     ditawarkan: barang ini sudah bukan stok gudang, dan
-                     menaruhnya kembali di denah membuat put-away berikutnya
-                     menumpuk barang baru di atasnya. --}}
+                     Dua titik transit berdiri paling atas karena ke situlah
+                     barangnya hampir selalu pergi; rak lain tetap bisa dipilih
+                     kalau kenyataannya memang berbeda. --}}
                 <form method="POST" action="{{ route('wms.picking.complete', $list) }}" id="formSelesai"
                       class="d-flex flex-wrap gap-2 align-items-end"
                       onsubmit="return confirm('Serahkan daftar ini ke Produksi? Stok di rak berkurang dan barangnya LANGSUNG tercatat atas nama Produksi — tidak ada konfirmasi susulan.');">
                     @csrf
                     <div>
                         <label class="form-label small text-muted mb-1">Diserahkan ke</label>
+                        @php($transit = $rakSerah->whereIn('zone', \App\Models\Location::ZONES_TRANSIT))
                         <select name="handover_location_id" class="form-select rounded-3" required style="min-width:200px">
                             <option value="">Pilih tempat…</option>
-                            @foreach($rakSerah as $rak)
-                                <option value="{{ $rak->id }}">{{ $rak->zone ?? $rak->code }}</option>
-                            @endforeach
+                            {{-- Dua kelompok, bukan satu daftar panjang: yang
+                                 lazim dipilih tidak boleh tenggelam di antara
+                                 ribuan kode rak. --}}
+                            <optgroup label="Titik serah terima">
+                                @foreach($transit as $rak)
+                                    <option value="{{ $rak->id }}">{{ $rak->zone }}</option>
+                                @endforeach
+                            </optgroup>
+                            <optgroup label="Rak gudang">
+                                @foreach($rakSerah->whereNotIn('id', $transit->pluck('id')) as $rak)
+                                    <option value="{{ $rak->id }}">{{ $rak->code }}</option>
+                                @endforeach
+                            </optgroup>
                         </select>
                     </div>
                     <div class="flex-grow-1" style="min-width:180px">

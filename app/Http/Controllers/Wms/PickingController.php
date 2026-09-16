@@ -225,14 +225,15 @@ class PickingController extends Controller
                 && $list->claimed_by !== $request->user()?->id
                 && Gate::allows(Permission::OUTBOUND_PICKING_LIST),
             /*
-             | Rak yang boleh dipilih sebagai tempat serah terima MRF.
+             | Tempat yang boleh dipilih sebagai titik serah terima MRF.
              |
-             | HANYA RAK TRANSIT — dua pilihan, bukan seluruh denah gudang.
-             | Barang MRF yang sudah turun dari rak bukan lagi stok gudang; ia
-             | menunggu di titik serah terima sampai Produksi membawanya.
-             | Menawarkan rak penyimpanan di sini membuat barang yang sudah
-             | berpindah tangan tercatat seolah masih tersimpan, dan rak itu
-             | tetap ditawarkan untuk put-away barang baru.
+             | RAK TRANSIT DIDAHULUKAN, bukan disendirikan. Barang MRF hampir
+             | selalu berhenti di salah satu dari dua titik transit, jadi
+             | keduanya berdiri paling atas dan tidak perlu dicari. Tetapi
+             | kenyataan di lantai gudang tidak selalu begitu — kadang barangnya
+             | memang dititipkan di rak biasa — dan daftar yang menolak
+             | menyebutkan tempat sebenarnya hanya melahirkan catatan yang
+             | tidak cocok dengan keadaan.
              |
              | Hanya dimuat untuk daftar MRF: pada daftar pesanan dan transfer
              | barangnya naik kendaraan, dan daftar rak yang tidak pernah
@@ -240,7 +241,10 @@ class PickingController extends Controller
              */
             'rakSerah' => $list->requisition()->exists()
                 ? Location::where('warehouse_id', $list->warehouse_id)
-                    ->active()->transit()->orderBy('zone')->get(['id', 'code', 'zone'])
+                    ->active()
+                    ->orderByRaw('CASE WHEN zone IN (?, ?) THEN 0 ELSE 1 END', Location::ZONES_TRANSIT)
+                    ->orderBy('code')
+                    ->get(['id', 'code', 'zone'])
                 : collect(),
         ]);
     }
@@ -406,19 +410,17 @@ class PickingController extends Controller
             $data = $request->validate([
                 'handover_location_id' => [
                     'required', 'integer',
-                    // Dibatasi ke rak transit di sisi server juga, bukan hanya
-                    // di dropdown: id rak penyimpanan yang dikirim langsung
-                    // lewat permintaan HTTP akan menempatkan barang yang sudah
-                    // berpindah tangan kembali ke denah gudang.
+                    // Rak mana pun di gudang ini, asal aktif. Yang dijaga di
+                    // sini cuma satu: tempatnya benar-benar ada dan milik
+                    // gudang yang sama.
                     Rule::exists('locations', 'id')
                         ->where('warehouse_id', $list->warehouse_id)
-                        ->where('is_active', true)
-                        ->whereIn('zone', Location::ZONES_TRANSIT),
+                        ->where('is_active', true),
                 ],
                 'handover_note' => ['nullable', 'string', 'max:500'],
             ], [
                 'handover_location_id.required' => 'Pilih dulu tempat barang ini ditaruh — Produksi perlu tahu harus mengambilnya ke mana.',
-                'handover_location_id.exists' => 'Pilih In-Transit Produksi atau In-Transit Logistik.',
+                'handover_location_id.exists' => 'Tempat yang dipilih tidak ada atau tidak aktif di gudang ini.',
             ], ['handover_location_id' => 'tempat serah terima']);
 
             $rakSerah = (int) $data['handover_location_id'];
@@ -482,9 +484,10 @@ class PickingController extends Controller
     private function selesaiMrf(MaterialRequisition $mrf, PickingList $list, array $hasil): RedirectResponse
     {
         $mrf->load('handoverLocation:id,code,zone');
-        // Zona yang dibaca orang ("In-Transit Produksi"), bukan kode raknya —
-        // yang membaca pesan ini Produksi, bukan operator yang tahu denah.
-        $rak = $mrf->handoverLocation?->zone ?? $mrf->handoverLocation?->code ?? '—';
+        // Titik transit disebut dengan namanya ("In-Transit Produksi"), rak
+        // biasa dengan kodenya — yang membaca pesan ini Produksi, bukan
+        // operator yang hafal denah.
+        $rak = $mrf->handoverLocation?->nama_serah_terima ?? '—';
 
         Activity::record(
             ActivityLog::PICKING_RELEASE,
