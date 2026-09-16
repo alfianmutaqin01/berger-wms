@@ -61,9 +61,11 @@ class MaterialRequisitionTest extends TestCase
         $this->rak = Location::factory()->create([
             'warehouse_id' => $this->karawang->id, 'code' => 'A-01-01', 'is_active' => true,
         ]);
-        $this->rakSerah = Location::factory()->create([
-            'warehouse_id' => $this->karawang->id, 'code' => 'I-01-01', 'is_active' => true,
-        ]);
+        // Titik serah terima MRF selalu rak transit, bukan rak penyimpanan —
+        // keduanya dibuat sendiri untuk tiap gudang baru.
+        $this->rakSerah = Location::where('warehouse_id', $this->karawang->id)
+            ->where('zone', Location::ZONE_TRANSIT_PRODUKSI)
+            ->firstOrFail();
 
         $this->produk = Product::factory()->create(['sku' => 'APKO-001', 'uom' => 'PAIL', 'is_active' => true]);
     }
@@ -89,6 +91,32 @@ class MaterialRequisitionTest extends TestCase
 
         $this->withUnencryptedCookies(['device_token' => $token]);
         $this->withCredentials();
+        $this->actingAs($user);
+
+        return $user;
+    }
+
+    /**
+     * Masuk sebagai pengguna yang SUDAH ada — biasanya pemohon MRF-nya.
+     *
+     * loginAt() selalu membuat orang baru, dan perbaikan MRF hanya boleh
+     * dikerjakan pemohonnya sendiri.
+     */
+    private function masukSebagai(int $userId): User
+    {
+        $user = User::findOrFail($userId);
+        $token = Str::random(64);
+
+        UserSession::create([
+            'user_id' => $user->id,
+            'session_id' => $token,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'PHPUnit',
+            'last_activity_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->withUnencryptedCookies(['device_token' => $token]);
         $this->actingAs($user);
 
         return $user;
@@ -405,7 +433,11 @@ class MaterialRequisitionTest extends TestCase
 
         $mrf = $this->pickingSelesai($mrf);
 
-        $this->assertSame(MaterialRequisition::STATUS_READY_FOR_PICKUP, $mrf->status);
+        // LANGSUNG DITERIMA. Serah terima di layar operator terjadi bersamaan
+        // dengan serah terima sungguhan di lantai gudang, jadi di situlah
+        // kepemilikannya berpindah — tidak ada lagi konfirmasi susulan yang
+        // harus ditekan seseorang di Produksi untuk barang yang sudah dibawa.
+        $this->assertSame(MaterialRequisition::STATUS_RECEIVED, $mrf->status);
         $this->assertSame($this->rakSerah->id, $mrf->handover_location_id);
 
         $stok->refresh();
@@ -467,17 +499,22 @@ class MaterialRequisitionTest extends TestCase
 
     /* -------------------------------------------------- Penerimaan & pakai */
 
-    public function test_produksi_menerima_dan_barangnya_pindah_ke_buku_produksi(): void
+    /**
+     * Serah terima operator LANGSUNG melahirkan baris di buku Produksi.
+     *
+     * Dulu barangnya menggantung di "siap diambil" sampai seseorang di
+     * Produksi membuka WMS dan menekan Diterima — langkah yang dikerjakan di
+     * depan layar, jauh dari barang yang sudah berpindah tangan di lantai
+     * gudang. Yang terjadi kemudian selalu sama: barangnya sudah dibawa,
+     * tombolnya tidak pernah ditekan, dan buku Produksi kosong sementara stok
+     * gudang sudah berkurang.
+     */
+    public function test_serah_terima_langsung_memindahkan_barang_ke_buku_produksi(): void
     {
         $mrf = $this->disetujuiAtasan($this->ajukan(300));
         $stok = $this->stok(500);
         $mrf = $this->disetujuiLogistik($mrf, $stok, 300);
         $mrf = $this->pickingSelesai($mrf);
-
-        $this->loginAt(Role::PRODUCTION);
-
-        $this->post(route('wms.mrf.receive', $mrf), ['production_area' => 'I-01-01'])
-            ->assertRedirect(route('wms.material-produksi.index'));
 
         $this->assertSame(MaterialRequisition::STATUS_RECEIVED, $mrf->refresh()->status);
 
@@ -485,13 +522,15 @@ class MaterialRequisitionTest extends TestCase
 
         $this->assertSame(300, $holding->qty_received);
         $this->assertSame(0, $holding->qty_consumed);
-        $this->assertSame('I-01-01', $holding->production_area);
+        // Area awalnya dibaca dari titik serah terima yang dipilih operator —
+        // keterangan pembuka yang boleh dipindahkan sendiri oleh Produksi.
+        $this->assertSame(Location::ZONE_TRANSIT_PRODUKSI, $holding->production_area);
         $this->assertSame('BT-2601', $holding->batch_no);
         $this->assertNull($holding->finished_at);
 
-        // TIDAK ADA MUTASI BARU saat diterima: stoknya sudah berkurang waktu
-        // operator menekan Siap Loading. Mutasi kedua akan mengurangi barang
-        // yang sama untuk kedua kalinya.
+        // TIDAK ADA MUTASI BARU saat kepemilikannya berpindah: stoknya sudah
+        // berkurang waktu barangnya turun dari rak. Mutasi kedua akan
+        // mengurangi barang yang sama untuk kedua kalinya.
         $this->assertSame(1, StockMovement::where('reference_type', StockMovement::REF_MATERIAL_REQUISITION)
             ->where('movement_type', StockMovement::TYPE_PRODUCTION_OUT)
             ->count());
@@ -608,7 +647,7 @@ class MaterialRequisitionTest extends TestCase
             'reason' => 'Ternyata tidak jadi dipakai.',
         ])->assertSessionHas('error');
 
-        $this->assertSame(MaterialRequisition::STATUS_READY_FOR_PICKUP, $mrf->refresh()->status);
+        $this->assertSame(MaterialRequisition::STATUS_RECEIVED, $mrf->refresh()->status);
     }
 
     public function test_daftar_picking_mrf_tidak_bisa_dibubarkan_dari_layar_batching(): void
@@ -680,11 +719,222 @@ class MaterialRequisitionTest extends TestCase
         $mrf = $this->disetujuiAtasan($this->ajukan($qty));
         $stok = $this->stok($qty + 200);
         $mrf = $this->disetujuiLogistik($mrf, $stok, $qty);
-        $mrf = $this->pickingSelesai($mrf);
-
-        $this->loginAt(Role::PRODUCTION);
-        $this->post(route('wms.mrf.receive', $mrf), ['production_area' => 'I-01-01']);
+        // Serah terima operator sudah memindahkan kepemilikannya; tidak ada
+        // lagi tombol Diterima yang perlu ditekan Produksi.
+        $this->pickingSelesai($mrf);
 
         return ProductionMaterialHolding::latest('id')->firstOrFail();
+    }
+
+    /* ==================================================== Nomor dokumen */
+
+    /**
+     * MRF{YYMM}{urut}, bukan MR{YYMMDD}{urut}.
+     *
+     * Dokumen ini disebut MRF oleh semua orang yang memakainya, dan tanggal di
+     * dalam nomornya tidak pernah menjawab pertanyaan siapa pun — permintaan
+     * material diajukan sekitar tiga bulan sekali.
+     */
+    public function test_nomor_mrf_memakai_awalan_mrf_tanpa_tanggal(): void
+    {
+        $mrf = $this->ajukan(100);
+
+        $this->assertMatchesRegularExpression('/^MRF\d{4}\d{3}$/', $mrf->mrf_number);
+        $this->assertSame('MRF'.now()->format('ym').'001', $mrf->mrf_number);
+    }
+
+    public function test_nomor_mrf_kedua_di_bulan_yang_sama_tidak_berebut(): void
+    {
+        $pertama = $this->ajukan(100);
+        $kedua = $this->ajukan(150);
+
+        $this->assertSame('MRF'.now()->format('ym').'001', $pertama->mrf_number);
+        $this->assertSame('MRF'.now()->format('ym').'002', $kedua->mrf_number);
+    }
+
+    /* ============================================ Serah terima ke transit */
+
+    /** Gudang baru lahir dengan kedua titik serah terimanya. */
+    public function test_gudang_baru_langsung_punya_rak_transit(): void
+    {
+        $baru = Warehouse::factory()->create(['code' => 'WH-77']);
+
+        $this->assertSame(
+            [Location::ZONE_TRANSIT_LOGISTIK, Location::ZONE_TRANSIT_PRODUKSI],
+            Location::where('warehouse_id', $baru->id)->transit()->orderBy('zone')->pluck('zone')->all(),
+        );
+    }
+
+    /**
+     * Rak transit tidak boleh muncul di layar yang menempatkan stok.
+     *
+     * Barang di sana sudah bukan milik gudang; menawarkannya untuk put-away
+     * akan menumpuk barang baru di atas barang yang sedang berpindah tangan.
+     */
+    public function test_rak_transit_tidak_ikut_pilihan_rak_penyimpanan(): void
+    {
+        $transit = Location::where('warehouse_id', $this->karawang->id)->transit()->pluck('id');
+
+        $this->assertNotEmpty($transit);
+        $this->assertEmpty(
+            Location::penyimpanan()->whereIn('id', $transit)->pluck('id')->all(),
+            'Rak transit tidak boleh lolos scope penyimpanan.',
+        );
+        $this->assertContains(
+            $this->rak->id,
+            Location::penyimpanan()->pluck('id')->all(),
+            'Rak penyimpanan biasa harus tetap ada.',
+        );
+    }
+
+    /** Operator hanya boleh menyerahkan ke salah satu dari dua titik transit. */
+    public function test_serah_terima_ke_rak_penyimpanan_ditolak(): void
+    {
+        $mrf = $this->disetujuiAtasan($this->ajukan(300));
+        $stok = $this->stok(500);
+        $mrf = $this->disetujuiLogistik($mrf, $stok, 300);
+
+        $operator = $this->loginAt(Role::WAREHOUSE_OPERATOR);
+        $daftar = PickingList::findOrFail($mrf->picking_list_id);
+        $picking = app(PickingRun::class);
+
+        $picking->claim($daftar, $operator);
+        foreach ($daftar->items as $baris) {
+            $picking->pick($baris, $operator);
+        }
+
+        $this->post(route('wms.picking.complete', $daftar), [
+            // Rak penyimpanan biasa — bukan titik serah terima.
+            'handover_location_id' => $this->rak->id,
+        ])->assertSessionHasErrors('handover_location_id');
+
+        $this->assertSame(MaterialRequisition::STATUS_PENDING_PICKING, $mrf->refresh()->status);
+    }
+
+    /* ================================================= Pindah area produksi */
+
+    public function test_produksi_memindahkan_materialnya_ke_area_lain(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $this->loginAt(Role::PRODUCTION);
+
+        $this->post(route('wms.material-produksi.move', $holding), [
+            'production_area' => 'Lantai 2 Tinting',
+        ])->assertSessionHas('success');
+
+        $this->assertSame('Lantai 2 Tinting', $holding->refresh()->production_area);
+        // Yang pindah hanya alamatnya. Jumlahnya tidak ikut berubah.
+        $this->assertSame(300, $holding->qty_received);
+        $this->assertSame(0, $holding->qty_consumed);
+    }
+
+    public function test_material_yang_sudah_habis_tidak_bisa_dipindahkan(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 300]);
+
+        $this->post(route('wms.material-produksi.move', $holding), [
+            'production_area' => 'Lantai 2 Tinting',
+        ])->assertSessionHas('error');
+
+        $this->assertNotSame('Lantai 2 Tinting', $holding->refresh()->production_area);
+    }
+
+    /* ================================================== Pengajuan ulang */
+
+    /** Ditolak atasan lalu diperbaiki: nomornya tetap, alurnya diulang. */
+    public function test_mrf_yang_ditolak_atasan_bisa_diperbaiki_dan_diajukan_ulang(): void
+    {
+        $mrf = $this->ajukan(300);
+        $nomor = $mrf->mrf_number;
+        $tokenLama = $mrf->approval_token;
+
+        $this->flushSession();
+        auth()->logout();
+        $this->post(route('mrf.approval.reject', $mrf->approval_token), [
+            'reason' => 'Qty-nya kebanyakan untuk satu batch.',
+        ]);
+
+        $this->assertSame(MaterialRequisition::STATUS_REJECTED_APPROVAL, $mrf->refresh()->status);
+
+        $this->masukSebagai($mrf->requested_by);
+
+        $this->put(route('wms.mrf.update', $mrf), [
+            'request_type' => MaterialRequisition::TYPE_REPROSES,
+            'purpose' => 'Reproses DDP batch Juli — qty diturunkan sesuai catatan atasan.',
+            'approver_name' => 'Pak Ganti',
+            'approver_phone' => '081234567890',
+            'items' => [['product_id' => $this->produk->id, 'qty' => 120]],
+        ])->assertRedirect(route('wms.mrf.show', $mrf));
+
+        $mrf->refresh();
+
+        $this->assertSame($nomor, $mrf->mrf_number, 'Nomornya dipakai ulang, bukan diganti.');
+        $this->assertSame(MaterialRequisition::STATUS_PENDING_APPROVAL, $mrf->status);
+        $this->assertSame(120, $mrf->items()->firstOrFail()->qty_requested);
+        $this->assertSame(1, $mrf->items()->count(), 'Baris lama ditulis ulang, bukan ditumpuk.');
+
+        // Tautan lama sudah dipakai untuk menolak; membiarkannya hidup berarti
+        // keputusan lama masih bisa ditekan ulang atas berkas yang berbeda.
+        $this->assertNotSame($tokenLama, $mrf->approval_token);
+        $this->assertNull($mrf->approver_rejected_at);
+
+        // Jejak penolakannya TIDAK hilang.
+        $this->assertSame(1, $mrf->rejections()->count());
+        $this->assertSame('Qty-nya kebanyakan untuk satu batch.', $mrf->rejections()->firstOrFail()->reason);
+    }
+
+    public function test_mrf_yang_ditolak_logistik_juga_bisa_diajukan_ulang(): void
+    {
+        $mrf = $this->disetujuiAtasan($this->ajukan(300));
+
+        $this->loginAt(Role::LOGISTICS);
+        $this->post(route('wms.mrf.reject', $mrf), ['reason' => 'Batchnya sedang dikarantina.']);
+
+        $this->assertSame(MaterialRequisition::STATUS_REJECTED_LOGISTICS, $mrf->refresh()->status);
+
+        $this->masukSebagai($mrf->requested_by);
+
+        $this->get(route('wms.mrf.edit', $mrf))->assertOk()->assertSee($mrf->mrf_number);
+
+        $this->put(route('wms.mrf.update', $mrf), [
+            'request_type' => MaterialRequisition::TYPE_REPROSES,
+            'purpose' => 'Diajukan ulang setelah batch lain tersedia.',
+            'approver_name' => 'Pak Ganti',
+            'approver_phone' => '081234567890',
+            'items' => [['product_id' => $this->produk->id, 'qty' => 300]],
+        ])->assertRedirect();
+
+        $this->assertSame(MaterialRequisition::STATUS_PENDING_APPROVAL, $mrf->refresh()->status);
+        $this->assertNull($mrf->logistics_rejected_at);
+        $this->assertSame(1, $mrf->rejections()->count());
+    }
+
+    /** Yang belum ditolak tidak boleh disunting — isinya sudah jadi dasar keputusan. */
+    public function test_mrf_yang_belum_ditolak_tidak_bisa_disunting(): void
+    {
+        $mrf = $this->ajukan(300);
+
+        $this->masukSebagai($mrf->requested_by);
+
+        $this->get(route('wms.mrf.edit', $mrf))->assertForbidden();
+    }
+
+    /** Permintaan orang lain bukan milik siapa pun yang kebetulan sedepartemen. */
+    public function test_mrf_orang_lain_tidak_bisa_disunting(): void
+    {
+        $mrf = $this->ajukan(300);
+
+        $this->flushSession();
+        auth()->logout();
+        $this->post(route('mrf.approval.reject', $mrf->approval_token), ['reason' => 'Belum perlu.']);
+
+        // Orang Produksi yang berbeda.
+        $this->loginAt(Role::PRODUCTION);
+
+        $this->get(route('wms.mrf.edit', $mrf->refresh()))->assertForbidden();
     }
 }

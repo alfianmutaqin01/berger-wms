@@ -80,6 +80,7 @@
                             Ditolak <strong>{{ $mrf->approver_name }}</strong>
                             pada {{ $mrf->approver_rejected_at?->format('d/m/Y H:i') }}.
                             <div class="mt-1">Alasan: {{ $mrf->approver_rejection_reason }}</div>
+                            @include('wms.produksi.partials.tombol-perbaiki-mrf', ['mrf' => $mrf])
                         </div>
                         @break
                     @case(\App\Models\MaterialRequisition::STATUS_REJECTED_LOGISTICS)
@@ -87,6 +88,7 @@
                             Ditolak Logistik ({{ $mrf->logisticsRejectedBy?->full_name ?? '—' }})
                             pada {{ $mrf->logistics_rejected_at?->format('d/m/Y H:i') }}.
                             <div class="mt-1">Alasan: {{ $mrf->logistics_rejection_reason }}</div>
+                            @include('wms.produksi.partials.tombol-perbaiki-mrf', ['mrf' => $mrf])
                         </div>
                         @break
                     @case(\App\Models\MaterialRequisition::STATUS_CANCELLED)
@@ -100,7 +102,7 @@
                         <p class="mb-0">
                             Diterima Produksi pada {{ $mrf->received_at?->format('d/m/Y H:i') }}
                             oleh {{ $mrf->receivedBy?->full_name ?? '—' }}.
-                            Pemakaiannya dicatat di <a href="{{ route('wms.material-produksi.index') }}">Material di Tangan Produksi</a>.
+                            Pemakaiannya dicatat di <a href="{{ route('wms.material-produksi.index') }}">MRF Picked</a>.
                         </p>
                 @endswitch
             </div>

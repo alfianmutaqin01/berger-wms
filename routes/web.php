@@ -448,6 +448,14 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         Route::get('/{mrf}', [MaterialRequisitionController::class, 'show'])
             ->middleware('can:'.Permission::MRF_VIEW)
             ->name('wms.mrf.show');
+        // Perbaikan permintaan yang DITOLAK, nomornya tetap — sama seperti
+        // pesanan Sales yang ditolak.
+        Route::get('/{mrf}/edit', [MaterialRequisitionController::class, 'edit'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.edit');
+        Route::put('/{mrf}', [MaterialRequisitionController::class, 'update'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.update');
         Route::post('/{mrf}/resend', [MaterialRequisitionController::class, 'resend'])
             ->middleware('can:'.Permission::MRF_CREATE)
             ->name('wms.mrf.resend');
@@ -483,6 +491,10 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.material-produksi.index');
         Route::post('/{holding}/pakai', [ProductionMaterialController::class, 'consume'])
             ->name('wms.material-produksi.consume');
+        // Area yang ditulis operator saat serah terima hanya keterangan awal;
+        // Produksi yang tahu di lantai mana barangnya benar-benar dikerjakan.
+        Route::post('/{holding}/pindah', [ProductionMaterialController::class, 'move'])
+            ->name('wms.material-produksi.move');
     });
 
     // Transfer antar gudang (F-INV-05). Rutenya ditaruh SEBELUM

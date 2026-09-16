@@ -91,18 +91,18 @@
             </div>
         @endif
 
-        {{-- Daftar MRF: barangnya tidak naik kendaraan apa pun. Ia ditaruh di
-             sebuah rak dan Produksi yang menjemputnya — dan rak itu WAJIB
-             disebutkan operator saat menekan Loading, kalau tidak barangnya
-             berdiri tanpa alamat. --}}
+        {{-- Daftar MRF: barangnya tidak naik kendaraan apa pun. Ia berpindah
+             tangan di tempat, dan titik serah terimanya WAJIB disebutkan —
+             kalau tidak, barangnya berdiri tanpa alamat. --}}
         @if($list->requisition)
             <div class="alert alert-primary border-0 rounded-3 mt-3 mb-0 small">
                 <i class="bi bi-clipboard2-check me-1"></i>
                 <strong>Permintaan material {{ $list->requisition->mrf_number }}</strong> —
                 untuk {{ $list->requisition->requestedBy?->full_name ?? 'Produksi' }}
                 ({{ $list->requisition->jenis_label }}).
-                Barang ini <strong>tidak menuju pelanggan dan tidak naik truk</strong>: taruh di rak serah
-                terima, lalu sebutkan raknya saat menekan Loading supaya Produksi tahu harus mengambil ke mana.
+                Barang ini <strong>tidak menuju pelanggan dan tidak naik truk</strong>: taruh di titik
+                transit, lalu tekan <strong>Serah Terima</strong>. Begitu ditekan, barangnya
+                <strong>langsung tercatat atas nama Produksi</strong> — tidak ada konfirmasi susulan dari sana.
             </div>
         @endif
 
@@ -150,23 +150,27 @@
             </button>
 
             @if($list->requisition)
-                {{-- DAFTAR MRF: satu isian lagi sebelum tombolnya bisa ditekan.
+                {{-- DAFTAR MRF: SERAH TERIMA, bukan Siap Loading.
 
-                     Rak serah terima bukan pelengkap. Barang permintaan Produksi
-                     tidak naik kendaraan mana pun; kalau tidak ada rak yang
-                     disebut, ia berdiri di suatu tempat yang cuma diingat
-                     operator yang menaruhnya — dan kebiasaan itulah yang membuat
-                     material produksi hilang berbulan-bulan. --}}
+                     Barang permintaan Produksi tidak naik kendaraan mana pun
+                     dan tidak menunggu Surat Jalan — ia berpindah tangan di
+                     tempat. Menekan tombol ini memindahkan kepemilikannya ke
+                     Produksi seketika, tanpa konfirmasi susulan dari sana.
+
+                     Pilihannya hanya dua titik transit. Rak penyimpanan tidak
+                     ditawarkan: barang ini sudah bukan stok gudang, dan
+                     menaruhnya kembali di denah membuat put-away berikutnya
+                     menumpuk barang baru di atasnya. --}}
                 <form method="POST" action="{{ route('wms.picking.complete', $list) }}" id="formSelesai"
                       class="d-flex flex-wrap gap-2 align-items-end"
-                      onsubmit="return confirm('Selesaikan daftar ini? Stok di rak akan berkurang dan Produksi dikabari bahwa barangnya siap diambil.');">
+                      onsubmit="return confirm('Serahkan daftar ini ke Produksi? Stok di rak berkurang dan barangnya LANGSUNG tercatat atas nama Produksi — tidak ada konfirmasi susulan.');">
                     @csrf
                     <div>
-                        <label class="form-label small text-muted mb-1">Ditaruh di rak</label>
-                        <select name="handover_location_id" class="form-select rounded-3" required style="min-width:160px">
-                            <option value="">Pilih rak…</option>
+                        <label class="form-label small text-muted mb-1">Diserahkan ke</label>
+                        <select name="handover_location_id" class="form-select rounded-3" required style="min-width:200px">
+                            <option value="">Pilih tempat…</option>
                             @foreach($rakSerah as $rak)
-                                <option value="{{ $rak->id }}">{{ $rak->code }}</option>
+                                <option value="{{ $rak->id }}">{{ $rak->zone ?? $rak->code }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -177,7 +181,7 @@
                     </div>
                     <button class="btn btn-success btn-lg rounded-3 px-4" id="tombolSiapLoading"
                             @disabled($ringkas['selesai'] < $ringkas['total'])>
-                        <i class="bi bi-box-seam me-1"></i> Siap Loading
+                        <i class="bi bi-arrow-left-right me-1"></i> Serah Terima
                     </button>
                 </form>
             @else
@@ -208,8 +212,7 @@
         <div class="alert alert-info border-0 rounded-3 small" id="catatanBelumLengkap"
              @if($ringkas['selesai'] >= $ringkas['total']) hidden @endif>
             <i class="bi bi-info-circle-fill me-2"></i>
-            Tombol <strong>Siap Loading</strong> aktif setelah seluruh baris ditandai. Baris yang terlewat
-            berarti barang yang tidak ikut naik ke kendaraan tanpa ada yang tahu.
+            X            berarti barang yang tidak ikut naik ke kendaraan tanpa ada yang tahu.
         </div>
         @endif
 
@@ -368,7 +371,7 @@
                         <i class="bi bi-exclamation-triangle-fill me-1"></i>
                         <strong>{{ $ringkas['selesai'] }} baris sudah ditandai</strong> dan tandanya akan
                         dikosongkan. Stok di rak tidak berubah sama sekali — yang mengurangi stok hanya
-                        tombol Siap Loading, dan itu belum ditekan.
+                        tombol penyelesaian daftar ini, dan itu belum ditekan.
                     </div>
                 @endif
 
@@ -424,7 +427,7 @@
                           placeholder="Minimal 10 karakter, mis. rak hanya berisi 8 kaleng, sisanya tidak ditemukan"></textarea>
 
                 <p class="text-muted small mt-3 mb-0">
-                    Selisihnya akan dicatat sebagai <strong>koreksi stok</strong> saat Siap Loading ditekan,
+                    Selisihnya akan dicatat sebagai <strong>koreksi stok</strong> saat daftar ini diselesaikan,
                     lengkap dengan alasan ini — bukan sebagai barang yang keluar ke customer.
                 </p>
             </div>

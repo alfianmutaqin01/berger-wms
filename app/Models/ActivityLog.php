@@ -128,6 +128,8 @@ class ActivityLog extends Model
 
     public const MRF_RECEIVE = 'mrf.receive';
 
+    public const MRF_MOVE = 'mrf.move';
+
     public const MRF_CONSUME = 'mrf.consume';
 
     public const MRF_CANCEL = 'mrf.cancel';
@@ -213,6 +215,7 @@ class ActivityLog extends Model
         self::MRF_LOGISTICS_APPROVE => 'Setujui Permintaan Material',
         self::MRF_LOGISTICS_REJECT => 'Tolak Permintaan Material',
         self::MRF_RECEIVE => 'Terima Material di Produksi',
+        self::MRF_MOVE => 'Pindahkan Material Produksi',
         self::MRF_CONSUME => 'Catat Pemakaian Material',
         self::MRF_CANCEL => 'Batalkan Permintaan Material',
         self::TRANSFER_CREATE => 'Buat Transfer Gudang',

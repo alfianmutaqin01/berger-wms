@@ -63,7 +63,11 @@ class LocationSeeder extends Seeder
             return;
         }
 
-        if (Location::where('warehouse_id', $warehouse->id)->exists()) {
+        // RAK PENYIMPANAN saja yang dihitung. Tiap gudang lahir dengan dua rak
+        // transit (lihat Warehouse::pastikanRakTransit), jadi penjaga yang
+        // menghitung seluruh baris akan menyimpulkan denahnya sudah ada dan
+        // melewatkan 2.264 rak yang sebenarnya belum dibuat satu pun.
+        if (Location::where('warehouse_id', $warehouse->id)->penyimpanan()->exists()) {
             $this->command?->info('LocationSeeder dilewati: lokasi untuk gudang ini sudah ada.');
 
             return;

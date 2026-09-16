@@ -522,6 +522,9 @@ class CustomerRejection
 
         $lokasi = Location::query()
             ->where('warehouse_id', $warehouseId)
+            // Barang retur masuk ke penyimpanan, bukan ke titik serah terima
+            // material produksi.
+            ->penyimpanan()
             ->whereRaw('UPPER(code) = ?', [strtoupper(trim($kode))])
             ->first();
 

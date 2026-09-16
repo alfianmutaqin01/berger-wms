@@ -230,8 +230,10 @@ class StockTransferController extends Controller
             'details.product:id,sku,name,uom',
         ]);
 
+        // Rak transit tidak ditawarkan: kiriman antar gudang masuk ke
+        // penyimpanan, bukan ke titik serah terima material produksi.
         $rak = Location::where('warehouse_id', $transfer->to_warehouse_id)
-            ->active()->inStorageOrder()->get(['id', 'code', 'zone']);
+            ->active()->penyimpanan()->inStorageOrder()->get(['id', 'code', 'zone']);
 
         // Kiriman lama yang berangkat SEBELUM pemeriksaan rak dipasang di
         // WarehouseTransfer::ship() bisa sudah tersangkut di sini. Layarnya

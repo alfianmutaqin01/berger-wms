@@ -190,6 +190,17 @@ class MaterialRequisition extends Model
         return $this->hasMany(ProductionMaterialHolding::class);
     }
 
+    /**
+     * Seluruh penolakan yang pernah dialami permintaan ini.
+     *
+     * Kosong berarti belum pernah ditolak. Terisi berarti pernah — SEKALIPUN
+     * permintaannya sekarang sudah disetujui dan selesai.
+     */
+    public function rejections(): HasMany
+    {
+        return $this->hasMany(MaterialRequisitionRejection::class)->orderBy('rejected_at');
+    }
+
     public function pickingList(): BelongsTo
     {
         return $this->belongsTo(PickingList::class);
@@ -248,6 +259,39 @@ class MaterialRequisition extends Model
     }
 
     /* ------------------------------------------------------------ Aturan */
+
+    /**
+     * Sedang ditolak dan menunggu diperbaiki Produksi.
+     *
+     * Dua pintu penolakan, satu keadaan bagi pemohonnya: ditolak atasan
+     * ("belum boleh meminta ini") dan ditolak Logistik ("barangnya tidak ada,
+     * atau permintaannya keliru"). Keduanya sama-sama mengembalikan berkas ke
+     * meja Produksi.
+     */
+    public function sedangDitolak(): bool
+    {
+        return $this->status === self::STATUS_REJECTED_APPROVAL
+            || $this->status === self::STATUS_REJECTED_LOGISTICS;
+    }
+
+    /**
+     * Boleh diperbaiki isinya lalu diajukan lagi, NOMORNYA TETAP.
+     *
+     * Sebelumnya penolakan adalah jalan buntu: permintaan yang ditolak karena
+     * satu baris keliru memaksa Produksi mengetik ulang seluruhnya sebagai
+     * permintaan baru — dan permintaan barunya tidak punya hubungan apa pun
+     * dengan yang ditolak, sehingga atasan dan Logistik tidak pernah tahu ini
+     * pengajuan kedua atas hal yang sama. Aturan yang sama sudah berlaku untuk
+     * pesanan Sales yang ditolak.
+     *
+     * NOMOR MRF-NYA DIPAKAI ULANG, bukan diganti. Nomor itu sudah beredar di
+     * WhatsApp atasan dan di catatan Logistik; memberi nomor baru pada berkas
+     * yang sama membuat satu urusan punya dua nama.
+     */
+    public function bolehDiperbaiki(): bool
+    {
+        return $this->sedangDitolak();
+    }
 
     /**
      * Tautan persetujuan untuk approver.

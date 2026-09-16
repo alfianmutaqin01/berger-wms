@@ -43,6 +43,37 @@ class Warehouse extends Model
         ];
     }
 
+    /**
+     * Gudang baru langsung mendapat kedua rak transitnya.
+     *
+     * Serah terima MRF tidak bisa dijalankan sama sekali tanpa rak transit,
+     * dan kalau pembuatannya diserahkan ke pengisian master data, gudang yang
+     * baru dibuka akan punya alur MRF yang mati tanpa ada yang tahu sebabnya
+     * sampai ada operator berdiri di depan layar tanpa satu pun pilihan rak.
+     *
+     * Di sini, bukan di migrasi saja: migrasi hanya mengurus gudang yang sudah
+     * ada saat ia dijalankan.
+     */
+    protected static function booted(): void
+    {
+        static::created(fn (self $gudang) => $gudang->pastikanRakTransit());
+    }
+
+    /** Membuat rak transit yang belum ada. Aman dipanggil berulang. */
+    public function pastikanRakTransit(): void
+    {
+        foreach ([
+            // Deretnya pendek karena kolom `rack` hanya menampung 5 karakter.
+            'TRANSIT-PROD' => ['TR-PR', Location::ZONE_TRANSIT_PRODUKSI],
+            'TRANSIT-LOG' => ['TR-LG', Location::ZONE_TRANSIT_LOGISTIK],
+        ] as $kode => [$deret, $zona]) {
+            Location::query()->firstOrCreate(
+                ['warehouse_id' => $this->id, 'code' => $kode],
+                ['rack' => $deret, 'level' => 1, 'cell' => 1, 'zone' => $zona, 'is_active' => true],
+            );
+        }
+    }
+
     /** Gudang yang punya lini produksi — hanya Karawang untuk saat ini. */
     public function scopeWithProduction($query)
     {

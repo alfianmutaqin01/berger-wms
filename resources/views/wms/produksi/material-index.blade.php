@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Material di Tangan Produksi')
-@section('page_title', 'Material di Tangan Produksi')
+@section('title', 'MRF Picked')
+@section('page_title', 'MRF Picked')
 
 @section('content')
 {{-- LAYAR YANG MENJAWAB PERTANYAAN YANG SELAMA INI TIDAK PUNYA JAWABAN.
@@ -99,6 +99,27 @@
                     <div class="small text-muted mt-1">
                         Batch <span class="font-monospace">{{ $holding->batch_no ?? '—' }}</span>
                         · di <strong>{{ $holding->production_area }}</strong>
+                        @unless($holding->sudahHabis())
+                            {{-- Area yang tertulis berasal dari titik transit yang
+                                 dipilih operator saat serah terima — keterangan
+                                 pembuka, bukan keputusan akhir. Barangnya hampir
+                                 selalu berpindah ke lantai tempat ia benar-benar
+                                 dikerjakan, dan yang tahu itu Produksi. --}}
+                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none"
+                                    data-bs-toggle="collapse" data-bs-target="#pindah{{ $holding->id }}"
+                                    title="Pindahkan ke area lain">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                            <form method="POST" action="{{ route('wms.material-produksi.move', $holding) }}"
+                                  class="collapse mt-2 d-flex gap-1" id="pindah{{ $holding->id }}">
+                                @csrf
+                                <input type="text" name="production_area" maxlength="100" required
+                                       value="{{ $holding->production_area }}"
+                                       class="form-control form-control-sm rounded-3"
+                                       placeholder="Mis. Lantai 2 Tinting">
+                                <button class="btn btn-sm btn-outline-primary rounded-3 text-nowrap">Pindahkan</button>
+                            </form>
+                        @endunless
                     </div>
                     <div class="small text-muted">
                         Dari <a href="{{ route('wms.mrf.show', $holding->material_requisition_id) }}" class="font-monospace">{{ $holding->requisition?->mrf_number }}</a>

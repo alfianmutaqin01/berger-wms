@@ -193,7 +193,7 @@
                                  benar masuk mixer hari ini cuma orang di lantai
                                  produksi. --}}
                             <li class="nav-item {{ request()->is('wms/material-produksi*') ? 'active' : '' }}">
-                                <a href="/wms/material-produksi" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Material di Tangan Produksi</span></a>
+                                <a href="/wms/material-produksi" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>MRF Picked</span></a>
                             </li>
                         @endcan
                     </ul>

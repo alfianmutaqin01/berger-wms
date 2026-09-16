@@ -187,7 +187,10 @@ class WarehouseTransfer
      */
     private function pastikanTujuanPunyaRak(int $toWarehouseId): void
     {
-        if (Location::where('warehouse_id', $toWarehouseId)->active()->exists()) {
+        // Rak transit TIDAK dihitung. Gudang yang cuma punya titik serah
+        // terima tetap gudang tanpa tempat menyimpan, dan kirimannya akan
+        // tersangkut di layar penerimaan tanpa satu pun rak yang bisa dipilih.
+        if (Location::where('warehouse_id', $toWarehouseId)->active()->penyimpanan()->exists()) {
             return;
         }
 
@@ -444,6 +447,9 @@ class WarehouseTransfer
         $rak = Location::query()
             ->where('warehouse_id', $transfer->to_warehouse_id)
             ->active()
+            // Rak transit tidak menerima stok: kode yang diketik ke sana
+            // diperlakukan seperti rak yang tidak ada.
+            ->penyimpanan()
             ->whereRaw('UPPER(code) = ?', [$kode])
             ->first();
 

@@ -47,13 +47,30 @@ class DocumentNumber
     public const TYPE_MATERIAL_REQUISITION = 'material_requisition';
 
     /**
-     * Nomor MRF: MR{YYMMDD}{urut 3 digit}.
+     * Nomor MRF: MRF{YYMM}{urut 3 digit}.
+     *
+     * MRF, BUKAN MR. Dokumen ini disebut MRF oleh semua orang yang
+     * memakainya; nomor yang berawalan MR memaksa pembacanya menerjemahkan
+     * sendiri, dan di WhatsApp ia tertukar dengan singkatan lain.
+     *
+     * TANPA TANGGAL, hanya tahun dan bulan (keputusan pemilik produk).
+     * Permintaan material diajukan sekitar tiga bulan sekali, jadi tanggal di
+     * dalam nomor tidak pernah menjawab pertanyaan siapa pun — sementara
+     * nomor yang lebih pendek lebih mudah dieja lewat telepon. Urutnya tetap
+     * ada supaya dua MRF dalam bulan yang sama tidak berebut nomor yang sama:
+     *
+     *   MRF2609001  MRF pertama September 2026
+     *   MRF2609002  MRF kedua bulan yang sama
+     *   MRF2612001  kuartal berikutnya, urut kembali ke 001
+     *
+     * Nomor MR lama TIDAK diubah. Nomor dokumen yang sudah beredar di
+     * WhatsApp dan catatan kertas tidak boleh berganti arti di belakang hari.
      *
      * LINTAS GUDANG, sama alasannya dengan PL, TF, dan RJ. MRF dibaca
      * Produksi, Logistik, Operator, dan atasan yang menyetujui lewat WhatsApp
      * — sebagian di antaranya tidak melihat layar WMS sama sekali dan hanya
      * menyebut nomornya. Nomor yang berulang di tiap gudang membuat
-     * "MR261011001" berarti tiga permintaan berbeda tergantung siapa yang
+     * "MRF2609001" berarti tiga permintaan berbeda tergantung siapa yang
      * menyebutnya.
      *
      * WAJIB dipanggil di dalam DB::transaction — lihat next().
@@ -68,7 +85,7 @@ class DocumentNumber
             month: (int) $waktu->format('n'),
         );
 
-        return 'MR'.$waktu->format('ymd').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+        return 'MRF'.$waktu->format('ym').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
     }
 
     /**

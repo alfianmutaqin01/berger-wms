@@ -14,7 +14,7 @@ use Illuminate\View\View;
 use RuntimeException;
 
 /**
- * "Material di Tangan Produksi" — buku besar milik Produksi.
+ * "MRF Picked" — buku besar milik Produksi.
  *
  * LAYAR YANG MENJAWAB PERTANYAAN YANG SELAMA INI TIDAK PUNYA JAWABAN:
  * barang apa saja yang pernah diminta Produksi, berapa yang sudah dipakai,
@@ -94,6 +94,74 @@ class ProductionMaterialController extends Controller
                 'menunggak' => (clone $dasar())->menunggak(self::AMBANG_MENUNGGAK_HARI)->count(),
             ],
         ]);
+    }
+
+    /**
+     * Produksi memindahkan materialnya ke area lain.
+     *
+     * Area yang tertulis saat serah terima berasal dari titik transit yang
+     * dipilih operator — keterangan pembuka, bukan keputusan akhir. Barangnya
+     * hampir selalu berpindah lagi ke lantai tempat ia benar-benar dikerjakan,
+     * dan tanpa pintu ini satu-satunya cara menyebutkannya adalah menulis di
+     * kolom keterangan pemakaian, yang baru terbaca setelah barangnya habis.
+     *
+     * Hanya AREA yang berubah. Jumlah, batch, dan asal MRF-nya tidak disentuh:
+     * memindahkan barang bukan mengubah apa yang diterima.
+     */
+    public function move(Request $request, ProductionMaterialHolding $holding): RedirectResponse
+    {
+        WarehouseScope::assert($holding->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'production_area' => ['required', 'string', 'max:100'],
+        ], [
+            'production_area.required' => 'Isi dulu area produksi tempat material ini sekarang berada.',
+        ], ['production_area' => 'area produksi']);
+
+        if ($holding->sudahHabis()) {
+            return back()->with('error', sprintf(
+                'Material %s batch %s sudah habis terpakai, jadi tidak ada yang bisa dipindahkan.',
+                $holding->product?->sku ?? 'ini',
+                $holding->batch_no ?? '—',
+            ));
+        }
+
+        $sebelum = (string) $holding->production_area;
+        $sesudah = trim($data['production_area']);
+
+        if ($sebelum === $sesudah) {
+            return back()->with('error', 'Area produksinya sama dengan yang sekarang — tidak ada yang dipindahkan.');
+        }
+
+        $holding->forceFill(['production_area' => $sesudah])->save();
+
+        Activity::record(
+            ActivityLog::MRF_MOVE,
+            sprintf(
+                'Produksi memindahkan %d unit %s batch %s dari %s ke %s.',
+                $holding->qty_sisa,
+                $holding->product?->sku ?? 'produk',
+                $holding->batch_no ?? '—',
+                $sebelum === '' ? '—' : $sebelum,
+                $sesudah,
+            ),
+            $holding,
+            $holding->warehouse_id,
+            [
+                'mrf' => $holding->requisition?->mrf_number,
+                'batch' => $holding->batch_no,
+                'dari' => $sebelum,
+                'ke' => $sesudah,
+                'sisa' => $holding->qty_sisa,
+            ],
+        );
+
+        return back()->with('success', sprintf(
+            'Sisa %s batch %s sekarang tercatat di %s.',
+            $holding->product?->sku ?? 'material',
+            $holding->batch_no ?? '—',
+            $sesudah,
+        ));
     }
 
     /** Produksi mencatat pemakaian — sebagian, atau seluruh sisanya. */

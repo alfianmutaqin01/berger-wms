@@ -216,6 +216,9 @@ class StockTakeController extends Controller
             'rakPilihan' => $stocktake->sedangDihitung()
                 ? Location::where('warehouse_id', $stocktake->warehouse_id)
                     ->where('is_active', true)
+                    // Rak transit tidak dihitung dalam stocktake: isinya sudah
+                    // bukan stok gudang.
+                    ->penyimpanan()
                     ->orderBy('code')->get(['id', 'code'])
                 : collect(),
         ]);

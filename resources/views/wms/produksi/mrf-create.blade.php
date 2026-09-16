@@ -1,7 +1,11 @@
 @extends('layouts.wms')
 
-@section('title', 'Buat Permintaan Material')
-@section('page_title', 'Buat Permintaan Material (MRF)')
+@php($mrf = $mrf ?? null)
+
+@section('title', $mrf ? 'Perbaiki MRF '.$mrf->mrf_number : 'Buat Permintaan Material')
+@section('page_title', $mrf
+    ? 'Perbaiki & Ajukan Ulang '.$mrf->mrf_number
+    : 'Buat Permintaan Material (MRF)')
 
 @section('content')
 {{-- FORMULIR PRODUKSI.
@@ -30,8 +34,31 @@
 </div>
 @endif
 
-<form method="POST" action="{{ route('wms.mrf.store') }}" id="formMrf">
+@if($mrf)
+    {{-- ALASAN PENOLAKANNYA DITARUH DI ATAS FORMULIR, bukan ditinggal di
+         halaman sebelumnya. Yang sedang memperbaiki perlu membacanya sambil
+         mengetik; perbaikan yang dikerjakan dari ingatan akan ditolak untuk
+         alasan yang sama. --}}
+    <div class="alert alert-warning border-0 shadow-sm rounded-3">
+        <i class="bi bi-arrow-counterclockwise me-2"></i>
+        <strong>{{ $mrf->mrf_number }} dikembalikan kepada Anda.</strong>
+        Perbaiki isinya lalu ajukan lagi — <strong>nomornya tetap sama</strong>, dan riwayat
+        penolakannya ikut terbaca oleh yang menyetujui nanti.
+        @php($alasan = $mrf->status === \App\Models\MaterialRequisition::STATUS_REJECTED_APPROVAL
+            ? $mrf->approver_rejection_reason
+            : $mrf->logistics_rejection_reason)
+        @if($alasan)
+            <div class="mt-2 mb-0 p-2 bg-body-secondary rounded-3">
+                <span class="small text-muted d-block">Alasan penolakan:</span>
+                {{ $alasan }}
+            </div>
+        @endif
+    </div>
+@endif
+
+<form method="POST" action="{{ $mrf ? route('wms.mrf.update', $mrf) : route('wms.mrf.store') }}" id="formMrf">
     @csrf
+    @if($mrf) @method('PUT') @endif
 
     <div class="row g-3">
         <div class="col-12 col-lg-7">
@@ -81,7 +108,7 @@
                             @foreach($jenisOptions as $nilai => $jenis)
                             <div class="col-12 col-md-6">
                                 <input type="radio" class="btn-check" name="request_type" id="jenis-{{ $nilai }}"
-                                       value="{{ $nilai }}" @checked(old('request_type') === $nilai) required>
+                                       value="{{ $nilai }}" @checked(old('request_type', $mrf?->request_type) === $nilai) required>
                                 <label class="btn btn-outline-secondary w-100 text-start rounded-3 py-2" for="jenis-{{ $nilai }}">
                                     <span class="fw-semibold d-block">{{ $jenis['label'] }}</span>
                                     <small class="text-muted">{{ $jenis['bantuan'] }}</small>
@@ -94,7 +121,7 @@
                     <div>
                         <label class="form-label">Purpose / Keperluan <span class="text-danger">*</span></label>
                         <textarea name="purpose" rows="3" class="form-control rounded-3" required
-                                  placeholder="Mis. Reproses 300 pcs DDP batch Juli menjadi warna Off White untuk stok ulang.">{{ old('purpose') }}</textarea>
+                                  placeholder="Mis. Reproses 300 pcs DDP batch Juli menjadi warna Off White untuk stok ulang.">{{ old('purpose', $mrf?->purpose) }}</textarea>
                         <div class="form-text">
                             Inilah satu-satunya keterangan yang menjelaskan kenapa barang keluar dari gudang.
                             Ditulis untuk orang yang membacanya enam bulan lagi, bukan untuk yang sudah tahu.
@@ -159,13 +186,13 @@
                     <div class="mb-3">
                         <label class="form-label">Nama atasan <span class="text-danger">*</span></label>
                         <input type="text" name="approver_name" id="approverNama" class="form-control rounded-3"
-                               value="{{ old('approver_name') }}" maxlength="100" required placeholder="Mis. Pak Ganti">
+                               value="{{ old('approver_name', $mrf?->approver_name) }}" maxlength="100" required placeholder="Mis. Pak Ganti">
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label">Nomor WhatsApp <span class="text-danger">*</span></label>
                         <input type="text" name="approver_phone" id="approverNomor" class="form-control rounded-3 font-monospace"
-                               value="{{ old('approver_phone') }}" maxlength="25" required placeholder="081234567890">
+                               value="{{ old('approver_phone', $mrf?->approver_phone) }}" maxlength="25" required placeholder="081234567890">
                         <div class="form-text">Satu nomor saja. Boleh ditulis 08… atau 62….</div>
                     </div>
 
@@ -184,9 +211,11 @@
 
             <div class="d-grid gap-2">
                 <button type="submit" class="btn btn-primary rounded-3 py-2">
-                    <i class="bi bi-send me-1"></i> Simpan &amp; Minta Persetujuan
+                    <i class="bi bi-send me-1"></i>
+                    {{ $mrf ? 'Ajukan Ulang '.$mrf->mrf_number : 'Simpan & Minta Persetujuan' }}
                 </button>
-                <a href="{{ route('wms.mrf.index') }}" class="btn btn-link text-decoration-none">Batal</a>
+                <a href="{{ $mrf ? route('wms.mrf.show', $mrf) : route('wms.mrf.index') }}"
+                   class="btn btn-link text-decoration-none">Batal</a>
             </div>
         </div>
     </div>
@@ -265,13 +294,36 @@
         });
 
         perbaruiKosong();
+
+        return baris;
     }
 
     document.getElementById('tambahBaris').addEventListener('click', tambahBaris);
 
+    /*
+     | Baris permintaan yang sudah ada, pada perbaikan MRF yang ditolak.
+     |
+     | Dibangun lewat jalur yang SAMA dengan baris baru (tambahBaris), bukan
+     | dicetak sebagai HTML tersendiri: kalau dicetak terpisah, pencarian
+     | produk dan tombol hapusnya harus dipasang untuk kedua bentuk baris, dan
+     | suatu hari salah satunya ketinggalan.
+     */
+    const barisAwal = @json($barisAwal ?? []);
+
+    barisAwal.forEach(function (isi) {
+        const baris = tambahBaris();
+
+        baris.querySelector('.cari-nilai').value = isi.id;
+        baris.querySelector('.cari-teks').value = isi.label;
+        baris.querySelector('[name$="[qty]"]').value = isi.qty;
+        baris.querySelector('[name$="[note]"]').value = isi.note ?? '';
+    });
+
     // Satu baris langsung disiapkan: formulir yang dibuka dan masih kosong
     // menuntut satu ketukan tambahan sebelum bisa dipakai, setiap kali.
-    tambahBaris();
+    if (barisAwal.length === 0) {
+        tambahBaris();
+    }
 
     document.querySelectorAll('.pilihKontak').forEach(function (tombol) {
         tombol.addEventListener('click', function () {
