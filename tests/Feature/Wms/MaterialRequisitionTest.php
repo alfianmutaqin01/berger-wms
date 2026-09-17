@@ -757,6 +757,31 @@ class MaterialRequisitionTest extends TestCase
         $this->assertSame('ID11_1001', $this->karawang->code);
     }
 
+    /**
+     * Rincian MRF juga memakai kode cabang, bukan kode finish good.
+     *
+     * Akhiran "_1001" berarti finish good, dan MRF justru sering mengambil
+     * barang DDP untuk direproses — menyebut "_1001" di dokumennya berarti
+     * menyebut jenis barang yang belum tentu benar. Jangkauan kode cabang
+     * memang lebih lebar, dan itu yang sesuai di sini.
+     *
+     * Kebalikannya berlaku di penjualan, yang selalu mengirim finish good;
+     * lihat Warehouse::getKodePendekAttribute().
+     */
+    public function test_rincian_mrf_memakai_kode_cabang(): void
+    {
+        $this->karawang->update(['code' => 'ID11_1001']);
+
+        $mrf = $this->ajukan(300);
+
+        $this->loginAt(Role::LOGISTICS);
+
+        $this->get(route('wms.mrf.show', $mrf))
+            ->assertOk()
+            ->assertSee('ID11')
+            ->assertDontSee('ID11_1001');
+    }
+
     /** Gudang tanpa akhiran tetap terbaca utuh, bukan terpotong. */
     public function test_kode_gudang_tanpa_akhiran_tidak_berubah(): void
     {
