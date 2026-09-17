@@ -539,6 +539,10 @@ class StockTakeRun
     {
         return Location::query()
             ->where('warehouse_id', $gudang->id)
+            // Rak transit di luar cakupan stocktake mana pun: isinya sudah
+            // bukan stok gudang, dan menghitungnya berarti menghitung barang
+            // milik Produksi.
+            ->penyimpanan()
             ->when($scopeType === StockTake::SCOPE_ZONE, fn ($q) => $q->where('zone', $scopeValue))
             ->when($scopeType === StockTake::SCOPE_RACK, fn ($q) => $q->where('rack', $scopeValue))
             ->pluck('id')

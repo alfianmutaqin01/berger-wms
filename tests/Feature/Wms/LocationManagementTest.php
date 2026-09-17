@@ -183,7 +183,7 @@ class LocationManagementTest extends TestCase
             Location::factory()->at('B', 1, $cell)->create(['warehouse_id' => $this->warehouse->id]);
         }
 
-        $codes = Location::inStorageOrder()->pluck('code')->all();
+        $codes = Location::penyimpanan()->inStorageOrder()->pluck('code')->all();
 
         $this->assertSame(['B-01-01', 'B-01-02', 'B-01-10', 'B-01-11'], $codes);
     }
@@ -312,8 +312,8 @@ class LocationManagementTest extends TestCase
     {
         $this->seed(LocationSeeder::class);
 
-        $this->assertSame(2264, Location::count());
-        $this->assertSame(29, Location::distinct()->count('rack'));
+        $this->assertSame(2264, Location::penyimpanan()->count());
+        $this->assertSame(29, Location::penyimpanan()->distinct()->count('rack'));
 
         $this->assertSame(826, Location::where('zone', Location::ZONE_FAST)->count());
         $this->assertSame(476, Location::where('zone', Location::ZONE_SLOW)->count());
@@ -349,6 +349,6 @@ class LocationManagementTest extends TestCase
         $this->seed(LocationSeeder::class);
         $this->seed(LocationSeeder::class);
 
-        $this->assertSame(2264, Location::count());
+        $this->assertSame(2264, Location::penyimpanan()->count());
     }
 }

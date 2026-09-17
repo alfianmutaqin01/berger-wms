@@ -38,6 +38,27 @@ class Location extends Model
 
     public const ZONES = [self::ZONE_FAST, self::ZONE_SLOW, self::ZONE_MIDDLE];
 
+    /*
+    | RAK TRANSIT — bukan tempat penyimpanan, melainkan tempat barang berdiri
+    | sebentar saat berpindah tangan.
+    |
+    | Material MRF yang sudah diambil operator tidak naik kendaraan mana pun
+    | dan tidak kembali ke rak; ia menunggu di satu titik serah terima sampai
+    | Produksi membawanya. Sebelumnya titik itu dipilih dari daftar rak biasa,
+    | sehingga barang yang sudah bukan milik gudang tercatat seolah masih
+    | tersimpan di rak penyimpanan — dan rak itu tetap ditawarkan untuk
+    | put-away barang baru.
+    |
+    | SENGAJA DI LUAR ZONES. Zona di atas adalah zona pergerakan barang yang
+    | dipakai strategi put-away dan penyaring master rak; rak transit tidak
+    | ikut keduanya. Yang membutuhkannya memakai scope transit() di bawah.
+    */
+    public const ZONE_TRANSIT_PRODUKSI = 'In-Transit Produksi';
+
+    public const ZONE_TRANSIT_LOGISTIK = 'In-Transit Logistik';
+
+    public const ZONES_TRANSIT = [self::ZONE_TRANSIT_PRODUKSI, self::ZONE_TRANSIT_LOGISTIK];
+
     protected $fillable = [
         'warehouse_id',
         'code',
@@ -133,6 +154,39 @@ class Location extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /** Titik transit dikenali orang dari zonanya, rak biasa dari kodenya. */
+    public function getNamaSerahTerimaAttribute(): string
+    {
+        return in_array($this->zone, self::ZONES_TRANSIT, true)
+            ? (string) $this->zone
+            : (string) $this->code;
+    }
+
+    /** Hanya rak transit serah terima. */
+    public function scopeTransit(Builder $query): Builder
+    {
+        return $query->whereIn('zone', self::ZONES_TRANSIT);
+    }
+
+    /**
+     * Rak penyimpanan sungguhan — rak transit dikecualikan.
+     *
+     * Dipakai setiap kali sebuah layar menawarkan "taruh barang di mana".
+     * Rak transit bukan tempat menyimpan: barang di sana sudah bukan milik
+     * gudang, dan menawarkannya untuk put-away akan menumpuk stok baru di
+     * atas barang yang sedang menunggu diambil orang lain.
+     *
+     * whereNotIn SAJA TIDAK CUKUP: di SQL, baris ber-zona NULL tidak pernah
+     * cocok dengan NOT IN, jadi rak lama yang zonanya belum terisi akan ikut
+     * hilang dari seluruh pilihan.
+     */
+    public function scopePenyimpanan(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $q) => $q
+            ->whereNotIn('zone', self::ZONES_TRANSIT)
+            ->orWhereNull('zone'));
     }
 
     /** Urutan alami di lantai gudang: rak, lalu level, lalu sel. */

@@ -57,7 +57,7 @@
                     @elseif($daftar->requisition)
                         <span class="badge bg-primary-subtle text-primary-emphasis border border-primary">
                             <i class="bi bi-clipboard2-check me-1"></i>
-                            Permintaan Produksi
+                            Permintaan {{ $daftar->requisition->nama_divisi }}
                         </span>
                     @else
                         <span class="badge bg-light text-dark border">

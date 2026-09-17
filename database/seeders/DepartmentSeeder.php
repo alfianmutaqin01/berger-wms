@@ -19,6 +19,10 @@ class DepartmentSeeder extends Seeder
             ['name' => 'Finance', 'slug' => 'finance'],
             ['name' => 'Human Resource', 'slug' => 'hr'],
             ['name' => 'IT & Sistem', 'slug' => 'it'],
+            // Dua divisi yang tidak punya akun WMS tetapi sesekali meminta
+            // material lewat tautan divisi — lihat MrfRequestLink.
+            ['name' => 'Quality Control', 'slug' => 'qc'],
+            ['name' => 'Research & Development', 'slug' => 'rnd'],
         ];
 
         foreach ($departments as $department) {

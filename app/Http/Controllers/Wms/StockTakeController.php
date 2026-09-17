@@ -11,6 +11,7 @@ use App\Models\StockTakeItem;
 use App\Models\Warehouse;
 use App\Support\Activity;
 use App\Support\Export\XlsxWriter;
+use App\Support\Inventory\BatchProduksi;
 use App\Support\Inventory\StockTakeRun;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -52,6 +53,15 @@ class StockTakeController extends Controller
 
     /** Batas saran yang dikirim ke layar. */
     private const MAKS_SARAN = 10;
+
+    /** Penyaring hasil hitungan di layar penghitungan. */
+    private const HASIL_SELISIH = 'selisih';
+
+    private const HASIL_COCOK = 'cocok';
+
+    private const HASIL_BELUM = 'belum';
+
+    private const HASIL = [self::HASIL_SELISIH, self::HASIL_COCOK, self::HASIL_BELUM];
 
     public function __construct(private readonly StockTakeRun $stocktake) {}
 
@@ -154,6 +164,10 @@ class StockTakeController extends Controller
         $filter = [
             'rak' => trim((string) $request->query('rak')),
             'q' => trim((string) $request->query('q')),
+            // Hanya tiga nilai yang dikenal; sisanya dianggap "semua".
+            'hasil' => in_array($request->query('hasil'), self::HASIL, true)
+                ? $request->query('hasil')
+                : '',
         ];
 
         $items = $stocktake->items()
@@ -161,6 +175,16 @@ class StockTakeController extends Controller
             ->when($filter['rak'] !== '', fn ($q, $ada) => $q->whereHas(
                 'location', fn ($l) => $l->where('rack', $filter['rak']),
             ))
+            // PENYARING SELISIH. Pada sesi berisi ratusan baris, yang perlu
+            // ditindaklanjuti hanya baris yang angkanya tidak cocok — dan
+            // mencarinya dengan menggulir seluruh gudang berarti ada yang
+            // terlewat. Dibandingkan di basis data, bukan di PHP, supaya
+            // penyaringnya tetap benar sekalipun barisnya ribuan.
+            ->when($filter['hasil'] === self::HASIL_SELISIH, fn ($q) => $q
+                ->whereNotNull('qty_physical')->whereColumn('qty_physical', '!=', 'qty_system'))
+            ->when($filter['hasil'] === self::HASIL_COCOK, fn ($q) => $q
+                ->whereNotNull('qty_physical')->whereColumn('qty_physical', '=', 'qty_system'))
+            ->when($filter['hasil'] === self::HASIL_BELUM, fn ($q) => $q->whereNull('qty_physical'))
             ->when($filter['q'] !== '', fn ($q) => $q->whereHas(
                 'product',
                 fn ($p) => $p->where('sku', 'ILIKE', '%'.$filter['q'].'%')
@@ -192,6 +216,9 @@ class StockTakeController extends Controller
             'rakPilihan' => $stocktake->sedangDihitung()
                 ? Location::where('warehouse_id', $stocktake->warehouse_id)
                     ->where('is_active', true)
+                    // Rak transit tidak dihitung dalam stocktake: isinya sudah
+                    // bukan stok gudang.
+                    ->penyimpanan()
                     ->orderBy('code')->get(['id', 'code'])
                 : collect(),
         ]);
@@ -217,10 +244,14 @@ class StockTakeController extends Controller
             'location_id' => ['required', 'integer', 'exists:locations,id'],
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'batch_no' => ['required', 'string', 'max:50'],
+            // TIDAK LAGI WAJIB: tanggal produksi dibaca dari nomor batchnya
+            // sendiri (lihat BatchProduksi). Isian ini hanya jalan cadangan
+            // untuk batch lama yang tidak mengikuti pola itu.
+            //
             // Tidak boleh di masa depan: kedaluwarsa dihitung dari tanggal
             // ini, dan tanggal maju memberi umur simpan yang tidak pernah
             // dimiliki palet itu.
-            'production_date' => ['required', 'date', 'before_or_equal:'.now()->toDateString()],
+            'production_date' => ['nullable', 'date', 'before_or_equal:'.now()->toDateString()],
             'qty' => ['required', 'integer', 'min:1', 'max:1000000'],
             'note' => ['nullable', 'string', 'max:500'],
         ], [], [
@@ -231,12 +262,26 @@ class StockTakeController extends Controller
             'qty' => 'jumlah',
         ]);
 
+        // Nomor batchnya yang menentukan. Isian manual hanya dipakai kalau
+        // nomor itu memang tidak memuat tanggal — bukan untuk menimpanya,
+        // supaya tidak ada dua keterangan yang saling bertentangan tentang
+        // palet yang sama.
+        $tanggal = BatchProduksi::tanggal($data['batch_no']) ?? ($data['production_date'] ?? null);
+
+        if ($tanggal === null) {
+            return back()->withInput()->with('error', sprintf(
+                'Nomor batch %s tidak memuat tahun dan bulan produksi, jadi tanggalnya tidak bisa dibaca '.
+                'otomatis. Isi tanggal produksinya dari label palet.',
+                trim($data['batch_no']),
+            ));
+        }
+
         try {
             $item = $this->stocktake->catatTemuan($stocktake, [
                 'location_id' => (int) $data['location_id'],
                 'product_id' => (int) $data['product_id'],
                 'batch_no' => $data['batch_no'],
-                'production_date' => $data['production_date'],
+                'production_date' => $tanggal,
                 'qty' => (int) $data['qty'],
                 'note' => $data['note'] ?? null,
             ], $request->user()?->id);
@@ -265,12 +310,16 @@ class StockTakeController extends Controller
             ],
         );
 
+        // Tanggal produksinya ikut disebut. Ia dibaca otomatis dari nomor
+        // batch, dan pembacaan yang tidak pernah diperlihatkan adalah
+        // pembacaan yang tidak pernah dikoreksi kalau salah.
         return back()->with('success', sprintf(
-            'Temuan tercatat: %d unit batch %s di rak %s. Stok BELUM bertambah — barang ini baru masuk sistem '.
-            'saat laporan sesi ini disahkan, sama seperti hitungan lainnya.',
+            'Temuan tercatat: %d unit batch %s di rak %s, produksi %s. Stok BELUM bertambah — barang ini baru '.
+            'masuk sistem saat laporan sesi ini disahkan, sama seperti hitungan lainnya.',
             $item->qty_physical,
             $item->batch_no,
             $item->location?->code ?? '—',
+            $item->found_production_date?->translatedFormat('F Y') ?? '—',
         ));
     }
 
@@ -478,13 +527,26 @@ class StockTakeController extends Controller
             ->with('product:id,sku,name,uom')
             ->get()
             ->groupBy('product_id')
-            ->map(function ($isi) {
+            ->map(function ($isi) use ($stocktake) {
                 $pertama = $isi->first();
 
-                // Baris yang belum dihitung menyumbang qty_after = qty_system:
-                // stoknya memang tidak disentuh, jadi selisihnya nol dan
-                // totalnya tetap jujur.
-                $sesudah = $isi->sum(fn (StockTakeItem $i) => $i->qty_after ?? $i->qty_system);
+                // SEBELUM DISAHKAN, angka "sesudah" adalah RAMALAN dari hasil
+                // hitungan; sesudah disahkan, ia angka yang benar-benar
+                // diterapkan (qty_after).
+                //
+                // Dulu keduanya sama-sama membaca qty_after — padahal kolom itu
+                // baru terisi saat pengesahan. Akibatnya pratinjau SELALU
+                // menunjukkan sesudah = sebelum, selisih 0, dan +0/-0, bahkan
+                // ketika layar penghitungan sudah menemukan selisih. Justru di
+                // pratinjau itulah orang memeriksa sebelum menekan "Sahkan",
+                // jadi laporan yang selalu bersih membuat pemeriksaannya sia-sia.
+                //
+                // Baris yang belum dihitung tetap menyumbang qty_system: stoknya
+                // memang tidak akan disentuh, jadi selisihnya nol dan totalnya
+                // tetap jujur.
+                $sesudah = $isi->sum(fn (StockTakeItem $i) => $stocktake->sudahDisahkan()
+                    ? ($i->qty_after ?? $i->qty_system)
+                    : ($i->qty_physical ?? $i->qty_system));
                 $sebelum = $isi->sum('qty_system');
 
                 return [

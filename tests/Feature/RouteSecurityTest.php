@@ -41,11 +41,17 @@ class RouteSecurityTest extends TestCase
      *
      * epod & mrf: dibuka supir dan atasan lewat tautan WhatsApp; kuncinya
      * token acak di URL (dan throttle), bukan akun.
+     *
+     * mrf/minta: formulir permintaan material untuk divisi yang tidak punya
+     * akun WMS (QC, R&D). Pengamannya bukan kerahasiaan tautannya melainkan
+     * dua pintu persetujuan yang tetap harus dilewati — atasan divisi lewat
+     * WhatsApp, lalu Logistik. Keduanya bukan pengisi formulir.
      */
     private const PUBLIK = [
         '/', 'login', 'logout', 'health', 'up',
         'epod/{token}', 'epod/{token}/confirm',
         'mrf/{token}', 'mrf/{token}/approve', 'mrf/{token}/reject',
+        'mrf/minta/{token}', 'mrf/minta/{token}/selesai', 'mrf/minta/{token}/produk',
     ];
 
     /**
@@ -152,8 +158,22 @@ class RouteSecurityTest extends TestCase
         foreach ($this->ruteAplikasi() as $rute) {
             $mw = $rute->gatherMiddleware();
 
+            /*
+             | Satu rute boleh menyebut lebih dari satu portal
+             | (`portal:wms,sales`) — layar MRF milik Produksi DAN Sales. Yang
+             | diperiksa karena itu daftar portalnya, bukan kecocokan teks
+             | middleware-nya: mencocokkan teks membuat rute bersama terbaca
+             | seperti rute tanpa penjagaan sama sekali.
+             */
+            $disebut = [];
+            foreach ($mw as $satu) {
+                if (str_starts_with($satu, 'portal:')) {
+                    $disebut = array_merge($disebut, explode(',', substr($satu, 7)));
+                }
+            }
+
             foreach (['wms', 'sales'] as $portal) {
-                if (str_starts_with($rute->uri(), $portal.'/') && ! in_array('portal:'.$portal, $mw, true)) {
+                if (str_starts_with($rute->uri(), $portal.'/') && ! in_array($portal, $disebut, true)) {
                     $bocor[] = $rute->uri();
                 }
             }

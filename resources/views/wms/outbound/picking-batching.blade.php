@@ -152,7 +152,7 @@
                                         Transfer {{ $daftar->transfer->transfer_number }} →
                                         {{ $daftar->transfer->toWarehouse?->code ?? 'gudang lain' }}
                                     @elseif($daftar->requisition)
-                                        MRF {{ $daftar->requisition->mrf_number }} → Produksi
+                                        MRF {{ $daftar->requisition->mrf_number }} → {{ $daftar->requisition->nama_divisi }}
                                     @else
                                         {{ $daftar->orders_count }} pesanan
                                     @endif

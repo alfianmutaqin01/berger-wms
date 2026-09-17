@@ -870,6 +870,7 @@ class InboundController extends Controller
 
         $locations = Location::where('warehouse_id', $header->warehouse_id)
             ->active()
+            ->penyimpanan()
             ->inStorageOrder()
             ->get(['id', 'code', 'zone']);
 
@@ -1158,6 +1159,7 @@ class InboundController extends Controller
 
         $locations = Location::where('warehouse_id', $header->warehouse_id)
             ->active()
+            ->penyimpanan()
             ->inStorageOrder()
             ->get(['id', 'code', 'zone']);
 

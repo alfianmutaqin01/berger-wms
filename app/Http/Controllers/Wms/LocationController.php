@@ -50,7 +50,14 @@ class LocationController extends Controller
             'status' => $request->query('status'),
         ];
 
+        // RAK TRANSIT TIDAK IKUT. Ia bukan bagian dari denah gudang melainkan
+        // perlengkapan tetap sistem: dua titik serah terima material produksi
+        // yang dibuat sendiri untuk tiap gudang. Menampilkannya di sini hanya
+        // menambah dua baris yang selamanya kosong ke hitungan "rak terisi" —
+        // dan membuka jalan untuk menonaktifkannya, yang akan mematikan serah
+        // terima MRF tanpa ada yang menghubungkan sebabnya.
         $base = WarehouseScope::apply(Location::query(), $user)
+            ->penyimpanan()
             ->when($filters['warehouse_id'], fn ($q, $id) => $q->where('warehouse_id', $id));
 
         $locations = (clone $base)
@@ -124,7 +131,8 @@ class LocationController extends Controller
             ? $pilihan->firstWhere('id', (int) $filters['warehouse_id'])
             : $pilihan->first();
 
-        $base = Location::query()->where('warehouse_id', $warehouse?->id);
+        // Sama seperti daftar rak: titik serah terima bukan bagian denah.
+        $base = Location::query()->penyimpanan()->where('warehouse_id', $warehouse?->id);
 
         $locations = (clone $base)
             ->when($filters['zone'], fn ($q, $zone) => $q->where('zone', $zone))

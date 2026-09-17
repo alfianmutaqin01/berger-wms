@@ -134,6 +134,28 @@
             {{-- Menu "My Customers" dihapus pada PRD v1.1: pelanggan didaftarkan
                  langsung oleh Manager/Super Admin lewat Master Customer di Portal WMS.
                  Lihat docs/1_prd.md §6.2 F-MASTER-06. --}}
+
+            {{-- PERMINTAAN MATERIAL, satu-satunya layar sisi WMS yang dibuka
+                 untuk Sales. Contoh untuk calon pelanggan diminta Sales, bukan
+                 Produksi, dan tanpa pintu ini izin MRF-nya tidak punya jalan
+                 masuk sama sekali. Yang dilihatnya berhenti di divisinya. --}}
+            @can(\App\Support\Permission::MRF_VIEW)
+                <li class="nav-section">Permintaan Material</li>
+                <li class="nav-item {{ request()->is('wms/mrf*') ? 'active' : '' }}">
+                    <a href="/wms/mrf" class="nav-link">
+                        <i class="bi bi-clipboard2-check"></i>
+                        <span>MRF</span>
+                    </a>
+                </li>
+                @can(\App\Support\Permission::MRF_RECEIVE)
+                    <li class="nav-item {{ request()->is('wms/material-produksi*') ? 'active' : '' }}">
+                        <a href="/wms/material-produksi" class="nav-link">
+                            <i class="bi bi-box-seam"></i>
+                            <span>MRF Picked</span>
+                        </a>
+                    </li>
+                @endcan
+            @endcan
         </ul>
 
         <!-- User Profile - Fixed Bottom -->

@@ -55,6 +55,10 @@ class BinAllocator
     {
         $bins = Location::where('warehouse_id', $warehouseId)
             ->active()
+            // Rak transit bukan tempat menyimpan: barang di sana sudah bukan
+            // milik gudang, dan menyarankannya untuk put-away akan menumpuk
+            // barang baru di atas barang yang sedang menunggu diambil.
+            ->penyimpanan()
             ->get(['id', 'code'])
             ->keyBy(fn (Location $l) => strtoupper($l->code));
 

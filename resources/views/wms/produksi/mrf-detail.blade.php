@@ -65,14 +65,41 @@
                         <div class="alert alert-primary border-0 rounded-3 mb-0">
                             <i class="bi bi-box-seam me-2"></i>
                             Barangnya sudah turun dari rak dan menunggu di
-                            <strong class="font-monospace">{{ $mrf->handoverLocation?->code ?? '—' }}</strong>.
+                            <strong>{{ $mrf->handoverLocation?->nama_serah_terima ?? '—' }}</strong>.
                             @if(filled($mrf->handover_note))
                                 <div class="small mt-1">Catatan operator: {{ $mrf->handover_note }}</div>
                             @endif
                             <div class="small mt-1">
-                                Sejak saat ini barang itu sudah <strong>keluar dari stok gudang</strong>. Tekan Diterima
-                                supaya ia tercatat di buku Produksi dan sisanya ikut terpantau.
+                                Sejak saat ini barang itu sudah <strong>keluar dari stok gudang</strong>.
                             </div>
+
+                            @if($mrf->lewatTautan())
+                                {{-- PENUTUPNYA DI GUDANG, bukan di tangan pemohon:
+                                     QC dan R&D tidak punya akun WMS dan tidak akan
+                                     pernah membuka layar ini. Yang dicatat nama
+                                     orang yang benar-benar membawa barangnya. --}}
+                                <div class="small mt-2">
+                                    {{ $mrf->department_name ?? 'Pemohon' }} sudah dikabari lewat WhatsApp.
+                                    Isi nama pengambilnya saat orangnya datang — permintaan ini langsung ditutup
+                                    dan pemakaiannya tercatat di Riwayat Pemakaian MRF.
+                                </div>
+                                @can(\App\Support\Permission::MRF_APPROVE)
+                                <form method="POST" action="{{ route('wms.mrf.collect', $mrf) }}"
+                                      class="d-flex flex-wrap gap-2 mt-3">
+                                    @csrf
+                                    <input type="text" name="collected_by_name" maxlength="100" required
+                                           class="form-control form-control-sm rounded-3" style="max-width:260px"
+                                           placeholder="Nama yang mengambil">
+                                    <button class="btn btn-sm btn-primary rounded-3">
+                                        <i class="bi bi-check2-circle me-1"></i> Sudah Diambil
+                                    </button>
+                                </form>
+                                @endcan
+                            @else
+                                <div class="small mt-1">
+                                    Tekan Diterima supaya ia tercatat di buku Produksi dan sisanya ikut terpantau.
+                                </div>
+                            @endif
                         </div>
                         @break
                     @case(\App\Models\MaterialRequisition::STATUS_REJECTED_APPROVAL)
@@ -80,6 +107,7 @@
                             Ditolak <strong>{{ $mrf->approver_name }}</strong>
                             pada {{ $mrf->approver_rejected_at?->format('d/m/Y H:i') }}.
                             <div class="mt-1">Alasan: {{ $mrf->approver_rejection_reason }}</div>
+                            @include('wms.produksi.partials.tombol-perbaiki-mrf', ['mrf' => $mrf])
                         </div>
                         @break
                     @case(\App\Models\MaterialRequisition::STATUS_REJECTED_LOGISTICS)
@@ -87,6 +115,7 @@
                             Ditolak Logistik ({{ $mrf->logisticsRejectedBy?->full_name ?? '—' }})
                             pada {{ $mrf->logistics_rejected_at?->format('d/m/Y H:i') }}.
                             <div class="mt-1">Alasan: {{ $mrf->logistics_rejection_reason }}</div>
+                            @include('wms.produksi.partials.tombol-perbaiki-mrf', ['mrf' => $mrf])
                         </div>
                         @break
                     @case(\App\Models\MaterialRequisition::STATUS_CANCELLED)
@@ -100,7 +129,7 @@
                         <p class="mb-0">
                             Diterima Produksi pada {{ $mrf->received_at?->format('d/m/Y H:i') }}
                             oleh {{ $mrf->receivedBy?->full_name ?? '—' }}.
-                            Pemakaiannya dicatat di <a href="{{ route('wms.material-produksi.index') }}">Material di Tangan Produksi</a>.
+                            Pemakaiannya dicatat di <a href="{{ route('wms.material-produksi.index') }}">MRF Picked</a>.
                         </p>
                 @endswitch
             </div>

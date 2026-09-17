@@ -19,7 +19,7 @@ class MaterialRequisitionFactory extends Factory
             // Nomor acak, BUKAN lewat DocumentNumber: factory dipakai di luar
             // transaksi dan penomoran sungguhan menuntut baris urutannya
             // dikunci. Yang diuji di sini isinya, bukan penomorannya.
-            'mrf_number' => 'MR'.now()->format('ymd').fake()->unique()->numerify('###'),
+            'mrf_number' => 'MRF'.now()->format('ym').fake()->unique()->numerify('###'),
             'warehouse_id' => Warehouse::factory(),
             'requested_by' => User::factory(),
             'department_id' => null,

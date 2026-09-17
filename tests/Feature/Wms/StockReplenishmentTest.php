@@ -431,7 +431,7 @@ class StockReplenishmentTest extends TestCase
         $this->imporStok([['APKO-001', 'BT-001', '2026-03-15', 120, 'Z-99-99']])
             ->assertSessionHas('warning', fn ($p) => str_contains($p, 'Z-99-99'));
 
-        $this->assertSame(1, Location::count());
+        $this->assertSame(1, Location::penyimpanan()->count());
         $this->assertSame(0, InventoryStock::count());
     }
 

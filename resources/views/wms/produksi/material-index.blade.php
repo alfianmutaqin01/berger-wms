@@ -1,7 +1,7 @@
 @extends('layouts.wms')
 
-@section('title', 'Material di Tangan Produksi')
-@section('page_title', 'Material di Tangan Produksi')
+@section('title', 'MRF Picked')
+@section('page_title', 'MRF Picked')
 
 @section('content')
 {{-- LAYAR YANG MENJAWAB PERTANYAAN YANG SELAMA INI TIDAK PUNYA JAWABAN.
@@ -79,30 +79,94 @@
             <div class="col-12 col-md-auto d-flex gap-2">
                 <button class="btn btn-sm btn-outline-secondary rounded-3">Terapkan</button>
                 <a href="{{ route('wms.material-produksi.index') }}" class="btn btn-sm btn-link text-decoration-none">Reset</a>
+                {{-- Hanya untuk yang boleh membacanya. Divisi peminta berhenti
+                     di daftar ini; riwayatnya lintas divisi. --}}
+                @can(\App\Support\Permission::MRF_HISTORY)
+                    <a href="{{ route('wms.material-produksi.riwayat') }}"
+                       class="btn btn-sm btn-outline-primary rounded-3 ms-auto text-nowrap">
+                        <i class="bi bi-clock-history me-1"></i> Riwayat Pemakaian
+                    </a>
+                @endcan
             </div>
         </form>
+
+        {{-- Saran rak untuk isian "pindahkan ke". Satu daftar untuk seluruh
+             halaman: mencetaknya per baris berarti ribuan pilihan yang sama
+             diulang sebanyak jumlah material. --}}
+        <datalist id="rakPenyimpanan">
+            @foreach($rakPenyimpanan as $kode)
+                <option value="{{ $kode }}"></option>
+            @endforeach
+        </datalist>
 
         @forelse($halaman as $holding)
         @php($menunggak = ! $holding->sudahHabis() && $holding->umur_hari >= $ambangMenunggak)
         <div class="border rounded-4 p-3 mb-3 {{ $menunggak ? 'border-danger border-2' : '' }}">
             <div class="row g-3 align-items-start">
                 <div class="col-12 col-lg-5">
+                    {{-- SKU dan deskripsi BERDAMPINGAN, bukan bertumpuk. Yang
+                         dicari di daftar ini adalah satu SKU tertentu, dan mata
+                         membacanya sebagai satu kalimat: kode lalu namanya. --}}
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         <span class="font-monospace fw-semibold">{{ $holding->product?->sku }}</span>
+                        <span class="text-muted">—</span>
+                        <span>{{ $holding->product?->name }}</span>
                         @if($holding->sudahHabis())
                             <span class="badge bg-success-subtle text-success-emphasis">Habis</span>
                         @elseif($menunggak)
                             <span class="badge bg-danger">{{ $holding->umur_hari }} hari belum habis</span>
                         @endif
                     </div>
-                    <div class="small text-muted">{{ $holding->product?->name }}</div>
                     <div class="small text-muted mt-1">
                         Batch <span class="font-monospace">{{ $holding->batch_no ?? '—' }}</span>
                         · di <strong>{{ $holding->production_area }}</strong>
+                        @unless($holding->sudahHabis())
+                            {{-- Area yang tertulis berasal dari titik transit yang
+                                 dipilih operator saat serah terima — keterangan
+                                 pembuka, bukan keputusan akhir. Barangnya hampir
+                                 selalu berpindah ke lantai tempat ia benar-benar
+                                 dikerjakan, dan yang tahu itu Produksi. --}}
+                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none"
+                                    data-bs-toggle="collapse" data-bs-target="#pindah{{ $holding->id }}"
+                                    title="Pindahkan ke area lain">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                            <form method="POST" action="{{ route('wms.material-produksi.move', $holding) }}"
+                                  class="collapse mt-2 d-flex gap-1" id="pindah{{ $holding->id }}">
+                                @csrf
+                                {{-- Rak penyimpanan gudang ditawarkan sebagai saran,
+                                     tetapi isiannya tetap bebas: material produksi
+                                     sering berdiri di tempat yang bukan rak sama
+                                     sekali ("Lantai 2 Tinting"). Rak transit tidak
+                                     ikut disarankan — ia titik serah terima, bukan
+                                     tempat menyimpan. --}}
+                                <input type="text" name="production_area" maxlength="100" required
+                                       list="rakPenyimpanan"
+                                       value="{{ $holding->production_area }}"
+                                       class="form-control form-control-sm rounded-3"
+                                       placeholder="Mis. Lantai 2 Tinting atau kode rak">
+                                <button class="btn btn-sm btn-outline-primary rounded-3 text-nowrap">Pindahkan</button>
+                            </form>
+                        @endunless
                     </div>
+                    {{-- SIAPA MENGERJAKAN APA. Produksi bukan satu orang: yang
+                         meminta, yang menerima, dan yang memindahkan sering
+                         tiga orang berbeda, dan pertanyaan yang muncul
+                         berbulan-bulan kemudian selalu berbentuk "siapa yang
+                         memegang ini terakhir". --}}
                     <div class="small text-muted">
                         Dari <a href="{{ route('wms.mrf.show', $holding->material_requisition_id) }}" class="font-monospace">{{ $holding->requisition?->mrf_number }}</a>
-                        ({{ $holding->requisition?->requestedBy?->full_name ?? '—' }})
+                        · diminta {{ $holding->requisition?->requestedBy?->full_name ?? '—' }}
+                    </div>
+                    <div class="small text-muted">
+                        Diterima {{ $holding->receivedBy?->full_name ?? '—' }},
+                        {{ $holding->received_at?->format('d/m/Y H:i') }}
+                        @if($holding->area_moved_at)
+                            <div>
+                                Dipindahkan {{ $holding->areaMovedBy?->full_name ?? '—' }},
+                                {{ $holding->area_moved_at->format('d/m/Y H:i') }}
+                            </div>
+                        @endif
                     </div>
                 </div>
 
@@ -160,12 +224,14 @@
                                 <i class="bi bi-dot"></i>
                                 {{ $holding->received_at->format('d/m/Y') }} — masuk Produksi
                                 <strong>{{ number_format($holding->qty_received) }}</strong>
+                                lewat {{ $holding->receivedBy?->full_name ?? '—' }}
                             </li>
                             @foreach($holding->consumptions as $pakai)
                             <li class="text-muted">
                                 <i class="bi bi-dot"></i>
                                 {{ $pakai->consumed_at->format('d/m/Y') }} — dipakai
                                 <strong>{{ number_format($pakai->qty) }}</strong>
+                                oleh {{ $pakai->consumedBy?->full_name ?? '—' }}
                                 @if(filled($pakai->note)) · {{ $pakai->note }} @endif
                             </li>
                             @endforeach

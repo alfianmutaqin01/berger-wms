@@ -539,6 +539,9 @@ class InventoryController extends Controller
 
         $tujuan = Location::where('warehouse_id', $stock->warehouse_id)
             ->active()
+            // Rak transit bukan tempat menyimpan stok; kodenya diperlakukan
+            // seperti rak yang tidak ada.
+            ->penyimpanan()
             ->whereRaw('UPPER(code) = ?', [strtoupper(trim($validated['to_location_code']))])
             ->first();
 

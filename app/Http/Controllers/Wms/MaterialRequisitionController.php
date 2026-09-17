@@ -67,8 +67,14 @@ class MaterialRequisitionController extends Controller
             'warehouse_id' => $gudang,
         ];
 
+        /*
+         | Tiap divisi peminta melihat daftarnya sendiri; Logistik dan Manager
+         | melihat semuanya. Aturannya di MaterialRequisition::scopeUntukPembaca,
+         | supaya layar mana pun yang membaca MRF memakai batas yang sama.
+         */
         $dasar = fn () => WarehouseScope::apply(MaterialRequisition::query(), $user)
             ->when($gudang, fn ($q, $id) => $q->where('warehouse_id', $id))
+            ->untukPembaca($user)
             ->search($filters['search'])
             ->when($filters['jenis'], fn ($q, $j) => $q->where('request_type', $j));
 
@@ -118,12 +124,128 @@ class MaterialRequisitionController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    /**
+     * Memperbaiki permintaan yang ditolak — formulir yang sama, terisi.
+     *
+     * Hanya pemohonnya sendiri. Permintaan material membawa nama orang yang
+     * memintanya sampai ke WhatsApp atasan; membiarkan rekan lain menyuntingnya
+     * berarti nama itu berhenti berarti apa-apa.
+     */
+    public function edit(Request $request, MaterialRequisition $mrf): View
     {
+        WarehouseScope::assert($mrf->warehouse_id, $request->user());
+        $this->pastikanMilikSendiri($request, $mrf);
+
+        abort_unless(
+            $mrf->bolehDiperbaiki(),
+            403,
+            'Hanya permintaan yang sedang ditolak yang bisa diperbaiki.',
+        );
+
         $user = $request->user();
 
-        $data = $request->validate([
-            'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
+        $mrf->load('items.product:id,sku,name,uom');
+
+        return view('wms.produksi.mrf-create', [
+            'mrf' => $mrf,
+            // Disusun di sini, bukan di Blade: ekspresi bertingkat di dalam
+            // @json() tidak bisa diurai Blade, dan galatnya muncul sebagai
+            // kesalahan sintaksis yang menunjuk baris yang tidak bersalah.
+            'barisAwal' => $mrf->items->map(fn ($item) => [
+                'id' => $item->product_id,
+                'label' => trim(($item->product?->sku ?? '').' — '.($item->product?->name ?? '')),
+                'qty' => $item->qty_requested,
+                'note' => $item->note,
+            ])->values()->all(),
+            'gudang' => $mrf->warehouse,
+            'gudangOptions' => WarehouseScope::options($user),
+            'kontak' => MrfApproverContact::query()
+                ->untukGudang($mrf->warehouse_id)
+                ->orderBy('name')
+                ->get(),
+            'jenisOptions' => MaterialRequisition::TYPES,
+        ]);
+    }
+
+    /** Menyimpan perbaikan lalu mengajukannya lagi dengan nomor yang sama. */
+    public function update(Request $request, MaterialRequisition $mrf): RedirectResponse
+    {
+        WarehouseScope::assert($mrf->warehouse_id, $request->user());
+        $this->pastikanMilikSendiri($request, $mrf);
+
+        abort_unless(
+            $mrf->bolehDiperbaiki(),
+            403,
+            'Hanya permintaan yang sedang ditolak yang bisa diperbaiki.',
+        );
+
+        $data = $request->validate($this->aturanFormulir(), $this->pesanFormulir(), $this->namaFormulir());
+
+        try {
+            $mrf = $this->mrf->ajukanUlang(
+                mrf: $mrf,
+                jenis: $data['request_type'],
+                keperluan: $data['purpose'],
+                baris: array_values($data['items']),
+                namaApprover: $data['approver_name'],
+                nomorApprover: $data['approver_phone'],
+                simpanKontak: (bool) ($data['simpan_kontak'] ?? false),
+                pemohon: $request->user(),
+            );
+        } catch (RuntimeException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        SendMrfApprovalRequest::dispatch($mrf->id);
+
+        Activity::record(
+            ActivityLog::MRF_CREATE,
+            sprintf(
+                'Mengajukan ulang permintaan material %s (%s) setelah ditolak — %d produk, persetujuan '.
+                'diminta lagi ke %s.',
+                $mrf->mrf_number,
+                $mrf->jenis_label,
+                count($data['items']),
+                $mrf->approver_name,
+            ),
+            $mrf,
+            $mrf->warehouse_id,
+            [
+                'nomor' => $mrf->mrf_number,
+                'pengajuan_ulang' => true,
+                'jenis' => $mrf->request_type,
+                'keperluan' => $mrf->purpose,
+                'approver' => $mrf->approver_name,
+            ],
+        );
+
+        return redirect()
+            ->route('wms.mrf.show', $mrf)
+            ->with('success', sprintf(
+                'Permintaan %s diajukan ulang ke %s dengan nomor yang sama. Catatan bahwa permintaan ini '.
+                'pernah ditolak tetap tersimpan dan ikut terbaca oleh yang menyetujui.',
+                $mrf->mrf_number,
+                $mrf->approver_name,
+            ));
+    }
+
+    /**
+     * Aturan formulir MRF, dipakai bersama oleh pengajuan dan perbaikan.
+     *
+     * Ditulis sekali karena keduanya mengisi berkas yang sama. Kalau disalin,
+     * suatu hari salah satunya diberi aturan baru dan yang lain tidak — dan
+     * pengajuan ulang menjadi pintu belakang yang menerima isian yang sudah
+     * tidak diterima di pintu depan.
+     *
+     * `warehouse_id` sengaja TIDAK di sini: hanya pengajuan pertama yang
+     * memilih gudang. Perbaikan tidak boleh memindahkan berkas ke gudang lain
+     * setelah nomornya beredar.
+     *
+     * @return array<string, list<string>>
+     */
+    private function aturanFormulir(): array
+    {
+        return [
             'request_type' => ['required', 'string', 'in:'.implode(',', array_keys(MaterialRequisition::TYPES))],
             'purpose' => ['required', 'string', 'min:5', 'max:1000'],
             'approver_name' => ['required', 'string', 'max:100'],
@@ -133,17 +255,74 @@ class MaterialRequisitionController extends Controller
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:999999'],
             'items.*.note' => ['nullable', 'string', 'max:500'],
-        ], [
+        ];
+    }
+
+    /** @return array<string, string> */
+    private function pesanFormulir(): array
+    {
+        return [
             'purpose.required' => 'Keperluan wajib diisi — inilah satu-satunya keterangan yang menjelaskan kenapa barang keluar dari gudang.',
             'purpose.min' => 'Keperluan terlalu pendek untuk bisa dipahami orang yang membacanya nanti.',
             'items.required' => 'Belum ada satu produk pun yang diminta.',
             'approver_name.required' => 'Nama atasan yang akan menyetujui wajib diisi.',
             'approver_phone.required' => 'Nomor WhatsApp atasan wajib diisi.',
-        ], [
+        ];
+    }
+
+    /** @return array<string, string> */
+    private function namaFormulir(): array
+    {
+        return [
             'purpose' => 'keperluan',
             'approver_name' => 'nama atasan',
             'approver_phone' => 'nomor WhatsApp atasan',
-        ]);
+        ];
+    }
+
+    /** Pemohonnya sendiri, bukan rekan sedepartemen. */
+    private function pastikanMilikSendiri(Request $request, MaterialRequisition $mrf): void
+    {
+        abort_unless(
+            $mrf->requested_by === $request->user()?->id,
+            403,
+            'Permintaan ini bukan milik Anda.',
+        );
+    }
+
+    /**
+     * Rincian satu MRF hanya terbuka untuk divisi yang memintanya.
+     *
+     * Daftarnya sudah disaring, tetapi nomor MRF mudah ditebak dan url-nya
+     * mudah ditempel. Tanpa pemeriksaan ini, penyaringan di daftar cuma
+     * menyembunyikan barisnya, bukan menutup dokumennya.
+     */
+    private function pastikanSedivisi(Request $request, MaterialRequisition $mrf): void
+    {
+        $user = $request->user();
+
+        if ($user === null || ! in_array($user->role?->slug, MaterialRequisition::PERAN_SEDIVISI, true)) {
+            return;
+        }
+
+        abort_unless(
+            $user->department_id !== null
+                ? $mrf->department_id === $user->department_id
+                : $mrf->requested_by === $user->id,
+            403,
+            'Permintaan ini milik divisi lain.',
+        );
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate(
+            ['warehouse_id' => ['required', 'integer', 'exists:warehouses,id']] + $this->aturanFormulir(),
+            $this->pesanFormulir(),
+            $this->namaFormulir(),
+        );
 
         WarehouseScope::assert((int) $data['warehouse_id'], $user);
 
@@ -234,6 +413,7 @@ class MaterialRequisitionController extends Controller
     public function show(Request $request, MaterialRequisition $mrf): View
     {
         WarehouseScope::assert($mrf->warehouse_id, $request->user());
+        $this->pastikanSedivisi($request, $mrf);
 
         $mrf->load([
             'warehouse:id,code,name',
@@ -422,6 +602,62 @@ class MaterialRequisitionController extends Controller
     }
 
     /* -------------------------------------------------- Produksi: menerima */
+
+    /**
+     * Barang permintaan lewat tautan divisi DIAMBIL pemohonnya. Selesai.
+     *
+     * Ditekan orang gudang saat orangnya datang, bukan oleh pemohonnya —
+     * pemohon dari QC atau R&D tidak punya akun dan tidak akan membuka WMS.
+     * Yang dicatat adalah nama orang yang benar-benar membawa barangnya
+     * keluar, dan itulah satu-satunya jejak siapa yang memegangnya.
+     */
+    public function collect(Request $request, MaterialRequisition $mrf): RedirectResponse
+    {
+        WarehouseScope::assert($mrf->warehouse_id, $request->user());
+
+        abort_unless($mrf->lewatTautan(), 404);
+
+        $data = $request->validate([
+            'collected_by_name' => ['required', 'string', 'max:100'],
+        ], [
+            'collected_by_name.required' => 'Isi nama orang yang mengambil — inilah satu-satunya catatan '.
+                'siapa yang membawa barang ini keluar gudang.',
+        ], ['collected_by_name' => 'nama pengambil']);
+
+        try {
+            $hasil = $this->mrf->tandaiDiambil($mrf, $data['collected_by_name'], $request->user()?->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::MRF_RECEIVE,
+            sprintf(
+                '%s diambil %s dari divisi %s: %d unit dalam %d batch, dan permintaannya ditutup.',
+                $mrf->mrf_number,
+                trim($data['collected_by_name']),
+                $mrf->department_name ?? '—',
+                $hasil['unit'],
+                $hasil['baris'],
+            ),
+            $mrf,
+            $mrf->warehouse_id,
+            [
+                'nomor' => $mrf->mrf_number,
+                'lewat_tautan' => true,
+                'divisi' => $mrf->department_name,
+                'diambil_oleh' => trim($data['collected_by_name']),
+                'unit' => $hasil['unit'],
+            ],
+        );
+
+        return back()->with('success', sprintf(
+            '%s ditutup: %d unit diambil %s. Pemakaiannya tercatat di Riwayat Pemakaian MRF.',
+            $mrf->mrf_number,
+            $hasil['unit'],
+            trim($data['collected_by_name']),
+        ));
+    }
 
     public function receive(Request $request, MaterialRequisition $mrf): RedirectResponse
     {

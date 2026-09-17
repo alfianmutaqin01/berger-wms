@@ -38,15 +38,45 @@ class UserFactory extends Factory
         ];
     }
 
+    /**
+     * Departemen bawaan tiap peran, mengikuti DepartmentSeeder.
+     *
+     * Di lapangan seluruh orang Produksi duduk di satu departemen, dan layar
+     * MRF membatasi bacaannya PER DEPARTEMEN. Factory yang memberi tiap user
+     * departemen acak membuat dua rekan sedivisi saling tidak terlihat —
+     * keadaan yang tidak pernah ada di data sungguhan, dan yang membuat test
+     * gagal karena datanya mustahil, bukan karena aturannya salah.
+     *
+     * @var array<string, array{slug:string, name:string}>
+     */
+    private const DEPARTEMEN_PERAN = [
+        Role::PRODUCTION => ['slug' => 'produksi', 'name' => 'Produksi Inti'],
+        Role::SALES => ['slug' => 'sales', 'name' => 'Sales & Marketing'],
+        Role::LOGISTICS => ['slug' => 'logistik', 'name' => 'Logistik & Supply Chain'],
+        Role::WAREHOUSE_OPERATOR => ['slug' => 'logistik', 'name' => 'Logistik & Supply Chain'],
+    ];
+
     /** User dengan role tertentu berdasarkan slug; role dibuat bila belum ada. */
     public function withRole(string $slug): static
     {
-        return $this->state(fn () => [
-            'role_id' => Role::firstOrCreate(
-                ['slug' => $slug],
-                ['name' => Str::headline($slug), 'level' => 99]
-            )->id,
-        ]);
+        return $this->state(function () use ($slug) {
+            $keadaan = [
+                'role_id' => Role::firstOrCreate(
+                    ['slug' => $slug],
+                    ['name' => Str::headline($slug), 'level' => 99]
+                )->id,
+            ];
+
+            if (isset(self::DEPARTEMEN_PERAN[$slug])) {
+                $departemen = self::DEPARTEMEN_PERAN[$slug];
+                $keadaan['department_id'] = Department::firstOrCreate(
+                    ['slug' => $departemen['slug']],
+                    ['name' => $departemen['name']],
+                )->id;
+            }
+
+            return $keadaan;
+        });
     }
 
     public function superAdmin(): static

@@ -23,9 +23,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *   rejected_logistics  Logistik menolak, dengan alasan
  *   pending_picking     Logistik memilih batch; stok DICADANGKAN, operator
  *                       mendapat tugasnya
- *   ready_for_pickup    operator selesai; barang turun dari rak dan menunggu
- *                       Produksi di rak serah terima
- *   received            Produksi mengambilnya; barang pindah ke buku Produksi
+ *   ready_for_pickup    operator selesai; barang menunggu pemohon di titik
+ *                       serah terima — hanya untuk permintaan lewat tautan
+ *                       divisi, yang pemohonnya tidak berdiri di gudang
+ *   received            barangnya berpindah tangan dan masuk buku pemakaian
  *   cancelled           dibatalkan sebelum barangnya turun dari rak
  *
  * KENAPA DUA LAPIS PERSETUJUAN. Approver WA menjawab "bolehkah Produksi
@@ -36,6 +37,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class MaterialRequisition extends Model
 {
     use HasFactory;
+
+    /**
+     * Peran yang hanya melihat permintaan divisinya sendiri.
+     *
+     * Keduanya divisi PEMINTA: mereka membuka daftar ini untuk mengejar
+     * permintaannya, bukan untuk mengurus permintaan orang lain.
+     */
+    public const PERAN_SEDIVISI = [Role::PRODUCTION, Role::SALES];
 
     /* ------------------------------------------------------------ Status */
 
@@ -61,8 +70,8 @@ class MaterialRequisition extends Model
         self::STATUS_PENDING_LOGISTICS => 'Menunggu Logistik',
         self::STATUS_REJECTED_LOGISTICS => 'Ditolak Logistik',
         self::STATUS_PENDING_PICKING => 'Menunggu Picking',
-        self::STATUS_READY_FOR_PICKUP => 'Siap Diambil Produksi',
-        self::STATUS_RECEIVED => 'Diterima Produksi',
+        self::STATUS_READY_FOR_PICKUP => 'Siap Diambil Pemohon',
+        self::STATUS_RECEIVED => 'Sudah Diterima',
         self::STATUS_CANCELLED => 'Dibatalkan',
     ];
 
@@ -128,7 +137,8 @@ class MaterialRequisition extends Model
 
     protected $fillable = [
         'mrf_number', 'warehouse_id',
-        'requested_by', 'department_id', 'department_name',
+        'requested_by', 'request_link_id', 'requester_name', 'requester_phone',
+        'department_id', 'department_name', 'collected_by_name',
         'request_type', 'purpose', 'status',
         'approver_name', 'approver_phone', 'approval_token',
         'approved_at', 'approval_note',
@@ -168,6 +178,50 @@ class MaterialRequisition extends Model
         return $this->belongsTo(User::class, 'requested_by');
     }
 
+    /** Terisi bila permintaan ini datang lewat tautan divisi, bukan akun. */
+    public function requestLink(): BelongsTo
+    {
+        return $this->belongsTo(MrfRequestLink::class, 'request_link_id');
+    }
+
+    /**
+     * Nama orang yang meminta, dari jalur mana pun ia datang.
+     *
+     * Permintaan lewat tautan tidak punya akun sama sekali — namanya diketik
+     * di formulir. Dokumen ini harus tetap menjawab "siapa yang meminta"
+     * dengan satu cara, entah pemohonnya punya akun atau tidak.
+     */
+    public function getNamaPemohonAttribute(): string
+    {
+        return $this->requestedBy?->full_name ?? $this->requester_name ?? '—';
+    }
+
+    /**
+     * Divisi yang meminta, untuk ditulis di layar.
+     *
+     * Dipakai di layar operator, yang dulu selalu menulis "Produksi" karena
+     * memang hanya Produksi yang meminta. Sekarang Sales, QC dan R&D ikut
+     * meminta, dan operator yang membaca "Produksi" di atas permintaan Sales
+     * akan menaruh barangnya di tempat yang salah.
+     */
+    public function getNamaDivisiAttribute(): string
+    {
+        return $this->department_name ?: ($this->department?->name ?? 'Divisi peminta');
+    }
+
+    /**
+     * Permintaan dari divisi tanpa akun.
+     *
+     * Barangnya SELESAI SAAT DIAMBIL, tidak masuk buku pemakaian bertahap:
+     * divisi lain lazimnya minta satu-dua pcs yang langsung habis, dan baris
+     * sekecil itu di daftar sisa berjalan hanya menenggelamkan sisa Produksi
+     * yang benar-benar perlu dikejar.
+     */
+    public function lewatTautan(): bool
+    {
+        return $this->request_link_id !== null;
+    }
+
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
@@ -188,6 +242,17 @@ class MaterialRequisition extends Model
     public function holdings(): HasMany
     {
         return $this->hasMany(ProductionMaterialHolding::class);
+    }
+
+    /**
+     * Seluruh penolakan yang pernah dialami permintaan ini.
+     *
+     * Kosong berarti belum pernah ditolak. Terisi berarti pernah — SEKALIPUN
+     * permintaannya sekarang sudah disetujui dan selesai.
+     */
+    public function rejections(): HasMany
+    {
+        return $this->hasMany(MaterialRequisitionRejection::class)->orderBy('rejected_at');
     }
 
     public function pickingList(): BelongsTo
@@ -236,6 +301,37 @@ class MaterialRequisition extends Model
             ->orWhere('approver_name', 'ILIKE', $pola));
     }
 
+    /*
+     | DIVISI PEMINTA HANYA MELIHAT PERMINTAAN DIVISINYA SENDIRI.
+     |
+     | Satu daftar yang memuat semua divisi tidak menolong siapa pun yang
+     | meminta: Produksi tidak berkepentingan pada sampel Sales, dan Sales
+     | tidak berkepentingan pada bahan baku sepalet. Yang tercampur begitu
+     | bukan sekadar panjang — ia membuat orang membaca nomor yang bukan
+     | miliknya lalu ragu apakah itu salah satu permintaannya.
+     |
+     | Dibatasi per DEPARTEMEN, bukan per orang: di dalam satu divisi
+     | pekerjaannya memang dioper — yang meminta pagi ini bukan yang mengambil
+     | sore nanti — dan membatasi tiap orang ke permintaannya sendiri justru
+     | memutus operan itu.
+     |
+     | Logistik, Manager, Operator dan Super Admin tidak dibatasi: pekerjaan
+     | mereka justru MELINTASI divisi.
+     |
+     | Akun tanpa departemen jatuh ke permintaannya sendiri, bukan ke semua —
+     | data yang belum lengkap tidak boleh membuka pintu yang lebih lebar.
+     */
+    public function scopeUntukPembaca(Builder $query, ?User $pembaca): Builder
+    {
+        if ($pembaca === null || ! in_array($pembaca->role?->slug, self::PERAN_SEDIVISI, true)) {
+            return $query;
+        }
+
+        return $pembaca->department_id !== null
+            ? $query->where('department_id', $pembaca->department_id)
+            : $query->where('requested_by', $pembaca->id);
+    }
+
     /** Yang masih menunggu seseorang berbuat sesuatu. */
     public function scopeBerjalan(Builder $query): Builder
     {
@@ -248,6 +344,39 @@ class MaterialRequisition extends Model
     }
 
     /* ------------------------------------------------------------ Aturan */
+
+    /**
+     * Sedang ditolak dan menunggu diperbaiki Produksi.
+     *
+     * Dua pintu penolakan, satu keadaan bagi pemohonnya: ditolak atasan
+     * ("belum boleh meminta ini") dan ditolak Logistik ("barangnya tidak ada,
+     * atau permintaannya keliru"). Keduanya sama-sama mengembalikan berkas ke
+     * meja Produksi.
+     */
+    public function sedangDitolak(): bool
+    {
+        return $this->status === self::STATUS_REJECTED_APPROVAL
+            || $this->status === self::STATUS_REJECTED_LOGISTICS;
+    }
+
+    /**
+     * Boleh diperbaiki isinya lalu diajukan lagi, NOMORNYA TETAP.
+     *
+     * Sebelumnya penolakan adalah jalan buntu: permintaan yang ditolak karena
+     * satu baris keliru memaksa Produksi mengetik ulang seluruhnya sebagai
+     * permintaan baru — dan permintaan barunya tidak punya hubungan apa pun
+     * dengan yang ditolak, sehingga atasan dan Logistik tidak pernah tahu ini
+     * pengajuan kedua atas hal yang sama. Aturan yang sama sudah berlaku untuk
+     * pesanan Sales yang ditolak.
+     *
+     * NOMOR MRF-NYA DIPAKAI ULANG, bukan diganti. Nomor itu sudah beredar di
+     * WhatsApp atasan dan di catatan Logistik; memberi nomor baru pada berkas
+     * yang sama membuat satu urusan punya dua nama.
+     */
+    public function bolehDiperbaiki(): bool
+    {
+        return $this->sedangDitolak();
+    }
 
     /**
      * Tautan persetujuan untuk approver.
@@ -283,7 +412,7 @@ class MaterialRequisition extends Model
             '',
             'Permintaan material dari Produksi Berger Paints menunggu persetujuan Anda:',
             'Nomor: '.$this->mrf_number,
-            'Pemohon: '.($this->requestedBy?->full_name ?? '—')
+            'Pemohon: '.$this->nama_pemohon
                 .($this->department_name ? ' ('.$this->department_name.')' : ''),
             'Gudang: '.($this->warehouse?->name ?? '—'),
             'Jenis: '.$this->jenis_label,
@@ -300,6 +429,42 @@ class MaterialRequisition extends Model
     }
 
     /**
+     * Kabar untuk pemohon lewat tautan: barangnya sudah bisa diambil.
+     *
+     * Dikirim lewat WhatsApp, bukan lonceng di dalam WMS — pemohonnya tidak
+     * punya akun dan tidak akan pernah melihat lonceng itu. Tempat
+     * pengambilannya disebut dengan nama yang bisa didatangi orang luar
+     * gudang, bukan kode rak yang hanya dipahami operator.
+     */
+    public function pesanSiapDiambil(): PesanWhatsApp
+    {
+        $tempat = $this->handoverLocation?->nama_serah_terima ?? 'gudang';
+
+        $teks = implode("\n", array_filter([
+            'Halo '.$this->nama_pemohon.',',
+            '',
+            'Permintaan material '.$this->mrf_number.' sudah disiapkan dan BISA DIAMBIL.',
+            'Tempat: '.$tempat,
+            'Gudang: '.($this->warehouse?->name ?? '—'),
+            $this->handover_note ? 'Catatan gudang: '.$this->handover_note : null,
+            '',
+            'Bawa serta nomor MRF di atas saat mengambil. Petugas gudang akan mencatat nama pengambilnya.',
+            '',
+            'Terima kasih.',
+        ], fn ($baris) => $baris !== null));
+
+        return new PesanWhatsApp(
+            teks: $teks,
+            template: PesanWhatsApp::TEMPLATE_MRF_SIAP_DIAMBIL,
+            variabel: [
+                (string) $this->nama_pemohon,
+                (string) $this->mrf_number,
+                (string) $tempat,
+            ],
+        );
+    }
+
+    /**
      * Pesan atasan dalam bentuk yang diterima seluruh penyedia WhatsApp.
      *
      * Urutan variabel adalah kontrak dengan template persetujuan_mrf di Meta —
@@ -313,7 +478,7 @@ class MaterialRequisition extends Model
             variabel: [
                 (string) $this->approver_name,
                 (string) $this->mrf_number,
-                (string) ($this->requestedBy?->full_name ?? 'Produksi'),
+                (string) $this->nama_pemohon,
                 (string) $this->approvalUrl(),
             ],
         );

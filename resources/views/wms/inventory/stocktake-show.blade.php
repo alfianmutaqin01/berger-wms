@@ -69,18 +69,44 @@
             {{-- Diberi id supaya ikut diperbarui setiap kali satu baris
                  disimpan. Angka ringkas yang diam-diam basi lebih buruk
                  daripada tidak ada angka sama sekali. --}}
+            {{-- Kartu yang punya penyaringnya sendiri dibuat BISA DIKLIK.
+                 "Ada selisih: 4" adalah pertanyaan yang belum selesai — yang
+                 ditanyakan berikutnya selalu "yang mana", dan jawabannya
+                 seharusnya satu klik, bukan menggulir seluruh gudang. --}}
             @php($kartu = [
-                ['Baris dihitung', $ringkasan['dihitung'].' / '.$ringkasan['baris'], 'primary', 'kartuDihitung'],
-                ['Cocok', $ringkasan['cocok'], 'success', 'kartuCocok'],
-                ['Ada selisih', $ringkasan['selisih'], 'danger', 'kartuSelisih'],
-                ['Belum dihitung', $ringkasan['belum'], 'secondary', 'kartuBelum'],
+                ['Baris dihitung', $ringkasan['dihitung'].' / '.$ringkasan['baris'], 'primary', 'kartuDihitung', null],
+                ['Cocok', $ringkasan['cocok'], 'success', 'kartuCocok', 'cocok'],
+                ['Ada selisih', $ringkasan['selisih'], 'danger', 'kartuSelisih', 'selisih'],
+                ['Belum dihitung', $ringkasan['belum'], 'secondary', 'kartuBelum', 'belum'],
             ])
-            @foreach($kartu as [$judul, $nilai, $warna, $id])
+            @foreach($kartu as [$judul, $nilai, $warna, $id, $saring])
+                {{-- Bentuk sebaris, sama seperti $kartu di atas. Mencampurnya
+                     dengan bentuk blok dalam satu berkas membuat Blade gagal
+                     parse, dan galatnya menunjuk baris yang tidak bersalah. --}}
+                @php($aktif = $saring !== null && $filter['hasil'] === $saring)
+                @php($kelas = 'd-block border rounded-3 p-3 text-decoration-none text-reset'
+                    .($aktif ? ' border-'.$warna.' border-2 bg-body-secondary' : ''))
                 <div class="col-6 col-lg-3">
-                    <div class="border rounded-3 p-3">
-                        <div class="text-muted small">{{ $judul }}</div>
-                        <div class="fs-5 fw-bold text-{{ $warna }}" id="{{ $id }}">{{ $nilai }}</div>
-                    </div>
+                    @if($saring === null)
+                        <div class="{{ $kelas }}">
+                            <div class="text-muted small">{{ $judul }}</div>
+                            <div class="fs-5 fw-bold text-{{ $warna }}" id="{{ $id }}">{{ $nilai }}</div>
+                        </div>
+                    @else
+                        <a class="{{ $kelas }}"
+                           title="{{ $aktif ? 'Hapus penyaring ini' : 'Tampilkan hanya baris: '.$judul }}"
+                           href="{{ route('wms.stocktake.show', ['stocktake' => $sesi] + array_filter([
+                               'rak' => $filter['rak'],
+                               'q' => $filter['q'],
+                               'hasil' => $aktif ? '' : $saring,
+                           ])) }}">
+                            <div class="text-muted small">
+                                {{ $judul }}
+                                <i class="bi bi-funnel{{ $aktif ? '-fill' : '' }} ms-1 opacity-50"></i>
+                            </div>
+                            <div class="fs-5 fw-bold text-{{ $warna }}" id="{{ $id }}">{{ $nilai }}</div>
+                        </a>
+                    @endif
                 </div>
             @endforeach
         </div>
@@ -117,24 +143,41 @@
                     @endforeach
                 </select>
             </div>
-            <div class="col-6 col-md-5">
+            {{-- PENYARING HASIL. Pertanyaan yang paling sering diajukan di
+                 tengah stocktake adalah "yang selisih itu SKU mana, rak mana"
+                 — dan tanpa penyaring, jawabannya adalah menggulir seluruh
+                 gudang sambil berharap tidak ada yang terlewat. --}}
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="filterHasil">Hasil hitungan</label>
+                <select name="hasil" id="filterHasil" class="form-select form-select-sm">
+                    <option value="">Semua hasil</option>
+                    <option value="selisih" @selected($filter['hasil'] === 'selisih')>Hanya yang ada selisih</option>
+                    <option value="cocok" @selected($filter['hasil'] === 'cocok')>Hanya yang cocok</option>
+                    <option value="belum" @selected($filter['hasil'] === 'belum')>Belum dihitung</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
                 <label class="form-label small fw-semibold text-secondary mb-1" for="filterSku">Cari SKU / nama produk</label>
                 <input type="search" name="q" id="filterSku" class="form-control form-control-sm"
                        value="{{ $filter['q'] }}" placeholder="mis. ID11 atau Apko">
             </div>
-            <div class="col-12 col-md-4 d-flex gap-2">
+            <div class="col-12 col-md-3 d-flex gap-2">
                 <button class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>Terapkan</button>
-                @if($filter['rak'] !== '' || $filter['q'] !== '')
+                @if($filter['rak'] !== '' || $filter['q'] !== '' || $filter['hasil'] !== '')
                     <a href="{{ route('wms.stocktake.show', $sesi) }}" class="btn btn-sm btn-outline-secondary">Reset</a>
                 @endif
             </div>
         </form>
 
-        @if($filter['rak'] !== '' || $filter['q'] !== '')
+        @if($filter['rak'] !== '' || $filter['q'] !== '' || $filter['hasil'] !== '')
             <div class="small text-muted mt-2">
                 <i class="bi bi-info-circle me-1"></i>
                 Layar sedang disaring. Angka ringkas di atas tetap menghitung <strong>seluruh sesi</strong>,
                 bukan hanya yang tampil — supaya tidak ada yang menutup sesi karena mengira sudah selesai.
+                @if($filter['hasil'] !== '')
+                    Baris yang hitungannya diperbaiki di sini <strong>tetap tinggal</strong> sampai halaman
+                    dimuat ulang, sekalipun angkanya sudah tidak lagi masuk penyaring.
+                @endif
             </div>
         @endif
     </div>
@@ -181,9 +224,21 @@
                            value="{{ old('batch_no') }}" class="form-control form-control-sm font-monospace">
                 </div>
 
+                {{-- TANGGAL PRODUKSI TIDAK DIKETIK LAGI: nomor batch sudah
+                     memuat tahun dan bulannya (I1|26|08|0071). Selama ia
+                     diketik terpisah, dua keterangan tentang palet yang sama
+                     bisa saling bertentangan — dan yang salah justru yang
+                     menentukan kedaluwarsa serta urutan FIFO.
+
+                     Hasil bacaannya DIPERLIHATKAN, bukan diam-diam dipakai.
+                     Isian manualnya hanya muncul untuk batch lama yang tidak
+                     mengikuti pola itu; menolak barangnya sama sekali akan
+                     membuat operator kembali mencatat di kertas. --}}
                 <div class="col-6 col-md-3">
-                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanTanggal">Tgl produksi <span class="text-danger">*</span></label>
-                    <input type="date" name="production_date" id="temuanTanggal" required
+                    <label class="form-label small fw-semibold text-secondary mb-1" for="temuanTanggal">Tgl produksi</label>
+                    <div id="temuanTanggalBaca" class="form-control form-control-sm bg-body-secondary d-none"
+                         aria-live="polite"></div>
+                    <input type="date" name="production_date" id="temuanTanggal"
                            value="{{ old('production_date') }}" max="{{ now()->toDateString() }}"
                            class="form-control form-control-sm">
                 </div>
@@ -209,8 +264,11 @@
 
                 <div class="col-12">
                     <p class="small text-muted mb-0 mt-1">
-                        <strong>Tanggal produksi dibaca dari palet</strong>, bukan hari ini — kedaluwarsanya
-                        dihitung dari situ, dan salah isi membuat barang lama justru dijual paling akhir.
+                        <strong>Tanggal produksi dibaca dari nomor batch</strong> — pada
+                        <span class="font-monospace">I1<strong>26</strong><strong>08</strong>0071</span>,
+                        <strong>26</strong> adalah tahunnya dan <strong>08</strong> bulannya, jadi tanggalnya
+                        1 Agustus 2026. Kedaluwarsa dan urutan FIFO dihitung dari situ. Kalau nomor batchnya
+                        tidak berpola seperti itu, isian tanggalnya muncul untuk diisi dari label palet.
                         Stok belum bertambah sampai laporan sesi ini disahkan.
                     </p>
                 </div>
@@ -238,8 +296,15 @@
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
+                                {{-- SKU dan deskripsi BERDAMPINGAN, bukan
+                                     bertumpuk. Ditumpuk, deskripsinya harus
+                                     dicetak kecil agar muat dan barisnya jadi
+                                     dua kali lebih tinggi — padahal layar ini
+                                     dibaca sambil berdiri di depan rak,
+                                     mencocokkan label. --}}
                                 <tr class="small text-muted">
-                                    <th>Produk</th>
+                                    <th style="width:170px">SKU</th>
+                                    <th>Deskripsi</th>
                                     <th>Batch</th>
                                     <th class="text-end">Sistem</th>
                                     <th style="width:220px">Hitungan fisik</th>
@@ -249,10 +314,8 @@
                             <tbody>
                             @foreach($baris as $item)
                                 <tr id="baris-{{ $item->id }}">
-                                    <td>
-                                        <div class="fw-semibold font-monospace small">{{ $item->product?->sku ?? '—' }}</div>
-                                        <div class="text-muted" style="font-size:.72rem">{{ $item->product?->name }}</div>
-                                    </td>
+                                    <td class="fw-semibold font-monospace small text-nowrap">{{ $item->product?->sku ?? '—' }}</td>
+                                    <td class="small">{{ $item->product?->name }}</td>
                                     <td class="font-monospace small">
                                         {{ $item->batch_no ?? '—' }}
                                         @if($item->is_found)
@@ -325,7 +388,7 @@
     <div class="card shadow-sm border-0 rounded-4">
         <div class="card-body text-center py-5 text-muted">
             <i class="bi bi-inbox display-6 d-block mb-2 opacity-50"></i>
-            @if($filter['rak'] !== '' || $filter['q'] !== '')
+            @if($filter['rak'] !== '' || $filter['q'] !== '' || $filter['hasil'] !== '')
                 {{-- Dibedakan dari sesi yang memang kosong. "Tidak ada baris"
                      pada layar yang sedang disaring terbaca seperti raknya
                      memang kosong, dan orang menutup pekerjaan yang belum
@@ -354,6 +417,70 @@ document.addEventListener('DOMContentLoaded', function () {
         label: function (p) { return p.teks; },
         kosong: 'SKU tidak terdaftar di Master Produk.',
     });
+
+    /*
+     * Membaca tanggal produksi dari nomor batch sambil diketik.
+     *
+     * Aturannya SAMA PERSIS dengan App\Support\Inventory\BatchProduksi di sisi
+     * server, dan servernya tetap membaca ulang sendiri — yang di sini hanya
+     * memperlihatkan hasilnya supaya operator bisa menangkap salah ketik
+     * sebelum menekan simpan. Kalau JavaScript-nya gagal dimuat, isian
+     * tanggalnya tetap terlihat dan formulirnya tetap jalan.
+     */
+    const bulanIndo = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+    function bacaTanggalBatch(nilai) {
+        const cocok = /^[A-Za-z]{1,3}\d(\d{2})(\d{2})\d{3,4}$/.exec(String(nilai).trim());
+
+        if (! cocok) {
+            return null;
+        }
+
+        const tahun = 2000 + Number(cocok[1]);
+        const bulan = Number(cocok[2]);
+
+        if (bulan < 1 || bulan > 12) {
+            return null;
+        }
+
+        const tanggal = new Date(Date.UTC(tahun, bulan - 1, 1));
+        const hariIni = new Date();
+
+        if (tanggal > hariIni) {
+            return null;
+        }
+
+        return {
+            iso: tahun + '-' + String(bulan).padStart(2, '0') + '-01',
+            label: '1 ' + bulanIndo[bulan - 1] + ' ' + tahun,
+        };
+    }
+
+    const isianBatch = document.getElementById('temuanBatch');
+    const isianTanggal = document.getElementById('temuanTanggal');
+    const bacaan = document.getElementById('temuanTanggalBaca');
+
+    function segarkanTanggal() {
+        const hasil = bacaTanggalBatch(isianBatch.value);
+
+        if (hasil === null) {
+            bacaan.classList.add('d-none');
+            isianTanggal.classList.remove('d-none');
+            isianTanggal.required = true;
+
+            return;
+        }
+
+        bacaan.textContent = hasil.label;
+        bacaan.classList.remove('d-none');
+        isianTanggal.classList.add('d-none');
+        isianTanggal.required = false;
+        isianTanggal.value = hasil.iso;
+    }
+
+    isianBatch.addEventListener('input', segarkanTanggal);
+    segarkanTanggal();
 });
 </script>
 @endcan
