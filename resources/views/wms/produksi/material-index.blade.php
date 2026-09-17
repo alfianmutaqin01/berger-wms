@@ -156,7 +156,7 @@
                          memegang ini terakhir". --}}
                     <div class="small text-muted">
                         Dari <a href="{{ route('wms.mrf.show', $holding->material_requisition_id) }}" class="font-monospace">{{ $holding->requisition?->mrf_number }}</a>
-                        · diminta {{ $holding->requisition?->requestedBy?->full_name ?? '—' }}
+                        · diminta {{ $holding->requisition?->nama_pemohon ?? '—' }}
                     </div>
                     <div class="small text-muted">
                         Diterima {{ $holding->receivedBy?->full_name ?? '—' }},

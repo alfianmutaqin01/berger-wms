@@ -78,7 +78,10 @@ class MrfApprovalController extends Controller
             sprintf(
                 '%s dari %s sudah disetujui %s. Tinggal dipilih batch mana yang diambilkan.',
                 $mrf->mrf_number,
-                $mrf->requestedBy?->full_name ?? 'Produksi',
+                // nama_pemohon: permintaan lewat tautan divisi tidak punya
+                // akun, dan "Produksi" adalah tebakan yang salah sejak QC,
+                // R&D dan Sales ikut meminta.
+                $mrf->nama_pemohon,
                 $mrf->approver_name,
             ),
             route('wms.mrf.show', $mrf),
