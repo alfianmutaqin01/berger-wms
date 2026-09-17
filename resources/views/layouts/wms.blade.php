@@ -84,6 +84,7 @@
                 \App\Support\Permission::RETURN_VIEW,
                 \App\Support\Permission::INBOUND_VERIFY,
                 \App\Support\Permission::INVENTORY_VIEW,
+                \App\Support\Permission::INVENTORY_LEDGER,
                 \App\Support\Permission::STOCKTAKE_COUNT,
                 \App\Support\Permission::TRANSFER_HISTORY,
             ])
@@ -140,8 +141,19 @@
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INVENTORY_VIEW)
-                            <li class="nav-item {{ request()->is('wms/inventory') || request()->is('wms/inventory/*') ? 'active' : '' }}">
+                            <li class="nav-item {{ request()->is('wms/inventory') ? 'active' : '' }}">
                                 <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok</span></a>
+                            </li>
+                        @endcan
+                        {{-- Menu tersendiri, sejajar Data Stok. Keduanya bicara
+                             tentang barang yang sama tetapi menjawab pertanyaan
+                             yang berbeda: yang satu sisa hari ini, yang satu
+                             jalan menuju ke sana. Dilipat ke dalam Data Stok,
+                             yang kedua hanya ditemukan orang yang sudah tahu
+                             ia ada. --}}
+                        @can(\App\Support\Permission::INVENTORY_LEDGER)
+                            <li class="nav-item {{ request()->is('wms/inventory/kartu-stok') ? 'active' : '' }}">
+                                <a href="/wms/inventory/kartu-stok" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kartu Stok</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::STOCKTAKE_COUNT)

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\JenisTransaksi;
 use App\Support\Settings;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -249,7 +250,7 @@ class ActivityLog extends Model
 
     protected $fillable = [
         'user_id', 'user_name', 'user_role', 'action', 'description',
-        'subject_type', 'subject_id', 'warehouse_id', 'properties',
+        'subject_type', 'subject_id', 'reference_number', 'warehouse_id', 'properties',
         'ip_address', 'created_at',
     ];
 
@@ -270,6 +271,20 @@ class ActivityLog extends Model
         static::deleting(function () {
             throw new RuntimeException('Log aktivitas tidak boleh dihapus — isinya jejak pertanggungjawaban.');
         });
+    }
+
+    /* ----------------------------------------------------------- Bacaan */
+
+    /** Kode pendek jenis transaksinya — MRF, PO, SJ, TF … */
+    public function getKodeJenisAttribute(): string
+    {
+        return JenisTransaksi::kode($this->subject_type);
+    }
+
+    /** Nama panjang jenisnya, untuk judul kolom dan penyaring. */
+    public function getLabelJenisAttribute(): string
+    {
+        return JenisTransaksi::label($this->subject_type);
     }
 
     /* ------------------------------------------------------------ Relasi */

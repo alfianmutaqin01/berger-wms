@@ -87,6 +87,18 @@ class Permission
     public const INVENTORY_QUARANTINE = 'inventory.quarantine';
 
     /**
+     * Membaca buku besar mutasi stok — kartu stok.
+     *
+     * DIPISAH dari INVENTORY_VIEW, yang menjawab "berapa sisa barang ini
+     * sekarang" dan memang dibutuhkan Produksi serta Operator tiap hari untuk
+     * mencari rak. Kartu stok menjawab pertanyaan yang lain sama sekali:
+     * SETIAP pertambahan dan pengurangan sejak hari pertama, lengkap dengan
+     * dokumen penyebabnya. Itu bahan rekonsiliasi, bukan bahan kerja harian,
+     * dan yang mengerjakannya Logistik bersama Manager.
+     */
+    public const INVENTORY_LEDGER = 'inventory.ledger';
+
+    /**
      * MEMASUKKAN hasil hitungan fisik saat stocktake.
      *
      * Terbuka sampai Operator Gudang: merekalah yang berdiri di depan rak dan
@@ -308,6 +320,7 @@ class Permission
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
         ],
         self::INVENTORY_QUARANTINE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::INVENTORY_LEDGER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::STOCKTAKE_COUNT => [
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
         ],

@@ -20,7 +20,21 @@
             <div class="col-md-3">
                 <label class="form-label small fw-semibold mb-1">Cari</label>
                 <input type="search" name="search" value="{{ $filters['search'] }}" class="form-control form-control-sm"
-                       placeholder="Isi catatan atau nama pelaku">
+                       placeholder="Nomor transaksi, catatan, atau nama pelaku">
+            </div>
+            {{-- JENIS TRANSAKSI berdiri sendiri, bukan dilebur ke "Tindakan".
+                 Keduanya pertanyaan yang berbeda: tindakan menjawab APA yang
+                 dilakukan (menyetujui, membatalkan), jenis menjawab DOKUMEN
+                 APA. Menelusuri satu dokumen berarti memilih jenisnya lalu
+                 membaca seluruh tindakan atasnya — bukan sebaliknya. --}}
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold mb-1">Jenis transaksi</label>
+                <select name="jenis" class="form-select form-select-sm">
+                    <option value="">Semua</option>
+                    @foreach($jenisOptions as $kelas => $label)
+                        <option value="{{ $kelas }}" @selected($filters['jenis'] === $kelas)>{{ $label }}</option>
+                    @endforeach
+                </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold mb-1">Tindakan</label>
@@ -81,11 +95,13 @@
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th style="width:150px">Waktu</th>
-                    <th style="width:170px">Pelaku</th>
-                    <th style="width:170px">Tindakan</th>
+                    <th style="width:140px">Waktu</th>
+                    <th style="width:160px">Pelaku</th>
+                    <th style="width:70px">Jenis</th>
+                    <th style="width:140px">Nomor Transaksi</th>
+                    <th style="width:160px">Tindakan</th>
                     <th>Keterangan</th>
-                    <th style="width:110px">Gudang</th>
+                    <th style="width:90px">Gudang</th>
                 </tr>
             </thead>
             <tbody>
@@ -105,6 +121,22 @@
                                 <span class="badge bg-secondary-subtle text-secondary-emphasis">akun dihapus</span>
                             @endif
                         </div>
+                    </td>
+                    {{-- Kode pendek saja di kolomnya sendiri: itu yang tertulis
+                         di dokumen fisik dan yang diucapkan orang gudang. Nama
+                         panjangnya tetap terbaca di tooltip dan di penyaring. --}}
+                    <td class="small">
+                        @if($log->subject_type)
+                            <span class="badge bg-dark-subtle text-dark-emphasis border font-monospace"
+                                  title="{{ $log->label_jenis }}">{{ $log->kode_jenis }}</span>
+                        @else
+                            <span class="text-muted">—</span>
+                        @endif
+                    </td>
+                    {{-- Nomornya DISALIN saat kejadian, jadi tetap terbaca
+                         walau dokumennya sudah tidak ada lagi. --}}
+                    <td class="small font-monospace text-break">
+                        {{ $log->reference_number ?? '—' }}
                     </td>
                     <td>
                         <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">
@@ -141,7 +173,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-5">
+                    <td colspan="7" class="text-center text-muted py-5">
                         Belum ada aktivitas yang cocok dengan penyaring ini.
                     </td>
                 </tr>
