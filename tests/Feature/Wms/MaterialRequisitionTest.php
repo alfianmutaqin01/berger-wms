@@ -966,6 +966,9 @@ class MaterialRequisitionTest extends TestCase
 
         $this->assertNotNull($holding->refresh()->finished_at, 'Materialnya memang sudah habis.');
 
+        // Yang menelusuri Logistik, bukan divisi yang memakainya.
+        $this->loginAt(Role::LOGISTICS);
+
         $this->get(route('wms.material-produksi.riwayat'))
             ->assertOk()
             ->assertSee('BT-2601')
@@ -980,6 +983,8 @@ class MaterialRequisitionTest extends TestCase
 
         $this->loginAt(Role::PRODUCTION);
         $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 50, 'note' => 'Uji warna.']);
+
+        $this->loginAt(Role::LOGISTICS);
 
         $this->get(route('wms.material-produksi.riwayat', ['search' => 'BT-2601']))
             ->assertOk()->assertSee('Uji warna.');
@@ -1004,12 +1009,122 @@ class MaterialRequisitionTest extends TestCase
         $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 50, 'note' => 'Uji warna.']);
 
         $lain = Warehouse::factory()->withProduction()->create(['code' => 'WH-88']);
-        $this->loginAt(Role::PRODUCTION, $lain);
+        $this->loginAt(Role::LOGISTICS, $lain);
 
         $this->get(route('wms.material-produksi.riwayat'))
             ->assertOk()
             ->assertDontSee('Uji warna.')
             ->assertViewHas('stats', fn (array $s) => $s['baris'] === 0);
+    }
+
+    /** Riwayat lintas divisi, jadi tertutup untuk divisi peminta. */
+    public function test_riwayat_pemakaian_tertutup_untuk_divisi_peminta(): void
+    {
+        foreach ([Role::PRODUCTION, Role::SALES] as $peran) {
+            $this->loginAt($peran);
+
+            $this->get(route('wms.material-produksi.riwayat'))
+                ->assertForbidden();
+        }
+    }
+
+    /* ================================================ Pemisahan divisi */
+
+    /**
+     * Daftar MRF berhenti di divisi pembacanya.
+     *
+     * Bukan sekadar kerapian layar: Sales yang membaca nomor permintaan
+     * Produksi tidak bisa membedakan mana miliknya, dan yang paling mungkin
+     * terjadi adalah ia mengejar dokumen yang bukan urusannya.
+     */
+    public function test_produksi_tidak_melihat_permintaan_divisi_lain(): void
+    {
+        $mrfProduksi = $this->ajukan(300);
+
+        $sales = $this->loginAt(Role::SALES);
+        $this->post(route('wms.mrf.store'), [
+            'warehouse_id' => $this->karawang->id,
+            'request_type' => MaterialRequisition::TYPE_REPROSES,
+            'purpose' => 'Sampel warna untuk calon pelanggan baru di Cikarang.',
+            'approver_name' => 'Bu Sales',
+            'approver_phone' => '081234567891',
+            'items' => [['product_id' => $this->produk->id, 'qty' => 2]],
+        ]);
+        $mrfSales = MaterialRequisition::where('requested_by', $sales->id)->firstOrFail();
+
+        // Sales melihat miliknya, tidak melihat milik Produksi.
+        $this->get(route('wms.mrf.index'))
+            ->assertOk()
+            ->assertSee($mrfSales->mrf_number)
+            ->assertDontSee($mrfProduksi->mrf_number);
+
+        $this->get(route('wms.mrf.show', $mrfProduksi))->assertForbidden();
+
+        // Produksi kebalikannya — dan orang Produksi yang BERBEDA dari
+        // pemohonnya, karena batasnya departemen, bukan orang.
+        $this->loginAt(Role::PRODUCTION);
+        $this->get(route('wms.mrf.index'))
+            ->assertOk()
+            ->assertSee($mrfProduksi->mrf_number)
+            ->assertDontSee($mrfSales->mrf_number);
+
+        $this->get(route('wms.mrf.show', $mrfSales))->assertForbidden();
+
+        // Logistik melihat keduanya: pekerjaannya memang melintasi divisi.
+        $this->loginAt(Role::LOGISTICS);
+        $this->get(route('wms.mrf.index'))
+            ->assertOk()
+            ->assertSee($mrfProduksi->mrf_number)
+            ->assertSee($mrfSales->mrf_number);
+    }
+
+    /** Layar MRF Picked memakai batas yang sama dengan daftar MRF-nya. */
+    public function test_mrf_picked_juga_berhenti_di_divisi_pembacanya(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $this->loginAt(Role::PRODUCTION);
+        $this->get(route('wms.material-produksi.index'))
+            ->assertOk()
+            ->assertSee($holding->requisition->mrf_number);
+
+        $this->loginAt(Role::SALES);
+        $this->get(route('wms.material-produksi.index'))
+            ->assertOk()
+            ->assertDontSee($holding->requisition->mrf_number);
+    }
+
+    /**
+     * Layar operator menyebut divisi peminta, bukan selalu "Produksi".
+     *
+     * Operator memakai kalimat itu untuk memutuskan ke titik transit mana
+     * barangnya ditaruh; menyebut divisi yang salah menaruhnya di tempat yang
+     * salah juga.
+     */
+    public function test_layar_picking_menyebut_divisi_peminta(): void
+    {
+        $sales = $this->loginAt(Role::SALES);
+        $this->post(route('wms.mrf.store'), [
+            'warehouse_id' => $this->karawang->id,
+            'request_type' => MaterialRequisition::TYPE_REPROSES,
+            'purpose' => 'Sampel warna untuk calon pelanggan baru di Cikarang.',
+            'approver_name' => 'Bu Sales',
+            'approver_phone' => '081234567891',
+            'items' => [['product_id' => $this->produk->id, 'qty' => 2]],
+        ]);
+
+        $mrf = MaterialRequisition::where('requested_by', $sales->id)->firstOrFail();
+        $mrf = $this->disetujuiAtasan($mrf);
+        $mrf = $this->disetujuiLogistik($mrf, $this->stok(300), 2);
+
+        $operator = $this->loginAt(Role::WAREHOUSE_OPERATOR);
+        $daftar = PickingList::findOrFail($mrf->picking_list_id);
+        app(PickingRun::class)->claim($daftar, $operator);
+
+        $this->get(route('wms.picking.show', $daftar))
+            ->assertOk()
+            ->assertSee('Sales & Marketing')
+            ->assertDontSee('tercatat atas nama Produksi');
     }
 
     /* ================================================== Pengajuan ulang */

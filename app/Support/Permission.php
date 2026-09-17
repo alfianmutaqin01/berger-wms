@@ -196,6 +196,21 @@ class Permission
      */
     public const MRF_RECEIVE = 'mrf.receive';
 
+    /**
+     * Menelusuri pemakaian material yang sudah lewat, lintas divisi.
+     *
+     * Dipisah dari MRF_VIEW karena pembacanya berbeda. MRF_VIEW menjawab
+     * "permintaan saya sampai mana" — pertanyaan divisi peminta, dan
+     * jawabannya sengaja dibatasi ke divisinya sendiri. Riwayat menjawab
+     * "ke mana barang ini pergi setahun lalu" — pertanyaan gudang, dan
+     * jawabannya harus melintasi semua divisi sekaligus untuk ada gunanya.
+     *
+     * Riwayat yang tidak bisa dipenggal per divisi itulah alasan Produksi
+     * dan Sales tidak ada di sini: membukanya untuk mereka berarti membuka
+     * pemakaian divisi lain juga.
+     */
+    public const MRF_HISTORY = 'mrf.history';
+
     /* -------------------------------------------------------------- Billing */
 
     public const BILLING_VIEW = 'billing.view';
@@ -343,6 +358,7 @@ class Permission
         ],
         self::MRF_APPROVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::MRF_RECEIVE => [Role::SUPER_ADMIN, Role::PRODUCTION, Role::SALES],
+        self::MRF_HISTORY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
         self::BILLING_VIEW => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::BILLING_CONFIRM => [Role::SUPER_ADMIN, Role::LOGISTICS],

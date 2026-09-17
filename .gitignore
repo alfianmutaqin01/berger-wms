@@ -56,3 +56,4 @@ Homestead.yaml
 
 # Cadangan production (container `backup`) — berisi data operasional.
 /backups
+scratchpad/

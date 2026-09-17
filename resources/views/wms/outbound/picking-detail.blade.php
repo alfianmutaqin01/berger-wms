@@ -98,11 +98,12 @@
             <div class="alert alert-primary border-0 rounded-3 mt-3 mb-0 small">
                 <i class="bi bi-clipboard2-check me-1"></i>
                 <strong>Permintaan material {{ $list->requisition->mrf_number }}</strong> —
-                untuk {{ $list->requisition->requestedBy?->full_name ?? 'Produksi' }}
-                ({{ $list->requisition->jenis_label }}).
+                untuk <strong>{{ $list->requisition->nama_divisi }}</strong>
+                ({{ $list->requisition->nama_pemohon }}, {{ $list->requisition->jenis_label }}).
                 Barang ini <strong>tidak menuju pelanggan dan tidak naik truk</strong>: taruh di titik
                 transit, lalu tekan <strong>Serah Terima</strong>. Begitu ditekan, barangnya
-                <strong>langsung tercatat atas nama Produksi</strong> — tidak ada konfirmasi susulan dari sana.
+                <strong>langsung tercatat atas nama {{ $list->requisition->nama_divisi }}</strong> —
+                tidak ada konfirmasi susulan dari sana.
             </div>
         @endif
 
@@ -152,17 +153,22 @@
             @if($list->requisition)
                 {{-- DAFTAR MRF: SERAH TERIMA, bukan Siap Loading.
 
-                     Barang permintaan Produksi tidak naik kendaraan mana pun
+                     Barang permintaan material tidak naik kendaraan mana pun
                      dan tidak menunggu Surat Jalan — ia berpindah tangan di
-                     tempat. Menekan tombol ini memindahkan kepemilikannya ke
-                     Produksi seketika, tanpa konfirmasi susulan dari sana.
+                     tempat. Divisinya disebut dengan namanya, bukan selalu
+                     "Produksi": sejak Sales, QC dan R&D ikut meminta, kalimat
+                     yang menyebut divisi yang salah menyesatkan operator.
 
                      Dua titik transit berdiri paling atas karena ke situlah
                      barangnya hampir selalu pergi; rak lain tetap bisa dipilih
                      kalau kenyataannya memang berbeda. --}}
+                @php($divisiMrf = $list->requisition->nama_divisi)
+                @php($tanyaSerah = $list->requisition->lewatTautan()
+                    ? sprintf('Serahkan daftar ini? Stok di rak berkurang dan %s dikabari lewat WhatsApp bahwa barangnya bisa diambil.', $divisiMrf)
+                    : sprintf('Serahkan daftar ini ke %s? Stok di rak berkurang dan barangnya LANGSUNG tercatat atas nama %s — tidak ada konfirmasi susulan.', $divisiMrf, $divisiMrf))
                 <form method="POST" action="{{ route('wms.picking.complete', $list) }}" id="formSelesai"
                       class="d-flex flex-wrap gap-2 align-items-end"
-                      onsubmit="return confirm('Serahkan daftar ini ke Produksi? Stok di rak berkurang dan barangnya LANGSUNG tercatat atas nama Produksi — tidak ada konfirmasi susulan.');">
+                      onsubmit="return confirm(@json($tanyaSerah));">
                     @csrf
                     <div>
                         <label class="form-label small text-muted mb-1">Diserahkan ke</label>
@@ -185,7 +191,7 @@
                         </select>
                     </div>
                     <div class="flex-grow-1" style="min-width:180px">
-                        <label class="form-label small text-muted mb-1">Catatan untuk Produksi (opsional)</label>
+                        <label class="form-label small text-muted mb-1">Catatan untuk {{ $divisiMrf }} (opsional)</label>
                         <input type="text" name="handover_note" class="form-control rounded-3" maxlength="500"
                                placeholder="Mis. 3 palet, ditumpuk di sisi kiri">
                     </div>
@@ -272,7 +278,7 @@
                                     {{ $list->transfer?->transfer_number ?? '—' }}
                                 </small>
                             @elseif($item->material_requisition_allocation_id)
-                                <div class="small">Produksi — {{ $list->requisition?->requestedBy?->full_name ?? '—' }}</div>
+                                <div class="small">{{ $list->requisition?->nama_divisi ?? '—' }} — {{ $list->requisition?->nama_pemohon ?? '—' }}</div>
                                 <small class="text-muted font-monospace">
                                     {{ $list->requisition?->mrf_number ?? '—' }}
                                 </small>

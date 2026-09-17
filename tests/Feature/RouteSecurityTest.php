@@ -158,8 +158,22 @@ class RouteSecurityTest extends TestCase
         foreach ($this->ruteAplikasi() as $rute) {
             $mw = $rute->gatherMiddleware();
 
+            /*
+             | Satu rute boleh menyebut lebih dari satu portal
+             | (`portal:wms,sales`) — layar MRF milik Produksi DAN Sales. Yang
+             | diperiksa karena itu daftar portalnya, bukan kecocokan teks
+             | middleware-nya: mencocokkan teks membuat rute bersama terbaca
+             | seperti rute tanpa penjagaan sama sekali.
+             */
+            $disebut = [];
+            foreach ($mw as $satu) {
+                if (str_starts_with($satu, 'portal:')) {
+                    $disebut = array_merge($disebut, explode(',', substr($satu, 7)));
+                }
+            }
+
             foreach (['wms', 'sales'] as $portal) {
-                if (str_starts_with($rute->uri(), $portal.'/') && ! in_array('portal:'.$portal, $mw, true)) {
+                if (str_starts_with($rute->uri(), $portal.'/') && ! in_array($portal, $disebut, true)) {
                     $bocor[] = $rute->uri();
                 }
             }

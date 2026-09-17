@@ -25,7 +25,11 @@
     <nav id="sidebar" class="sidebar">
         <!-- Brand -->
         <div class="sidebar-header d-flex justify-content-between align-items-center w-100">
-            <a href="/wms/dashboard" class="sidebar-brand text-decoration-none d-flex align-items-center">
+            {{-- Sales masuk ke sisi WMS hanya untuk MRF, dan dashboard-nya
+                 tertutup baginya. Brand yang menuju ke sana berarti pintu
+                 keluar satu-satunya justru mengantar ke halaman 403. --}}
+            <a href="{{ auth()->user()?->hasRole(\App\Models\Role::SALES) ? '/sales/dashboard' : '/wms/dashboard' }}"
+               class="sidebar-brand text-decoration-none d-flex align-items-center">
                 <i class="bi bi-box-seam"></i> <span class="ms-2">Berger WMS</span>
             </a>
             <button type="button" class="btn btn-link text-white p-0 d-none d-lg-block" id="sidebarToggleDesktop">
@@ -201,10 +205,10 @@
                              sudah habis wajar hilang dari sana. Penelusuran
                              berbulan-bulan kemudian bertanya hal yang berbeda.
 
-                             DIBUKA LEBIH LUAS daripada MRF Picked: yang paling
-                             sering menelusurinya Logistik, karena barang yang
-                             keluar lewat MRF hanya bisa dilacak dari sini. --}}
-                        @can(\App\Support\Permission::MRF_VIEW)
+                             MILIK LOGISTIK, bukan divisi peminta: isinya lintas
+                             divisi dan tidak bisa dipenggal per divisi tanpa
+                             kehilangan gunanya. --}}
+                        @can(\App\Support\Permission::MRF_HISTORY)
                             <li class="nav-item {{ request()->is('wms/material-produksi/riwayat') ? 'active' : '' }}">
                                 <a href="/wms/material-produksi/riwayat" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Pemakaian MRF</span></a>
                             </li>

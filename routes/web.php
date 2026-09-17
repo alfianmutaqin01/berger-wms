@@ -418,109 +418,6 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         ->defaults('type', 'opening-stock')->middleware('can:'.Permission::INVENTORY_ADJUST)
         ->name('wms.inventory.import.cancel');
 
-    /*
-    | MRF — permintaan material Produksi ke Logistik.
-    |
-    | Empat izin yang berbeda dipakai di dalam satu prefix, dan itu memang
-    | maksudnya: satu dokumen dikerjakan empat orang yang berlainan. Yang
-    | membuat tidak boleh memutus, yang memutus tidak boleh menerima.
-    |
-    | '/mrf/create' dan '/mrf/lookup/products' WAJIB didaftarkan SEBELUM
-    | '/mrf/{mrf}', kalau tidak keduanya tertangkap sebagai id permintaan.
-    */
-    Route::prefix('mrf')->group(function () {
-        Route::get('/', [MaterialRequisitionController::class, 'index'])
-            ->middleware('can:'.Permission::MRF_VIEW)
-            ->name('wms.mrf.index');
-
-        Route::get('/create', [MaterialRequisitionController::class, 'create'])
-            ->middleware('can:'.Permission::MRF_CREATE)
-            ->name('wms.mrf.create');
-        Route::post('/', [MaterialRequisitionController::class, 'store'])
-            ->middleware('can:'.Permission::MRF_CREATE)
-            ->name('wms.mrf.store');
-        Route::get('/lookup/products', [MaterialRequisitionController::class, 'lookupProducts'])
-            ->middleware('can:'.Permission::MRF_CREATE)
-            ->name('wms.mrf.lookup.products');
-        Route::delete('/contacts/{contact}', [MaterialRequisitionController::class, 'destroyContact'])
-            ->middleware('can:'.Permission::MRF_CREATE)
-            ->name('wms.mrf.contacts.destroy');
-
-        Route::get('/{mrf}', [MaterialRequisitionController::class, 'show'])
-            ->middleware('can:'.Permission::MRF_VIEW)
-            ->name('wms.mrf.show');
-        // Perbaikan permintaan yang DITOLAK, nomornya tetap — sama seperti
-        // pesanan Sales yang ditolak.
-        Route::get('/{mrf}/edit', [MaterialRequisitionController::class, 'edit'])
-            ->middleware('can:'.Permission::MRF_CREATE)
-            ->name('wms.mrf.edit');
-        Route::put('/{mrf}', [MaterialRequisitionController::class, 'update'])
-            ->middleware('can:'.Permission::MRF_CREATE)
-            ->name('wms.mrf.update');
-        Route::post('/{mrf}/resend', [MaterialRequisitionController::class, 'resend'])
-            ->middleware('can:'.Permission::MRF_CREATE)
-            ->name('wms.mrf.resend');
-
-        Route::get('/{mrf}/approve', [MaterialRequisitionController::class, 'approveForm'])
-            ->middleware('can:'.Permission::MRF_APPROVE)
-            ->name('wms.mrf.approve.form');
-        Route::post('/{mrf}/approve', [MaterialRequisitionController::class, 'approve'])
-            ->middleware('can:'.Permission::MRF_APPROVE)
-            ->name('wms.mrf.approve');
-        Route::post('/{mrf}/reject', [MaterialRequisitionController::class, 'reject'])
-            ->middleware('can:'.Permission::MRF_APPROVE)
-            ->name('wms.mrf.reject');
-
-        // Permintaan lewat tautan divisi ditutup di gudang, saat orangnya
-        // datang mengambil — pemohonnya tidak punya akun untuk menekan apa pun.
-        Route::post('/{mrf}/collect', [MaterialRequisitionController::class, 'collect'])
-            ->middleware('can:'.Permission::MRF_APPROVE)
-            ->name('wms.mrf.collect');
-        Route::post('/{mrf}/receive', [MaterialRequisitionController::class, 'receive'])
-            ->middleware('can:'.Permission::MRF_RECEIVE)
-            ->name('wms.mrf.receive');
-
-        /*
-        | Pembatalan dibuka untuk DUA izin sekaligus — Produksi yang salah
-        | meminta, dan Logistik yang sudah telanjur menyetujui lalu menemukan
-        | barangnya ternyata dibutuhkan pesanan pelanggan. Batas sebenarnya
-        | ada di keadaan dokumennya (bolehDibatalkan), bukan di peran.
-        */
-        Route::post('/{mrf}/cancel', [MaterialRequisitionController::class, 'cancel'])
-            ->middleware('can:'.Permission::MRF_VIEW)
-            ->name('wms.mrf.cancel');
-    });
-
-    // Buku material yang sudah di tangan Produksi, berikut pemakaiannya.
-    /*
-     | RIWAYAT PEMAKAIAN DIBUKA LEBIH LUAS daripada halaman MRF Picked, jadi ia
-     | berdiri di luar kelompoknya — bukan di dalam lalu dikecualikan, yang
-     | membuat izin sebenarnya hanya terbaca setelah menelusuri dua tempat.
-     |
-     | Halaman lain di bawah adalah TINDAKAN atas material yang sedang
-     | dipegang, jadi hanya yang memegangnya yang boleh. Riwayat adalah bacaan,
-     | dan yang paling sering menelusurinya justru Logistik: barang yang keluar
-     | lewat MRF — termasuk permintaan divisi lewat tautan, yang selesai saat
-     | diambil — hanya bisa dilacak dari sini.
-     |
-     | Didaftarkan SEBELUM rute ber-{holding}: "riwayat" bukan angka, tetapi
-     | urutannya tetap dijaga supaya tidak ada yang tertangkap sebagai id.
-     */
-    Route::get('material-produksi/riwayat', [ProductionMaterialController::class, 'riwayat'])
-        ->middleware('can:'.Permission::MRF_VIEW)
-        ->name('wms.material-produksi.riwayat');
-
-    Route::prefix('material-produksi')->middleware('can:'.Permission::MRF_RECEIVE)->group(function () {
-        Route::get('/', [ProductionMaterialController::class, 'index'])
-            ->name('wms.material-produksi.index');
-        Route::post('/{holding}/pakai', [ProductionMaterialController::class, 'consume'])
-            ->name('wms.material-produksi.consume');
-        // Area yang ditulis operator saat serah terima hanya keterangan awal;
-        // Produksi yang tahu di lantai mana barangnya benar-benar dikerjakan.
-        Route::post('/{holding}/pindah', [ProductionMaterialController::class, 'move'])
-            ->name('wms.material-produksi.move');
-    });
-
     // Transfer antar gudang (F-INV-05). Rutenya ditaruh SEBELUM
     // /transfers/{transfer} tidak diperlukan di sini karena "create" bukan
     // angka dan binding-nya memakai id — tetapi urutannya tetap dijaga agar
@@ -918,6 +815,129 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         Route::post('/billing/pembayaran/{payment}/batal', [BillingController::class, 'void'])
             ->middleware('can:'.Permission::BILLING_VOID)
             ->name('wms.billing.void');
+    });
+});
+
+/*
+| MRF — MILIK DUA PORTAL SEKALIGUS, jadi ia di luar grup Portal WMS.
+|
+| Permintaan material tidak lagi hanya datang dari Produksi: Sales memintanya
+| untuk contoh calon pelanggan. Sales dipagari keluar dari Portal WMS oleh
+| `portal:wms` (PRD §5.2), sehingga izin MRF-nya tidak akan pernah terpakai
+| kalau layarnya berdiri di dalam grup itu — 403 sebelum gate-nya sempat
+| dibaca.
+|
+| Alamatnya tetap /wms/... dan nama rutenya tetap wms.mrf.*: yang berubah
+| hanya siapa yang boleh lewat, bukan di mana dokumennya tinggal. Menyalin
+| layarnya ke sisi Sales akan berarti dua salinan satu dokumen yang harus
+| sepakat selamanya.
+|
+| Yang DILIHAT tiap divisi dibatasi di controller-nya
+| (MaterialRequisition::scopeUntukPembaca), bukan di sini.
+*/
+Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms,sales'])->group(function () {
+    /*
+    | MRF — permintaan material Produksi ke Logistik.
+    |
+    | Empat izin yang berbeda dipakai di dalam satu prefix, dan itu memang
+    | maksudnya: satu dokumen dikerjakan empat orang yang berlainan. Yang
+    | membuat tidak boleh memutus, yang memutus tidak boleh menerima.
+    |
+    | '/mrf/create' dan '/mrf/lookup/products' WAJIB didaftarkan SEBELUM
+    | '/mrf/{mrf}', kalau tidak keduanya tertangkap sebagai id permintaan.
+    */
+    Route::prefix('mrf')->group(function () {
+        Route::get('/', [MaterialRequisitionController::class, 'index'])
+            ->middleware('can:'.Permission::MRF_VIEW)
+            ->name('wms.mrf.index');
+
+        Route::get('/create', [MaterialRequisitionController::class, 'create'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.create');
+        Route::post('/', [MaterialRequisitionController::class, 'store'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.store');
+        Route::get('/lookup/products', [MaterialRequisitionController::class, 'lookupProducts'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.lookup.products');
+        Route::delete('/contacts/{contact}', [MaterialRequisitionController::class, 'destroyContact'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.contacts.destroy');
+
+        Route::get('/{mrf}', [MaterialRequisitionController::class, 'show'])
+            ->middleware('can:'.Permission::MRF_VIEW)
+            ->name('wms.mrf.show');
+        // Perbaikan permintaan yang DITOLAK, nomornya tetap — sama seperti
+        // pesanan Sales yang ditolak.
+        Route::get('/{mrf}/edit', [MaterialRequisitionController::class, 'edit'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.edit');
+        Route::put('/{mrf}', [MaterialRequisitionController::class, 'update'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.update');
+        Route::post('/{mrf}/resend', [MaterialRequisitionController::class, 'resend'])
+            ->middleware('can:'.Permission::MRF_CREATE)
+            ->name('wms.mrf.resend');
+
+        Route::get('/{mrf}/approve', [MaterialRequisitionController::class, 'approveForm'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.approve.form');
+        Route::post('/{mrf}/approve', [MaterialRequisitionController::class, 'approve'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.approve');
+        Route::post('/{mrf}/reject', [MaterialRequisitionController::class, 'reject'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.reject');
+
+        // Permintaan lewat tautan divisi ditutup di gudang, saat orangnya
+        // datang mengambil — pemohonnya tidak punya akun untuk menekan apa pun.
+        Route::post('/{mrf}/collect', [MaterialRequisitionController::class, 'collect'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.collect');
+        Route::post('/{mrf}/receive', [MaterialRequisitionController::class, 'receive'])
+            ->middleware('can:'.Permission::MRF_RECEIVE)
+            ->name('wms.mrf.receive');
+
+        /*
+        | Pembatalan dibuka untuk DUA izin sekaligus — Produksi yang salah
+        | meminta, dan Logistik yang sudah telanjur menyetujui lalu menemukan
+        | barangnya ternyata dibutuhkan pesanan pelanggan. Batas sebenarnya
+        | ada di keadaan dokumennya (bolehDibatalkan), bukan di peran.
+        */
+        Route::post('/{mrf}/cancel', [MaterialRequisitionController::class, 'cancel'])
+            ->middleware('can:'.Permission::MRF_VIEW)
+            ->name('wms.mrf.cancel');
+    });
+
+    // Buku material yang sudah di tangan Produksi, berikut pemakaiannya.
+    /*
+     | RIWAYAT PEMAKAIAN BERDIRI DI IZINNYA SENDIRI, jadi ia di luar kelompok
+     | ini — bukan di dalam lalu dikecualikan, yang membuat izin sebenarnya
+     | hanya terbaca setelah menelusuri dua tempat.
+     |
+     | Halaman lain di bawah adalah TINDAKAN atas material yang sedang
+     | dipegang, jadi hanya yang memegangnya yang boleh. Riwayat adalah bacaan
+     | LINTAS DIVISI: ia menjawab ke mana barang pergi berbulan-bulan lalu, dan
+     | jawaban itu tidak bisa dipenggal per divisi tanpa kehilangan gunanya.
+     | Karena itu ia milik Logistik dan Manager — bukan Produksi atau Sales,
+     | yang layarnya sengaja berhenti di divisinya sendiri.
+     |
+     | Didaftarkan SEBELUM rute ber-{holding}: "riwayat" bukan angka, tetapi
+     | urutannya tetap dijaga supaya tidak ada yang tertangkap sebagai id.
+     */
+    Route::get('material-produksi/riwayat', [ProductionMaterialController::class, 'riwayat'])
+        ->middleware('can:'.Permission::MRF_HISTORY)
+        ->name('wms.material-produksi.riwayat');
+
+    Route::prefix('material-produksi')->middleware('can:'.Permission::MRF_RECEIVE)->group(function () {
+        Route::get('/', [ProductionMaterialController::class, 'index'])
+            ->name('wms.material-produksi.index');
+        Route::post('/{holding}/pakai', [ProductionMaterialController::class, 'consume'])
+            ->name('wms.material-produksi.consume');
+        // Area yang ditulis operator saat serah terima hanya keterangan awal;
+        // Produksi yang tahu di lantai mana barangnya benar-benar dikerjakan.
+        Route::post('/{holding}/pindah', [ProductionMaterialController::class, 'move'])
+            ->name('wms.material-produksi.move');
     });
 });
 

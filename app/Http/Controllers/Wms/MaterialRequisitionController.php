@@ -10,7 +10,6 @@ use App\Models\MaterialRequisition;
 use App\Models\MrfApproverContact;
 use App\Models\Notification;
 use App\Models\Product;
-use App\Models\Role;
 use App\Models\Warehouse;
 use App\Support\Activity;
 use App\Support\Notifier;
@@ -69,22 +68,13 @@ class MaterialRequisitionController extends Controller
         ];
 
         /*
-         | SALES HANYA MELIHAT PERMINTAANNYA SENDIRI.
-         |
-         | Ia ikut boleh meminta material — contoh untuk calon pelanggan baru —
-         | tetapi permintaan material Produksi bukan urusannya, dan daftar yang
-         | memuat keduanya membuat layar ini panjang tanpa guna baginya.
-         |
-         | Produksi tidak dibatasi: mereka satu tim yang bergantian meminta dan
-         | mengambil di gudang yang sama, dan membatasi tiap orang ke
-         | permintaannya sendiri justru memutus kerja yang memang dioper.
+         | Tiap divisi peminta melihat daftarnya sendiri; Logistik dan Manager
+         | melihat semuanya. Aturannya di MaterialRequisition::scopeUntukPembaca,
+         | supaya layar mana pun yang membaca MRF memakai batas yang sama.
          */
         $dasar = fn () => WarehouseScope::apply(MaterialRequisition::query(), $user)
             ->when($gudang, fn ($q, $id) => $q->where('warehouse_id', $id))
-            ->when(
-                $user?->role?->slug === Role::SALES,
-                fn ($q) => $q->where('requested_by', $user->id),
-            )
+            ->untukPembaca($user)
             ->search($filters['search'])
             ->when($filters['jenis'], fn ($q, $j) => $q->where('request_type', $j));
 
@@ -300,6 +290,30 @@ class MaterialRequisitionController extends Controller
         );
     }
 
+    /**
+     * Rincian satu MRF hanya terbuka untuk divisi yang memintanya.
+     *
+     * Daftarnya sudah disaring, tetapi nomor MRF mudah ditebak dan url-nya
+     * mudah ditempel. Tanpa pemeriksaan ini, penyaringan di daftar cuma
+     * menyembunyikan barisnya, bukan menutup dokumennya.
+     */
+    private function pastikanSedivisi(Request $request, MaterialRequisition $mrf): void
+    {
+        $user = $request->user();
+
+        if ($user === null || ! in_array($user->role?->slug, MaterialRequisition::PERAN_SEDIVISI, true)) {
+            return;
+        }
+
+        abort_unless(
+            $user->department_id !== null
+                ? $mrf->department_id === $user->department_id
+                : $mrf->requested_by === $user->id,
+            403,
+            'Permintaan ini milik divisi lain.',
+        );
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $user = $request->user();
@@ -399,6 +413,7 @@ class MaterialRequisitionController extends Controller
     public function show(Request $request, MaterialRequisition $mrf): View
     {
         WarehouseScope::assert($mrf->warehouse_id, $request->user());
+        $this->pastikanSedivisi($request, $mrf);
 
         $mrf->load([
             'warehouse:id,code,name',

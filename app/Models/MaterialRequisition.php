@@ -38,6 +38,14 @@ class MaterialRequisition extends Model
 {
     use HasFactory;
 
+    /**
+     * Peran yang hanya melihat permintaan divisinya sendiri.
+     *
+     * Keduanya divisi PEMINTA: mereka membuka daftar ini untuk mengejar
+     * permintaannya, bukan untuk mengurus permintaan orang lain.
+     */
+    public const PERAN_SEDIVISI = [Role::PRODUCTION, Role::SALES];
+
     /* ------------------------------------------------------------ Status */
 
     public const STATUS_PENDING_APPROVAL = 'pending_approval';
@@ -189,6 +197,19 @@ class MaterialRequisition extends Model
     }
 
     /**
+     * Divisi yang meminta, untuk ditulis di layar.
+     *
+     * Dipakai di layar operator, yang dulu selalu menulis "Produksi" karena
+     * memang hanya Produksi yang meminta. Sekarang Sales, QC dan R&D ikut
+     * meminta, dan operator yang membaca "Produksi" di atas permintaan Sales
+     * akan menaruh barangnya di tempat yang salah.
+     */
+    public function getNamaDivisiAttribute(): string
+    {
+        return $this->department_name ?: ($this->department?->name ?? 'Divisi peminta');
+    }
+
+    /**
      * Permintaan dari divisi tanpa akun.
      *
      * Barangnya SELESAI SAAT DIAMBIL, tidak masuk buku pemakaian bertahap:
@@ -278,6 +299,37 @@ class MaterialRequisition extends Model
             ->where('mrf_number', 'ILIKE', $pola)
             ->orWhere('purpose', 'ILIKE', $pola)
             ->orWhere('approver_name', 'ILIKE', $pola));
+    }
+
+    /*
+     | DIVISI PEMINTA HANYA MELIHAT PERMINTAAN DIVISINYA SENDIRI.
+     |
+     | Satu daftar yang memuat semua divisi tidak menolong siapa pun yang
+     | meminta: Produksi tidak berkepentingan pada sampel Sales, dan Sales
+     | tidak berkepentingan pada bahan baku sepalet. Yang tercampur begitu
+     | bukan sekadar panjang — ia membuat orang membaca nomor yang bukan
+     | miliknya lalu ragu apakah itu salah satu permintaannya.
+     |
+     | Dibatasi per DEPARTEMEN, bukan per orang: di dalam satu divisi
+     | pekerjaannya memang dioper — yang meminta pagi ini bukan yang mengambil
+     | sore nanti — dan membatasi tiap orang ke permintaannya sendiri justru
+     | memutus operan itu.
+     |
+     | Logistik, Manager, Operator dan Super Admin tidak dibatasi: pekerjaan
+     | mereka justru MELINTASI divisi.
+     |
+     | Akun tanpa departemen jatuh ke permintaannya sendiri, bukan ke semua —
+     | data yang belum lengkap tidak boleh membuka pintu yang lebih lebar.
+     */
+    public function scopeUntukPembaca(Builder $query, ?User $pembaca): Builder
+    {
+        if ($pembaca === null || ! in_array($pembaca->role?->slug, self::PERAN_SEDIVISI, true)) {
+            return $query;
+        }
+
+        return $pembaca->department_id !== null
+            ? $query->where('department_id', $pembaca->department_id)
+            : $query->where('requested_by', $pembaca->id);
     }
 
     /** Yang masih menunggu seseorang berbuat sesuatu. */

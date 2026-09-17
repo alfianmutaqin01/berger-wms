@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Location;
+use App\Models\MaterialRequisition;
 use App\Models\ProductionMaterialConsumption;
 use App\Models\ProductionMaterialHolding;
-use App\Models\Role;
 use App\Support\Activity;
 use App\Support\FilterTanggal;
 use App\Support\Production\MaterialRequisitionRun;
@@ -54,13 +54,13 @@ class ProductionMaterialController extends Controller
             'warehouse_id' => $gudang,
         ];
 
-        // Sales hanya melihat material dari permintaannya sendiri — alasannya
-        // sama dengan daftar MRF: material Produksi bukan urusannya.
+        // Tiap divisi peminta melihat materialnya sendiri — batas yang sama
+        // dengan daftar MRF, dan dari sumber aturan yang sama.
         $dasar = fn () => WarehouseScope::apply(ProductionMaterialHolding::query(), $user)
             ->when($gudang, fn ($q, $id) => $q->where('warehouse_id', $id))
             ->when(
-                $user?->role?->slug === Role::SALES,
-                fn ($q) => $q->whereHas('requisition', fn ($m) => $m->where('requested_by', $user->id)),
+                in_array($user?->role?->slug, MaterialRequisition::PERAN_SEDIVISI, true),
+                fn ($q) => $q->whereHas('requisition', fn ($m) => $m->untukPembaca($user)),
             )
             ->when($filters['search'], function ($q, $cari) {
                 $pola = '%'.str_replace('%', '\%', $cari).'%';

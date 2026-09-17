@@ -486,9 +486,13 @@ class PickingController extends Controller
     {
         $mrf->load('handoverLocation:id,code,zone');
         // Titik transit disebut dengan namanya ("In-Transit Produksi"), rak
-        // biasa dengan kodenya — yang membaca pesan ini Produksi, bukan
+        // biasa dengan kodenya — yang membaca pesan ini divisi pemohon, bukan
         // operator yang hafal denah.
         $rak = $mrf->handoverLocation?->nama_serah_terima ?? '—';
+
+        // Divisinya disebut dengan namanya: permintaan material tidak lagi
+        // selalu datang dari Produksi.
+        $divisi = $mrf->nama_divisi;
 
         Activity::record(
             ActivityLog::PICKING_RELEASE,
@@ -497,11 +501,12 @@ class PickingController extends Controller
                     ? 'Daftar %s untuk permintaan material %s selesai: %d unit turun dari rak dan '.
                       'menunggu di %s sampai pemohonnya datang mengambil.'
                     : 'Daftar %s untuk permintaan material %s diserahterimakan: %d unit turun dari rak, '.
-                      'ditaruh di %s, dan langsung tercatat di buku Produksi.',
+                      'ditaruh di %s, dan langsung tercatat di buku %s.',
                 $list->list_number,
                 $mrf->mrf_number,
                 $hasil['diambil'],
                 $rak,
+                $divisi,
             ),
             $mrf,
             $mrf->warehouse_id,
@@ -545,22 +550,24 @@ class PickingController extends Controller
                 $hasil['diambil'],
                 $mrf->mrf_number,
                 $rak,
-                $mrf->department_name ?? 'pemohonnya',
+                $divisi,
             )
             : sprintf(
                 'Serah terima %s selesai. %d unit untuk permintaan material %s ditaruh di %s dan langsung '.
-                'tercatat di buku Produksi.',
+                'tercatat di buku %s.',
                 $list->list_number,
                 $hasil['diambil'],
                 $mrf->mrf_number,
                 $rak,
+                $divisi,
             );
 
         if ($hasil['kurang'] > 0) {
             return redirect()->route('wms.picking.queue')->with('warning', $pesan.sprintf(
-                ' %d unit TIDAK ditemukan di rak, jadi Produksi menerima kurang dari yang disetujui — '.
+                ' %d unit TIDAK ditemukan di rak, jadi %s menerima kurang dari yang disetujui — '.
                 'selisihnya sudah dicatat sebagai koreksi stok dan terbaca di dokumen MRF.',
                 $hasil['kurang'],
+                $divisi,
             ));
         }
 
