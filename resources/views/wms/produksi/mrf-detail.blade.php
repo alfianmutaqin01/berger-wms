@@ -261,14 +261,28 @@
                 <h6 class="fw-bold mb-3">Keterangan</h6>
 
                 <dl class="row small mb-0">
+                    {{-- nama_pemohon, BUKAN relasi akunnya. Permintaan lewat
+                         tautan divisi tidak punya akun sama sekali — namanya
+                         diketik pemohonnya sendiri dan tersimpan sebagai teks.
+                         Membaca relasinya langsung membuat kolom ini kosong
+                         justru pada permintaan yang paling perlu disebut
+                         pemiliknya. --}}
                     <dt class="col-5 text-muted fw-normal">Pemohon</dt>
-                    <dd class="col-7">{{ $mrf->requestedBy?->full_name ?? '—' }}</dd>
+                    <dd class="col-7">
+                        {{ $mrf->nama_pemohon }}
+                        @if($mrf->lewatTautan())
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis border ms-1"
+                                  title="Diajukan lewat tautan divisi, tanpa akun WMS">tautan divisi</span>
+                        @endif
+                    </dd>
 
                     <dt class="col-5 text-muted fw-normal">Departemen</dt>
                     <dd class="col-7">{{ $mrf->department_name ?? '—' }}</dd>
 
                     <dt class="col-5 text-muted fw-normal">Gudang</dt>
-                    <dd class="col-7">{{ $mrf->warehouse?->code }} — {{ $mrf->warehouse?->name }}</dd>
+                    {{-- Kode pendek, sesuai layar MRF lainnya: akhiran "_1001"
+                         tidak pernah diucapkan siapa pun di gudang. --}}
+                    <dd class="col-7">{{ $mrf->warehouse?->kode_pendek }} — {{ $mrf->warehouse?->name }}</dd>
 
                     <dt class="col-5 text-muted fw-normal">Jenis</dt>
                     <dd class="col-7">{{ $mrf->jenis_label }}</dd>

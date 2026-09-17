@@ -57,7 +57,7 @@
             <dl class="row mb-0 small">
                 <dt class="col-4 text-muted fw-normal">Pemohon</dt>
                 <dd class="col-8">
-                    {{ $mrf->requestedBy?->full_name ?? '—' }}
+                    {{ $mrf->nama_pemohon }}
                     @if($mrf->department_name)
                         <span class="text-muted">({{ $mrf->department_name }})</span>
                     @endif

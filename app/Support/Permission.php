@@ -87,6 +87,18 @@ class Permission
     public const INVENTORY_QUARANTINE = 'inventory.quarantine';
 
     /**
+     * Membaca buku besar mutasi stok — kartu stok.
+     *
+     * DIPISAH dari INVENTORY_VIEW, yang menjawab "berapa sisa barang ini
+     * sekarang" dan memang dibutuhkan Produksi serta Operator tiap hari untuk
+     * mencari rak. Kartu stok menjawab pertanyaan yang lain sama sekali:
+     * SETIAP pertambahan dan pengurangan sejak hari pertama, lengkap dengan
+     * dokumen penyebabnya. Itu bahan rekonsiliasi, bukan bahan kerja harian,
+     * dan yang mengerjakannya Logistik bersama Manager.
+     */
+    public const INVENTORY_LEDGER = 'inventory.ledger';
+
+    /**
      * MEMASUKKAN hasil hitungan fisik saat stocktake.
      *
      * Terbuka sampai Operator Gudang: merekalah yang berdiri di depan rak dan
@@ -196,20 +208,19 @@ class Permission
      */
     public const MRF_RECEIVE = 'mrf.receive';
 
-    /**
-     * Menelusuri pemakaian material yang sudah lewat, lintas divisi.
-     *
-     * Dipisah dari MRF_VIEW karena pembacanya berbeda. MRF_VIEW menjawab
-     * "permintaan saya sampai mana" — pertanyaan divisi peminta, dan
-     * jawabannya sengaja dibatasi ke divisinya sendiri. Riwayat menjawab
-     * "ke mana barang ini pergi setahun lalu" — pertanyaan gudang, dan
-     * jawabannya harus melintasi semua divisi sekaligus untuk ada gunanya.
-     *
-     * Riwayat yang tidak bisa dipenggal per divisi itulah alasan Produksi
-     * dan Sales tidak ada di sini: membukanya untuk mereka berarti membuka
-     * pemakaian divisi lain juga.
+    /*
+     | TIDAK ADA IZIN TERSENDIRI UNTUK RIWAYAT PEMAKAIAN.
+     |
+     | Sempat ada (MRF_HISTORY, Logistik & Manager saja) dengan alasan riwayat
+     | lintas divisi tidak bisa dipenggal. Alasan itu ternyata salah: ia BISA
+     | dipenggal, lewat penyaring divisi yang sudah dipakai daftar MRF dan MRF
+     | Picked. Yang tersisa cuma memagari Produksi keluar dari catatan
+     | pemakaiannya sendiri — persis orang yang paling sering membutuhkannya.
+     |
+     | Jadi riwayat memakai MRF_VIEW, sama dengan daftar MRF-nya, dan yang
+     | membatasi apa yang terbaca adalah MaterialRequisition::scopeUntukPembaca
+     | di controller — bukan pintu yang tertutup rapat.
      */
-    public const MRF_HISTORY = 'mrf.history';
 
     /* -------------------------------------------------------------- Billing */
 
@@ -308,6 +319,7 @@ class Permission
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
         ],
         self::INVENTORY_QUARANTINE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::INVENTORY_LEDGER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::STOCKTAKE_COUNT => [
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
         ],
@@ -358,7 +370,6 @@ class Permission
         ],
         self::MRF_APPROVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::MRF_RECEIVE => [Role::SUPER_ADMIN, Role::PRODUCTION, Role::SALES],
-        self::MRF_HISTORY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
 
         self::BILLING_VIEW => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::BILLING_CONFIRM => [Role::SUPER_ADMIN, Role::LOGISTICS],

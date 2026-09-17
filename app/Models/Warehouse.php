@@ -131,15 +131,31 @@ class Warehouse extends Model
     }
 
     /**
-     * Kode gudang tanpa akhiran cabangnya: ID11_1001 -> ID11.
+     * Kode CABANG saja, tanpa akhiran jenis barangnya: ID11_1001 -> ID11.
      *
-     * Akhiran "_1001" sama untuk ketiga gudang, jadi ia tidak membedakan apa
-     * pun — ia hanya memperpanjang setiap baris pilihan dan mendorong nama
-     * gudangnya keluar layar pada HP. Yang dipakai orang gudang untuk menyebut
-     * cabangnya memang empat huruf di depan: ID11, ID1B, ID1I.
+     * DUA KODE INI BUKAN PANJANG-PENDEK BELAKA, dan salah memilihnya bukan
+     * soal kerapian:
      *
-     * Kode PENUH tetap dipakai di tempat yang harus cocok dengan sistem lain
-     * (impor, ekspor, dokumen) — yang dipendekkan hanya yang dibaca manusia.
+     *   ID11        cabangnya — Karawang, seluruh barang di dalamnya
+     *   ID11_1001   cabang DAN jenis barangnya; "1001" berarti finish good
+     *
+     * Jangkauan kode pendek karena itu LEBIH LEBAR: ia memuat finish good
+     * berikut barang DDP, rusak, dan berbau.
+     *
+     * KAPAN MEMAKAI YANG MANA ditentukan barangnya, bukan sempitnya layar:
+     *
+     *   Penjualan       SELALU kode penuh. Yang dikirim ke pelanggan selalu
+     *                   finish good — tidak mungkin barang DDP atau rusak —
+     *                   jadi menyebutnya "ID11" saja membuang keterangan yang
+     *                   justru menjadi janji ke pelanggan.
+     *   MRF & pengujian Kode pendek. Reproses dan pengujian kadang mengambil
+     *                   barang DDP, kadang barang bagus; mengunci layarnya ke
+     *                   "_1001" menyebut jenis yang belum tentu benar.
+     *
+     * Jadi jangan "merapikan" layar penjualan menjadi kode pendek — itu
+     * menghapus keterangan, bukan memendekkan tulisan. Kode PENUH juga tetap
+     * dipakai di tempat yang harus cocok dengan sistem lain: impor, ekspor,
+     * dan dokumen.
      */
     public function getKodePendekAttribute(): string
     {

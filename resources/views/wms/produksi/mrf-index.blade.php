@@ -119,7 +119,7 @@
                             <div class="small text-muted text-truncate" style="max-width:280px">{{ $mrf->purpose }}</div>
                         </td>
                         <td>
-                            {{ $mrf->requestedBy?->full_name ?? '—' }}
+                            {{ $mrf->nama_pemohon }}
                             <div class="small text-muted">{{ $mrf->department_name ?? $mrf->warehouse?->code }}</div>
                         </td>
                         <td class="text-end">

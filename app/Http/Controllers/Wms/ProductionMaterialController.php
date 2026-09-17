@@ -148,12 +148,24 @@ class ProductionMaterialController extends Controller
             'warehouse_id' => $gudang,
         ];
 
-        // Batas gudang ditegakkan lewat materialnya, bukan lewat baris
-        // pemakaian: baris pemakaian tidak punya kolom gudang sendiri, dan
-        // menambahkannya berarti dua tempat yang harus sepakat selamanya.
+        /*
+         | Batas gudang ditegakkan lewat materialnya, bukan lewat baris
+         | pemakaian: baris pemakaian tidak punya kolom gudang sendiri, dan
+         | menambahkannya berarti dua tempat yang harus sepakat selamanya.
+         |
+         | BATAS DIVISI menumpang jalur yang sama. Produksi boleh menelusuri
+         | pemakaiannya sendiri — justru merekalah yang paling sering mencari
+         | "batch kemarin terpakai berapa" — tetapi pemakaian Sales, QC dan R&D
+         | bukan urusannya. Logistik dan Manager tidak dibatasi: yang perlu
+         | melacak seluruh barang keluar lewat MRF memang mereka.
+         */
         $dasar = fn () => ProductionMaterialConsumption::query()
             ->whereHas('holding', fn ($q) => WarehouseScope::apply($q, $user)
-                ->when($gudang, fn ($w, $id) => $w->where('warehouse_id', $id)))
+                ->when($gudang, fn ($w, $id) => $w->where('warehouse_id', $id))
+                ->when(
+                    in_array($user?->role?->slug, MaterialRequisition::PERAN_SEDIVISI, true),
+                    fn ($w) => $w->whereHas('requisition', fn ($m) => $m->untukPembaca($user)),
+                ))
             ->when($filters['search'], function ($q, $cari) {
                 $pola = '%'.str_replace('%', '\%', $cari).'%';
 

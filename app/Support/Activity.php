@@ -54,6 +54,11 @@ class Activity
                 'description' => $description,
                 'subject_type' => $subject !== null ? $subject::class : null,
                 'subject_id' => $subject?->getKey(),
+                // Nomor dokumennya DISALIN, bukan dibaca ulang lewat relasi
+                // saat log dibuka: satu query per baris kalau dibaca ulang,
+                // dan nomornya ikut hilang begitu dokumennya dihapus — justru
+                // pada saat jejaknya paling dibutuhkan.
+                'reference_number' => JenisTransaksi::nomor($subject),
                 'warehouse_id' => $warehouseId,
                 'properties' => $properties === [] ? null : $properties,
                 // Request::ip() aman dipanggil dari command baris perintah —

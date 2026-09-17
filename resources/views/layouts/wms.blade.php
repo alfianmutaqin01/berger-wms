@@ -76,6 +76,36 @@
                 </li>
             @endcan
 
+            {{-- AUDIT — SATU menu untuk dua layar penelusuran.
+
+                 Log aktivitas dan kartu stok tidak bisa dilebur jadi satu tabel
+                 (yang satu berbaris per tindakan orang, yang satu per
+                 pergerakan angka), tetapi pintunya satu: yang membukanya sedang
+                 menelusuri, dan menelusuri berangkat dari pertanyaan — bukan
+                 dari tahu tabel mana yang menyimpan jawabannya.
+
+                 Berdiri di sebelah Laporan, bukan terkubur di Pengaturan
+                 Sistem: Logistik dan Manager berhak atas kartu stok tetapi
+                 tidak pernah membuka menu pengaturan.
+
+                 Tautannya menyesuaikan izin pembukanya — yang hanya berhak atas
+                 satu tab langsung mendarat di tab itu. --}}
+            @canany([\App\Support\Permission::ADMIN_AUDIT, \App\Support\Permission::INVENTORY_LEDGER])
+                @php
+                    $auditAktif = request()->is('wms/admin/activity-log*')
+                        || request()->is('wms/inventory/kartu-stok');
+                    $auditTujuan = (auth()->user()?->can(\App\Support\Permission::ADMIN_AUDIT) ?? false)
+                        ? '/wms/admin/activity-log'
+                        : '/wms/inventory/kartu-stok';
+                @endphp
+                <li class="nav-item {{ $auditAktif ? 'active' : '' }}">
+                    <a href="{{ $auditTujuan }}" class="nav-link">
+                        <i class="bi bi-search"></i>
+                        <span>Audit & Penelusuran</span>
+                    </a>
+                </li>
+            @endcanany
+
             <!-- INBOUND & STOK -->
             @canany([
                 \App\Support\Permission::INBOUND_CREATE,
@@ -88,8 +118,11 @@
                 \App\Support\Permission::TRANSFER_HISTORY,
             ])
                 @php
+                    // Kartu stok ikut ber-URL /wms/inventory tetapi menunya di
+                    // Audit, jadi ia sengaja TIDAK membuka kelompok ini —
+                    // kalau tidak, dua menu menyala sekaligus.
                     $inboundOpen = request()->is('wms/inbound*')
-                        || request()->is('wms/inventory*')
+                        || (request()->is('wms/inventory*') && ! request()->is('wms/inventory/kartu-stok'))
                         || request()->is('wms/stocktake*')
                         || request()->is('wms/transfers*');
 
@@ -140,10 +173,14 @@
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INVENTORY_VIEW)
-                            <li class="nav-item {{ request()->is('wms/inventory') || request()->is('wms/inventory/*') ? 'active' : '' }}">
+                            <li class="nav-item {{ request()->is('wms/inventory') ? 'active' : '' }}">
                                 <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok</span></a>
                             </li>
                         @endcan
+                        {{-- Kartu Stok TIDAK di sini melainkan di menu Audit,
+                             satu pintu dengan Log Aktivitas: keduanya dibuka
+                             untuk menelusuri, bukan untuk mengerjakan sesuatu
+                             hari ini. --}}
                         @can(\App\Support\Permission::STOCKTAKE_COUNT)
                             {{-- Menu sendiri, bukan menumpang Denah. Stocktake
                                  adalah PROSES bertahap dengan awal, akhir, dan
@@ -205,10 +242,11 @@
                              sudah habis wajar hilang dari sana. Penelusuran
                              berbulan-bulan kemudian bertanya hal yang berbeda.
 
-                             MILIK LOGISTIK, bukan divisi peminta: isinya lintas
-                             divisi dan tidak bisa dipenggal per divisi tanpa
-                             kehilangan gunanya. --}}
-                        @can(\App\Support\Permission::MRF_HISTORY)
+                             TERBUKA UNTUK DIVISI PEMINTA JUGA, masing-masing
+                             berhenti di divisinya sendiri. Produksi justru yang
+                             paling sering bertanya "batch kemarin terpakai
+                             berapa"; Logistik melihat seluruhnya. --}}
+                        @can(\App\Support\Permission::MRF_VIEW)
                             <li class="nav-item {{ request()->is('wms/material-produksi/riwayat') ? 'active' : '' }}">
                                 <a href="/wms/material-produksi/riwayat" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Pemakaian MRF</span></a>
                             </li>
@@ -363,11 +401,8 @@
                                 <a href="/wms/admin/pallet-capacity" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kapasitas Palet</span></a>
                             </li>
                         @endcan
-                        @can(\App\Support\Permission::ADMIN_AUDIT)
-                            <li class="nav-item {{ request()->is('wms/admin/activity-log') ? 'active' : '' }}">
-                                <a href="/wms/admin/activity-log" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Log Aktivitas</span></a>
-                            </li>
-                        @endcan
+                        {{-- Log Aktivitas TIDAK di sini melainkan di menu Audit
+                             bersama Kartu Stok — lihat catatan di sana. --}}
                     </ul>
                 </li>
             @endcanany

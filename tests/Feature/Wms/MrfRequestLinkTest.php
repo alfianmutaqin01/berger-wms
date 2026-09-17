@@ -204,6 +204,38 @@ class MrfRequestLinkTest extends TestCase
     }
 
     /**
+     * NAMA PEMOHONNYA TERBACA DI SETIAP LAYAR, termasuk yang tanpa akun.
+     *
+     * Permintaan lewat tautan tidak punya baris user, jadi layar yang membaca
+     * relasi akunnya langsung menampilkan "—" — kolom kosong di dokumen yang
+     * justru paling perlu menyebut siapa pemiliknya, karena pemohonnya tidak
+     * bisa ditanya lewat sistem. Empat layar membacanya, dan keempatnya harus
+     * lewat satu accessor yang sama.
+     */
+    public function test_nama_pemohon_terbaca_walau_tanpa_akun(): void
+    {
+        $tautan = $this->tautan();
+        $this->isiFormulir($tautan);
+
+        $mrf = MaterialRequisition::latest('id')->firstOrFail();
+
+        // Halaman atasan — publik, tanpa login.
+        $this->get(route('mrf.approval.show', $mrf->approval_token))
+            ->assertOk()
+            ->assertSee('Andi QC');
+
+        $this->loginAs(Role::LOGISTICS);
+
+        // Daftar MRF, rincian, dan layar keputusan Logistik.
+        $this->get(route('wms.mrf.index'))->assertOk()->assertSee('Andi QC');
+        $this->get(route('wms.mrf.show', $mrf))->assertOk()->assertSee('Andi QC');
+
+        $this->post(route('mrf.approval.approve', $mrf->approval_token), ['note' => null]);
+        $this->loginAs(Role::LOGISTICS);
+        $this->get(route('wms.mrf.approve.form', $mrf))->assertOk()->assertSee('Andi QC');
+    }
+
+    /**
      * Atasan yang dikunci tidak bisa diganti lewat permintaan HTTP langsung.
      *
      * Ini pagar yang membuat tautan publik aman: tanpanya, pemegang tautan

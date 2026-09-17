@@ -3,13 +3,16 @@
 namespace Tests\Feature\Wms;
 
 use App\Models\ActivityLog;
+use App\Models\DeliveryNote;
 use App\Models\InventoryStock;
 use App\Models\Location;
+use App\Models\MaterialRequisition;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use App\Support\Activity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -276,6 +279,157 @@ class ActivityLogTest extends TestCase
 
         $this->assertNotNull($log);
         $this->assertSame(14, $log->properties['hari']);
+    }
+
+    /* -------------------------------------------- Nomor & jenis transaksi */
+
+    /**
+     * Nomor dokumennya disalin ke kolomnya sendiri saat dicatat.
+     *
+     * Bukan kenyamanan tampilan: selama nomornya hanya ada di dalam kalimat
+     * keterangan, "tunjukkan seluruh jejak MRF ini" hanya bisa dijawab dengan
+     * membaca ratusan baris satu per satu.
+     */
+    public function test_nomor_transaksi_disalin_saat_mencatat(): void
+    {
+        $this->login(Role::MANAGER);
+
+        $mrf = MaterialRequisition::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'mrf_number' => 'MRF2609099',
+        ]);
+
+        Activity::record(ActivityLog::MRF_CREATE, 'Permintaan material dibuat.', $mrf, $this->warehouse->id);
+
+        $log = ActivityLog::latest('id')->firstOrFail();
+
+        $this->assertSame('MRF2609099', $log->reference_number);
+        $this->assertSame('MRF', $log->kode_jenis);
+        $this->assertSame('Permintaan Material', $log->label_jenis);
+    }
+
+    /** Tindakan tanpa dokumen tetap tercatat, kolom nomornya saja yang kosong. */
+    public function test_tindakan_tanpa_dokumen_tidak_memaksakan_nomor(): void
+    {
+        $this->login(Role::MANAGER);
+
+        Activity::record(ActivityLog::STOCK_ADJUST, 'Koreksi tanpa dokumen induk.', null, $this->warehouse->id);
+
+        $log = ActivityLog::latest('id')->firstOrFail();
+
+        $this->assertNull($log->reference_number);
+        $this->assertSame('—', $log->kode_jenis);
+    }
+
+    /**
+     * Penyaring jenis memakai subject_type, bukan huruf depan nomornya.
+     *
+     * Dokumen dengan nomor tanpa huruf sama sekali — Surat Jalan dari BC
+     * berbunyi "206223" — tetap harus bisa disaring, dan itu mustahil kalau
+     * jenisnya ditebak dari teks nomornya.
+     */
+    public function test_log_bisa_disaring_per_jenis_transaksi(): void
+    {
+        $this->login(Role::SUPER_ADMIN);
+
+        $mrf = MaterialRequisition::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'mrf_number' => 'MRF2609098',
+        ]);
+        $surat = DeliveryNote::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'document_no' => '206223',
+        ]);
+
+        Activity::record(ActivityLog::MRF_CREATE, 'Permintaan material dibuat.', $mrf, $this->warehouse->id);
+        Activity::record(ActivityLog::DELIVERY_SHIP, 'Kiriman berangkat.', $surat, $this->warehouse->id);
+
+        $this->get(route('wms.admin.activity-log', ['jenis' => DeliveryNote::class]))
+            ->assertOk()
+            ->assertSee('206223')
+            ->assertDontSee('MRF2609098');
+
+        // Nomor yang tanpa huruf tetap ketemu lewat pencarian.
+        $this->get(route('wms.admin.activity-log', ['search' => '206223']))
+            ->assertOk()
+            ->assertSee('Kiriman berangkat.')
+            ->assertDontSee('MRF2609098');
+
+        // Jenis yang tidak dikenal diabaikan, bukan menjatuhkan halaman.
+        $this->get(route('wms.admin.activity-log', ['jenis' => 'App\Models\TidakAda']))
+            ->assertOk()
+            ->assertViewHas('filters', fn (array $f) => $f['jenis'] === null);
+    }
+
+    /* -------------------------------------------------------- Export Excel */
+
+    /**
+     * Berkasnya keluar sebagai .xlsx, bukan halaman HTML yang salah judul.
+     *
+     * Yang diuji tipenya dan namanya: kalau streaming-nya gagal, yang terunduh
+     * tetap "berkas" yang bisa dibuka — dan baru ketahuan rusak saat sudah
+     * diteruskan ke orang lain.
+     */
+    public function test_log_bisa_diunduh_sebagai_excel(): void
+    {
+        $this->login(Role::SUPER_ADMIN);
+
+        ActivityLog::create([
+            'action' => ActivityLog::STOCK_ADJUST,
+            'description' => 'Koreksi rak B-01-01.',
+            'created_at' => now(),
+        ]);
+
+        $respons = $this->get(route('wms.admin.activity-log.unduh'));
+
+        $respons->assertOk()
+            ->assertHeader(
+                'content-type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            );
+
+        $this->assertStringContainsString(
+            'log-aktivitas-',
+            $respons->headers->get('content-disposition') ?? '',
+        );
+    }
+
+    /**
+     * Unduhannya memakai penyaring yang sedang aktif, dan ikut tercatat.
+     *
+     * Berkas yang isinya berbeda dari layar yang barusan dibaca adalah cara
+     * paling halus membuat orang menarik kesimpulan yang keliru.
+     */
+    public function test_unduhan_mengikuti_penyaring_dan_ikut_tercatat(): void
+    {
+        $this->login(Role::SUPER_ADMIN);
+
+        $mrf = MaterialRequisition::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'mrf_number' => 'MRF2609097',
+        ]);
+
+        Activity::record(ActivityLog::MRF_CREATE, 'Permintaan material dibuat.', $mrf, $this->warehouse->id);
+        Activity::record(ActivityLog::STOCK_ADJUST, 'Koreksi yang tidak ikut terunduh.', null, $this->warehouse->id);
+
+        $this->get(route('wms.admin.activity-log.unduh', ['jenis' => MaterialRequisition::class]))
+            ->assertOk();
+
+        $jejak = ActivityLog::where('action', ActivityLog::REPORT_EXPORT)->latest('id')->firstOrFail();
+
+        $this->assertSame(1, $jejak->properties['baris'], 'Hanya baris MRF yang ikut terunduh.');
+        $this->assertSame(MaterialRequisition::class, $jejak->properties['jenis']);
+        $this->assertFalse($jejak->properties['terpotong']);
+    }
+
+    /** Yang tidak boleh membaca log juga tidak boleh mengunduhnya. */
+    public function test_unduhan_tertutup_untuk_yang_tidak_boleh_membaca(): void
+    {
+        foreach ([Role::MANAGER, Role::LOGISTICS] as $peran) {
+            $this->login($peran);
+
+            $this->get(route('wms.admin.activity-log.unduh'))->assertForbidden();
+        }
     }
 
     /* ------------------------------------------------------------ Ketahanan */

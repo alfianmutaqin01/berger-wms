@@ -28,7 +28,7 @@
         <div class="row g-3">
             <div class="col-md-3">
                 <small class="text-muted d-block">Pemohon</small>
-                <span class="fw-semibold">{{ $mrf->requestedBy?->full_name ?? '—' }}</span>
+                <span class="fw-semibold">{{ $mrf->nama_pemohon }}</span>
                 <div class="small text-muted">{{ $mrf->department_name ?? '—' }}</div>
             </div>
             <div class="col-md-3">

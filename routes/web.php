@@ -31,6 +31,7 @@ use App\Http\Controllers\Wms\ProductionMaterialController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ProofVerificationController;
 use App\Http\Controllers\Wms\ReportController;
+use App\Http\Controllers\Wms\StockLedgerController;
 use App\Http\Controllers\Wms\StockTakeController;
 use App\Http\Controllers\Wms\StockTransferController;
 use App\Http\Controllers\Wms\UserController;
@@ -322,6 +323,22 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::get('/inventory', [InventoryController::class, 'index'])
         ->middleware('can:'.Permission::INVENTORY_VIEW)
         ->name('wms.inventory.index');
+
+    /*
+    | KARTU STOK — buku besar mutasi, hanya baca.
+    |
+    | Gate-nya SENDIRI, bukan INVENTORY_VIEW. Data Stok menjawab "berapa
+    | sisanya sekarang" dan memang dipakai Produksi serta Operator tiap hari;
+    | kartu stok menjawab "bagaimana ia sampai ke angka itu", bahan
+    | rekonsiliasi yang dikerjakan Logistik dan Manager.
+    |
+    | Didaftarkan SEBELUM rute /inventory ber-parameter apa pun kelak, dengan
+    | alasan yang sama seperti di tempat lain: "kartu-stok" bukan angka, tetapi
+    | urutannya dijaga supaya tidak pernah menjadi jebakan.
+    */
+    Route::get('/inventory/kartu-stok', [StockLedgerController::class, 'index'])
+        ->middleware('can:'.Permission::INVENTORY_LEDGER)
+        ->name('wms.inventory.kartu-stok');
     // TIDAK ADA rute unduhan tersendiri di sini. Tombol Export Excel pada
     // halaman Data Stok mengarah ke pratinjau laporan Posisi Stok /
     // Pergerakan Stok yang sudah ada — alur, tampilan, batas baris, dan
@@ -578,6 +595,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // Log aktivitas — SUPER ADMIN SAJA, dan HANYA BACA. Tidak ada rute
         // tulis di sini bukan karena belum dibuat: log yang bisa disunting
         // oleh orang yang tercatat di dalamnya bukan log.
+        // Unduhan didaftarkan SEBELUM halamannya supaya tetap terbaca
+        // berpasangan; keduanya di balik gate yang sama, karena isi berkasnya
+        // persis isi layarnya.
+        Route::get('/activity-log/unduh', [ActivityLogController::class, 'download'])
+            ->middleware('can:'.Permission::ADMIN_AUDIT)
+            ->name('wms.admin.activity-log.unduh');
+
         Route::get('/activity-log', [ActivityLogController::class, 'index'])
             ->middleware('can:'.Permission::ADMIN_AUDIT)
             ->name('wms.admin.activity-log');
@@ -911,22 +935,24 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms,sales'])-
 
     // Buku material yang sudah di tangan Produksi, berikut pemakaiannya.
     /*
-     | RIWAYAT PEMAKAIAN BERDIRI DI IZINNYA SENDIRI, jadi ia di luar kelompok
-     | ini — bukan di dalam lalu dikecualikan, yang membuat izin sebenarnya
-     | hanya terbaca setelah menelusuri dua tempat.
+     | RIWAYAT PEMAKAIAN MEMAKAI MRF_VIEW, jadi ia di luar kelompok ini — bukan
+     | di dalam lalu dikecualikan, yang membuat izin sebenarnya hanya terbaca
+     | setelah menelusuri dua tempat.
      |
      | Halaman lain di bawah adalah TINDAKAN atas material yang sedang
-     | dipegang, jadi hanya yang memegangnya yang boleh. Riwayat adalah bacaan
-     | LINTAS DIVISI: ia menjawab ke mana barang pergi berbulan-bulan lalu, dan
-     | jawaban itu tidak bisa dipenggal per divisi tanpa kehilangan gunanya.
-     | Karena itu ia milik Logistik dan Manager — bukan Produksi atau Sales,
-     | yang layarnya sengaja berhenti di divisinya sendiri.
+     | dipegang, jadi hanya yang memegangnya yang boleh. Riwayat adalah BACAAN,
+     | dan pembacanya lebih luas: Produksi menelusuri pemakaiannya sendiri,
+     | Logistik menelusuri seluruhnya — termasuk permintaan divisi lewat
+     | tautan, yang selesai saat diambil dan hanya terlacak dari sini.
+     |
+     | Yang membatasi apa yang terbaca ada di controller (scopeUntukPembaca),
+     | bukan di pintu ini: divisi peminta berhenti di divisinya sendiri.
      |
      | Didaftarkan SEBELUM rute ber-{holding}: "riwayat" bukan angka, tetapi
      | urutannya tetap dijaga supaya tidak ada yang tertangkap sebagai id.
      */
     Route::get('material-produksi/riwayat', [ProductionMaterialController::class, 'riwayat'])
-        ->middleware('can:'.Permission::MRF_HISTORY)
+        ->middleware('can:'.Permission::MRF_VIEW)
         ->name('wms.material-produksi.riwayat');
 
     Route::prefix('material-produksi')->middleware('can:'.Permission::MRF_RECEIVE)->group(function () {
