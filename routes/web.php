@@ -935,22 +935,24 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms,sales'])-
 
     // Buku material yang sudah di tangan Produksi, berikut pemakaiannya.
     /*
-     | RIWAYAT PEMAKAIAN BERDIRI DI IZINNYA SENDIRI, jadi ia di luar kelompok
-     | ini — bukan di dalam lalu dikecualikan, yang membuat izin sebenarnya
-     | hanya terbaca setelah menelusuri dua tempat.
+     | RIWAYAT PEMAKAIAN MEMAKAI MRF_VIEW, jadi ia di luar kelompok ini — bukan
+     | di dalam lalu dikecualikan, yang membuat izin sebenarnya hanya terbaca
+     | setelah menelusuri dua tempat.
      |
      | Halaman lain di bawah adalah TINDAKAN atas material yang sedang
-     | dipegang, jadi hanya yang memegangnya yang boleh. Riwayat adalah bacaan
-     | LINTAS DIVISI: ia menjawab ke mana barang pergi berbulan-bulan lalu, dan
-     | jawaban itu tidak bisa dipenggal per divisi tanpa kehilangan gunanya.
-     | Karena itu ia milik Logistik dan Manager — bukan Produksi atau Sales,
-     | yang layarnya sengaja berhenti di divisinya sendiri.
+     | dipegang, jadi hanya yang memegangnya yang boleh. Riwayat adalah BACAAN,
+     | dan pembacanya lebih luas: Produksi menelusuri pemakaiannya sendiri,
+     | Logistik menelusuri seluruhnya — termasuk permintaan divisi lewat
+     | tautan, yang selesai saat diambil dan hanya terlacak dari sini.
+     |
+     | Yang membatasi apa yang terbaca ada di controller (scopeUntukPembaca),
+     | bukan di pintu ini: divisi peminta berhenti di divisinya sendiri.
      |
      | Didaftarkan SEBELUM rute ber-{holding}: "riwayat" bukan angka, tetapi
      | urutannya tetap dijaga supaya tidak ada yang tertangkap sebagai id.
      */
     Route::get('material-produksi/riwayat', [ProductionMaterialController::class, 'riwayat'])
-        ->middleware('can:'.Permission::MRF_HISTORY)
+        ->middleware('can:'.Permission::MRF_VIEW)
         ->name('wms.material-produksi.riwayat');
 
     Route::prefix('material-produksi')->middleware('can:'.Permission::MRF_RECEIVE)->group(function () {

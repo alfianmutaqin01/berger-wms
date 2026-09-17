@@ -79,9 +79,9 @@
             <div class="col-12 col-md-auto d-flex gap-2">
                 <button class="btn btn-sm btn-outline-secondary rounded-3">Terapkan</button>
                 <a href="{{ route('wms.material-produksi.index') }}" class="btn btn-sm btn-link text-decoration-none">Reset</a>
-                {{-- Hanya untuk yang boleh membacanya. Divisi peminta berhenti
-                     di daftar ini; riwayatnya lintas divisi. --}}
-                @can(\App\Support\Permission::MRF_HISTORY)
+                {{-- Daftar ini menjawab apa yang MASIH ada; yang sudah habis
+                     hilang dari sini dan hanya terbaca di riwayat. --}}
+                @can(\App\Support\Permission::MRF_VIEW)
                     <a href="{{ route('wms.material-produksi.riwayat') }}"
                        class="btn btn-sm btn-outline-primary rounded-3 ms-auto text-nowrap">
                         <i class="bi bi-clock-history me-1"></i> Riwayat Pemakaian

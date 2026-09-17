@@ -242,10 +242,11 @@
                              sudah habis wajar hilang dari sana. Penelusuran
                              berbulan-bulan kemudian bertanya hal yang berbeda.
 
-                             MILIK LOGISTIK, bukan divisi peminta: isinya lintas
-                             divisi dan tidak bisa dipenggal per divisi tanpa
-                             kehilangan gunanya. --}}
-                        @can(\App\Support\Permission::MRF_HISTORY)
+                             TERBUKA UNTUK DIVISI PEMINTA JUGA, masing-masing
+                             berhenti di divisinya sendiri. Produksi justru yang
+                             paling sering bertanya "batch kemarin terpakai
+                             berapa"; Logistik melihat seluruhnya. --}}
+                        @can(\App\Support\Permission::MRF_VIEW)
                             <li class="nav-item {{ request()->is('wms/material-produksi/riwayat') ? 'active' : '' }}">
                                 <a href="/wms/material-produksi/riwayat" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Pemakaian MRF</span></a>
                             </li>

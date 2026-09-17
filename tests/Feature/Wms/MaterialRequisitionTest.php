@@ -1017,15 +1017,52 @@ class MaterialRequisitionTest extends TestCase
             ->assertViewHas('stats', fn (array $s) => $s['baris'] === 0);
     }
 
-    /** Riwayat lintas divisi, jadi tertutup untuk divisi peminta. */
-    public function test_riwayat_pemakaian_tertutup_untuk_divisi_peminta(): void
+    /**
+     * Produksi boleh menelusuri pemakaiannya sendiri.
+     *
+     * Merekalah yang paling sering bertanya "batch kemarin terpakai berapa",
+     * dan memagari mereka keluar dari catatan pemakaiannya sendiri hanya
+     * memindahkan pertanyaan itu ke telepon.
+     */
+    public function test_produksi_boleh_membuka_riwayat_pemakaiannya(): void
     {
-        foreach ([Role::PRODUCTION, Role::SALES] as $peran) {
-            $this->loginAt($peran);
+        $holding = $this->sampaiDiterima(300);
 
-            $this->get(route('wms.material-produksi.riwayat'))
-                ->assertForbidden();
-        }
+        $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 50, 'note' => 'Reproses pagi.']);
+
+        $this->get(route('wms.material-produksi.riwayat'))
+            ->assertOk()
+            ->assertSee('Reproses pagi.')
+            ->assertViewHas('stats', fn (array $s) => $s['baris'] === 1 && $s['unit'] === 50);
+    }
+
+    /**
+     * Tetapi berhenti di divisinya: pemakaian Sales bukan urusan Produksi.
+     *
+     * Batas yang sama dengan daftar MRF dan MRF Picked — kalau riwayat lolos
+     * dari batas itu, seluruh pemisahan divisi bocor lewat satu layar.
+     */
+    public function test_riwayat_pemakaian_berhenti_di_divisi_pembacanya(): void
+    {
+        $holding = $this->sampaiDiterima(300);
+
+        $this->loginAt(Role::PRODUCTION);
+        $this->post(route('wms.material-produksi.consume', $holding), ['qty' => 50, 'note' => 'Reproses pagi.']);
+
+        // Sales tidak melihat pemakaian Produksi …
+        $this->loginAt(Role::SALES);
+        $this->get(route('wms.material-produksi.riwayat'))
+            ->assertOk()
+            ->assertDontSee('Reproses pagi.')
+            ->assertViewHas('stats', fn (array $s) => $s['baris'] === 0);
+
+        // … sedangkan Logistik melihat seluruhnya.
+        $this->loginAt(Role::LOGISTICS);
+        $this->get(route('wms.material-produksi.riwayat'))
+            ->assertOk()
+            ->assertSee('Reproses pagi.')
+            ->assertViewHas('stats', fn (array $s) => $s['baris'] === 1);
     }
 
     /* ================================================ Pemisahan divisi */
