@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EpodController;
 use App\Http\Controllers\MrfApprovalController;
+use App\Http\Controllers\MrfRequestLinkController;
 use App\Http\Controllers\Sales\DashboardController as SalesDashboardController;
 use App\Http\Controllers\Sales\DeliveryProofController;
 use App\Http\Controllers\Sales\SalesOrderController;
@@ -470,6 +471,11 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->middleware('can:'.Permission::MRF_APPROVE)
             ->name('wms.mrf.reject');
 
+        // Permintaan lewat tautan divisi ditutup di gudang, saat orangnya
+        // datang mengambil — pemohonnya tidak punya akun untuk menekan apa pun.
+        Route::post('/{mrf}/collect', [MaterialRequisitionController::class, 'collect'])
+            ->middleware('can:'.Permission::MRF_APPROVE)
+            ->name('wms.mrf.collect');
         Route::post('/{mrf}/receive', [MaterialRequisitionController::class, 'receive'])
             ->middleware('can:'.Permission::MRF_RECEIVE)
             ->name('wms.mrf.receive');
@@ -486,13 +492,27 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     });
 
     // Buku material yang sudah di tangan Produksi, berikut pemakaiannya.
+    /*
+     | RIWAYAT PEMAKAIAN DIBUKA LEBIH LUAS daripada halaman MRF Picked, jadi ia
+     | berdiri di luar kelompoknya — bukan di dalam lalu dikecualikan, yang
+     | membuat izin sebenarnya hanya terbaca setelah menelusuri dua tempat.
+     |
+     | Halaman lain di bawah adalah TINDAKAN atas material yang sedang
+     | dipegang, jadi hanya yang memegangnya yang boleh. Riwayat adalah bacaan,
+     | dan yang paling sering menelusurinya justru Logistik: barang yang keluar
+     | lewat MRF — termasuk permintaan divisi lewat tautan, yang selesai saat
+     | diambil — hanya bisa dilacak dari sini.
+     |
+     | Didaftarkan SEBELUM rute ber-{holding}: "riwayat" bukan angka, tetapi
+     | urutannya tetap dijaga supaya tidak ada yang tertangkap sebagai id.
+     */
+    Route::get('material-produksi/riwayat', [ProductionMaterialController::class, 'riwayat'])
+        ->middleware('can:'.Permission::MRF_VIEW)
+        ->name('wms.material-produksi.riwayat');
+
     Route::prefix('material-produksi')->middleware('can:'.Permission::MRF_RECEIVE)->group(function () {
         Route::get('/', [ProductionMaterialController::class, 'index'])
             ->name('wms.material-produksi.index');
-        // Didaftarkan SEBELUM rute ber-{holding}: "riwayat" bukan angka, tetapi
-        // urutannya tetap dijaga supaya tidak ada yang tertangkap sebagai id.
-        Route::get('/riwayat', [ProductionMaterialController::class, 'riwayat'])
-            ->name('wms.material-produksi.riwayat');
         Route::post('/{holding}/pakai', [ProductionMaterialController::class, 'consume'])
             ->name('wms.material-produksi.consume');
         // Area yang ditulis operator saat serah terima hanya keterangan awal;
@@ -634,6 +654,14 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.admin.settings');
             Route::post('/settings', [AdminController::class, 'updateSettings'])
                 ->name('wms.admin.settings.update');
+
+            // Tautan permintaan material per divisi. Menumpang halaman
+            // Pengaturan, bukan menu sendiri: diatur sekali lalu nyaris tidak
+            // disentuh lagi, sama sifatnya dengan setelan di sana.
+            Route::post('/settings/tautan-mrf', [AdminController::class, 'storeMrfLink'])
+                ->name('wms.admin.mrf-link.store');
+            Route::put('/settings/tautan-mrf/{link}', [AdminController::class, 'updateMrfLink'])
+                ->name('wms.admin.mrf-link.update');
 
             // Kapasitas palet: berapa muat di satu palet, menurut ukurannya.
             // Halaman sendiri karena bentuknya DAFTAR yang bisa bertambah,
@@ -924,6 +952,21 @@ Route::middleware('throttle:30,1')->group(function () {
 | karakter tidak boleh bisa dicari dengan mencoba satu per satu.
 */
 Route::middleware('throttle:30,1')->group(function () {
+    /*
+     | Formulir permintaan untuk divisi tanpa akun (QC, R&D).
+     |
+     | WAJIB didaftarkan SEBELUM '/mrf/{token}', kalau tidak "minta" tertangkap
+     | sebagai token persetujuan dan formulirnya tidak pernah bisa dibuka.
+     */
+    Route::get('/mrf/minta/{token}', [MrfRequestLinkController::class, 'show'])
+        ->name('mrf.minta.show');
+    Route::post('/mrf/minta/{token}', [MrfRequestLinkController::class, 'store'])
+        ->name('mrf.minta.store');
+    Route::get('/mrf/minta/{token}/selesai', [MrfRequestLinkController::class, 'done'])
+        ->name('mrf.minta.selesai');
+    Route::get('/mrf/minta/{token}/produk', [MrfRequestLinkController::class, 'lookupProducts'])
+        ->name('mrf.minta.produk');
+
     Route::get('/mrf/{token}', [MrfApprovalController::class, 'show'])->name('mrf.approval.show');
     Route::post('/mrf/{token}/approve', [MrfApprovalController::class, 'approve'])->name('mrf.approval.approve');
     Route::post('/mrf/{token}/reject', [MrfApprovalController::class, 'reject'])->name('mrf.approval.reject');

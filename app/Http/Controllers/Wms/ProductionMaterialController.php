@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\Location;
 use App\Models\ProductionMaterialConsumption;
 use App\Models\ProductionMaterialHolding;
+use App\Models\Role;
 use App\Support\Activity;
 use App\Support\FilterTanggal;
 use App\Support\Production\MaterialRequisitionRun;
@@ -53,8 +54,14 @@ class ProductionMaterialController extends Controller
             'warehouse_id' => $gudang,
         ];
 
+        // Sales hanya melihat material dari permintaannya sendiri — alasannya
+        // sama dengan daftar MRF: material Produksi bukan urusannya.
         $dasar = fn () => WarehouseScope::apply(ProductionMaterialHolding::query(), $user)
             ->when($gudang, fn ($q, $id) => $q->where('warehouse_id', $id))
+            ->when(
+                $user?->role?->slug === Role::SALES,
+                fn ($q) => $q->whereHas('requisition', fn ($m) => $m->where('requested_by', $user->id)),
+            )
             ->when($filters['search'], function ($q, $cari) {
                 $pola = '%'.str_replace('%', '\%', $cari).'%';
 

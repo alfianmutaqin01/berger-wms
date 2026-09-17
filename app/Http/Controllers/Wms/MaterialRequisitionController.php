@@ -10,6 +10,7 @@ use App\Models\MaterialRequisition;
 use App\Models\MrfApproverContact;
 use App\Models\Notification;
 use App\Models\Product;
+use App\Models\Role;
 use App\Models\Warehouse;
 use App\Support\Activity;
 use App\Support\Notifier;
@@ -67,8 +68,23 @@ class MaterialRequisitionController extends Controller
             'warehouse_id' => $gudang,
         ];
 
+        /*
+         | SALES HANYA MELIHAT PERMINTAANNYA SENDIRI.
+         |
+         | Ia ikut boleh meminta material — contoh untuk calon pelanggan baru —
+         | tetapi permintaan material Produksi bukan urusannya, dan daftar yang
+         | memuat keduanya membuat layar ini panjang tanpa guna baginya.
+         |
+         | Produksi tidak dibatasi: mereka satu tim yang bergantian meminta dan
+         | mengambil di gudang yang sama, dan membatasi tiap orang ke
+         | permintaannya sendiri justru memutus kerja yang memang dioper.
+         */
         $dasar = fn () => WarehouseScope::apply(MaterialRequisition::query(), $user)
             ->when($gudang, fn ($q, $id) => $q->where('warehouse_id', $id))
+            ->when(
+                $user?->role?->slug === Role::SALES,
+                fn ($q) => $q->where('requested_by', $user->id),
+            )
             ->search($filters['search'])
             ->when($filters['jenis'], fn ($q, $j) => $q->where('request_type', $j));
 
@@ -571,6 +587,62 @@ class MaterialRequisitionController extends Controller
     }
 
     /* -------------------------------------------------- Produksi: menerima */
+
+    /**
+     * Barang permintaan lewat tautan divisi DIAMBIL pemohonnya. Selesai.
+     *
+     * Ditekan orang gudang saat orangnya datang, bukan oleh pemohonnya —
+     * pemohon dari QC atau R&D tidak punya akun dan tidak akan membuka WMS.
+     * Yang dicatat adalah nama orang yang benar-benar membawa barangnya
+     * keluar, dan itulah satu-satunya jejak siapa yang memegangnya.
+     */
+    public function collect(Request $request, MaterialRequisition $mrf): RedirectResponse
+    {
+        WarehouseScope::assert($mrf->warehouse_id, $request->user());
+
+        abort_unless($mrf->lewatTautan(), 404);
+
+        $data = $request->validate([
+            'collected_by_name' => ['required', 'string', 'max:100'],
+        ], [
+            'collected_by_name.required' => 'Isi nama orang yang mengambil — inilah satu-satunya catatan '.
+                'siapa yang membawa barang ini keluar gudang.',
+        ], ['collected_by_name' => 'nama pengambil']);
+
+        try {
+            $hasil = $this->mrf->tandaiDiambil($mrf, $data['collected_by_name'], $request->user()?->id);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        Activity::record(
+            ActivityLog::MRF_RECEIVE,
+            sprintf(
+                '%s diambil %s dari divisi %s: %d unit dalam %d batch, dan permintaannya ditutup.',
+                $mrf->mrf_number,
+                trim($data['collected_by_name']),
+                $mrf->department_name ?? '—',
+                $hasil['unit'],
+                $hasil['baris'],
+            ),
+            $mrf,
+            $mrf->warehouse_id,
+            [
+                'nomor' => $mrf->mrf_number,
+                'lewat_tautan' => true,
+                'divisi' => $mrf->department_name,
+                'diambil_oleh' => trim($data['collected_by_name']),
+                'unit' => $hasil['unit'],
+            ],
+        );
+
+        return back()->with('success', sprintf(
+            '%s ditutup: %d unit diambil %s. Pemakaiannya tercatat di Riwayat Pemakaian MRF.',
+            $mrf->mrf_number,
+            $hasil['unit'],
+            trim($data['collected_by_name']),
+        ));
+    }
 
     public function receive(Request $request, MaterialRequisition $mrf): RedirectResponse
     {

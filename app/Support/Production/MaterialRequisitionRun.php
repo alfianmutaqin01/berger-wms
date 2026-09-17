@@ -8,6 +8,7 @@ use App\Models\MaterialRequisition;
 use App\Models\MaterialRequisitionItem;
 use App\Models\MaterialRequisitionRejection;
 use App\Models\MrfApproverContact;
+use App\Models\MrfRequestLink;
 use App\Models\PickingList;
 use App\Models\PickingListItem;
 use App\Models\ProductionMaterialConsumption;
@@ -257,6 +258,156 @@ class MaterialRequisitionRun
     }
 
     /**
+     * Permintaan dari divisi yang tidak punya akun WMS, lewat tautan divisi.
+     *
+     * Bentuk dokumennya SAMA PERSIS dengan MRF dari akun — nomor, jenis,
+     * keperluan, baris barang, dan dua pintu persetujuan yang sama. Yang
+     * berbeda hanya dari mana ia datang dan bagaimana ia berakhir: pemohonnya
+     * tidak punya akun, dan barangnya selesai saat diambil alih-alih masuk
+     * buku pemakaian bertahap.
+     *
+     * ATASANNYA DIAMBIL DARI TAUTAN bila Manager sudah menetapkannya. Tanpa
+     * itu, siapa pun yang memegang tautannya bisa mengetik nomornya sendiri,
+     * menerima tautan persetujuannya, lalu menyetujui permintaannya sendiri —
+     * dan seluruh pemeriksaan ini jadi hiasan.
+     *
+     * @param  list<array{product_id:int, qty:int, note:?string}>  $baris
+     *
+     * @throws RuntimeException
+     */
+    public function ajukanLewatTautan(
+        MrfRequestLink $tautan,
+        string $namaPemohon,
+        string $jenis,
+        string $keperluan,
+        array $baris,
+        ?string $namaApprover,
+        ?string $nomorApprover,
+    ): MaterialRequisition {
+        if (! $tautan->is_active) {
+            throw new RuntimeException(
+                'Tautan permintaan ini sudah tidak berlaku. Hubungi Logistik untuk mendapatkan tautan baru.'
+            );
+        }
+
+        if ($baris === []) {
+            throw new RuntimeException('Belum ada satu produk pun yang diminta. Tambahkan minimal satu baris.');
+        }
+
+        $namaAtasan = $tautan->atasanTerkunci() ? $tautan->approver_name : trim((string) $namaApprover);
+        $nomor = PhoneNumber::forWhatsApp(
+            $tautan->atasanTerkunci() ? $tautan->approver_phone : $nomorApprover,
+        );
+
+        if ($namaAtasan === '' || $nomor === null) {
+            throw new RuntimeException(
+                'Nama dan nomor WhatsApp atasan yang menyetujui wajib diisi, dan nomornya harus satu nomor '.
+                'ponsel Indonesia — mis. 081234567890.'
+            );
+        }
+
+        return DB::transaction(function () use ($tautan, $namaPemohon, $jenis, $keperluan, $baris, $namaAtasan, $nomor) {
+            $mrf = MaterialRequisition::create([
+                'mrf_number' => DocumentNumber::forMaterialRequisition(),
+                'warehouse_id' => $tautan->warehouse_id,
+                // TANPA akun pemohon. Memalsukannya sebagai akun siapa pun
+                // membuat dokumen ini berbohong soal siapa yang meminta.
+                'requested_by' => null,
+                'request_link_id' => $tautan->id,
+                'requester_name' => trim($namaPemohon),
+                'department_id' => $tautan->department_id,
+                'department_name' => $tautan->department?->name,
+                'request_type' => $jenis,
+                'purpose' => trim($keperluan),
+                'status' => MaterialRequisition::STATUS_PENDING_APPROVAL,
+                'approver_name' => $namaAtasan,
+                'approver_phone' => $nomor,
+                'approval_token' => Str::random(64),
+                'notify_status' => MaterialRequisition::NOTIFY_PENDING,
+            ]);
+
+            foreach ($baris as $item) {
+                $qty = (int) ($item['qty'] ?? 0);
+
+                if ($qty < 1) {
+                    throw new RuntimeException('Qty tiap baris permintaan harus minimal 1.');
+                }
+
+                $mrf->items()->create([
+                    'product_id' => (int) $item['product_id'],
+                    'qty_requested' => $qty,
+                    'note' => blank($item['note'] ?? null) ? null : trim((string) $item['note']),
+                ]);
+            }
+
+            return $mrf;
+        });
+    }
+
+    /**
+     * Barang permintaan lewat tautan diambil pemohonnya. Selesai di sini.
+     *
+     * TIDAK MASUK BUKU PEMAKAIAN BERTAHAP, dan itu disengaja: divisi lain
+     * lazimnya minta satu-dua pcs yang langsung habis, dan baris sekecil itu
+     * di daftar sisa berjalan hanya menenggelamkan sisa Produksi yang
+     * benar-benar perlu dikejar.
+     *
+     * TETAPI TETAP MASUK BUKU, sebagai baris yang lahir dan habis sekaligus.
+     * Dengan begitu ia muncul di Riwayat Pemakaian seperti pengeluaran
+     * material lainnya, dan Logistik bisa menelusurinya setahun kemudian lewat
+     * layar yang sama — bukan lewat layar khusus yang harus diingat ada.
+     *
+     * @return array{baris:int, unit:int}
+     *
+     * @throws RuntimeException
+     */
+    public function tandaiDiambil(MaterialRequisition $mrf, string $namaPengambil, ?int $userId): array
+    {
+        if (trim($namaPengambil) === '') {
+            throw new RuntimeException(
+                'Nama orang yang mengambil wajib diisi — inilah satu-satunya catatan siapa yang membawa '.
+                'barang ini keluar gudang.'
+            );
+        }
+
+        return DB::transaction(function () use ($mrf, $namaPengambil, $userId) {
+            $terkunci = MaterialRequisition::query()->lockForUpdate()->findOrFail($mrf->id);
+
+            if ($terkunci->status !== MaterialRequisition::STATUS_READY_FOR_PICKUP) {
+                throw new RuntimeException(sprintf(
+                    'MRF %s berstatus "%s", jadi belum ada barang yang menunggu diambil.',
+                    $terkunci->mrf_number,
+                    $terkunci->status_label,
+                ));
+            }
+
+            $area = $terkunci->handoverLocation?->nama_serah_terima ?? self::AREA_BAWAAN;
+            $hasil = $this->wujudkanDiTanganProduksi($terkunci, $area, $userId);
+
+            // Lahir dan habis sekaligus. Dicatat sebagai pemakaian sungguhan,
+            // lengkap dengan nama pengambilnya, supaya Riwayat Pemakaian
+            // menjawab pertanyaan yang sama untuk kedua jalur.
+            foreach ($terkunci->holdings()->whereNull('finished_at')->get() as $holding) {
+                $this->pakai(
+                    $holding,
+                    (int) $holding->qty_sisa,
+                    sprintf('Diambil %s (%s).', trim($namaPengambil), $terkunci->department_name ?? 'divisi pemohon'),
+                    $userId,
+                );
+            }
+
+            $terkunci->fill([
+                'status' => MaterialRequisition::STATUS_RECEIVED,
+                'received_at' => now(),
+                'received_by' => $userId,
+                'collected_by_name' => trim($namaPengambil),
+            ])->save();
+
+            return $hasil;
+        });
+    }
+
+    /**
      * Menyimpan nomor approver supaya MRF berikutnya tinggal diklik.
      *
      * updateOrCreate, bukan create: nomor yang sama disimpan dua kali hanya
@@ -477,7 +628,7 @@ class MaterialRequisitionRun
      * SESUDAH baris-barisnya dikeluarkan dari rak — qty_picked yang dibaca di
      * sini hasil pekerjaan operator, bukan angka yang dijanjikan Logistik.
      *
-     * @return array{diambil:int, kurang:int, baris:int, unit:int}
+     * @return array{diambil:int, kurang:int, lewat_tautan:bool, baris:int, unit:int}
      *
      * @throws RuntimeException
      */
@@ -528,25 +679,44 @@ class MaterialRequisitionRun
             $kurang += max(0, (int) $alokasi->qty_allocated - $qty);
         }
 
+        /*
+         | DUA AKHIR YANG BERBEDA, menurut dari mana permintaannya datang.
+         |
+         | Permintaan dari AKUN (Produksi, Sales) berpindah tangan di sini
+         | juga: serah terima di layar operator terjadi bersamaan dengan serah
+         | terima sungguhan di lantai gudang, dan orangnya ada di tempat.
+         |
+         | Permintaan lewat TAUTAN DIVISI belum bisa selesai: pemohonnya tidak
+         | punya akun, tidak berdiri di gudang, dan baru akan dikabari lewat
+         | WhatsApp bahwa barangnya sudah bisa diambil. Ia berhenti di "siap
+         | diambil" sampai ada yang benar-benar datang mengambilnya, dan nama
+         | orang itu yang menutup dokumennya.
+         */
+        $lewatTautan = $terkunci->lewatTautan();
+
         $terkunci->fill([
-            'status' => MaterialRequisition::STATUS_RECEIVED,
+            'status' => $lewatTautan
+                ? MaterialRequisition::STATUS_READY_FOR_PICKUP
+                : MaterialRequisition::STATUS_RECEIVED,
             'handover_location_id' => $handoverLocationId,
             'handover_note' => blank($catatan) ? null : trim($catatan),
             'picked_at' => now(),
-            'received_at' => now(),
             // Yang menyerahkan, bukan yang menerima. Ditulis apa adanya:
             // memalsukannya sebagai pemohon akan membuat log mengaku Produksi
             // menekan tombol yang tidak pernah ia lihat.
-            'received_by' => $userId,
+            'received_at' => $lewatTautan ? null : now(),
+            'received_by' => $lewatTautan ? null : $userId,
         ])->save();
 
-        $masuk = $this->wujudkanDiTanganProduksi(
-            $terkunci,
-            $lokasiSerah?->nama_serah_terima ?? self::AREA_BAWAAN,
-            $userId,
-        );
+        $masuk = $lewatTautan
+            ? ['baris' => 0, 'unit' => 0]
+            : $this->wujudkanDiTanganProduksi(
+                $terkunci,
+                $lokasiSerah?->nama_serah_terima ?? self::AREA_BAWAAN,
+                $userId,
+            );
 
-        return ['diambil' => $diambil, 'kurang' => $kurang] + $masuk;
+        return ['diambil' => $diambil, 'kurang' => $kurang, 'lewat_tautan' => $lewatTautan] + $masuk;
     }
 
     /* ------------------------------------------------ Penerimaan Produksi */

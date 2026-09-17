@@ -326,13 +326,23 @@ class Permission
          | mengambil barang tanpa tahu untuk siapa dan ke rak mana harus
          | ditaruh. Yang dipisah adalah tindakannya, bukan bacaannya.
          */
-        self::MRF_CREATE => [Role::SUPER_ADMIN, Role::PRODUCTION],
+        /*
+         | SALES IKUT MEMINTA, dan itu memang terjadi di lapangan: contoh untuk
+         | calon pelanggan baru diminta Sales, bukan Produksi. Ia sudah punya
+         | akun dan memakai WMS tiap hari, jadi jalurnya akun biasa — bukan
+         | tautan divisi, yang disediakan justru untuk divisi yang TIDAK punya
+         | akun (QC, R&D — lihat MrfRequestLink).
+         |
+         | Yang DILIHAT Sales dan Produksi dibatasi ke permintaannya sendiri di
+         | controller; izin ini hanya membuka pintunya.
+         */
+        self::MRF_CREATE => [Role::SUPER_ADMIN, Role::PRODUCTION, Role::SALES],
         self::MRF_VIEW => [
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS,
-            Role::PRODUCTION, Role::WAREHOUSE_OPERATOR,
+            Role::PRODUCTION, Role::WAREHOUSE_OPERATOR, Role::SALES,
         ],
         self::MRF_APPROVE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
-        self::MRF_RECEIVE => [Role::SUPER_ADMIN, Role::PRODUCTION],
+        self::MRF_RECEIVE => [Role::SUPER_ADMIN, Role::PRODUCTION, Role::SALES],
 
         self::BILLING_VIEW => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::BILLING_CONFIRM => [Role::SUPER_ADMIN, Role::LOGISTICS],

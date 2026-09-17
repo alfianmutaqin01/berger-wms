@@ -36,6 +36,12 @@ final readonly class PesanWhatsApp
     public const TEMPLATE_PERSETUJUAN_MRF = 'persetujuan_mrf';
 
     /**
+     * Kabar material MRF siap diambil, untuk pemohon dari divisi tanpa akun.
+     * Variabel: [nama pemohon, nomor MRF, tempat pengambilan].
+     */
+    public const TEMPLATE_MRF_SIAP_DIAMBIL = 'mrf_siap_diambil';
+
+    /**
      * Kabar barang sampai untuk Sales.
      * Variabel: [nama sales, nomor PO, nama customer, nomor Surat Jalan, tautan].
      */

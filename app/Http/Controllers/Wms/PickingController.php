@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ReportPickingShortageRequest;
 use App\Http\Requests\Wms\StorePickingListRequest;
+use App\Jobs\SendMrfPickupReady;
 use App\Models\ActivityLog;
 use App\Models\Location;
 use App\Models\MaterialRequisition;
@@ -492,8 +493,11 @@ class PickingController extends Controller
         Activity::record(
             ActivityLog::PICKING_RELEASE,
             sprintf(
-                'Daftar %s untuk permintaan material %s diserahterimakan: %d unit turun dari rak, '.
-                'ditaruh di %s, dan langsung tercatat di buku Produksi.',
+                $hasil['lewat_tautan']
+                    ? 'Daftar %s untuk permintaan material %s selesai: %d unit turun dari rak dan '.
+                      'menunggu di %s sampai pemohonnya datang mengambil.'
+                    : 'Daftar %s untuk permintaan material %s diserahterimakan: %d unit turun dari rak, '.
+                      'ditaruh di %s, dan langsung tercatat di buku Produksi.',
                 $list->list_number,
                 $mrf->mrf_number,
                 $hasil['diambil'],
@@ -510,30 +514,47 @@ class PickingController extends Controller
             ],
         );
 
-        Notifier::toUser(
-            $mrf->requested_by,
-            Notification::MRF_READY_FOR_PICKUP,
-            'Material Anda sudah diserahkan',
-            sprintf(
-                '%s: %d unit sudah turun dari rak, ditaruh di %s, dan tercatat atas nama Produksi. '.
-                'Pemakaiannya dicatat di MRF Picked — lokasinya boleh Anda pindahkan di sana.',
-                $mrf->mrf_number,
-                $hasil['diambil'],
-                $rak,
-            ),
-            route('wms.material-produksi.index'),
-            $mrf->warehouse_id,
-            $mrf,
-        );
+        if ($hasil['lewat_tautan']) {
+            // Pemohonnya tidak punya akun WMS, jadi loncengnya tidak akan
+            // pernah ia lihat — kabarnya dikirim lewat WhatsApp, jalur yang
+            // sama dengan tautan permintaannya.
+            SendMrfPickupReady::dispatch($mrf->id);
+        } else {
+            Notifier::toUser(
+                $mrf->requested_by,
+                Notification::MRF_READY_FOR_PICKUP,
+                'Material Anda sudah diserahkan',
+                sprintf(
+                    '%s: %d unit sudah turun dari rak, ditaruh di %s, dan tercatat atas nama Anda. '.
+                    'Pemakaiannya dicatat di MRF Picked — lokasinya boleh Anda pindahkan di sana.',
+                    $mrf->mrf_number,
+                    $hasil['diambil'],
+                    $rak,
+                ),
+                route('wms.material-produksi.index'),
+                $mrf->warehouse_id,
+                $mrf,
+            );
+        }
 
-        $pesan = sprintf(
-            'Serah terima %s selesai. %d unit untuk permintaan material %s ditaruh di %s dan langsung '.
-            'tercatat di buku Produksi.',
-            $list->list_number,
-            $hasil['diambil'],
-            $mrf->mrf_number,
-            $rak,
-        );
+        $pesan = $hasil['lewat_tautan']
+            ? sprintf(
+                'Daftar %s selesai. %d unit untuk permintaan material %s menunggu di %s, dan %s sudah '.
+                'dikabari lewat WhatsApp. Tekan "Sudah Diambil" di dokumen MRF-nya saat orangnya datang.',
+                $list->list_number,
+                $hasil['diambil'],
+                $mrf->mrf_number,
+                $rak,
+                $mrf->department_name ?? 'pemohonnya',
+            )
+            : sprintf(
+                'Serah terima %s selesai. %d unit untuk permintaan material %s ditaruh di %s dan langsung '.
+                'tercatat di buku Produksi.',
+                $list->list_number,
+                $hasil['diambil'],
+                $mrf->mrf_number,
+                $rak,
+            );
 
         if ($hasil['kurang'] > 0) {
             return redirect()->route('wms.picking.queue')->with('warning', $pesan.sprintf(

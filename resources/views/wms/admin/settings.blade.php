@@ -134,4 +134,147 @@
         </ul>
     </div>
 </div>
+
+{{-- ------------------------------------------- Tautan permintaan material --}}
+{{-- MENUMPANG HALAMAN INI, bukan menu sendiri. Daftarnya berisi dua-tiga
+     baris dan diubah setahun sekali; menu tersendiri untuk itu hanya
+     memperpanjang menu samping yang dibaca orang setiap hari.
+
+     Yang diatur di sini: divisi mana yang boleh meminta material tanpa punya
+     akun WMS, dan siapa atasan yang menyetujuinya. --}}
+<div class="card border-0 shadow-sm rounded-4 mt-4">
+    <div class="card-body p-3 p-md-4">
+        <h6 class="fw-bold mb-1">
+            <i class="bi bi-link-45deg me-2"></i>Tautan Permintaan Material per Divisi
+        </h6>
+        <p class="text-muted small">
+            Untuk divisi yang <strong>tidak punya akun WMS</strong> — QC, R&amp;D, dan sejenisnya.
+            Mereka mengisi permintaannya sendiri lewat tautan ini, lalu alurnya sama persis dengan MRF
+            Produksi: disetujui atasan lewat WhatsApp, dipastikan Logistik, disiapkan Operator.
+            Barangnya <strong>selesai saat diambil</strong> dan tercatat di Riwayat Pemakaian MRF.
+        </p>
+
+        <div class="alert alert-warning border-0 rounded-3 small">
+            <i class="bi bi-key-fill me-2"></i>
+            <strong>Perlakukan tautannya seperti kunci.</strong> Berikan sekali kepada kepala divisinya,
+            jangan disebar di grup. Kalau terlanjur tersebar, tekan <em>Terbitkan ulang</em> — alamat
+            lamanya mati seketika.
+            <div class="mt-2 mb-0">
+                Mengisi nama dan nomor atasan di bawah membuat atasannya <strong>terkunci</strong>:
+                pengisi formulir tidak bisa menyebutkan atasan lain, apalagi dirinya sendiri.
+                Dikosongkan berarti divisi itu menyebutkannya sendiri tiap kali, seperti Produksi.
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead class="table-light">
+                    <tr class="small text-muted">
+                        <th>Divisi</th>
+                        <th>Gudang</th>
+                        <th>Atasan penyetuju</th>
+                        <th class="text-end">Dipakai</th>
+                        <th>Tautan</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @forelse($tautanMrf as $tautan)
+                    <tr class="{{ $tautan->is_active ? '' : 'opacity-50' }}">
+                        <td class="small fw-semibold">
+                            {{ $tautan->department?->name ?? '—' }}
+                            @unless($tautan->is_active)
+                                <span class="badge bg-secondary ms-1">Nonaktif</span>
+                            @endunless
+                        </td>
+                        <td class="small">{{ $tautan->warehouse?->kode_pendek ?? '—' }}</td>
+                        <td class="small">
+                            @if($tautan->atasanTerkunci())
+                                {{ $tautan->approver_name }}
+                                <span class="d-block text-muted font-monospace">{{ $tautan->approver_phone }}</span>
+                            @else
+                                <span class="text-muted">Diisi pemohon</span>
+                            @endif
+                        </td>
+                        <td class="text-end small">{{ number_format($tautan->requisitions_count) }}&times;</td>
+                        <td>
+                            @if($tautan->is_active)
+                                <input type="text" readonly class="form-control form-control-sm font-monospace"
+                                       style="min-width:240px" value="{{ $tautan->url() }}"
+                                       onclick="this.select()" aria-label="Alamat tautan">
+                            @else
+                                <span class="text-muted small">—</span>
+                            @endif
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <form method="POST" action="{{ route('wms.admin.mrf-link.update', $tautan) }}"
+                                  class="d-inline">
+                                @csrf @method('PUT')
+                                <input type="hidden" name="aksi" value="{{ $tautan->is_active ? 'nonaktifkan' : 'aktifkan' }}">
+                                <button class="btn btn-sm btn-outline-secondary rounded-3">
+                                    {{ $tautan->is_active ? 'Nonaktifkan' : 'Aktifkan' }}
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ route('wms.admin.mrf-link.update', $tautan) }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Terbitkan ulang tautan {{ $tautan->department?->name }}? Alamat lamanya berhenti bekerja seketika dan harus dibagikan ulang.');">
+                                @csrf @method('PUT')
+                                <input type="hidden" name="aksi" value="terbitkan_ulang">
+                                <button class="btn btn-sm btn-outline-warning rounded-3">Terbitkan ulang</button>
+                            </form>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4 small">
+                            Belum ada tautan divisi. Selama belum ada, permintaan material hanya bisa
+                            diajukan lewat akun WMS.
+                        </td>
+                    </tr>
+                @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        <form method="POST" action="{{ route('wms.admin.mrf-link.store') }}" class="row g-2 align-items-end border-top pt-3">
+            @csrf
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="tautanDivisi">Divisi</label>
+                <select name="department_id" id="tautanDivisi" class="form-select form-select-sm" required>
+                    <option value="">Pilih divisi…</option>
+                    @foreach($divisiOptions as $d)
+                        <option value="{{ $d->id }}" @selected(old('department_id') == $d->id)>{{ $d->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="tautanGudang">Gudang</label>
+                <select name="warehouse_id" id="tautanGudang" class="form-select form-select-sm" required>
+                    <option value="">Pilih gudang…</option>
+                    @foreach($gudangOptions as $g)
+                        <option value="{{ $g->id }}" @selected(old('warehouse_id') == $g->id)>{{ $g->kode_pendek }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="tautanAtasan">
+                    Nama atasan <span class="text-muted fw-normal">(opsional)</span>
+                </label>
+                <input type="text" name="approver_name" id="tautanAtasan" maxlength="100"
+                       value="{{ old('approver_name') }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-semibold text-secondary mb-1" for="tautanNomor">Nomor WA</label>
+                <input type="text" name="approver_phone" id="tautanNomor" maxlength="25"
+                       value="{{ old('approver_phone') }}" class="form-control form-control-sm font-monospace"
+                       placeholder="081234567890">
+            </div>
+            <div class="col-12 col-md-2 d-grid">
+                <button class="btn btn-sm btn-primary rounded-3">
+                    <i class="bi bi-plus-lg me-1"></i> Terbitkan
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 @endsection

@@ -41,11 +41,17 @@ class RouteSecurityTest extends TestCase
      *
      * epod & mrf: dibuka supir dan atasan lewat tautan WhatsApp; kuncinya
      * token acak di URL (dan throttle), bukan akun.
+     *
+     * mrf/minta: formulir permintaan material untuk divisi yang tidak punya
+     * akun WMS (QC, R&D). Pengamannya bukan kerahasiaan tautannya melainkan
+     * dua pintu persetujuan yang tetap harus dilewati — atasan divisi lewat
+     * WhatsApp, lalu Logistik. Keduanya bukan pengisi formulir.
      */
     private const PUBLIK = [
         '/', 'login', 'logout', 'health', 'up',
         'epod/{token}', 'epod/{token}/confirm',
         'mrf/{token}', 'mrf/{token}/approve', 'mrf/{token}/reject',
+        'mrf/minta/{token}', 'mrf/minta/{token}/selesai', 'mrf/minta/{token}/produk',
     ];
 
     /**
