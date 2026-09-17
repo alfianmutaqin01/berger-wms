@@ -3,6 +3,8 @@
 @section('title', 'Log Aktivitas')
 
 @section('content')
+@include('wms.partials.tab-audit')
+
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h4 class="fw-bold mb-1"><i class="bi bi-clock-history me-2"></i>Log Aktivitas</h4>
@@ -11,7 +13,19 @@
             oleh siapa pun — termasuk dari halaman ini.
         </p>
     </div>
-    <span class="badge bg-dark-subtle text-dark-emphasis border">{{ number_format($logs->total()) }} catatan</span>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-dark-subtle text-dark-emphasis border">{{ number_format($logs->total()) }} catatan</span>
+        {{-- Membawa SELURUH penyaring yang sedang aktif. Tombol unduh yang
+             mengabaikan penyaring menghasilkan berkas yang berbeda dari layar
+             yang barusan dibaca — dan yang membukanya tidak akan curiga, karena
+             isinya tetap berupa log yang masuk akal.
+
+             Unduhannya sendiri ikut tercatat di log ini juga. --}}
+        <a href="{{ route('wms.admin.activity-log.unduh', request()->query()) }}"
+           class="btn btn-sm btn-success rounded-3">
+            <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+        </a>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm rounded-4 mb-3">

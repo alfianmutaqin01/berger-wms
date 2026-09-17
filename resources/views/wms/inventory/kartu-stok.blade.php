@@ -3,6 +3,8 @@
 @section('title', 'Kartu Stok')
 
 @section('content')
+@include('wms.partials.tab-audit')
+
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h4 class="fw-bold mb-1"><i class="bi bi-journal-text me-2"></i>Kartu Stok</h4>

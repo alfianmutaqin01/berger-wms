@@ -595,6 +595,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // Log aktivitas — SUPER ADMIN SAJA, dan HANYA BACA. Tidak ada rute
         // tulis di sini bukan karena belum dibuat: log yang bisa disunting
         // oleh orang yang tercatat di dalamnya bukan log.
+        // Unduhan didaftarkan SEBELUM halamannya supaya tetap terbaca
+        // berpasangan; keduanya di balik gate yang sama, karena isi berkasnya
+        // persis isi layarnya.
+        Route::get('/activity-log/unduh', [ActivityLogController::class, 'download'])
+            ->middleware('can:'.Permission::ADMIN_AUDIT)
+            ->name('wms.admin.activity-log.unduh');
+
         Route::get('/activity-log', [ActivityLogController::class, 'index'])
             ->middleware('can:'.Permission::ADMIN_AUDIT)
             ->name('wms.admin.activity-log');

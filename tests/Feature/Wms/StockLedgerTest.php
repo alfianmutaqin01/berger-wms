@@ -212,6 +212,28 @@ class StockLedgerTest extends TestCase
         }
     }
 
+    /**
+     * Tab ke layar audit satunya hanya muncul untuk yang berhak atas keduanya.
+     *
+     * Satu menu, dua layar: kalau tabnya tampil untuk yang tidak berhak, ia
+     * memancing orang ke halaman yang menolaknya — dan menolak orang di pintu
+     * yang kita sendiri tunjukkan adalah cacat, bukan pengamanan.
+     */
+    public function test_tab_log_aktivitas_hanya_untuk_yang_berhak(): void
+    {
+        $this->mutasi();
+
+        $this->login(Role::LOGISTICS);
+        $this->get(route('wms.inventory.kartu-stok'))
+            ->assertOk()
+            ->assertDontSee(route('wms.admin.activity-log'));
+
+        $this->login(Role::SUPER_ADMIN);
+        $this->get(route('wms.inventory.kartu-stok'))
+            ->assertOk()
+            ->assertSee(route('wms.admin.activity-log'));
+    }
+
     /* -------------------------------------------------------------- Batas */
 
     /** Menelusuri seluruh mutasi bukan kewenangan yang sama dengan melihat sisa. */

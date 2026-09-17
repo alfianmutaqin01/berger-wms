@@ -361,6 +361,77 @@ class ActivityLogTest extends TestCase
             ->assertViewHas('filters', fn (array $f) => $f['jenis'] === null);
     }
 
+    /* -------------------------------------------------------- Export Excel */
+
+    /**
+     * Berkasnya keluar sebagai .xlsx, bukan halaman HTML yang salah judul.
+     *
+     * Yang diuji tipenya dan namanya: kalau streaming-nya gagal, yang terunduh
+     * tetap "berkas" yang bisa dibuka — dan baru ketahuan rusak saat sudah
+     * diteruskan ke orang lain.
+     */
+    public function test_log_bisa_diunduh_sebagai_excel(): void
+    {
+        $this->login(Role::SUPER_ADMIN);
+
+        ActivityLog::create([
+            'action' => ActivityLog::STOCK_ADJUST,
+            'description' => 'Koreksi rak B-01-01.',
+            'created_at' => now(),
+        ]);
+
+        $respons = $this->get(route('wms.admin.activity-log.unduh'));
+
+        $respons->assertOk()
+            ->assertHeader(
+                'content-type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            );
+
+        $this->assertStringContainsString(
+            'log-aktivitas-',
+            $respons->headers->get('content-disposition') ?? '',
+        );
+    }
+
+    /**
+     * Unduhannya memakai penyaring yang sedang aktif, dan ikut tercatat.
+     *
+     * Berkas yang isinya berbeda dari layar yang barusan dibaca adalah cara
+     * paling halus membuat orang menarik kesimpulan yang keliru.
+     */
+    public function test_unduhan_mengikuti_penyaring_dan_ikut_tercatat(): void
+    {
+        $this->login(Role::SUPER_ADMIN);
+
+        $mrf = MaterialRequisition::factory()->create([
+            'warehouse_id' => $this->warehouse->id,
+            'mrf_number' => 'MRF2609097',
+        ]);
+
+        Activity::record(ActivityLog::MRF_CREATE, 'Permintaan material dibuat.', $mrf, $this->warehouse->id);
+        Activity::record(ActivityLog::STOCK_ADJUST, 'Koreksi yang tidak ikut terunduh.', null, $this->warehouse->id);
+
+        $this->get(route('wms.admin.activity-log.unduh', ['jenis' => MaterialRequisition::class]))
+            ->assertOk();
+
+        $jejak = ActivityLog::where('action', ActivityLog::REPORT_EXPORT)->latest('id')->firstOrFail();
+
+        $this->assertSame(1, $jejak->properties['baris'], 'Hanya baris MRF yang ikut terunduh.');
+        $this->assertSame(MaterialRequisition::class, $jejak->properties['jenis']);
+        $this->assertFalse($jejak->properties['terpotong']);
+    }
+
+    /** Yang tidak boleh membaca log juga tidak boleh mengunduhnya. */
+    public function test_unduhan_tertutup_untuk_yang_tidak_boleh_membaca(): void
+    {
+        foreach ([Role::MANAGER, Role::LOGISTICS] as $peran) {
+            $this->login($peran);
+
+            $this->get(route('wms.admin.activity-log.unduh'))->assertForbidden();
+        }
+    }
+
     /* ------------------------------------------------------------ Ketahanan */
 
     public function test_stok_tetap_tersimpan_walau_pencatatan_log_gagal(): void
