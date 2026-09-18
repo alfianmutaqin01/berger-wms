@@ -80,7 +80,7 @@
                      dan memunculkan selisih yang tidak pernah ada. --}}
                 @if($list->status === \App\Models\PickingList::STATUS_COMPLETED)
                     <div class="mt-2">
-                        <a href="{{ route('wms.picking.unduh', $list) }}"
+                        <a href="{{ route('wms.picking.unduh', $list) }}" data-tanpa-pemuat
                            class="btn btn-sm btn-success rounded-3">
                             <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
                         </a>

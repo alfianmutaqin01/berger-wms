@@ -12,6 +12,7 @@
     </style>
 </head>
 <body class="py-4 px-3">
+@include('partials.pemuat')
 {{-- FORMULIR DIVISI TANPA AKUN — TANPA LOGIN.
 
      Dibuka QC atau R&D dari tautan yang diberikan sekali, sering dari HP.

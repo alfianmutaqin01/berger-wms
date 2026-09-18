@@ -21,7 +21,7 @@
              isinya tetap berupa log yang masuk akal.
 
              Unduhannya sendiri ikut tercatat di log ini juga. --}}
-        <a href="{{ route('wms.admin.activity-log.unduh', request()->query()) }}"
+        <a href="{{ route('wms.admin.activity-log.unduh', request()->query()) }}" data-tanpa-pemuat
            class="btn btn-sm btn-success rounded-3">
             <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
         </a>

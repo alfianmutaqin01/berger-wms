@@ -26,7 +26,7 @@
             @endforeach
         </select>
         <a class="btn btn-success btn-sm px-3 fw-semibold"
-           href="{{ route('wms.reports.download', array_merge(['key' => $key], array_filter($filter))) }}">
+           href="{{ route('wms.reports.download', array_merge(['key' => $key], array_filter($filter))) }}" data-tanpa-pemuat>
             <i class="bi bi-file-earmark-excel me-1"></i>Unduh Excel
         </a>
     </div>

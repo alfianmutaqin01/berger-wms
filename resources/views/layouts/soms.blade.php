@@ -97,6 +97,7 @@
     </style>
 </head>
 <body>
+@include('partials.pemuat')
 <div class="wrapper">
     <!-- Sidebar (desktop >= 992px) -->
     <nav id="sidebar" class="sidebar">

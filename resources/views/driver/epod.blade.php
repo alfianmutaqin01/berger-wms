@@ -12,6 +12,7 @@
     </style>
 </head>
 <body class="py-4 px-3">
+@include('partials.pemuat')
 {{-- HALAMAN SUPIR — TANPA LOGIN.
 
      Dibuka di HP, sering di halaman customer, kadang dengan sinyal seadanya

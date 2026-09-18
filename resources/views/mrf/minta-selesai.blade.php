@@ -12,6 +12,7 @@
     </style>
 </head>
 <body class="py-5 px-3">
+@include('partials.pemuat')
 {{-- Pemohon tidak punya layar lain untuk kembali, jadi halaman ini harus
      menjawab sendiri tiga hal: nomornya berapa, sekarang menunggu siapa, dan
      ia akan tahu dari mana kalau barangnya sudah siap. --}}

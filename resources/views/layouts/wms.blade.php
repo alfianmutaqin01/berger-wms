@@ -20,6 +20,7 @@
     string sudah tidak berlaku sejak autentikasi nyata aktif (Fase 1).
 --}}
 <body>
+@include('partials.pemuat')
 <div class="wrapper">
     <!-- Sidebar -->
     <nav id="sidebar" class="sidebar">
