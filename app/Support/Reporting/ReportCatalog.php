@@ -177,7 +177,7 @@ class ReportCatalog
 
             'pergerakan-stok' => [
                 'nama' => 'Pergerakan Stok',
-                'ringkas' => 'Kartu stok: tiap penambahan dan pengurangan beserta pelakunya.',
+                'ringkas' => 'Item ledger: tiap penambahan dan pengurangan beserta pelakunya.',
                 'ikon' => 'bi-arrow-left-right',
                 'warna' => 'danger',
                 'izin' => Permission::REPORTS_VIEW,

@@ -152,7 +152,7 @@ class Warehouse extends Model
      *                   barang DDP, kadang barang bagus; mengunci layarnya ke
      *                   "_1001" menyebut jenis yang belum tentu benar.
      *   Audit & jejak   Kode pendek. Layar yang memuat BERBAGAI jenis mutasi
-     *                   sekaligus — kartu stok, log aktivitas — tidak boleh
+     *                   sekaligus — item ledger, log aktivitas — tidak boleh
      *                   memakai kode penuh: lihat alasannya di bawah.
      *
      * AKHIRANNYA MELEKAT PADA BARIS GUDANGNYA, BUKAN PADA MUTASINYA. Tiap

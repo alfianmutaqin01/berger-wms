@@ -87,11 +87,11 @@ class Permission
     public const INVENTORY_QUARANTINE = 'inventory.quarantine';
 
     /**
-     * Membaca buku besar mutasi stok — kartu stok.
+     * Membaca buku besar mutasi stok — item ledger.
      *
      * DIPISAH dari INVENTORY_VIEW, yang menjawab "berapa sisa barang ini
      * sekarang" dan memang dibutuhkan Produksi serta Operator tiap hari untuk
-     * mencari rak. Kartu stok menjawab pertanyaan yang lain sama sekali:
+     * mencari rak. Item ledger menjawab pertanyaan yang lain sama sekali:
      * SETIAP pertambahan dan pengurangan sejak hari pertama, lengkap dengan
      * dokumen penyebabnya. Itu bahan rekonsiliasi, bukan bahan kerja harian,
      * dan yang mengerjakannya Logistik bersama Manager.

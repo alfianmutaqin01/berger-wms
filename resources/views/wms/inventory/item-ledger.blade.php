@@ -1,13 +1,13 @@
 @extends('layouts.wms')
 
-@section('title', 'Kartu Stok')
+@section('title', 'Item Ledger')
 
 @section('content')
 @include('wms.partials.tab-audit')
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
-        <h4 class="fw-bold mb-1"><i class="bi bi-journal-text me-2"></i>Kartu Stok</h4>
+        <h4 class="fw-bold mb-1"><i class="bi bi-journal-text me-2"></i>Item Ledger</h4>
         <p class="text-muted small mb-0">
             Buku besar mutasi barang: setiap pertambahan dan pengurangan, beserta dokumen penyebabnya.
             Tidak dapat diubah maupun dihapus — koreksi dilakukan dengan menambah baris lawan.
@@ -88,7 +88,7 @@
             </div>
             <div class="col-12 d-flex gap-2 mt-2">
                 <button class="btn btn-sm btn-dark px-3"><i class="bi bi-funnel me-1"></i>Terapkan</button>
-                <a href="{{ route('wms.inventory.kartu-stok') }}" class="btn btn-sm btn-outline-secondary">
+                <a href="{{ route('wms.inventory.item-ledger') }}" class="btn btn-sm btn-outline-secondary">
                     <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Filter
                 </a>
             </div>

@@ -78,14 +78,14 @@
 
             {{-- AUDIT — SATU menu untuk dua layar penelusuran.
 
-                 Log aktivitas dan kartu stok tidak bisa dilebur jadi satu tabel
+                 Log aktivitas dan item ledger tidak bisa dilebur jadi satu tabel
                  (yang satu berbaris per tindakan orang, yang satu per
                  pergerakan angka), tetapi pintunya satu: yang membukanya sedang
                  menelusuri, dan menelusuri berangkat dari pertanyaan — bukan
                  dari tahu tabel mana yang menyimpan jawabannya.
 
                  Berdiri di sebelah Laporan, bukan terkubur di Pengaturan
-                 Sistem: Logistik dan Manager berhak atas kartu stok tetapi
+                 Sistem: Logistik dan Manager berhak atas item ledger tetapi
                  tidak pernah membuka menu pengaturan.
 
                  Tautannya menyesuaikan izin pembukanya — yang hanya berhak atas
@@ -93,10 +93,10 @@
             @canany([\App\Support\Permission::ADMIN_AUDIT, \App\Support\Permission::INVENTORY_LEDGER])
                 @php
                     $auditAktif = request()->is('wms/admin/activity-log*')
-                        || request()->is('wms/inventory/kartu-stok');
+                        || request()->is('wms/inventory/item-ledger');
                     $auditTujuan = (auth()->user()?->can(\App\Support\Permission::ADMIN_AUDIT) ?? false)
                         ? '/wms/admin/activity-log'
-                        : '/wms/inventory/kartu-stok';
+                        : '/wms/inventory/item-ledger';
                 @endphp
                 <li class="nav-item {{ $auditAktif ? 'active' : '' }}">
                     <a href="{{ $auditTujuan }}" class="nav-link">
@@ -118,11 +118,11 @@
                 \App\Support\Permission::TRANSFER_HISTORY,
             ])
                 @php
-                    // Kartu stok ikut ber-URL /wms/inventory tetapi menunya di
+                    // Item ledger ikut ber-URL /wms/inventory tetapi menunya di
                     // Audit, jadi ia sengaja TIDAK membuka kelompok ini —
                     // kalau tidak, dua menu menyala sekaligus.
                     $inboundOpen = request()->is('wms/inbound*')
-                        || (request()->is('wms/inventory*') && ! request()->is('wms/inventory/kartu-stok'))
+                        || (request()->is('wms/inventory*') && ! request()->is('wms/inventory/item-ledger'))
                         || request()->is('wms/stocktake*')
                         || request()->is('wms/transfers*');
 
@@ -177,7 +177,7 @@
                                 <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok</span></a>
                             </li>
                         @endcan
-                        {{-- Kartu Stok TIDAK di sini melainkan di menu Audit,
+                        {{-- Item Ledger TIDAK di sini melainkan di menu Audit,
                              satu pintu dengan Log Aktivitas: keduanya dibuka
                              untuk menelusuri, bukan untuk mengerjakan sesuatu
                              hari ini. --}}
@@ -402,7 +402,7 @@
                             </li>
                         @endcan
                         {{-- Log Aktivitas TIDAK di sini melainkan di menu Audit
-                             bersama Kartu Stok — lihat catatan di sana. --}}
+                             bersama Item Ledger — lihat catatan di sana. --}}
                     </ul>
                 </li>
             @endcanany

@@ -325,20 +325,20 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         ->name('wms.inventory.index');
 
     /*
-    | KARTU STOK — buku besar mutasi, hanya baca.
+    | ITEM LEDGER — buku besar mutasi, hanya baca.
     |
     | Gate-nya SENDIRI, bukan INVENTORY_VIEW. Data Stok menjawab "berapa
     | sisanya sekarang" dan memang dipakai Produksi serta Operator tiap hari;
-    | kartu stok menjawab "bagaimana ia sampai ke angka itu", bahan
+    | item ledger menjawab "bagaimana ia sampai ke angka itu", bahan
     | rekonsiliasi yang dikerjakan Logistik dan Manager.
     |
     | Didaftarkan SEBELUM rute /inventory ber-parameter apa pun kelak, dengan
-    | alasan yang sama seperti di tempat lain: "kartu-stok" bukan angka, tetapi
+    | alasan yang sama seperti di tempat lain: "item-ledger" bukan angka, tetapi
     | urutannya dijaga supaya tidak pernah menjadi jebakan.
     */
-    Route::get('/inventory/kartu-stok', [StockLedgerController::class, 'index'])
+    Route::get('/inventory/item-ledger', [StockLedgerController::class, 'index'])
         ->middleware('can:'.Permission::INVENTORY_LEDGER)
-        ->name('wms.inventory.kartu-stok');
+        ->name('wms.inventory.item-ledger');
     // TIDAK ADA rute unduhan tersendiri di sini. Tombol Export Excel pada
     // halaman Data Stok mengarah ke pratinjau laporan Posisi Stok /
     // Pergerakan Stok yang sudah ada — alur, tampilan, batas baris, dan

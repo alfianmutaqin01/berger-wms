@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * Kartu stok — buku besar mutasi barang.
+ * Item ledger — buku besar mutasi barang.
  *
  * YANG DIUJI DI SINI ADALAH HAL-HAL YANG DIAM SAAT RUSAK
  * ------------------------------------------------------
@@ -107,7 +107,7 @@ class StockLedgerTest extends TestCase
 
         $this->login(Role::LOGISTICS);
 
-        $this->get(route('wms.inventory.kartu-stok'))
+        $this->get(route('wms.inventory.item-ledger'))
             ->assertOk()
             ->assertSee('ID11')
             ->assertDontSee('ID11_1001');
@@ -119,7 +119,7 @@ class StockLedgerTest extends TestCase
         $this->mutasi();
         $this->login(Role::LOGISTICS);
 
-        $this->get(route('wms.inventory.kartu-stok'))
+        $this->get(route('wms.inventory.item-ledger'))
             ->assertOk()
             ->assertSee('APKO-001')
             ->assertSee('BT-2601')
@@ -150,7 +150,7 @@ class StockLedgerTest extends TestCase
 
         $this->login(Role::LOGISTICS);
 
-        $this->get(route('wms.inventory.kartu-stok'))
+        $this->get(route('wms.inventory.item-ledger'))
             ->assertOk()
             ->assertSee('PO260901003')
             ->assertSee('PT Aneka Warna');
@@ -174,7 +174,7 @@ class StockLedgerTest extends TestCase
 
         $this->login(Role::LOGISTICS);
 
-        $this->get(route('wms.inventory.kartu-stok'))
+        $this->get(route('wms.inventory.item-ledger'))
             ->assertOk()
             ->assertSee('TF260901001')
             ->assertSee('ID1B');
@@ -197,7 +197,7 @@ class StockLedgerTest extends TestCase
 
         $this->login(Role::LOGISTICS);
 
-        $this->get(route('wms.inventory.kartu-stok', ['search' => 'PO260901003']))
+        $this->get(route('wms.inventory.item-ledger', ['search' => 'PO260901003']))
             ->assertOk()
             ->assertSee('BT-CARI')
             ->assertDontSee('BT-LAIN');
@@ -216,19 +216,19 @@ class StockLedgerTest extends TestCase
 
         $this->login(Role::LOGISTICS);
 
-        $this->get(route('wms.inventory.kartu-stok', ['tipe' => StockMovement::TYPE_IN]))
+        $this->get(route('wms.inventory.item-ledger', ['tipe' => StockMovement::TYPE_IN]))
             ->assertOk()
             ->assertSee('BT-MASUK')
             ->assertDontSee('BT-KELUAR');
 
         // Jenis karangan diabaikan, bukan menjatuhkan halaman.
-        $this->get(route('wms.inventory.kartu-stok', ['tipe' => 'TIDAK-ADA']))
+        $this->get(route('wms.inventory.item-ledger', ['tipe' => 'TIDAK-ADA']))
             ->assertOk()
             ->assertViewHas('filters', fn (array $f) => $f['tipe'] === null);
 
         // Tanggal mustahil juga diabaikan.
         foreach (['2026-13-45', 'abc', "' OR 1=1 --"] as $salah) {
-            $this->get(route('wms.inventory.kartu-stok', ['dari' => $salah, 'sampai' => $salah]))
+            $this->get(route('wms.inventory.item-ledger', ['dari' => $salah, 'sampai' => $salah]))
                 ->assertOk()
                 ->assertViewHas('filters', fn (array $f) => $f['dari'] === null && $f['sampai'] === null);
         }
@@ -246,12 +246,12 @@ class StockLedgerTest extends TestCase
         $this->mutasi();
 
         $this->login(Role::LOGISTICS);
-        $this->get(route('wms.inventory.kartu-stok'))
+        $this->get(route('wms.inventory.item-ledger'))
             ->assertOk()
             ->assertDontSee(route('wms.admin.activity-log'));
 
         $this->login(Role::SUPER_ADMIN);
-        $this->get(route('wms.inventory.kartu-stok'))
+        $this->get(route('wms.inventory.item-ledger'))
             ->assertOk()
             ->assertSee(route('wms.admin.activity-log'));
     }
@@ -264,7 +264,7 @@ class StockLedgerTest extends TestCase
         foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $peran) {
             $this->login($peran);
 
-            $this->get(route('wms.inventory.kartu-stok'))->assertForbidden();
+            $this->get(route('wms.inventory.item-ledger'))->assertForbidden();
         }
     }
 
@@ -275,7 +275,7 @@ class StockLedgerTest extends TestCase
         $lain = Warehouse::factory()->create(['code' => 'ID1B_SURABAYA']);
         $this->login(Role::LOGISTICS, $lain);
 
-        $this->get(route('wms.inventory.kartu-stok'))
+        $this->get(route('wms.inventory.item-ledger'))
             ->assertOk()
             ->assertDontSee('BT-KARAWANG')
             ->assertViewHas('stats', fn (array $s) => $s['baris'] === 0);
@@ -309,7 +309,7 @@ class StockLedgerTest extends TestCase
             $jumlah++;
         });
 
-        $this->get(route('wms.inventory.kartu-stok'))->assertOk();
+        $this->get(route('wms.inventory.item-ledger'))->assertOk();
 
         // 12 baris dari 3 pesanan. Batas longgar sengaja: yang dijaga bukan
         // angka pastinya melainkan bahwa jumlahnya tidak tumbuh mengikuti
