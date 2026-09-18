@@ -747,6 +747,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // susunannya, Operator mengerjakannya. Gate-nya "salah satu boleh",
         // bukan salah satunya saja — karena itu fiturnya sendiri, bukan
         // menumpang salah satu dari keduanya.
+        // Unduhan didaftarkan SEBELUM '/picking/list/{list}', kalau tidak
+        // "unduh" tertangkap sebagai id daftar. Gate-nya sama dengan rincian:
+        // isinya persis isi layar itu, hanya dalam bentuk berkas.
+        Route::get('/picking/list/{list}/unduh', [PickingController::class, 'download'])
+            ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
+            ->name('wms.picking.unduh');
+
         Route::get('/picking/list/{list}', [PickingController::class, 'show'])
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.show');

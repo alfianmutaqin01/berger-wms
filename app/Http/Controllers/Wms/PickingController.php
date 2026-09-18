@@ -15,6 +15,7 @@ use App\Models\PickingListItem;
 use App\Models\SalesOrder;
 use App\Models\StockTransfer;
 use App\Support\Activity;
+use App\Support\Export\XlsxWriter;
 use App\Support\Notifier;
 use App\Support\Outbound\PickingListBuilder;
 use App\Support\Outbound\PickingRun;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Picking — PRD §6.5 F-OUT-03, Fase 6 tahap 3.
@@ -248,6 +250,93 @@ class PickingController extends Controller
                     ->get(['id', 'code', 'zone'])
                 : collect(),
         ]);
+    }
+
+    /**
+     * Berkas .xlsx satu daftar picking, untuk dicocokkan dengan sistem BC.
+     *
+     * HANYA SETELAH SELESAI DIPICKING. Sebelum itu qty_picked masih berubah
+     * setiap kali operator menandai satu baris, dan berkas yang keluar di
+     * tengah jalan menyatakan "diambil 0" untuk barang yang lima menit lagi
+     * sudah di troli. Berkas begitu tidak sekadar tidak berguna — ia beredar
+     * ke luar sistem sebagai angka yang terlihat resmi, lalu dipakai
+     * mencocokkan dan memunculkan selisih yang tidak pernah ada.
+     *
+     * YANG DIMUAT QTY DIMINTA DAN QTY DIAMBIL SEKALIGUS, berikut selisihnya.
+     * Mencocokkan dengan BC berarti mencari beda, dan beda tidak bisa dicari
+     * dari satu kolom saja — daftar yang cuma memuat "qty" memaksa yang
+     * membacanya menebak qty yang mana.
+     */
+    public function download(Request $request, PickingList $list): StreamedResponse
+    {
+        WarehouseScope::assert($list->warehouse_id, $request->user());
+
+        abort_unless(
+            $list->status === PickingList::STATUS_COMPLETED,
+            404,
+            'Daftar ini belum selesai dipicking, jadi belum ada angka yang bisa dicocokkan.',
+        );
+
+        $list->load(['warehouse:id,code,name', 'claimedBy:id,full_name', 'completedBy:id,full_name',
+            'transfer:id,picking_list_id,transfer_number',
+            'requisition:id,picking_list_id,mrf_number,department_name']);
+
+        $baris = $list->items()
+            ->with(['product:id,sku,name,uom', 'location:id,code',
+                'salesOrder:id,order_number,bc_so_number,customer_id',
+                'salesOrder.customer:id,code,name'])
+            // Urutan yang sama dengan layarnya: yang mencocokkan berkas ini
+            // dengan kertas yang dibawa operator tidak boleh harus mengurutkan
+            // ulang lebih dulu.
+            ->join('locations', 'locations.id', '=', 'picking_list_items.location_id')
+            ->orderBy('locations.code')
+            ->orderBy('picking_list_items.id')
+            ->select('picking_list_items.*')
+            ->get();
+
+        Activity::record(
+            ActivityLog::REPORT_EXPORT,
+            sprintf('Mengunduh daftar picking %s — %d baris.', $list->list_number, $baris->count()),
+            $list,
+            $list->warehouse_id,
+            ['daftar_picking' => $list->list_number, 'baris' => $baris->count()],
+        );
+
+        return XlsxWriter::unduh(
+            'daftar-picking-'.$list->list_number.'.xlsx',
+            'Daftar Picking '.$list->list_number,
+            ['No. SO (BC)', 'Dokumen', 'Pelanggan / Tujuan', 'SKU', 'Deskripsi', 'Batch',
+                'Rak', 'Qty Diminta', 'Qty Diambil', 'Selisih', 'UOM', 'Status', 'Alasan Selisih'],
+            $baris->map(fn (PickingListItem $item) => [
+                $item->salesOrder?->bc_so_number ?? '—',
+                $item->salesOrder?->order_number
+                    ?? $list->transfer?->transfer_number
+                    ?? $list->requisition?->mrf_number
+                    ?? '—',
+                $item->salesOrder?->customer?->name
+                    ?? $list->requisition?->department_name
+                    ?? '—',
+                $item->product?->sku ?? '—',
+                $item->product?->name ?? '—',
+                $item->batch_no ?? '—',
+                $item->location?->code ?? '—',
+                (int) $item->qty_to_pick,
+                (int) $item->qty_picked,
+                (int) $item->qty_picked - (int) $item->qty_to_pick,
+                $item->product?->uom ?? '—',
+                PickingListItem::STATUS_LABELS[$item->status] ?? $item->status,
+                $item->discrepancy_reason ?? '',
+            ])->all(),
+            angka: [7, 8, 9],
+            keterangan: array_filter([
+                'Daftar' => $list->list_number,
+                'Gudang' => (string) $list->warehouse?->code,
+                'Dikerjakan' => $list->claimedBy?->full_name ?? '—',
+                'Selesai' => $list->completed_at?->format('Y-m-d H:i') ?? '—',
+                'Baris' => (string) $baris->count(),
+                'Diunduh' => now()->format('Y-m-d H:i:s'),
+            ]),
+        );
     }
 
     public function claim(Request $request, PickingList $list): RedirectResponse

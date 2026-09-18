@@ -70,6 +70,25 @@
                       @if($ringkas['kurang'] < 1) hidden @endif>
                     <span id="angkaKurang">{{ $ringkas['kurang'] }}</span> baris kurang
                 </span>
+
+                {{-- UNDUHAN BARU MUNCUL SETELAH SELESAI, dan itu bukan sekadar
+                     kerapian. Selama picking berjalan, qty diambil masih
+                     berubah tiap kali operator menandai satu baris; berkas yang
+                     keluar di tengah jalan menyatakan "diambil 0" untuk barang
+                     yang lima menit lagi sudah di troli. Berkas itu lalu
+                     beredar di luar sistem sebagai angka yang terlihat resmi
+                     dan memunculkan selisih yang tidak pernah ada. --}}
+                @if($list->status === \App\Models\PickingList::STATUS_COMPLETED)
+                    <div class="mt-2">
+                        <a href="{{ route('wms.picking.unduh', $list) }}"
+                           class="btn btn-sm btn-success rounded-3">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+                        </a>
+                        <div class="text-muted mt-1" style="font-size:.72rem">
+                            Untuk dicocokkan dengan BC
+                        </div>
+                    </div>
+                @endif
             </div>
         </div>
 
