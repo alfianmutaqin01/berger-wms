@@ -74,9 +74,12 @@
                 <label class="form-label small fw-semibold mb-1">Gudang</label>
                 <select name="warehouse_id" class="form-select form-select-sm">
                     <option value="">Semua</option>
+                    {{-- Kode cabang: log ini memuat tindakan atas segala jenis
+                         barang, dan akhiran "_1001" hanya benar untuk finish
+                         good. Lihat Warehouse::getKodePendekAttribute(). --}}
                     @foreach($warehouses as $w)
                         <option value="{{ $w->id }}" @selected((string) $filters['warehouse_id'] === (string) $w->id)>
-                            {{ $w->code }} — {{ $w->name }}
+                            {{ $w->kode_pendek }} — {{ $w->name }}
                         </option>
                     @endforeach
                 </select>
@@ -182,7 +185,7 @@
                         @endif
                     </td>
                     <td class="small">
-                        <span class="font-monospace">{{ $log->warehouse?->code ?? '—' }}</span>
+                        <span class="font-monospace">{{ $log->warehouse?->kode_pendek ?? '—' }}</span>
                     </td>
                 </tr>
             @empty

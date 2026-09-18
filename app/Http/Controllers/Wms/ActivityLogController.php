@@ -125,7 +125,7 @@ class ActivityLogController extends Controller
                 $log->reference_number ?? '—',
                 $log->action_label,
                 $log->description,
-                $log->warehouse?->code ?? '—',
+                $log->warehouse?->kode_pendek ?? '—',
                 $log->ip_address ?? '—',
             ])->all(),
             keterangan: $this->keterangan($filters, $baris->count()),

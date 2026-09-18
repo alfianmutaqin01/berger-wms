@@ -91,6 +91,28 @@ class StockLedgerTest extends TestCase
 
     /* ----------------------------------------------------------- Bacaannya */
 
+    /**
+     * Gudangnya disebut dengan kode CABANG, bukan kode finish good.
+     *
+     * Akhiran "_1001" berarti finish good, tetapi ia melekat pada baris
+     * gudangnya — bukan pada mutasinya. Baris pengeluaran MRF yang barangnya
+     * DDP lalu tertulis sebagai finish good, dan itu salah, bukan sekadar
+     * bertele-tele.
+     */
+    public function test_gudang_disebut_dengan_kode_cabang(): void
+    {
+        $this->karawang->update(['code' => 'ID11_1001']);
+
+        $this->mutasi(['movement_type' => StockMovement::TYPE_PRODUCTION_OUT]);
+
+        $this->login(Role::LOGISTICS);
+
+        $this->get(route('wms.inventory.kartu-stok'))
+            ->assertOk()
+            ->assertSee('ID11')
+            ->assertDontSee('ID11_1001');
+    }
+
     /** Angka sebelum dan sesudah ikut terbaca, bukan cuma selisihnya. */
     public function test_kartu_stok_menampilkan_perpindahan_angkanya(): void
     {

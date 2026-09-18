@@ -63,16 +63,17 @@
             @if($gudangOptions->count() > 1)
                 <div class="col-md-2">
                     <label class="form-label small fw-semibold mb-1">Gudang</label>
-                    {{-- KODE PENUH di layar audit, termasuk akhiran jenis
-                         barangnya. Buku besar ini memuat pengiriman ke
-                         pelanggan — yang selalu finish good — bersama mutasi
-                         MRF yang bisa datang dari barang DDP. Memendekkannya
-                         menghapus justru keterangan yang membedakan keduanya. --}}
+                    {{-- KODE CABANG, bukan kode penuh. Akhiran "_1001" berarti
+                         finish good, tetapi ia melekat pada BARIS GUDANGNYA —
+                         bukan pada mutasinya. Buku besar ini memuat mutasi MRF
+                         yang barangnya sering DDP, dan menuliskan "_1001" di
+                         baris itu menyebut jenis barang yang justru salah.
+                         Kode cabang benar untuk semua jenis mutasi. --}}
                     <select name="warehouse_id" class="form-select form-select-sm">
                         <option value="">Semua</option>
                         @foreach($gudangOptions as $g)
                             <option value="{{ $g->id }}" @selected((string) $filters['warehouse_id'] === (string) $g->id)>
-                                {{ $g->code }}
+                                {{ $g->kode_pendek }}
                             </option>
                         @endforeach
                     </select>
@@ -160,7 +161,7 @@
                     <td class="small font-monospace text-break">{{ $acuan['nomor'] ?? '—' }}</td>
                     <td class="small text-break">{{ $acuan['pihak'] ?? '—' }}</td>
                     <td class="small">
-                        <span class="font-monospace">{{ $baris->warehouse?->code ?? '—' }}</span>
+                        <span class="font-monospace">{{ $baris->warehouse?->kode_pendek ?? '—' }}</span>
                         <div class="text-muted font-monospace" style="font-size:.72rem">
                             {{ $baris->location?->code ?? '—' }}
                         </div>
