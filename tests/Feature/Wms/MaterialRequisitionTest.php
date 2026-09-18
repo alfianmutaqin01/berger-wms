@@ -146,7 +146,7 @@ class MaterialRequisitionTest extends TestCase
             'warehouse_id' => $this->karawang->id,
             'request_type' => MaterialRequisition::TYPE_REPROSES,
             'purpose' => 'Reproses DDP batch Juli menjadi warna Off White.',
-            'approver_name' => 'Pak Ganti',
+            'approver_name' => 'Pak Gandhi',
             'approver_phone' => '081234567890',
             'items' => [['product_id' => $this->produk->id, 'qty' => $qty]],
         ], $ganti));
@@ -259,7 +259,7 @@ class MaterialRequisitionTest extends TestCase
 
         $kontak = MrfApproverContact::firstOrFail();
 
-        $this->assertSame('Pak Ganti', $kontak->name);
+        $this->assertSame('Pak Gandhi', $kontak->name);
         $this->assertSame('6281234567890', $kontak->phone);
         $this->assertSame($this->karawang->id, $kontak->warehouse_id);
 
@@ -1241,7 +1241,7 @@ class MaterialRequisitionTest extends TestCase
         $this->put(route('wms.mrf.update', $mrf), [
             'request_type' => MaterialRequisition::TYPE_REPROSES,
             'purpose' => 'Reproses DDP batch Juli — qty diturunkan sesuai catatan atasan.',
-            'approver_name' => 'Pak Ganti',
+            'approver_name' => 'Pak Gandhi',
             'approver_phone' => '081234567890',
             'items' => [['product_id' => $this->produk->id, 'qty' => 120]],
         ])->assertRedirect(route('wms.mrf.show', $mrf));
@@ -1279,7 +1279,7 @@ class MaterialRequisitionTest extends TestCase
         $this->put(route('wms.mrf.update', $mrf), [
             'request_type' => MaterialRequisition::TYPE_REPROSES,
             'purpose' => 'Diajukan ulang setelah batch lain tersedia.',
-            'approver_name' => 'Pak Ganti',
+            'approver_name' => 'Pak Gandhi',
             'approver_phone' => '081234567890',
             'items' => [['product_id' => $this->produk->id, 'qty' => 300]],
         ])->assertRedirect();

@@ -71,7 +71,7 @@ class WhatsAppSenderTest extends TestCase
             'mrf_number' => 'MR261011001',
             'request_type' => MaterialRequisition::TYPE_REPROSES,
             'purpose' => 'Reproses DDP batch Juli.',
-            'approver_name' => 'Pak Ganti',
+            'approver_name' => 'Pak Gandhi',
             'approval_token' => str_repeat('a', 64),
         ]);
 
@@ -83,7 +83,7 @@ class WhatsAppSenderTest extends TestCase
         $this->assertSame(PesanWhatsApp::TEMPLATE_PERSETUJUAN_MRF, $pesan->template);
         $this->assertNotSame(PesanWhatsApp::TEMPLATE_KONFIRMASI_SUPIR, $pesan->template);
 
-        $this->assertSame('Pak Ganti', $pesan->variabel[0]);
+        $this->assertSame('Pak Gandhi', $pesan->variabel[0]);
         $this->assertSame('MR261011001', $pesan->variabel[1]);
         $this->assertStringContainsString('/mrf/'.str_repeat('a', 64), $pesan->variabel[3]);
     }

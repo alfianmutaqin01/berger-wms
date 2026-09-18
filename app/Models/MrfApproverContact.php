@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * centang di formulir MRF — dan itu permintaan pemilik produk: yang tahu
  * kepada siapa permintaan hari ini dikirim adalah orang yang membuatnya.
  *
- * DIPAKAI BERSAMA SATU GUDANG. Nomor Pak Ganti dipakai siapa pun di Karawang;
+ * DIPAKAI BERSAMA SATU GUDANG. Nomor Pak Gandhi dipakai siapa pun di Karawang;
  * menyimpannya per akun berarti nomor yang sama diketik ulang berkali-kali,
  * dan nomor yang diketik ulang adalah nomor yang cepat atau lambat salah satu
  * digitnya.
