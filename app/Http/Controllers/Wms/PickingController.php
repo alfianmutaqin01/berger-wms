@@ -87,7 +87,7 @@ class PickingController extends Controller
             ->with(['warehouse:id,code,name', 'createdBy:id,full_name', 'claimedBy:id,full_name',
                 'transfer:id,picking_list_id,transfer_number,to_warehouse_id',
                 'transfer.toWarehouse:id,code,name',
-                'requisition:id,picking_list_id,mrf_number,request_type'])
+                'requisition:id,picking_list_id,mrf_number,request_type,department_name'])
             ->withCount(['orders', 'items',
                 // Dibaca PickingList::bolehDibatalkan() untuk tombol Batal.
                 'items as items_tersentuh_count' => fn ($q) => $q->where('status', '<>', PickingListItem::STATUS_PENDING)])
@@ -170,7 +170,7 @@ class PickingController extends Controller
             ->with(['warehouse:id,code,name', 'claimedBy:id,full_name',
                 'transfer:id,picking_list_id,transfer_number,to_warehouse_id',
                 'transfer.toWarehouse:id,code,name',
-                'requisition:id,picking_list_id,mrf_number,request_type'])
+                'requisition:id,picking_list_id,mrf_number,request_type,department_name'])
             ->withCount(['orders', 'items'])
             ->orderBy('created_at')
             ->get();

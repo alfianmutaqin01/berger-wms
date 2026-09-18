@@ -79,7 +79,10 @@ class ProductionMaterialController extends Controller
             ->with([
                 'product:id,sku,name,uom',
                 'warehouse:id,code,name',
-                'requisition:id,mrf_number,request_type,purpose,requested_by',
+                // requester_name ikut diambil: permintaan lewat tautan divisi
+                // tidak punya akun, dan tanpa kolom ini nama_pemohon jatuh ke
+                // "—" tanpa ada yang salah kelihatannya.
+                'requisition:id,mrf_number,request_type,purpose,requested_by,requester_name',
                 'requisition.requestedBy:id,full_name',
                 // Tiga nama yang sering tiga orang berbeda: yang meminta, yang
                 // menerima, dan yang terakhir memindahkan.
