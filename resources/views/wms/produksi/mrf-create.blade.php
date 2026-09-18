@@ -9,122 +9,78 @@
 
 @push('styles')
 <style>
-    /* =========================================================
-       MRF CREATE / EDIT FORM - MODERN ERGONOMIC STYLING
-       ========================================================= */
-    .mrf-step-banner {
-        background: linear-gradient(135deg, #0d2540 0%, #123962 60%, #1a4f85 100%);
-        border-radius: 0.85rem;
-        color: #ffffff;
-        position: relative;
-        overflow: hidden;
+    /* Yang ditata di sini hanya yang memang khas formulir MRF.
+
+       Warna dan tipografi kepala tabel dibiarkan ikut soms-style.css supaya
+       seragam dengan layar WMS lain; yang ditimpa cuma paddingnya, karena
+       tabel ini berisi kolom input yang diisi cepat, bukan teks yang dibaca,
+       sehingga barisnya wajar lebih rapat. */
+    .table-mrf-items th {
+        padding: 0.6rem 0.75rem;
     }
-    .mrf-step-banner::before {
-        content: '';
-        position: absolute;
-        top: -40px; right: -30px;
-        width: 140px; height: 140px;
-        background: radial-gradient(circle, rgba(232, 135, 30, .2) 0%, rgba(255, 255, 255, 0) 70%);
-        border-radius: 50%;
-        pointer-events: none;
+    .table-mrf-items td {
+        padding: 0.5rem 0.6rem;
+        vertical-align: middle;
     }
 
-    /* Type of Requisition Radio Cards */
-    .mrf-type-card {
+    /* Pilihan Jenis Permintaan, berupa kartu yang bisa diklik. */
+    .mrf-type-radio-label {
         cursor: pointer;
-        background: #ffffff;
-        border: 1.5px solid #e2e8f0;
-        transition: all 0.18s ease;
-        position: relative;
+        border: 1.5px solid var(--bs-border-color);
+        background-color: #ffffff;
+        transition: border-color 0.15s ease, background-color 0.15s ease;
     }
-    .mrf-type-card:hover {
-        border-color: #cbd5e1;
-        background: #f8fafc;
+    .mrf-type-radio-label:hover {
+        border-color: var(--bs-secondary-border-subtle);
+        background-color: var(--bs-tertiary-bg);
     }
-    .btn-check:checked + .mrf-type-card {
-        border-color: #123962;
-        background: #f0f7ff;
-        box-shadow: 0 2px 8px rgba(18, 57, 98, 0.08);
+    .btn-check:checked + .mrf-type-radio-label {
+        border-color: var(--primary);
+        background-color: rgba(var(--bs-primary-rgb), .06);
+        box-shadow: 0 0 0 1px var(--primary);
     }
-    .btn-check:checked + .mrf-type-card .type-check-icon {
-        display: block !important;
-    }
-    .btn-check:checked + .mrf-type-card .type-icon-box {
-        background: #123962 !important;
-        color: #ffffff !important;
+    .btn-check:checked + .mrf-type-radio-label .check-indicator {
+        display: inline-block !important;
     }
 
-    /* WhatsApp Approver Card */
-    .wa-approver-card {
-        border-top: 3.5px solid #25D366 !important;
-        background: #ffffff;
-    }
-
-    /* Saved Contact Chips */
-    .contact-item-chip {
-        border: 1px solid #e2e8f0;
-        background: #f8fafc;
-        border-radius: 0.65rem;
-        transition: all 0.15s ease;
-    }
-    .contact-item-chip:hover {
-        background: #f1f5f9;
-        border-color: #cbd5e1;
-    }
-
-    /* Autocomplete Dropdown */
+    /* Saran pencarian produk, muncul mengambang di dalam sel tabel. */
     .cari-saran {
-        border-radius: 0.65rem !important;
-        border: 1px solid #cbd5e1 !important;
-        overflow: hidden;
+        border-radius: 0.5rem !important;
+        border: 1px solid var(--bs-border-color) !important;
+        box-shadow: 0 8px 24px rgba(var(--bs-primary-rgb), .12) !important;
+        z-index: 1050;
     }
     .cari-saran .list-group-item {
-        border: none;
-        border-bottom: 1px solid #f1f5f9;
-        font-size: 0.82rem;
-        padding: 0.55rem 0.75rem;
-        transition: background-color 0.12s ease;
-    }
-    .cari-saran .list-group-item:last-child {
-        border-bottom: none;
+        font-size: 0.8rem;
+        padding: 0.45rem 0.75rem;
+        border-bottom: 1px solid var(--bs-border-color-translucent);
     }
     .cari-saran .list-group-item:hover, .cari-saran .list-group-item:focus {
-        background-color: #f0f7ff;
-    }
-
-    /* Items Row Card */
-    .baris-produk {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 0.65rem;
-        padding: 0.65rem 0.75rem;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-    .baris-produk:hover {
-        border-color: #cbd5e1;
-        box-shadow: 0 2px 6px rgba(18, 57, 98, 0.04);
-    }
-    .baris-num-badge {
-        width: 24px;
-        height: 24px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        border-radius: 50%;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: #e2e8f0;
-        color: #475569;
+        background-color: rgba(var(--bs-primary-rgb), .06);
     }
 </style>
 @endpush
 
 @section('content')
-{{-- FORMULIR PRODUKSI:
-     Menggantikan formulir kertas yang selama ini dipakai. Keperluan WAJIB ditulis
-     untuk jejak audit, dan nomor WhatsApp atasan disimpan agar pengajuan berikutnya cepat. --}}
+{{-- FORMULIR PRODUKSI (DESKTOP WORKSTATION OPTIMIZED)
+     Dirancang untuk entri data cepat pada layar monitor desktop/laptop staf produksi. --}}
 
-{{-- Session Flash Alerts --}}
+{{-- Header bar & navigasi kembali --}}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="fw-bold mb-1 text-dark d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-plus text-primary"></i>
+            {{ $mrf ? 'Perbaiki MRF '.$mrf->mrf_number : 'Buat Permintaan Material (MRF)' }}
+        </h4>
+        <p class="text-muted small mb-0">Formulir pengeluaran material dari gudang logistik untuk kebutuhan produksi dan operasional.</p>
+    </div>
+    <div>
+        <a href="{{ $mrf ? route('wms.mrf.show', $mrf) : route('wms.mrf.index') }}" class="btn btn-outline-secondary btn-sm rounded-3">
+            <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar
+        </a>
+    </div>
+</div>
+
 @foreach(['success' => 'check-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
     @if(session($jenis))
     <div class="alert alert-{{ $jenis === 'error' ? 'danger' : $jenis }} alert-dismissible fade show border-0 shadow-sm rounded-3 d-flex align-items-center mb-3">
@@ -148,43 +104,23 @@
 @endif
 
 @if($mrf)
-    {{-- ALASAN PENOLAKAN DITARUH DI ATAS FORMULIR --}}
     <div class="alert alert-warning border-0 shadow-sm rounded-3 mb-3">
         <div class="d-flex align-items-start gap-2">
-            <i class="bi bi-arrow-counterclockwise fs-5 text-warning-emphasis flex-shrink-0 mt-0.5"></i>
+            <i class="bi bi-arrow-counterclockwise fs-5 text-warning-emphasis flex-shrink-0 mt-1"></i>
             <div class="flex-grow-1">
                 <strong>{{ $mrf->mrf_number }} dikembalikan kepada Anda untuk perbaikan.</strong>
-                <div class="small text-muted mt-0.5">
+                <div class="small text-muted mt-1">
                     Perbaiki isinya lalu ajukan lagi — <strong>nomornya tetap sama</strong> dan riwayat penolakan terbaca oleh peninjau.
                 </div>
                 @php($alasan = $mrf->status === \App\Models\MaterialRequisition::STATUS_REJECTED_APPROVAL
                     ? $mrf->approver_rejection_reason
                     : $mrf->logistics_rejection_reason)
                 @if($alasan)
-                    <div class="mt-2 p-2.5 bg-white bg-opacity-75 rounded-2 border border-warning-subtle">
-                        <span class="small fw-bold text-dark d-block">Catatan Penolakan:</span>
+                    <div class="mt-2 p-2 bg-white bg-opacity-75 rounded-2 border border-warning-subtle">
+                        <span class="small fw-bold text-dark d-block">Alasan penolakan:</span>
                         <span class="text-body small">{{ $alasan }}</span>
                     </div>
                 @endif
-            </div>
-        </div>
-    </div>
-@else
-    {{-- Step Workflow Banner --}}
-    <div class="mrf-step-banner p-3 px-3.5 mb-3 shadow-sm">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div>
-                <span class="badge bg-white text-dark rounded-pill px-2.5 py-0.5 small fw-semibold mb-1" style="font-size: 0.68rem;">
-                    Material Requisition Form
-                </span>
-                <h5 class="fw-bold mb-0 text-white" style="font-size: 1.05rem;">Buat Permintaan Pengeluaran Material</h5>
-            </div>
-            <div class="d-none d-md-flex align-items-center gap-2 text-white-50 small" style="font-size: 0.76rem;">
-                <span class="text-white fw-medium"><i class="bi bi-1-circle-fill text-warning me-1"></i>Isi Data</span>
-                <i class="bi bi-chevron-right text-white-50"></i>
-                <span><i class="bi bi-2-circle me-1"></i>Persetujuan WA</span>
-                <i class="bi bi-chevron-right text-white-50"></i>
-                <span><i class="bi bi-3-circle me-1"></i>Ambil di Logistik</span>
             </div>
         </div>
     </div>
@@ -195,110 +131,60 @@
     @if($mrf) @method('PUT') @endif
 
     <div class="row g-3">
-        {{-- ============================================ KOLOM KIRI (7 Kolom) ============================================ --}}
-        <div class="col-12 col-lg-7">
-            {{-- Data Pemohon --}}
+        {{-- ============================================ KOLOM UTAMA (KIRI - 8 Kolom) ============================================ --}}
+        <div class="col-12 col-xl-8">
+            {{-- Card 1: Informasi Permintaan & Pemohon --}}
             <div class="card border-0 shadow-sm rounded-4 mb-3">
-                <div class="card-body p-3 p-md-3.5">
-                    <div class="d-flex align-items-center justify-content-between mb-2.5 pb-2 border-bottom">
-                        <h6 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2 small" style="font-size: 0.88rem;">
-                            <i class="bi bi-person-badge-fill text-primary"></i> Data Pemohon (Akun Anda)
-                        </h6>
-                        <span class="badge bg-light text-muted border rounded-pill px-2 py-0.5" style="font-size: 0.68rem;">
-                            Otomatis dari Akun
-                        </span>
-                    </div>
-
-                    <div class="row g-2">
-                        <div class="col-12 col-sm-6">
-                            <div class="p-2.5 rounded-3 bg-light border border-light-subtle d-flex align-items-center gap-2.5">
-                                <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center flex-shrink-0"
-                                     style="width: 36px; height: 36px;">
-                                    <i class="bi bi-person-fill fs-5"></i>
-                                </div>
-                                <div class="min-w-0 flex-grow-1">
-                                    <div class="text-muted small" style="font-size: 0.7rem;">Nama Lengkap</div>
-                                    <div class="fw-bold text-dark text-truncate small" style="font-size: 0.85rem;">{{ auth()->user()->full_name }}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-6">
-                            <div class="p-2.5 rounded-3 bg-light border border-light-subtle d-flex align-items-center gap-2.5">
-                                <div class="rounded-circle bg-info bg-opacity-10 text-info d-flex align-items-center justify-content-center flex-shrink-0"
-                                     style="width: 36px; height: 36px;">
-                                    <i class="bi bi-diagram-3-fill fs-5"></i>
-                                </div>
-                                <div class="min-w-0 flex-grow-1">
-                                    <div class="text-muted small" style="font-size: 0.7rem;">Departemen / Divisi</div>
-                                    <div class="fw-bold text-dark text-truncate small" style="font-size: 0.85rem;">
-                                        {{ auth()->user()->department?->name ?? 'Produksi' }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <div class="card-header bg-white border-bottom py-3 px-3 px-md-4">
+                    <h6 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
+                        <i class="bi bi-info-circle text-primary"></i> Informasi Permintaan &amp; Pemohon
+                    </h6>
                 </div>
-            </div>
-
-            {{-- Detail Permintaan Material --}}
-            <div class="card border-0 shadow-sm rounded-4 mb-3">
-                <div class="card-body p-3 p-md-3.5">
-                    <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-                        <h6 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2 small" style="font-size: 0.88rem;">
-                            <i class="bi bi-clipboard2-check-fill text-primary"></i> Spesifikasi Permintaan
-                        </h6>
-                        <span class="text-muted small" style="font-size: 0.7rem;">Wajib Lengkap</span>
-                    </div>
-
-                    {{-- Gudang Tujuan --}}
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold text-dark">
-                            Gudang Logistik Tujuan <span class="text-danger">*</span>
-                        </label>
-                        @if($gudang)
-                            <input type="hidden" name="warehouse_id" value="{{ $gudang->id }}">
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text bg-light text-muted border-end-0 rounded-start-3"><i class="bi bi-building"></i></span>
-                                <input type="text" class="form-control rounded-end-3 bg-light fw-medium" value="{{ $gudang->kode_pendek }} — {{ $gudang->name ?? 'Gudang Utama' }}" disabled>
-                            </div>
-                        @else
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text bg-white text-muted border-end-0 rounded-start-3"><i class="bi bi-building"></i></span>
-                                <select name="warehouse_id" class="form-select border-start-0 rounded-end-3" required>
+                <div class="card-body p-3 p-md-4">
+                    {{-- Row 1: Pemohon, Divisi, Gudang --}}
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-muted mb-1">Nama Pemohon</label>
+                            <input type="text" class="form-control form-control-sm rounded-2 bg-light fw-bold text-dark" value="{{ auth()->user()->full_name }}" disabled>
+                            <span class="text-muted small" style="font-size: 0.68rem;">Otomatis dari data login akun</span>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-muted mb-1">Departemen / Divisi</label>
+                            <input type="text" class="form-control form-control-sm rounded-2 bg-light" value="{{ auth()->user()->department?->name ?? 'Produksi' }}" disabled>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-dark mb-1">Gudang Logistik Tujuan <span class="text-danger">*</span></label>
+                            @if($gudang)
+                                <input type="hidden" name="warehouse_id" value="{{ $gudang->id }}">
+                                <input type="text" class="form-control form-control-sm rounded-2 bg-light fw-semibold" value="{{ $gudang->kode_pendek }} — {{ $gudang->name ?? 'Gudang Utama' }}" disabled>
+                            @else
+                                <select name="warehouse_id" class="form-select form-select-sm rounded-2" required>
                                     <option value="">Pilih gudang logistik...</option>
                                     @foreach($gudangOptions as $g)
                                         <option value="{{ $g->id }}" @selected(old('warehouse_id') == $g->id)>{{ $g->kode_pendek }} — {{ $g->name ?? '' }}</option>
                                     @endforeach
                                 </select>
-                            </div>
-                        @endif
+                            @endif
+                        </div>
                     </div>
 
-                    {{-- Type of Requisition (Selectable Radio Cards) --}}
+                    {{-- Row 2: Type of Requisition (Grid Options) --}}
                     <div class="mb-3">
-                        <label class="form-label small fw-semibold text-dark mb-1.5">
+                        <label class="form-label small fw-semibold text-dark mb-2">
                             Jenis Permintaan (Type of Requisition) <span class="text-danger">*</span>
                         </label>
                         <div class="row g-2">
                             @foreach($jenisOptions as $nilai => $jenis)
-                            <div class="col-12 col-sm-6">
+                            <div class="col-12 col-sm-6 col-lg-3">
                                 <input type="radio" class="btn-check" name="request_type" id="jenis-{{ $nilai }}"
                                        value="{{ $nilai }}" @checked(old('request_type', $mrf?->request_type) === $nilai) required>
-                                <label class="mrf-type-card w-100 p-2.5 rounded-3 d-flex align-items-start gap-2.5 h-100" for="jenis-{{ $nilai }}">
-                                    <div class="type-icon-box rounded-3 bg-light text-primary d-flex align-items-center justify-content-center flex-shrink-0" style="width:34px;height:34px;">
-                                        @switch($nilai)
-                                            @case('production') <i class="bi bi-gear-wide-connected fs-6"></i> @break
-                                            @case('rework')     <i class="bi bi-arrow-repeat fs-6"></i> @break
-                                            @case('sample')     <i class="bi bi-droplet-half fs-6"></i> @break
-                                            @default            <i class="bi bi-box fs-6"></i>
-                                        @endswitch
-                                    </div>
-                                    <div class="min-w-0 flex-grow-1">
-                                        <div class="d-flex align-items-center justify-content-between">
+                                <label class="mrf-type-radio-label w-100 p-3 rounded-3 h-100 d-flex flex-column justify-content-between" for="jenis-{{ $nilai }}">
+                                    <div>
+                                        <div class="d-flex align-items-center justify-content-between mb-1">
                                             <span class="fw-bold text-dark small" style="font-size: 0.8rem;">{{ $jenis['label'] }}</span>
-                                            <i class="bi bi-check-circle-fill text-primary type-check-icon d-none small"></i>
+                                            <i class="bi bi-check-circle-fill text-primary check-indicator d-none small"></i>
                                         </div>
-                                        <small class="text-muted d-block lh-sm mt-0.5" style="font-size: 0.7rem;">{{ $jenis['bantuan'] }}</small>
+                                        <div class="text-muted" style="font-size: 0.7rem; line-height: 1.3;">{{ $jenis['bantuan'] }}</div>
                                     </div>
                                 </label>
                             </div>
@@ -306,60 +192,64 @@
                         </div>
                     </div>
 
-                    {{-- Purpose / Keperluan --}}
+                    {{-- Row 3: Purpose / Keperluan --}}
                     <div>
                         <label class="form-label small fw-semibold text-dark mb-1">
                             Keperluan &amp; Keterangan (Purpose) <span class="text-danger">*</span>
                         </label>
-                        <textarea name="purpose" rows="3" class="form-control rounded-3 small" required
-                                  placeholder="Contoh: Reproses 300 pcs DDP batch Juli menjadi warna Off White untuk memenuhi jadwal produksi batch #B-104.">{{ old('purpose', $mrf?->purpose) }}</textarea>
+                        <textarea name="purpose" rows="2" class="form-control form-control-sm rounded-2" required
+                                  placeholder="Tuliskan alasan pengeluaran material (contoh: Reproses 300 pcs DDP batch Juli menjadi warna Off White untuk memenuhi jadwal produksi batch #B-104).">{{ old('purpose', $mrf?->purpose) }}</textarea>
                         <div class="form-text small text-muted mt-1" style="font-size: 0.7rem;">
-                            <i class="bi bi-info-circle me-1"></i>
-                            Keterangan ini menjadi dasar pertanggungjawaban keluarnya barang dari gudang saat audit stok.
+                            <i class="bi bi-info-circle me-1"></i> Keterangan ini menjadi dasar audit keluarnya barang dari gudang logistik.
                         </div>
                     </div>
                 </div>
             </div>
 
-            {{-- Barang yang Diminta --}}
+            {{-- Card 2: Daftar Barang yang Diminta (Tabular Data Grid) --}}
             <div class="card border-0 shadow-sm rounded-4 mb-3">
-                <div class="card-body p-3 p-md-3.5">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom">
-                        <div>
-                            <h6 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2 small" style="font-size: 0.88rem;">
-                                <i class="bi bi-box-seam-fill text-primary"></i> Daftar Barang yang Diminta
-                            </h6>
-                            <span class="text-muted small" style="font-size: 0.7rem;">Ketik minimal 2 karakter SKU atau nama material</span>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-primary rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1 fw-semibold" id="tambahBaris" style="font-size: 0.78rem;">
-                            <i class="bi bi-plus-lg"></i> Tambah Baris
-                        </button>
+                <div class="card-header bg-white border-bottom py-3 px-3 px-md-4 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
+                            <i class="bi bi-boxes text-primary"></i> Daftar Material yang Diminta
+                        </h6>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 py-1 fw-semibold d-inline-flex align-items-center gap-2" id="tambahBaris">
+                        <i class="bi bi-plus-lg"></i> Tambah Baris
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-mrf-items align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="width: 48px;" class="text-center">No</th>
+                                    <th>Material / SKU Produk <span class="text-danger">*</span></th>
+                                    <th style="width: 130px;" class="text-center">Jumlah (Qty) <span class="text-danger">*</span></th>
+                                    <th style="width: 240px;">Usulan Batch / Catatan</th>
+                                    <th style="width: 48px;" class="text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="barisProduk">
+                                {{-- Baris tabel di-generate via JavaScript --}}
+                            </tbody>
+                            <tbody id="kosongProdukWrap">
+                                <tr id="kosongProduk" class="d-none">
+                                    <td colspan="5" class="text-center py-4 text-muted">
+                                        <i class="bi bi-inbox fs-3 d-block mb-1 opacity-50"></i>
+                                        Belum ada material yang ditambahkan. Klik tombol <strong>Tambah Baris</strong> di atas untuk memilih barang.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
 
-                    {{-- Desktop Header Labels --}}
-                    <div class="row g-2 px-2 py-1.5 bg-light rounded-2 text-secondary small fw-bold mb-2 d-none d-md-flex" style="font-size: 0.72rem;">
-                        <div class="col-md-5">PRODUK / SKU MATERIAL</div>
-                        <div class="col-md-2">JUMLAH (QTY)</div>
-                        <div class="col-md-4">CATATAN / USULAN BATCH</div>
-                        <div class="col-md-1 text-end">AKSI</div>
-                    </div>
-
-                    {{-- Container Baris Produk --}}
-                    <div id="barisProduk" class="d-flex flex-column gap-2"></div>
-
-                    {{-- Kosong State --}}
-                    <div class="text-center py-4 border rounded-3 bg-light bg-opacity-50 text-muted small mt-2" id="kosongProduk">
-                        <i class="bi bi-inbox fs-3 d-block mb-1 opacity-50"></i>
-                        Belum ada material yang ditambahkan.<br>
-                        Tekan tombol <strong>Tambah Baris</strong> di atas untuk memasukkan barang.
-                    </div>
-
-                    <div class="d-flex justify-content-between align-items-center pt-2.5 mt-2.5 border-top">
-                        <small class="text-muted" style="font-size: 0.7rem;">
-                            <i class="bi bi-shield-check me-1 text-success"></i>
-                            Batch fisik akan diverifikasi &amp; diambilkan oleh tim Logistik Gudang.
+                    <div class="p-3 bg-light bg-opacity-50 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <small class="text-muted" style="font-size: 0.72rem;">
+                            <i class="bi bi-check2-shield text-success me-1"></i>
+                            Pilihan fisik batch barang aktual akan dialokasikan oleh tim Logistik Gudang sesuai rak penyimpanan.
                         </small>
-                        <span class="badge bg-light text-dark border rounded-pill px-2.5 py-1 small" id="totalBarisBadge" style="font-size: 0.7rem;">
+                        <span class="badge bg-white text-dark border rounded-pill px-3 py-1 fw-semibold small" id="totalBarisBadge">
                             0 baris material
                         </span>
                     </div>
@@ -367,54 +257,42 @@
             </div>
         </div>
 
-        {{-- ============================================ KOLOM KANAN (5 Kolom) ============================================ --}}
-        <div class="col-12 col-lg-5">
-            {{-- WhatsApp Approver Card --}}
-            <div class="card border-0 shadow-sm rounded-4 wa-approver-card mb-3">
-                <div class="card-body p-3 p-md-3.5">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <div class="rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center"
-                             style="width: 36px; height: 36px;">
-                            <i class="bi bi-whatsapp fs-5"></i>
-                        </div>
-                        <div>
-                            <h6 class="fw-bold mb-0 text-dark small" style="font-size: 0.88rem;">Persetujuan Atasan (WhatsApp)</h6>
-                            <span class="text-muted small" style="font-size: 0.7rem;">Link verifikasi interaktif</span>
-                        </div>
+        {{-- ============================================ KOLOM SAMPING (KANAN - 4 Kolom) ============================================ --}}
+        <div class="col-12 col-xl-4">
+            {{-- Card 3: Persetujuan Atasan via WhatsApp --}}
+            <div class="card border-0 shadow-sm rounded-4 mb-3">
+                <div class="card-header bg-white border-bottom py-3 px-3 px-md-4 d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-whatsapp text-success fs-5"></i>
+                        <h6 class="fw-bold mb-0 text-dark small" style="font-size: 0.88rem;">Persetujuan Atasan</h6>
                     </div>
-
-                    <div class="p-2.5 bg-success bg-opacity-10 rounded-3 text-success-emphasis small mb-3" style="font-size: 0.72rem; line-height: 1.35;">
-                        <i class="bi bi-info-circle-fill me-1"></i>
-                        Setelah disimpan, notifikasi tautan persetujuan dikirim langsung ke WhatsApp atasan. Logistik baru dapat memproses setelah disetujui.
-                    </div>
+                    <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle rounded-pill px-2 py-1" style="font-size: 0.68rem;">
+                        Tautan WhatsApp
+                    </span>
+                </div>
+                <div class="card-body p-3 p-md-4">
+                    <p class="small text-muted mb-3" style="font-size: 0.74rem; line-height: 1.4;">
+                        Setelah disimpan, notifikasi tautan persetujuan dikirim otomatis ke nomor WhatsApp atasan. Logistik baru memproses setelah disetujui.
+                    </p>
 
                     {{-- Daftar Kontak Tersimpan --}}
                     @if($kontak->isNotEmpty())
                     <div class="mb-3">
-                        <label class="form-label small fw-semibold text-muted d-block mb-1.5" style="font-size: 0.72rem;">
-                            <i class="bi bi-clock-history me-1"></i> Kontak Tersimpan (Tinggal Klik):
+                        <label class="form-label small fw-semibold text-muted d-block mb-2" style="font-size: 0.72rem;">
+                            <i class="bi bi-clock-history me-1"></i> Nomor Tersimpan (Klik untuk Memilih):
                         </label>
-                        <div class="d-flex flex-column gap-1.5" style="max-height: 180px; overflow-y: auto;">
+                        <div class="list-group list-group-flush border rounded-2" style="max-height: 160px; overflow-y: auto;">
                             @foreach($kontak as $k)
-                            <div class="contact-item-chip d-flex justify-content-between align-items-center p-2">
-                                <button type="button" class="btn btn-link p-0 text-start text-decoration-none flex-grow-1 pilihKontak d-flex align-items-center gap-2"
+                            <div class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
+                                <button type="button" class="btn btn-link p-0 text-start text-decoration-none flex-grow-1 pilihKontak"
                                         data-nama="{{ $k->name }}" data-nomor="{{ $k->phone }}">
-                                    <div class="rounded-circle bg-white text-secondary border d-flex align-items-center justify-content-center flex-shrink-0"
-                                         style="width: 26px; height: 26px; font-size: 0.72rem;">
-                                        <i class="bi bi-person"></i>
-                                    </div>
-                                    <div class="min-w-0 flex-grow-1">
-                                        <span class="fw-bold d-block text-dark small lh-1" style="font-size: 0.78rem;">{{ $k->name }}</span>
-                                        <small class="text-muted font-monospace" style="font-size: 0.68rem;">{{ $k->phone_label }}</small>
-                                    </div>
-                                    <span class="badge bg-white text-primary border rounded-pill px-2 py-0.5 small me-1" style="font-size: 0.65rem;">
-                                        Pilih
-                                    </span>
+                                    <span class="fw-bold d-block text-dark small" style="font-size: 0.78rem;">{{ $k->name }}</span>
+                                    <small class="text-muted font-monospace" style="font-size: 0.68rem;">{{ $k->phone_label }}</small>
                                 </button>
-                                <button type="button" class="btn btn-sm btn-link text-danger p-1 hapusKontak"
+                                <button type="button" class="btn btn-sm btn-link text-danger p-0 hapusKontak ms-2"
                                         data-action="{{ route('wms.mrf.contacts.destroy', $k) }}"
                                         data-nama="{{ $k->name }}" title="Hapus kontak dari daftar tersimpan">
-                                    <i class="bi bi-trash"></i>
+                                    <i class="bi bi-trash3"></i>
                                 </button>
                             </div>
                             @endforeach
@@ -422,53 +300,52 @@
                     </div>
                     @endif
 
-                    {{-- Input Nama & Nomor Atasan --}}
-                    <div class="mb-2.5">
+                    {{-- Input Nama Atasan --}}
+                    <div class="mb-3">
                         <label class="form-label small fw-semibold text-dark mb-1">
                             Nama Atasan Penyetuju <span class="text-danger">*</span>
                         </label>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-light text-muted border-end-0 rounded-start-3"><i class="bi bi-person"></i></span>
-                            <input type="text" name="approver_name" id="approverNama" class="form-control border-start-0 rounded-end-3"
-                                   value="{{ old('approver_name', $mrf?->approver_name) }}" maxlength="100" required placeholder="Mis. Pak Ganti / Bu Rina">
-                        </div>
+                        <input type="text" name="approver_name" id="approverNama" class="form-control form-control-sm rounded-2"
+                               value="{{ old('approver_name', $mrf?->approver_name) }}" maxlength="100" required placeholder="Contoh: Pak Gandhi / Bu Rina">
                     </div>
 
+                    {{-- Input Nomor WhatsApp --}}
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-dark mb-1">
                             Nomor WhatsApp Atasan <span class="text-danger">*</span>
                         </label>
                         <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-light text-success border-end-0 rounded-start-3"><i class="bi bi-whatsapp"></i></span>
-                            <input type="text" name="approver_phone" id="approverNomor" class="form-control border-start-0 rounded-end-3 font-monospace"
+                            <span class="input-group-text bg-light text-success border-end-0"><i class="bi bi-whatsapp"></i></span>
+                            <input type="text" name="approver_phone" id="approverNomor" class="form-control font-monospace border-start-0"
                                    value="{{ old('approver_phone', $mrf?->approver_phone) }}" maxlength="25" required placeholder="081234567890">
                         </div>
                         <div class="form-text small text-muted mt-1" style="font-size: 0.7rem;">
-                            Gunakan format 08... atau 62... (satu nomor tujuan).
+                            Boleh ditulis format 08... atau 62... (satu nomor tujuan).
                         </div>
                     </div>
 
+                    {{-- Checkbox Simpan Kontak --}}
                     <div class="form-check p-2 rounded-2 bg-light border">
                         <input type="checkbox" name="simpan_kontak" value="1" class="form-check-input ms-0 me-2" id="simpanKontak"
                                @checked(old('simpan_kontak'))>
-                        <label class="form-check-label small" for="simpanKontak" style="font-size: 0.75rem;">
-                            <strong>Simpan nomor ini</strong> untuk pengajuan berikutnya
+                        <label class="form-check-label small" for="simpanKontak" style="font-size: 0.74rem;">
+                            <strong>Simpan nomor ini</strong> agar tinggal diklik untuk pengajuan berikutnya
                         </label>
                     </div>
                 </div>
             </div>
 
-            {{-- Submit / Action Card --}}
-            <div class="card border-0 shadow-sm rounded-4 mb-3">
+            {{-- Card 4: Tombol Aksi Submit --}}
+            <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body p-3">
-                    <button type="submit" class="btn btn-primary rounded-3 py-2.5 w-100 shadow-sm d-flex align-items-center justify-content-center gap-2 fw-bold" style="font-size: 0.88rem;">
-                        <i class="bi bi-send-fill"></i>
+                    <button type="submit" class="btn btn-primary rounded-3 py-3 w-100 shadow-sm d-flex align-items-center justify-content-center gap-2 fw-bold" style="font-size: 0.88rem;">
+                        <i class="bi bi-send-check-fill"></i>
                         <span>{{ $mrf ? 'Simpan & Ajukan Ulang '.$mrf->mrf_number : 'Simpan & Minta Persetujuan' }}</span>
                     </button>
                     <div class="text-center mt-2">
                         <a href="{{ $mrf ? route('wms.mrf.show', $mrf) : route('wms.mrf.index') }}"
                            class="btn btn-sm btn-link text-decoration-none text-muted" style="font-size: 0.78rem;">
-                            <i class="bi bi-arrow-left me-1"></i> Batal &amp; Kembali
+                            <i class="bi bi-x-circle me-1"></i> Batal &amp; Kembali
                         </a>
                     </div>
                 </div>
@@ -477,45 +354,35 @@
     </div>
 </form>
 
-{{-- Form hapus kontak luar --}}
+{{-- Form hapus kontak berdiri sendiri di luar form MRF --}}
 <form method="POST" id="formHapusKontak" class="d-none">
     @csrf
     @method('DELETE')
 </form>
 
-{{-- Template Baris Item --}}
+{{-- Template Table Row Baris Item --}}
 <template id="templateBaris">
-    <div class="baris-produk">
-        <div class="row g-2 align-items-center">
-            <div class="col-12 col-md-5">
-                <div class="d-flex align-items-center gap-2 mb-1 d-md-none">
-                    <span class="baris-num-badge">__NUM__</span>
-                    <span class="small fw-bold text-dark">Material / SKU:</span>
-                </div>
-                <div class="cari-produk position-relative">
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-light border-end-0 text-muted rounded-start-3"><i class="bi bi-search"></i></span>
-                        <input type="text" class="form-control form-control-sm border-start-0 rounded-end-3 cari-teks" placeholder="Ketik SKU atau nama produk..." autocomplete="off">
-                    </div>
-                    <input type="hidden" class="cari-nilai" name="items[__I__][product_id]">
-                    <div class="list-group cari-saran d-none position-absolute w-100 shadow-lg" style="z-index:30;max-height:240px;overflow-y:auto"></div>
-                </div>
+    <tr class="baris-produk">
+        <td class="text-center text-muted fw-semibold baris-no" style="font-size: 0.82rem;">__NUM__</td>
+        <td>
+            <div class="cari-produk position-relative">
+                <input type="text" class="form-control form-control-sm rounded-2 cari-teks" placeholder="Ketik minimal 2 huruf SKU atau nama produk..." autocomplete="off">
+                <input type="hidden" class="cari-nilai" name="items[__I__][product_id]">
+                <div class="list-group cari-saran d-none position-absolute w-100 shadow" style="max-height:220px;overflow-y:auto"></div>
             </div>
-            <div class="col-6 col-md-2">
-                <div class="small fw-bold text-dark mb-1 d-md-none">Jumlah (Qty):</div>
-                <input type="number" name="items[__I__][qty]" class="form-control form-control-sm rounded-3" min="1" placeholder="Qty" required>
-            </div>
-            <div class="col-5 col-md-4">
-                <div class="small fw-bold text-dark mb-1 d-md-none">Catatan / Usulan Batch:</div>
-                <input type="text" name="items[__I__][note]" class="form-control form-control-sm rounded-3" maxlength="500" placeholder="Usulan batch (opsional)">
-            </div>
-            <div class="col-1 text-end">
-                <button type="button" class="btn btn-sm btn-outline-danger border-0 rounded-circle p-1 hapusBaris" title="Hapus baris ini">
-                    <i class="bi bi-trash fs-6"></i>
-                </button>
-            </div>
-        </div>
-    </div>
+        </td>
+        <td>
+            <input type="number" name="items[__I__][qty]" class="form-control form-control-sm rounded-2 text-end fw-bold" min="1" placeholder="Qty" required>
+        </td>
+        <td>
+            <input type="text" name="items[__I__][note]" class="form-control form-control-sm rounded-2" maxlength="500" placeholder="Usulan batch (opsional)">
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-link text-danger p-0 hapusBaris" title="Hapus baris ini">
+                <i class="bi bi-trash3 fs-6"></i>
+            </button>
+        </td>
+    </tr>
 </template>
 @endsection
 
@@ -529,27 +396,26 @@
     const totalBadge = document.getElementById('totalBarisBadge');
     let urut = 0;
 
-    function perbaruiKosong() {
-        const count = wadah.children.length;
-        kosong.classList.toggle('d-none', count > 0);
+    function perbaruiNomor() {
+        const barisList = wadah.querySelectorAll('.baris-produk');
+        kosong.classList.toggle('d-none', barisList.length > 0);
         if (totalBadge) {
-            totalBadge.textContent = count + ' baris material';
+            totalBadge.textContent = barisList.length + ' baris material';
         }
-        // Update line numbers for mobile view
-        Array.from(wadah.children).forEach((baris, idx) => {
-            const badge = baris.querySelector('.baris-num-badge');
-            if (badge) badge.textContent = String(idx + 1);
+        barisList.forEach((b, idx) => {
+            const noCell = b.querySelector('.baris-no');
+            if (noCell) noCell.textContent = String(idx + 1);
         });
     }
 
     function tambahBaris() {
-        const count = wadah.children.length + 1;
+        const count = wadah.querySelectorAll('.baris-produk').length + 1;
         let html = template.innerHTML.replaceAll('__I__', String(urut++));
         html = html.replaceAll('__NUM__', String(count));
 
-        const pembungkus = document.createElement('div');
-        pembungkus.innerHTML = html;
-        const baris = pembungkus.firstElementChild;
+        const tb = document.createElement('tbody');
+        tb.innerHTML = html;
+        const baris = tb.firstElementChild;
 
         wadah.appendChild(baris);
 
@@ -558,12 +424,11 @@
                 return '{{ route('wms.mrf.lookup.products') }}?q=' + encodeURIComponent(q);
             },
             minimal: 2,
-            kosong: 'Produk tidak ditemukan. Coba ketik bagian dari SKU.',
+            kosong: 'Produk tidak ditemukan. Coba ketik potongan SKU atau nama.',
             tampilan: function (item) {
-                return '<div class="d-flex justify-content-between align-items-center">'
-                    + '<div><span class="fw-bold font-monospace text-dark">' + item.sku + '</span>'
-                    + '<div class="small text-muted">' + item.name + '</div></div>'
-                    + '<span class="badge bg-light text-secondary border rounded-pill px-2 py-0.5 ms-2">' + (item.uom || '-') + '</span>'
+                return '<div class="d-flex justify-content-between align-items-center py-1">'
+                    + '<div><span class="fw-bold font-monospace text-dark">' + item.sku + '</span> — <span class="text-secondary small">' + item.name + '</span></div>'
+                    + '<span class="badge bg-light text-dark border rounded-pill px-2 py-1 ms-2">' + (item.uom || '-') + '</span>'
                     + '</div>';
             },
             label: function (item) { return item.sku + ' — ' + item.name; },
@@ -571,17 +436,17 @@
 
         baris.querySelector('.hapusBaris').addEventListener('click', function () {
             baris.remove();
-            perbaruiKosong();
+            perbaruiNomor();
         });
 
-        perbaruiKosong();
+        perbaruiNomor();
         return baris;
     }
 
     document.getElementById('tambahBaris').addEventListener('click', tambahBaris);
 
     /*
-     | Baris permintaan yang sudah ada, pada perbaikan MRF yang ditolak.
+     | Baris permintaan yang sudah ada (edit mode)
      */
     const barisAwal = @json($barisAwal ?? []);
 
@@ -631,7 +496,7 @@
 
         if (!adaYangSah) {
             e.preventDefault();
-            alert('Belum ada material yang dipilih. Ketik SKU-nya lalu klik salah satu dari hasil pencarian.');
+            alert('Belum ada material yang dipilih. Ketik SKU lalu pilih dari daftar saran produk.');
         }
     });
 })();

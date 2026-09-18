@@ -5,16 +5,21 @@
 
 @push('styles')
 <style>
+    /* Hanya kartu KPI yang punya gaya sendiri di sini.
+
+       Tabelnya sengaja TIDAK ditata ulang: soms-style.css sudah menata
+       `.table thead th` untuk seluruh WMS, dan menyalin palet lain ke berkas
+       ini hanya membuat layar MRF terlihat berbeda sendiri tanpa alasan. */
     .mrf-stat-card {
         transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
         background: #ffffff;
     }
     .mrf-stat-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(18, 57, 98, 0.08) !important;
+        box-shadow: 0 6px 16px rgba(var(--bs-primary-rgb), .08) !important;
     }
     .mrf-stat-active {
-        box-shadow: 0 4px 14px rgba(18, 57, 98, 0.1) !important;
+        box-shadow: 0 4px 14px rgba(var(--bs-primary-rgb), .1) !important;
         position: relative;
     }
     .mrf-stat-active::after {
@@ -26,24 +31,6 @@
         height: 3px;
         background: currentColor;
         border-radius: 3px;
-    }
-    .table-mrf thead th {
-        background-color: #f8fafc;
-        border-bottom: 2px solid #e2e8f0;
-        font-size: 0.74rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #64748b;
-        padding: 0.75rem 0.85rem;
-    }
-    .table-mrf tbody td {
-        padding: 0.85rem 0.85rem;
-        vertical-align: middle;
-        border-bottom: 1px solid #f1f5f9;
-    }
-    .table-mrf tbody tr:hover td {
-        background-color: #f8fafc;
     }
 </style>
 @endpush
@@ -66,7 +53,7 @@
 @endforeach
 
 {{-- Metric / Status KPI Cards --}}
-<div class="row g-2.5 g-md-3 mb-3">
+<div class="row g-2 g-md-3 mb-3">
     @foreach([
         ['Menunggu Persetujuan Atasan', 'Verifikasi WhatsApp', $stats['menunggu_atasan'], 'secondary', 'hourglass-split', \App\Models\MaterialRequisition::STATUS_PENDING_APPROVAL],
         ['Menunggu Alokasi Logistik', 'Penentuan Batch Rak', $stats['menunggu_logistik'], 'warning', 'boxes', \App\Models\MaterialRequisition::STATUS_PENDING_LOGISTICS],
@@ -77,12 +64,12 @@
         <a href="{{ request()->fullUrlWithQuery(['status' => $status, 'page' => null]) }}"
            class="text-decoration-none text-reset">
             <div class="card border-0 shadow-sm rounded-4 h-100 mrf-stat-card {{ $filters['status'] === $status ? 'mrf-stat-active border border-2 border-'.$warna.' text-'.$warna : '' }}">
-                <div class="card-body p-3 d-flex align-items-center gap-2.5">
+                <div class="card-body p-3 d-flex align-items-center gap-3">
                     <div class="rounded-3 bg-{{ $warna }}-subtle text-{{ $warna }}-emphasis d-flex align-items-center justify-content-center flex-shrink-0"
                          style="width:44px;height:44px;font-size:1.25rem">
                         <i class="bi bi-{{ $ikon }}"></i>
                     </div>
-                    <div class="min-w-0 flex-grow-1">
+                    <div class="flex-grow-1" style="min-width:0">
                         <div class="fs-4 fw-bold text-dark lh-1 mb-1">{{ $angka }}</div>
                         <div class="fw-semibold text-truncate small" style="font-size:0.78rem;">{{ $judul }}</div>
                         <div class="text-muted text-truncate" style="font-size:0.68rem;">{{ $subjudul }}</div>
@@ -106,7 +93,7 @@
                 <span class="text-muted small">Kelola alur permohonan material produksi dan serah terima dari logistik</span>
             </div>
             @can(\App\Support\Permission::MRF_CREATE)
-            <a href="{{ route('wms.mrf.create') }}" class="btn btn-primary btn-sm rounded-3 px-3 py-1.5 shadow-sm d-inline-flex align-items-center gap-1.5 fw-semibold">
+            <a href="{{ route('wms.mrf.create') }}" class="btn btn-primary btn-sm rounded-3 px-3 py-2 shadow-sm d-inline-flex align-items-center gap-2 fw-semibold">
                 <i class="bi bi-plus-circle-fill"></i> Buat Permintaan
             </a>
             @endcan
@@ -157,7 +144,7 @@
 
         {{-- Table responsive --}}
         <div class="table-responsive rounded-3 border">
-            <table class="table table-hover table-mrf align-middle mb-0">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th style="min-width: 140px;">Nomor MRF</th>
@@ -179,7 +166,7 @@
                             </div>
                         </td>
                         <td>
-                            <span class="badge bg-light text-dark border px-2 py-0.5 rounded-pill mb-1 fw-medium" style="font-size:0.7rem;">
+                            <span class="badge bg-light text-dark border px-2 py-1 rounded-pill mb-1 fw-medium" style="font-size:0.7rem;">
                                 {{ $mrf->jenis_label }}
                             </span>
                             <div class="small text-muted text-truncate" style="max-width:260px" title="{{ $mrf->purpose }}">
@@ -195,13 +182,13 @@
                         <td class="text-end">
                             <span class="fw-bold text-dark fs-6">{{ number_format($mrf->total_diminta) }}</span>
                             <div>
-                                <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2 py-0.5" style="font-size:0.68rem;">
+                                <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2 py-1" style="font-size:0.68rem;">
                                     {{ $mrf->items_count }} SKU
                                 </span>
                             </div>
                         </td>
                         <td>
-                            <span class="badge {{ $mrf->status_badge }} rounded-pill px-2.5 py-1 fw-medium" style="font-size: 0.75rem;">
+                            <span class="badge {{ $mrf->status_badge }} rounded-pill px-3 py-1 fw-medium" style="font-size: 0.75rem;">
                                 {{ $mrf->status_label }}
                             </span>
                         </td>
@@ -209,8 +196,8 @@
                             {{-- POSISI & TINDAKAN SELANJUTNYA: Sangat jelas siapa dan langkah apa yang sedang berjalan --}}
                             @switch($mrf->status)
                                 @case(\App\Models\MaterialRequisition::STATUS_PENDING_APPROVAL)
-                                    <div class="d-flex align-items-center gap-1.5 mb-0.5">
-                                        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle rounded-pill px-2 py-0.5" style="font-size: 0.72rem;">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
                                             <i class="bi bi-whatsapp me-1"></i>Persetujuan Atasan
                                         </span>
                                     </div>
@@ -220,8 +207,8 @@
                                     @break
 
                                 @case(\App\Models\MaterialRequisition::STATUS_PENDING_LOGISTICS)
-                                    <div class="d-flex align-items-center gap-1.5 mb-0.5">
-                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-0.5" style="font-size: 0.72rem;">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
                                             <i class="bi bi-boxes me-1"></i>Alokasi Batch
                                         </span>
                                     </div>
@@ -231,8 +218,8 @@
                                     @break
 
                                 @case(\App\Models\MaterialRequisition::STATUS_PENDING_PICKING)
-                                    <div class="d-flex align-items-center gap-1.5 mb-0.5">
-                                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill px-2 py-0.5" style="font-size: 0.72rem;">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
                                             <i class="bi bi-cart-check me-1"></i>Picking Rak
                                         </span>
                                     </div>
@@ -242,8 +229,8 @@
                                     @break
 
                                 @case(\App\Models\MaterialRequisition::STATUS_READY_FOR_PICKUP)
-                                    <div class="d-flex align-items-center gap-1.5 mb-0.5">
-                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0.5" style="font-size: 0.72rem;">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
                                             <i class="bi bi-box-arrow-up-right me-1"></i>Serah Terima
                                         </span>
                                     </div>
@@ -282,7 +269,7 @@
                         </td>
                         <td class="text-end">
                             <a href="{{ route('wms.mrf.show', $mrf) }}" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-medium" style="font-size: 0.78rem;">
-                                Detail <i class="bi bi-chevron-right ms-0.5"></i>
+                                Detail <i class="bi bi-chevron-right ms-1"></i>
                             </a>
                         </td>
                     </tr>
