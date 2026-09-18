@@ -511,6 +511,14 @@ class ProductionInputTest extends TestCase
         $this->assertSame(1, $ringkas['bisa_ditimpa']);
         $this->assertSame(0, $ringkas['terkunci']);
 
+        // Tanpa centang baris duplikat dilewati, dengan centang ia masuk.
+        // Kartu di layar harus mengikuti centangnya, bukan berhenti di salah
+        // satu keadaan saja.
+        $this->assertSame(0, $ringkas['akan_disimpan']);
+        $this->assertSame(1, $ringkas['akan_disimpan_timpa']);
+        $this->assertSame(0, $ringkas['palet_disimpan']);
+        $this->assertGreaterThan(0, $ringkas['palet_disimpan_timpa']);
+
         $baris = $preview->viewData('rows')[0];
         $this->assertSame(DuplikatProduksi::BISA_DITIMPA, $baris['duplikat']['keadaan']);
         $this->assertSame('IN-'.now()->format('ymd').'-001', $baris['duplikat']['dokumen']);
@@ -588,6 +596,17 @@ class ProductionInputTest extends TestCase
 
         $this->assertSame(1, $preview->viewData('summary')['terkunci']);
         $this->assertSame(0, $preview->viewData('summary')['bisa_ditimpa']);
+
+        // ANGKA LAYARNYA TIDAK BOLEH MEMBANTAH PERINGATANNYA SENDIRI.
+        // 'siap' berarti "terbaca utuh" dan tetap 1 di sini; yang dibaca kartu
+        // "Siap Disimpan" haruslah yang benar-benar akan tersimpan — nol,
+        // dicentang maupun tidak, karena paletnya sudah naik rak.
+        $ringkas = $preview->viewData('summary');
+        $this->assertSame(1, $ringkas['siap']);
+        $this->assertSame(0, $ringkas['akan_disimpan']);
+        $this->assertSame(0, $ringkas['akan_disimpan_timpa']);
+        $this->assertSame(0, $ringkas['palet_disimpan']);
+        $this->assertSame(0, $ringkas['palet_disimpan_timpa']);
 
         // Dicentang pun tetap ditolak — pagarnya di server, bukan di layar.
         $this->submit($preview, ['timpa' => 1])->assertSessionHas('error');

@@ -53,30 +53,69 @@
             </div>
         </div>
 
+        {{-- ANGKANYA HARUS SEJALAN DENGAN PERINGATAN DI BAWAHNYA.
+
+             Sebelumnya kartu ini membaca plan()['summary']['siap'], yang
+             berarti "barisnya terbaca utuh" — bukan "baris ini akan
+             tersimpan". Dua baris terkunci tetap terhitung siap, sehingga
+             layar menulis "Siap Disimpan 2" persis di atas peringatan merah
+             "2 baris tidak akan disimpan". Sekarang keduanya berasal dari
+             perhitungan yang sama, dan Baris Produksi = Siap + Tidak Disimpan
+             selalu genap. --}}
+        @php
+            $tidakDisimpan = $summary['total'] - $summary['akan_disimpan'];
+            $tidakDisimpanTimpa = $summary['total'] - $summary['akan_disimpan_timpa'];
+        @endphp
+
         <!-- Ringkasan -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-md-3">
-                <div class="border rounded-3 p-3">
+                <div class="border rounded-3 p-3 h-100">
                     <div class="text-muted small mb-1">Baris Produksi</div>
                     <div class="fs-4 fw-bold text-dark">{{ $summary['total'] }}</div>
+                    <div class="text-muted" style="font-size: 0.7rem;">Terbaca dari berkas</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="border border-success rounded-3 p-3 bg-success-subtle">
-                    <div class="text-success-emphasis small mb-1">Siap Disimpan</div>
-                    <div class="fs-4 fw-bold text-success">{{ $summary['siap'] }}</div>
+                <div class="border {{ $summary['akan_disimpan'] > 0 ? 'border-success bg-success-subtle' : '' }} rounded-3 p-3 h-100"
+                     data-kartu="siap">
+                    <div class="small mb-1 {{ $summary['akan_disimpan'] > 0 ? 'text-success-emphasis' : 'text-muted' }}">Siap Disimpan</div>
+                    <div class="fs-4 fw-bold {{ $summary['akan_disimpan'] > 0 ? 'text-success' : 'text-muted' }}"
+                         data-angka="siap"
+                         data-normal="{{ $summary['akan_disimpan'] }}"
+                         data-timpa="{{ $summary['akan_disimpan_timpa'] }}">{{ $summary['akan_disimpan'] }}</div>
+                    <div class="text-muted" style="font-size: 0.7rem;">Benar-benar masuk saat Submit</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="border border-primary rounded-3 p-3 bg-primary-subtle">
+                <div class="border border-primary rounded-3 p-3 bg-primary-subtle h-100">
                     <div class="text-primary-emphasis small mb-1">Total Palet</div>
-                    <div class="fs-4 fw-bold text-primary">{{ $summary['palet'] }}</div>
+                    <div class="fs-4 fw-bold text-primary"
+                         data-angka="palet"
+                         data-normal="{{ $summary['palet_disimpan'] }}"
+                         data-timpa="{{ $summary['palet_disimpan_timpa'] }}">{{ $summary['palet_disimpan'] }}</div>
+                    <div class="text-muted" style="font-size: 0.7rem;">Dari baris yang masuk saja</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="border {{ $summary['gagal'] > 0 ? 'border-danger bg-danger-subtle' : '' }} rounded-3 p-3">
-                    <div class="small mb-1 {{ $summary['gagal'] > 0 ? 'text-danger-emphasis' : 'text-muted' }}">Dilewati</div>
-                    <div class="fs-4 fw-bold {{ $summary['gagal'] > 0 ? 'text-danger' : 'text-muted' }}">{{ $summary['gagal'] }}</div>
+                <div class="border {{ $tidakDisimpan > 0 ? 'border-danger bg-danger-subtle' : '' }} rounded-3 p-3 h-100">
+                    <div class="small mb-1 {{ $tidakDisimpan > 0 ? 'text-danger-emphasis' : 'text-muted' }}">Tidak Disimpan</div>
+                    <div class="fs-4 fw-bold {{ $tidakDisimpan > 0 ? 'text-danger' : 'text-muted' }}"
+                         data-angka="tolak"
+                         data-normal="{{ $tidakDisimpan }}"
+                         data-timpa="{{ $tidakDisimpanTimpa }}">{{ $tidakDisimpan }}</div>
+                    {{-- Sebabnya disebut, karena "Tidak Disimpan 2" tanpa
+                         keterangan justru memaksa orang menebak. --}}
+                    <div class="text-muted" style="font-size: 0.7rem;">
+                        @if($tidakDisimpan === 0)
+                            Semua baris masuk
+                        @else
+                            @if($summary['gagal'] > 0)<div>{{ $summary['gagal'] }} datanya bermasalah</div>@endif
+                            @if($summary['terkunci'] > 0)<div>{{ $summary['terkunci'] }} terkunci</div>@endif
+                            @if($summary['bisa_ditimpa'] > 0)<div data-sebab="duplikat">{{ $summary['bisa_ditimpa'] }} duplikat</div>@endif
+                            <div data-sebab="kosong" hidden>Semua baris masuk</div>
+                        @endif
+                    </div>
                 </div>
             </div>
         </div>
@@ -98,8 +137,8 @@
             <div class="alert alert-danger border-0 small">
                 <i class="bi bi-lock-fill me-1"></i>
                 <strong>{{ $summary['terkunci'] }} baris tidak akan disimpan.</strong>
-                RMO + batch-nya sudah pernah masuk, dan paletnya sudah disentuh gudang —
-                sudah naik rak atau sudah diverifikasi. Barangnya sudah berdiri di rak dan
+                RMO + batch-nya sudah pernah masuk, dan paletnya sudah naik rak atau
+                sudah diverifikasi. Barangnya sudah berdiri di rak dan
                 angkanya sudah dihitung, jadi menimpanya akan membuat catatan sistem berbeda
                 dari isi gudang. Kalau ada yang keliru, perbaikannya lewat Koreksi Stok.
             </div>
@@ -109,7 +148,7 @@
             <div class="alert alert-warning border-0 small">
                 <i class="bi bi-exclamation-triangle-fill me-1"></i>
                 <strong>{{ $summary['bisa_ditimpa'] }} baris sudah pernah masuk</strong>
-                lewat dokumen yang paletnya belum disentuh gudang.
+                lewat dokumen yang paletnya belum naik rak.
                 Tanpa dicentang di bawah, baris-baris itu <strong>dilewati</strong> — dokumen lamanya tetap utuh.
             </div>
         @endif
@@ -176,10 +215,8 @@
                                     RMO + batch ini sudah ada di dokumen
                                     <strong class="font-monospace">{{ $row['duplikat']['dokumen'] }}</strong>
                                     ({{ $row['duplikat']['status'] }}) — {{ $row['duplikat']['palet'] }} palet.
-                                    @if($row['duplikat']['keadaan'] === 'terkunci')
-                                        <strong>{{ $row['duplikat']['tersentuh'] }} palet sudah disentuh gudang, jadi baris ini tidak bisa ditimpa.</strong>
-                                    @else
-                                        Belum ada palet yang disentuh gudang, jadi baris ini boleh ditimpa.
+                                    @if($row['duplikat']['keadaan'] !== 'terkunci')
+                                        Paletnya belum naik rak, jadi baris ini boleh ditimpa.
                                     @endif
                                 </td>
                             </tr>
@@ -230,12 +267,63 @@
                         <i class="bi bi-x-lg me-1"></i> Batal
                     </button>
                 </form>
+                {{-- Mati ketika tidak ada yang akan tersimpan, bukan ketika
+                     tidak ada yang terbaca. Tombol "Submit (4 palet)" yang
+                     menyimpan nol palet adalah janji yang tidak ditepati. --}}
                 <button type="submit" form="storeForm" class="btn btn-primary px-4 fw-bold shadow-sm"
-                        @disabled($summary['siap'] === 0)>
-                    <i class="bi bi-save me-1"></i> Submit ({{ $summary['palet'] }} palet)
+                        data-tombol-simpan
+                        @disabled($summary['akan_disimpan'] === 0 && $summary['akan_disimpan_timpa'] === 0)>
+                    <i class="bi bi-save me-1"></i> Submit (<span data-angka="palet"
+                        data-normal="{{ $summary['palet_disimpan'] }}"
+                        data-timpa="{{ $summary['palet_disimpan_timpa'] }}">{{ $summary['palet_disimpan'] }}</span> palet)
                 </button>
             </div>
         </div>
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+/* Centang "Timpa data yang sudah ada" mengubah apa yang akan tersimpan, jadi
+   angkanya ikut berubah. Tanpa ini kartunya tetap menyebut angka keadaan
+   tak-dicentang sementara tombolnya menyimpan lebih banyak — persis jenis
+   ketidakcocokan yang membuat layar ini sulit dipercaya sejak awal. */
+(function () {
+    const centang = document.getElementById('timpaDuplikat');
+    if (!centang) return;
+
+    const angka = document.querySelectorAll('[data-angka]');
+    const tombol = document.querySelector('[data-tombol-simpan]');
+    const sebabDuplikat = document.querySelectorAll('[data-sebab="duplikat"]');
+
+    function perbarui() {
+        const timpa = centang.checked;
+
+        angka.forEach(function (el) {
+            el.textContent = timpa ? el.dataset.timpa : el.dataset.normal;
+        });
+
+        sebabDuplikat.forEach(function (el) {
+            el.hidden = timpa;
+        });
+
+        // Kalau duplikat tadi satu-satunya sebab, mencentang Timpa membuat
+        // kartunya kosong tanpa keterangan — bukan nol yang menjelaskan diri.
+        const tolak = document.querySelector('[data-angka="tolak"]');
+        const kosong = document.querySelector('[data-sebab="kosong"]');
+        if (tolak && kosong) {
+            kosong.hidden = Number(tolak.textContent) !== 0;
+        }
+
+        if (tombol) {
+            const siap = document.querySelector('[data-angka="siap"]');
+            tombol.disabled = siap ? Number(siap.textContent) === 0 : false;
+        }
+    }
+
+    centang.addEventListener('change', perbarui);
+    perbarui();
+})();
+</script>
+@endpush
