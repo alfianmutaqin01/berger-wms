@@ -784,15 +784,25 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->defaults('type', 'delivery-notes')
                 ->name('wms.delivery.import.cancel');
 
-            // URUTAN PENTING: '/delivery/import*' di atas harus didaftarkan
-            // SEBELUM '/delivery/{note}', kalau tidak "import" tertangkap
-            // sebagai id dokumen.
+            // Pesanan yang sudah dipicking tetapi belum berangkat. Alasan
+            // halaman ini ada di DeliveryController::siapKirim().
+            Route::get('/delivery/siap-kirim', [DeliveryController::class, 'siapKirim'])
+                ->name('wms.delivery.siap-kirim');
+
+            // URUTAN PENTING: '/delivery/import*' dan '/delivery/siap-kirim'
+            // di atas harus didaftarkan SEBELUM '/delivery/{note}', kalau
+            // tidak keduanya tertangkap sebagai id dokumen.
             Route::get('/delivery/{note}', [DeliveryController::class, 'show'])
                 ->name('wms.delivery.show');
             Route::post('/delivery/{note}/ship', [DeliveryController::class, 'ship'])
                 ->name('wms.delivery.ship');
             Route::post('/delivery/{note}/resend', [DeliveryController::class, 'resend'])
                 ->name('wms.delivery.resend');
+
+            // Jalan keluar saat supir tidak bisa menekan konfirmasinya
+            // sendiri — alasannya di Shipment::markArrivedManually().
+            Route::post('/delivery/{note}/tandai-sampai', [DeliveryController::class, 'markArrived'])
+                ->name('wms.delivery.tandai-sampai');
 
             // Foto bukti sampai yang dijepret supir (Fase 12). Lewat rute
             // berizin, BUKAN dari folder publik: fotonya memperlihatkan

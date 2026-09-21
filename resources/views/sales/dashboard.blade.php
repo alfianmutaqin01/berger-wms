@@ -280,7 +280,7 @@
                             <div class="min-w-0">
                                 <div class="fw-bold text-dark small" style="font-size: 0.78rem;">Menunggu Foto Bukti</div>
                                 <div class="text-muted small text-truncate" style="font-size: 0.68rem;">
-                                    Barang sudah jalan. Pesanan belum dianggap selesai sampai buktinya masuk.
+                                    Barang sudah sampai di tujuan. Pesanan belum selesai sampai buktinya masuk.
                                 </div>
                             </div>
                         </div>
@@ -298,7 +298,7 @@
                 <span class="fw-bold small text-dark" style="font-size: 0.78rem;">
                     <i class="bi bi-camera me-1 text-primary"></i> Unggah Bukti Kirim
                 </span>
-                <a href="/sales/my-orders?status=shipping" class="text-decoration-none small text-muted" style="font-size: 0.72rem;">Semua</a>
+                <a href="/sales/my-orders?status=proof_uploaded" class="text-decoration-none small text-muted" style="font-size: 0.72rem;">Semua</a>
             </div>
             <div class="list-group list-group-flush">
                 @foreach($m['daftar_bukti'] as $pesanan)
@@ -307,7 +307,7 @@
                             <div class="fw-bold text-truncate text-dark" style="font-size: 0.82rem;">{{ $pesanan->customer?->name ?? '—' }}</div>
                             <div class="text-muted small" style="font-size: 0.7rem;">
                                 {{ $pesanan->order_number }}
-                                @if($pesanan->shipped_at) &middot; {{ $pesanan->shipped_at->diffForHumans(short: true) }} @endif
+                                @if($pesanan->delivered_at) &middot; sampai {{ $pesanan->delivered_at->diffForHumans(short: true) }} @endif
                             </div>
                         </div>
                         <a href="/sales/orders/{{ $pesanan->id }}" class="btn btn-sm btn-primary rounded-pill px-2.5 py-0.5 flex-shrink-0" style="font-size: 0.75rem;">

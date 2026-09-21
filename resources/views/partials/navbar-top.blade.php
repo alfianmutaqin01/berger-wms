@@ -72,11 +72,11 @@
                                            halamannya. Dua hal sekaligus, supaya
                                            loncengnya tidak tetap merah sesudah
                                            pekerjaannya dikerjakan. --}}
-                                      <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1 {{ $n->read_at ? 'opacity-75' : '' }}"
+                                      <a class="dropdown-item d-flex gap-3 align-items-start rounded px-2 py-2 mb-1"
                                          href="{{ route('wms.notifications.open', $n) }}" style="white-space: normal;">
                                           <div class="mt-1"><i class="bi {{ $n->ikon }} text-{{ $n->warna }} fs-5"></i></div>
                                           <div class="flex-grow-1">
-                                              <small class="fw-bold d-block text-{{ $n->read_at ? 'dark' : $n->warna }} mb-1">{{ $n->title }}</small>
+                                              <small class="fw-bold d-block text-{{ $n->warna }} mb-1">{{ $n->title }}</small>
                                               <small class="text-muted text-wrap d-block lh-sm mb-2" style="font-size: 0.8rem;">{{ $n->body }}</small>
                                               <small class="text-muted d-block" style="font-size: 0.7rem;">
                                                   <i class="bi bi-clock me-1"></i>{{ $n->created_at?->diffForHumans() }}
@@ -84,9 +84,12 @@
                                           </div>
                                       </a>
                                   @empty
+                                      {{-- "Belum ada notifikasi" akan bohong: yang
+                                           sudah dibaca tetap ada, hanya tidak
+                                           ditampilkan di sini lagi. --}}
                                       <div class="text-center text-muted small py-4">
                                           <i class="bi bi-bell-slash fs-4 d-block mb-2 opacity-50"></i>
-                                          Belum ada notifikasi.
+                                          Tidak ada notifikasi baru.
                                       </div>
                                   @endforelse
                               </div>

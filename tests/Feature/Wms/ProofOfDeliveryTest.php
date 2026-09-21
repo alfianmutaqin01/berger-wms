@@ -129,7 +129,8 @@ class ProofOfDeliveryTest extends TestCase
     public function test_sales_mengunggah_foto_surat_jalan(): void
     {
         $sales = $this->login($this->karawang, Role::SALES);
-        $order = $this->pesananTerkirim($sales, null, ['status' => SalesOrder::STATUS_SHIPPING]);
+        // Sudah dinyatakan sampai supir — itu syarat terbukanya unggahan.
+        $order = $this->pesananTerkirim($sales);
 
         $this->unggah($order, [$this->foto(), $this->foto('sj-2.jpg')])
             ->assertSessionHas('success');
@@ -144,6 +145,148 @@ class ProofOfDeliveryTest extends TestCase
         // Disk PRIVAT. Kalau ini pindah ke 'public', foto tanda tangan
         // pelanggan bisa diunduh siapa pun yang menebak nama berkasnya.
         Storage::disk('local')->assertExists($order->proofs()->first()->path);
+    }
+
+    /**
+     * BUKTI BARU TERBUKA SETELAH SUPIR MENYATAKAN SAMPAI (keputusan pemilik
+     * produk, membalik aturan sebelumnya).
+     *
+     * Dulu status SHIPPING sudah cukup, dengan alasan Sales kerap memegang
+     * Surat Jalan bertanda tangan sebelum supir sempat menekan tautannya.
+     * Akibatnya layar Sales meminta bukti untuk barang yang menurut sistem
+     * masih di jalan — dan bukti bisa masuk untuk kiriman yang ternyata tidak
+     * pernah sampai. Yang menandai barang benar-benar tiba hanya satu:
+     * konfirmasi supir, dan konfirmasi itulah yang mengabari Sales.
+     */
+    public function test_bukti_ditolak_selama_supir_belum_konfirmasi_sampai(): void
+    {
+        $sales = $this->login($this->karawang, Role::SALES);
+
+        $order = $this->pesananTerkirim($sales, null, [
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'delivered_at' => null,
+        ]);
+
+        $this->unggah($order, [$this->foto()])->assertSessionHas('error');
+
+        $this->assertSame(0, $order->proofs()->count());
+        $this->assertSame(SalesOrder::STATUS_SHIPPING, $order->fresh()->status);
+    }
+
+    /**
+     * Formulirnya ikut hilang, bukan cuma ditolak server. Tombol yang bisa
+     * ditekan lalu selalu gagal mengajari orang bahwa sistemnya rusak.
+     */
+    public function test_layar_sales_menjelaskan_kenapa_unggahan_belum_terbuka(): void
+    {
+        $sales = $this->login($this->karawang, Role::SALES);
+
+        $order = $this->pesananTerkirim($sales, null, [
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'delivered_at' => null,
+        ]);
+
+        $this->get('/sales/orders/'.$order->id)
+            ->assertOk()
+            ->assertSee('masih dalam perjalanan')
+            ->assertDontSee('name="photos[]"', false);
+    }
+
+    /**
+     * Jalan keluar supaya aturan ketat di atas tidak berubah jadi jalan buntu.
+     *
+     * Tanpa ini, supir yang kehilangan tautan ePOD-nya membuat pesanan macet
+     * selamanya: Sales tidak boleh mengunggah, Logistik tidak punya yang
+     * diverifikasi, dan tidak ada seorang pun di sistem yang bisa menutupnya.
+     */
+    public function test_logistik_bisa_menandai_sampai_saat_supir_tidak_bisa(): void
+    {
+        $sales = User::factory()->withRole(Role::SALES)->create(['warehouse_id' => $this->karawang->id]);
+
+        $order = $this->pesananTerkirim($sales, null, [
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'delivered_at' => null,
+        ]);
+
+        $note = DeliveryNote::factory()->create([
+            'sales_order_id' => $order->id,
+            'warehouse_id' => $this->karawang->id,
+            'bc_so_number' => $order->bc_so_number,
+            'status' => DeliveryNote::STATUS_SHIPPED,
+            'shipped_at' => now()->subHours(5),
+            'delivered_at' => null,
+        ]);
+
+        $logistik = $this->login($this->karawang, Role::LOGISTICS);
+
+        $this->post(route('wms.delivery.tandai-sampai', $note), [
+            'received_by_name' => 'Bu Sri',
+            'arrival_manual_reason' => 'HP supir mati, dikonfirmasi lewat telepon ke tokonya.',
+        ])->assertSessionHas('success');
+
+        $note->refresh();
+
+        $this->assertSame(DeliveryNote::STATUS_DELIVERED, $note->status);
+        $this->assertNotNull($note->delivered_at);
+        // Sumbernya TIDAK boleh terbaca sama dengan kesaksian supir.
+        $this->assertSame($logistik->id, $note->arrival_manual_by);
+        $this->assertStringContainsString('HP supir mati', $note->arrival_manual_reason);
+
+        // Dan pintunya benar-benar terbuka untuk Sales.
+        $this->assertSame(SalesOrder::STATUS_PROOF_UPLOADED, $order->fresh()->status);
+    }
+
+    /**
+     * INVARIAN BASIS DATA, bukan hanya aturan PHP.
+     *
+     * Trigger delivery_notes_sampai_wajib_berfoto menolak kedatangan yang
+     * tidak dijelaskan siapa pun. Jalur manual memperluasnya — foto ATAU
+     * penandaan beralasan — dan yang diuji di sini adalah bahwa perluasan itu
+     * tidak berubah menjadi lubang: "delivered" tanpa foto DAN tanpa
+     * penandaan manual tetap ditolak, walau ditulis langsung ke tabelnya.
+     */
+    public function test_sampai_tanpa_foto_dan_tanpa_penandaan_manual_tetap_ditolak_basis_data(): void
+    {
+        $note = DeliveryNote::factory()->create([
+            'warehouse_id' => $this->karawang->id,
+            'status' => DeliveryNote::STATUS_SHIPPED,
+            'shipped_at' => now()->subHours(5),
+            'delivered_at' => null,
+        ]);
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
+        $note->forceFill([
+            'status' => DeliveryNote::STATUS_DELIVERED,
+            'delivered_at' => now(),
+        ])->save();
+    }
+
+    /** Alasan wajib: tanpa itu tidak ada yang bisa menjelaskannya kemudian. */
+    public function test_tandai_sampai_tanpa_alasan_ditolak(): void
+    {
+        $order = $this->pesananTerkirim(null, null, [
+            'status' => SalesOrder::STATUS_SHIPPING,
+            'delivered_at' => null,
+        ]);
+
+        $note = DeliveryNote::factory()->create([
+            'sales_order_id' => $order->id,
+            'warehouse_id' => $this->karawang->id,
+            'bc_so_number' => $order->bc_so_number,
+            'status' => DeliveryNote::STATUS_SHIPPED,
+            'shipped_at' => now()->subHours(5),
+            'delivered_at' => null,
+        ]);
+
+        $this->login($this->karawang, Role::LOGISTICS);
+
+        $this->post(route('wms.delivery.tandai-sampai', $note), [
+            'received_by_name' => 'Bu Sri',
+            'arrival_manual_reason' => '',
+        ])->assertSessionHasErrors('arrival_manual_reason');
+
+        $this->assertNull($note->fresh()->delivered_at);
     }
 
     public function test_pesanan_sales_lain_dijawab_404(): void

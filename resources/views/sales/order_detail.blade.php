@@ -147,10 +147,15 @@
 
         <!-- ============ Bukti Surat Jalan (F-OUT-05) ============ -->
         @php
-            $bolehUnggah = in_array($order->status, [
-                \App\Models\SalesOrder::STATUS_SHIPPING,
-                \App\Models\SalesOrder::STATUS_PROOF_UPLOADED,
-            ], true) && $order->cancelled_at === null;
+            // Cerminan ProofOfDelivery::BOLEH_UNGGAH. Keduanya WAJIB berubah
+            // bersamaan: yang di sini hanya menyembunyikan formulir, yang
+            // menolak unggahannya ada di sana.
+            $bolehUnggah = $order->status === \App\Models\SalesOrder::STATUS_PROOF_UPLOADED
+                && $order->cancelled_at === null;
+
+            // Dibedakan dari "belum berangkat": yang ini sudah jalan dan
+            // tinggal menunggu satu ketukan supir.
+            $masihDiJalan = $order->status === \App\Models\SalesOrder::STATUS_SHIPPING;
 
             $sudahSelesai = in_array($order->status, [
                 \App\Models\SalesOrder::STATUS_COMPLETED,
@@ -158,7 +163,10 @@
             ], true);
         @endphp
 
-        @if($bolehUnggah || $bukti->isNotEmpty())
+        {{-- Yang masih di jalan tetap menampilkan kartunya, berisi keterangan
+             kenapa tombolnya belum ada. Menyembunyikannya sama sekali membuat
+             Sales mengira fiturnya hilang lalu menelepon Logistik. --}}
+        @if($bolehUnggah || $masihDiJalan || $bukti->isNotEmpty())
         <div class="card border-0 shadow-sm rounded-4 mb-3">
             <div class="card-header bg-white border-bottom-0 pt-3 px-3 px-md-4">
                 <h6 class="fw-bold mb-0"><i class="bi bi-camera text-primary me-2"></i>Bukti Surat Jalan</h6>
@@ -209,8 +217,15 @@
                     <div class="alert alert-success border-0 small mb-0 py-2">
                         <i class="bi bi-check2-circle me-1"></i> Bukti sudah diverifikasi Logistik. Pesanan selesai.
                     </div>
+                @elseif($masihDiJalan)
+                    <div class="alert alert-info border-0 small mb-0 py-2">
+                        <i class="bi bi-truck me-1"></i>
+                        Barang masih dalam perjalanan. Unggahan bukti terbuka setelah supir menekan
+                        <strong>&ldquo;sampai di tujuan&rdquo;</strong> &mdash; Anda akan dikabari lewat lonceng
+                        dan WhatsApp saat itu terjadi.
+                    </div>
                 @elseif(! $bolehUnggah)
-                    <div class="text-muted small">Bukti bisa diunggah setelah barang berangkat.</div>
+                    <div class="text-muted small">Bukti bisa diunggah setelah barang dinyatakan sampai.</div>
                 @elseif($sisaKuotaBukti < 1)
                     <div class="text-muted small">
                         Sudah ada {{ \App\Models\DeliveryProof::maksFoto() }} foto yang berlaku. Menunggu diperiksa Logistik.

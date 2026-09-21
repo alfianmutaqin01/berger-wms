@@ -1313,4 +1313,85 @@ class MaterialRequisitionTest extends TestCase
 
         $this->get(route('wms.mrf.edit', $mrf->refresh()))->assertForbidden();
     }
+
+    /* ------------------------------------------- Siap Loading dua baris ke atas */
+
+    /**
+     * DUA SKU, bukan satu — dan justru jumlah barisnya yang jadi pokok soal.
+     *
+     * Model::preventLazyLoading() hanya menyala pada baris yang datang dari
+     * query berisi LEBIH DARI SATU baris (Builder::hydrate()). Daftar picking
+     * satu baris karena itu memaafkan relasi yang dibaca tanpa dimuat, dan
+     * seluruh test MRF yang ada memakai satu SKU — sehingga jalur ini hijau
+     * sampai operator menekan Siap Loading atas permintaan dua SKU di layar
+     * sungguhan dan mendapat "Attempted to lazy load [allocation]".
+     *
+     * Yang dijaga di sini BUKAN sekadar lolos, melainkan lolos dengan dua
+     * baris: mengecilkannya kembali ke satu SKU membuat test ini tidak
+     * membuktikan apa pun lagi.
+     */
+    public function test_siap_loading_mrf_dua_sku_tidak_melempar_lazy_loading(): void
+    {
+        $produkLain = Product::factory()->create(['sku' => 'APKO-002', 'uom' => 'PAIL', 'is_active' => true]);
+
+        $stokSatu = $this->stok(500);
+        $stokDua = $this->stok(400, ['product_id' => $produkLain->id, 'batch_no' => 'BT-2602']);
+
+        $this->loginAt(Role::PRODUCTION);
+
+        $this->post(route('wms.mrf.store'), [
+            'warehouse_id' => $this->karawang->id,
+            'request_type' => MaterialRequisition::TYPE_REPROSES,
+            'purpose' => 'Reproses dua warna sekaligus.',
+            'approver_name' => 'Pak Gandhi',
+            'approver_phone' => '081234567890',
+            'items' => [
+                ['product_id' => $this->produk->id, 'qty' => 300],
+                ['product_id' => $produkLain->id, 'qty' => 200],
+            ],
+        ])->assertRedirect();
+
+        $mrf = $this->disetujuiAtasan(MaterialRequisition::latest('id')->firstOrFail());
+
+        $this->loginAt(Role::LOGISTICS);
+
+        $baris = $mrf->items()->orderBy('id')->get();
+
+        $this->post(route('wms.mrf.approve', $mrf), [
+            'baris' => [
+                ['item_id' => $baris[0]->id, 'stock_id' => $stokSatu->id, 'qty' => 300],
+                ['item_id' => $baris[1]->id, 'stock_id' => $stokDua->id, 'qty' => 200],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $mrf->refresh();
+
+        $daftar = PickingList::findOrFail($mrf->picking_list_id);
+
+        // Dasar seluruh test ini. Kalau daftarnya menyusut jadi satu baris,
+        // preventLazyLoading tidak menyala dan yang di bawah tidak membuktikan apa-apa.
+        $this->assertSame(2, $daftar->items()->count(), 'Daftar picking harus dua baris agar preventLazyLoading menyala.');
+
+        // Yang menekan Siap Loading harus orang yang sama dengan yang mengklaim
+        // daftarnya, jadi operatornya diambil dari sesi yang login.
+        $operator = $this->loginAt(Role::WAREHOUSE_OPERATOR);
+
+        $picking = app(PickingRun::class);
+        $picking->claim($daftar, $operator);
+
+        foreach ($daftar->items as $item) {
+            $picking->pick($item, $operator);
+        }
+
+        $this->post(route('wms.picking.complete', $daftar), [
+            'handover_location_id' => $this->rakSerah->id,
+        ])->assertSessionHasNoErrors();
+
+        // Galat lazy loading tidak menjatuhkan halaman — ia ditangkap
+        // catch (RuntimeException) di controller dan berubah jadi pesan merah,
+        // jadi yang membuktikan berhasil adalah status MRF-nya, bukan HTTP-nya.
+        $this->assertNull(session('error'));
+        $this->assertSame(MaterialRequisition::STATUS_RECEIVED, $mrf->refresh()->status);
+        $this->assertSame(500, ProductionMaterialHolding::sum('qty_received'));
+    }
 }

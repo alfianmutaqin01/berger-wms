@@ -82,6 +82,11 @@ class Reshipment
                 ->lockForUpdate()
                 ->get();
 
+            // Induknya sudah dipegang dan sudah terkunci, jadi dipasang
+            // langsung alih-alih dimuat ulang: FifoAllocator membaca
+            // $detail->salesOrder untuk tahu gudangnya.
+            $baris->each(fn (SalesOrderDetail $detail) => $detail->setRelation('salesOrder', $terkunci));
+
             if ($baris->isEmpty()) {
                 throw new RuntimeException(sprintf(
                     'Pesanan %s tidak punya kekurangan yang tersisa — seluruhnya sudah terkirim.',

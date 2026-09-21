@@ -156,6 +156,10 @@ class PendingAllocationFiller
     private function menunggu(int $productId, int $warehouseId)
     {
         return SalesOrderDetail::query()
+            // Baris di sini ditarik lepas dari induknya, jadi chaperone() pada
+            // SalesOrder::details() tidak menolong — induknya dimuat sendiri.
+            // Dibaca di antreanJanji() (urutan janji) dan oleh FifoAllocator.
+            ->with('salesOrder')
             ->where('sales_order_details.product_id', $productId)
             ->whereHas('salesOrder', fn ($q) => $q
                 ->where('warehouse_id', $warehouseId)

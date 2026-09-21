@@ -321,6 +321,13 @@
                             <li class="nav-item {{ request()->is('wms/outbound/delivery') ? 'active' : '' }}">
                                 <a href="/wms/outbound/delivery" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Surat Jalan (BC)</span></a>
                             </li>
+                            {{-- Pintu sendiri, bukan hanya tautan dari kartu di
+                                 halaman Surat Jalan: pesanan yang sudah turun
+                                 dari rak tetapi belum berangkat tidak muncul di
+                                 layar mana pun kalau dokumennya belum terbit. --}}
+                            <li class="nav-item {{ request()->is('wms/outbound/delivery/siap-kirim') ? 'active' : '' }}">
+                                <a href="/wms/outbound/delivery/siap-kirim" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Siap Kirim</span></a>
+                            </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_VERIFICATION)
                             <li class="nav-item {{ request()->is('wms/outbound/verification') ? 'active' : '' }}">

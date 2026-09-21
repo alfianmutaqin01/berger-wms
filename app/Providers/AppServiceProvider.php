@@ -127,8 +127,14 @@ class AppServiceProvider extends ServiceProvider
                     ->milik($userId)
                     ->belumDibaca()
                     ->count(),
+                // HANYA YANG BELUM DIBACA. Lonceng adalah daftar pekerjaan yang
+                // belum disentuh, bukan riwayat: begitu yang sudah dibaca ikut
+                // mengantre di sini, lima slotnya habis dipakai kabar lama dan
+                // yang baru masuk tidak kelihatan. Riwayat lengkapnya ada di
+                // halaman "Semua Notifikasi" lewat tautan di kaki dropdown.
                 'loncengTerbaru' => $userId === null ? collect() : Notification::query()
                     ->milik($userId)
+                    ->belumDibaca()
                     ->latest('created_at')
                     ->latest('id')
                     ->limit(Notification::JUMLAH_DI_LONCENG)

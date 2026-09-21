@@ -252,8 +252,35 @@ class NotificationTest extends TestCase
 
         $html = $this->get('/wms/dashboard/admin')->assertOk()->getContent();
 
-        $this->assertStringContainsString('Belum ada notifikasi', $html);
+        $this->assertStringContainsString('Tidak ada notifikasi baru', $html);
         $this->assertStringNotContainsString('bi-bell-fill', $html);
+    }
+
+    /**
+     * Lonceng = pekerjaan yang belum disentuh, bukan riwayat. Lima slotnya
+     * terbatas; kalau yang sudah dibaca ikut mengantre, kabar lama mendorong
+     * yang baru keluar dari daftar dan orang berhenti membuka loncengnya.
+     * Riwayatnya tetap utuh di halaman "Semua Notifikasi".
+     */
+    public function test_notifikasi_yang_sudah_dibaca_hilang_dari_lonceng(): void
+    {
+        $saya = $this->masuk($this->buat(Role::LOGISTICS, $this->karawang));
+
+        $dibaca = $this->kirim($saya->id);
+        $dibaca->forceFill(['read_at' => now(), 'title' => 'Kabar yang sudah dibaca'])->save();
+
+        $baru = $this->kirim($saya->id);
+        $baru->forceFill(['title' => 'Kabar yang belum dibaca'])->save();
+
+        $html = $this->get('/wms/dashboard/admin')->assertOk()->getContent();
+
+        $this->assertStringContainsString('Kabar yang belum dibaca', $html);
+        $this->assertStringNotContainsString('Kabar yang sudah dibaca', $html);
+
+        // Tetap bisa ditemukan di halaman penuh — disembunyikan, bukan dibuang.
+        $this->get(route('wms.notifications.index'))
+            ->assertOk()
+            ->assertSee('Kabar yang sudah dibaca');
     }
 
     /**

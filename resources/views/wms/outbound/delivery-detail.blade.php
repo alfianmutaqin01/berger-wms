@@ -457,9 +457,51 @@
                         @if($note->received_by_name)
                             <div class="text-muted">Diterima {{ $note->received_by_name }}</div>
                         @endif
+                        {{-- DIBEDAKAN DARI KESAKSIAN SUPIR. Yang menandai
+                             manual tidak berdiri di tempat tujuan; menampilkan
+                             keduanya sama membuat orang yang memeriksa
+                             pengiriman bermasalah salah membaca sumbernya. --}}
+                        @if($note->arrival_manual_by)
+                            <div class="mt-1">
+                                <span class="badge bg-warning-subtle text-warning-emphasis">Ditandai manual oleh Logistik</span>
+                                <div class="text-muted small mt-1">{{ $note->arrival_manual_reason }}</div>
+                            </div>
+                        @endif
                     </dd>
                     @endif
                 </dl>
+
+                {{-- JALAN KELUAR, bukan jalan pintas: hanya muncul pada
+                     pengiriman yang sudah berangkat tetapi belum dikonfirmasi
+                     supir. Tanpa ini, supir yang kehilangan tautannya membuat
+                     pesanan itu macet tanpa ada yang bisa menutupnya. --}}
+                @if($note->status === \App\Models\DeliveryNote::STATUS_SHIPPED)
+                <div class="border rounded-3 p-3 mt-3 bg-light-subtle">
+                    <div class="fw-semibold small mb-1">Supir tidak bisa konfirmasi?</div>
+                    <p class="text-muted small mb-2">
+                        Pakai ini hanya kalau supir benar-benar tidak bisa menekan tautannya sendiri —
+                        tautannya hilang, HP mati, atau nomornya salah. Tercatat atas nama Anda.
+                    </p>
+                    <form method="POST" action="{{ route('wms.delivery.tandai-sampai', $note) }}">
+                        @csrf
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-1">Nama penerima</label>
+                            <input type="text" name="received_by_name" maxlength="100" required
+                                   class="form-control form-control-sm rounded-3"
+                                   value="{{ old('received_by_name') }}" placeholder="Siapa yang menerima barangnya">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-1">Alasan</label>
+                            <textarea name="arrival_manual_reason" rows="2" maxlength="500" required
+                                      class="form-control form-control-sm rounded-3"
+                                      placeholder="Kenapa supir tidak menekan konfirmasinya sendiri">{{ old('arrival_manual_reason') }}</textarea>
+                        </div>
+                        <button class="btn btn-sm btn-outline-warning rounded-3">
+                            <i class="bi bi-check2-circle me-1"></i> Tandai Sampai
+                        </button>
+                    </form>
+                </div>
+                @endif
 
                 {{-- FOTO BUKTI SAMPAI (Fase 12).
 

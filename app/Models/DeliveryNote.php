@@ -62,6 +62,7 @@ class DeliveryNote extends Model
         'driver_name', 'driver_phone', 'vehicle_plate',
         'shipped_at', 'shipped_by', 'epod_token', 'epod_expires_at',
         'delivered_at', 'received_by_name',
+        'arrival_manual_by', 'arrival_manual_reason',
         'arrival_photo_path', 'arrival_photo_mime', 'arrival_photo_size',
         'arrival_photo_source', 'arrival_photo_taken_at',
         'notify_status', 'notify_attempts', 'notified_at', 'notify_error',

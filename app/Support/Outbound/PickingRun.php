@@ -256,7 +256,22 @@ class PickingRun
             // Diurutkan menurut id baris stok. Dua daftar yang kebetulan
             // menyentuh batch yang sama akan mengunci barisnya dalam urutan
             // yang sama pula, sehingga keduanya tidak saling menunggu.
-            $baris = $daftar->items()->orderBy('inventory_stock_id')->orderBy('id')->get();
+            //
+            // Relasinya ikut dimuat karena keluarkanDariRak() membacanya:
+            // transferDetail/allocation menentukan dokumen mana yang dirujuk
+            // mutasinya, sementara product dan location hanya dipakai menyusun
+            // pesan galat — justru yang itu paling mudah terlewat, karena baru
+            // tersentuh ketika baris stoknya sudah hilang.
+            $baris = $daftar->items()
+                ->with([
+                    'product:id,sku',
+                    'location:id,code',
+                    'transferDetail.transfer.toWarehouse:id,name',
+                    'allocation.requisition',
+                ])
+                ->orderBy('inventory_stock_id')
+                ->orderBy('id')
+                ->get();
 
             foreach ($baris as $item) {
                 $hasil = $this->keluarkanDariRak($item, $daftar, $operator->id);
