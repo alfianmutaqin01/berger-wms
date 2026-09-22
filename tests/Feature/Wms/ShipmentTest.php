@@ -28,6 +28,7 @@ use App\Models\Warehouse;
 use App\Support\Messaging\DispatchResult;
 use App\Support\Messaging\PesanWhatsApp;
 use App\Support\Messaging\WhatsAppSender;
+use App\Support\Outbound\DeliveryArrival;
 use App\Support\Outbound\FifoAllocator;
 use App\Support\Outbound\Shipment;
 use Illuminate\Database\QueryException;
@@ -1151,7 +1152,7 @@ class ShipmentTest extends TestCase
 
         $this->expectException(RuntimeException::class);
 
-        app(Shipment::class)->confirmDelivery($note->fresh(), 'Ibu Sari', []);
+        app(DeliveryArrival::class)->confirmDelivery($note->fresh(), 'Ibu Sari', []);
     }
 
     /**

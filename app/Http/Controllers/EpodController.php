@@ -11,7 +11,7 @@ use App\Support\Activity;
 use App\Support\Messaging\EmailSales;
 use App\Support\Notifier;
 use App\Support\Outbound\ArrivalPhoto;
-use App\Support\Outbound\Shipment;
+use App\Support\Outbound\DeliveryArrival;
 use App\Support\Permission;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,7 +42,7 @@ use RuntimeException;
 class EpodController extends Controller
 {
     public function __construct(
-        private readonly Shipment $pengiriman,
+        private readonly DeliveryArrival $kedatangan,
         private readonly ArrivalPhoto $foto,
     ) {}
 
@@ -89,7 +89,7 @@ class EpodController extends Controller
         );
 
         try {
-            $this->pengiriman->confirmDelivery($note, $data['received_by_name'] ?? null, $foto);
+            $this->kedatangan->confirmDelivery($note, $data['received_by_name'] ?? null, $foto);
         } catch (RuntimeException $e) {
             // Konfirmasinya batal, jadi fotonya tidak boleh tertinggal:
             // berkas yatim yang tidak ditunjuk siapa pun akan menumpuk diam-

@@ -9,7 +9,7 @@ use App\Models\MrfRequestLink;
 use App\Models\Product;
 use App\Support\Activity;
 use App\Support\PhoneNumber;
-use App\Support\Production\MaterialRequisitionRun;
+use App\Support\Production\MaterialRequisitionSubmission;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -50,7 +50,7 @@ class MrfRequestLinkController extends Controller
     /** Batas saran yang dikirim ke layar. */
     private const MAKS_SARAN = 10;
 
-    public function __construct(private readonly MaterialRequisitionRun $mrf) {}
+    public function __construct(private readonly MaterialRequisitionSubmission $mrf) {}
 
     public function show(string $token): View
     {

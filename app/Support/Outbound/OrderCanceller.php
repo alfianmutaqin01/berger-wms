@@ -41,7 +41,7 @@ class OrderCanceller
 {
     public function __construct(
         private readonly PickingListBuilder $penyusunDaftar,
-        private readonly PickingRun $picking,
+        private readonly PickedStockReturn $kembaliKeRak,
     ) {}
 
     /** Status yang masih boleh dibatalkan — barangnya belum berangkat. */
@@ -73,7 +73,7 @@ class OrderCanceller
             // tidak menemukan apa pun untuk dikembalikan. Tanpa langkah ini,
             // membatalkan pesanan yang sudah dipicking membuat stoknya
             // lenyap tanpa jejak: barangnya ada di dock, angkanya tidak.
-            $qtyDikembalikan = $this->picking->kembalikanHasilPicking($terkunci, $userId);
+            $qtyDikembalikan = $this->kembaliKeRak->kembalikanHasilPicking($terkunci, $userId);
 
             // Daftar yang BELUM selesai cukup melepaskan pesanan ini. Baris
             // pickingnya menunjuk cadangan yang sebentar lagi dilepas, dan

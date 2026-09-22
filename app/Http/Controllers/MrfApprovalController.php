@@ -8,7 +8,7 @@ use App\Models\Notification;
 use App\Support\Activity;
 use App\Support\Notifier;
 use App\Support\Permission;
-use App\Support\Production\MaterialRequisitionRun;
+use App\Support\Production\MaterialRequisitionDecision;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -39,7 +39,7 @@ use RuntimeException;
  */
 class MrfApprovalController extends Controller
 {
-    public function __construct(private readonly MaterialRequisitionRun $mrf) {}
+    public function __construct(private readonly MaterialRequisitionDecision $mrf) {}
 
     public function show(string $token): View
     {
