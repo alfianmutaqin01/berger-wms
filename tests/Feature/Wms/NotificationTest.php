@@ -218,6 +218,51 @@ class NotificationTest extends TestCase
         $this->assertNotNull($n->fresh()->read_at);
     }
 
+    /**
+     * Tautan disimpan tanpa host. route() di antrean memakai APP_URL; begitu
+     * IP laptop berganti karena DHCP, alamat lengkap itu menuju host mati.
+     */
+    public function test_tautan_disimpan_tanpa_host(): void
+    {
+        $saya = $this->buat(Role::LOGISTICS, $this->karawang);
+
+        Notifier::toUser(
+            $saya->id,
+            Notification::ORDER_PENDING,
+            'Pesanan baru',
+            'Isi.',
+            'http://10.10.11.8:8080/wms/admin/users?search=dwi%40berger.co.id#baris',
+        );
+
+        $this->assertSame(
+            '/wms/admin/users?search=dwi%40berger.co.id#baris',
+            Notification::where('user_id', $saya->id)->value('url'),
+        );
+    }
+
+    /** Baris lama di basis data masih membawa host tempat ia dibuat. */
+    public function test_notifikasi_lama_berhost_mati_tetap_mengantar_ke_halamannya(): void
+    {
+        $saya = $this->masuk($this->buat(Role::LOGISTICS, $this->karawang));
+        $n = $this->kirim($saya->id);
+        $n->forceFill(['url' => 'http://10.10.11.8:8080/wms/outbound/approval?warehouse=2'])->save();
+
+        $this->get(route('wms.notifications.open', $n))
+            ->assertRedirect('/wms/outbound/approval?warehouse=2');
+    }
+
+    public function test_tautan_ke_situs_luar_tidak_membawa_keluar_aplikasi(): void
+    {
+        $saya = $this->masuk($this->buat(Role::LOGISTICS, $this->karawang));
+        $n = $this->kirim($saya->id);
+        $n->forceFill(['url' => '//contoh-jahat.test/masuk'])->save();
+
+        $tujuan = $this->get(route('wms.notifications.open', $n))->headers->get('Location');
+
+        $this->assertStringNotContainsString('contoh-jahat.test', $tujuan);
+        $this->assertStringEndsWith('/masuk', $tujuan);
+    }
+
     public function test_tandai_semua_dibaca_benar_benar_menyimpan(): void
     {
         $saya = $this->masuk($this->buat(Role::LOGISTICS, $this->karawang));
