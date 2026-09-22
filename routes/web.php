@@ -22,21 +22,28 @@ use App\Http\Controllers\Wms\DashboardController;
 use App\Http\Controllers\Wms\DeliveryController;
 use App\Http\Controllers\Wms\ImportController;
 use App\Http\Controllers\Wms\InboundController;
+use App\Http\Controllers\Wms\InboundHistoryController;
+use App\Http\Controllers\Wms\InboundVerificationController;
 use App\Http\Controllers\Wms\InternalOrderController;
 use App\Http\Controllers\Wms\InventoryController;
 use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\MaterialRequisitionController;
+use App\Http\Controllers\Wms\MrfLogisticsController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OrderApprovalController;
 use App\Http\Controllers\Wms\OrderApprovalHistoryController;
 use App\Http\Controllers\Wms\OrderCancellationController;
 use App\Http\Controllers\Wms\OutstandingController;
 use App\Http\Controllers\Wms\PalletCapacityController;
+use App\Http\Controllers\Wms\PickingCompletionController;
 use App\Http\Controllers\Wms\PickingController;
+use App\Http\Controllers\Wms\PickingLineController;
+use App\Http\Controllers\Wms\PickingTaskController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProductionMaterialController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ProofVerificationController;
+use App\Http\Controllers\Wms\PutawayController;
 use App\Http\Controllers\Wms\ReportController;
 use App\Http\Controllers\Wms\SoNumberController;
 use App\Http\Controllers\Wms\StockAdjustmentController;
@@ -256,9 +263,9 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
 
     Route::prefix('inbound')->group(function () {
         Route::middleware('can:'.Permission::INBOUND_HISTORY)->group(function () {
-            Route::get('/history', [InboundController::class, 'historyIndex'])->name('wms.inbound.history');
+            Route::get('/history', [InboundHistoryController::class, 'historyIndex'])->name('wms.inbound.history');
             // Diberi nama karena lonceng selisih qty menautkan ke sini.
-            Route::get('/history/{doc_no}', [InboundController::class, 'historyDetail'])
+            Route::get('/history/{doc_no}', [InboundHistoryController::class, 'historyDetail'])
                 ->name('wms.inbound.history.detail');
         });
 
@@ -273,7 +280,7 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         | Selisihnya TIDAK hilang dari layar verifikasi Logistik setelah
         | disesuaikan; lihat InboundDetail::scopeBerselisih().
         */
-        Route::post('/history/{doc_no}/adjust-qty', [InboundController::class, 'adjustQty'])
+        Route::post('/history/{doc_no}/adjust-qty', [InboundHistoryController::class, 'adjustQty'])
             ->middleware('can:'.Permission::INBOUND_CREATE)
             ->name('wms.inbound.history.adjust');
 
@@ -290,10 +297,10 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // Operator menempatkan tiap palet ke bin dan berwenang mengoreksi
         // Qty Aktual; SKU & batch dikunci karena berasal dari dokumen produksi.
         Route::middleware('can:'.Permission::INBOUND_PUTAWAY)->group(function () {
-            Route::get('/putaway', [InboundController::class, 'putawayIndex'])->name('wms.inbound.putaway');
-            Route::get('/putaway/{doc_no}', [InboundController::class, 'putawayProcess'])
+            Route::get('/putaway', [PutawayController::class, 'putawayIndex'])->name('wms.inbound.putaway');
+            Route::get('/putaway/{doc_no}', [PutawayController::class, 'putawayProcess'])
                 ->name('wms.inbound.putaway.process');
-            Route::post('/putaway/{doc_no}', [InboundController::class, 'putawayStore'])
+            Route::post('/putaway/{doc_no}', [PutawayController::class, 'putawayStore'])
                 ->name('wms.inbound.putaway.store');
         });
 
@@ -302,10 +309,10 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // hasil put-away, tapi tidak SKU/batch. Palet yang sudah terverifikasi
         // terkunci di sini — koreksinya lewat Menu Stok (F-INB-04).
         Route::middleware('can:'.Permission::INBOUND_VERIFY)->group(function () {
-            Route::get('/verify', [InboundController::class, 'verifyIndex'])->name('wms.inbound.verify');
-            Route::get('/verify/{doc_no}', [InboundController::class, 'verifyProcess'])
+            Route::get('/verify', [InboundVerificationController::class, 'verifyIndex'])->name('wms.inbound.verify');
+            Route::get('/verify/{doc_no}', [InboundVerificationController::class, 'verifyProcess'])
                 ->name('wms.inbound.verify.process');
-            Route::post('/verify/{doc_no}', [InboundController::class, 'verifyStore'])
+            Route::post('/verify/{doc_no}', [InboundVerificationController::class, 'verifyStore'])
                 ->name('wms.inbound.verify.store');
         });
 
@@ -751,17 +758,17 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         });
 
         Route::middleware('can:'.Permission::OUTBOUND_PICKING_PROCESS)->group(function () {
-            Route::get('/picking', [PickingController::class, 'queue'])
+            Route::get('/picking', [PickingTaskController::class, 'queue'])
                 ->name('wms.picking.queue');
-            Route::post('/picking/list/{list}/claim', [PickingController::class, 'claim'])
+            Route::post('/picking/list/{list}/claim', [PickingTaskController::class, 'claim'])
                 ->name('wms.picking.claim');
-            Route::post('/picking/list/{list}/item/{item}/pick', [PickingController::class, 'pick'])
+            Route::post('/picking/list/{list}/item/{item}/pick', [PickingLineController::class, 'pick'])
                 ->name('wms.picking.item.pick');
-            Route::post('/picking/list/{list}/item/{item}/short', [PickingController::class, 'short'])
+            Route::post('/picking/list/{list}/item/{item}/short', [PickingLineController::class, 'short'])
                 ->name('wms.picking.item.short');
-            Route::post('/picking/list/{list}/item/{item}/reset', [PickingController::class, 'reset'])
+            Route::post('/picking/list/{list}/item/{item}/reset', [PickingLineController::class, 'reset'])
                 ->name('wms.picking.item.reset');
-            Route::post('/picking/list/{list}/complete', [PickingController::class, 'complete'])
+            Route::post('/picking/list/{list}/complete', [PickingCompletionController::class, 'complete'])
                 ->name('wms.picking.complete');
         });
 
@@ -772,11 +779,11 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // Unduhan didaftarkan SEBELUM '/picking/list/{list}', kalau tidak
         // "unduh" tertangkap sebagai id daftar. Gate-nya sama dengan rincian:
         // isinya persis isi layar itu, hanya dalam bentuk berkas.
-        Route::get('/picking/list/{list}/unduh', [PickingController::class, 'download'])
+        Route::get('/picking/list/{list}/unduh', [PickingTaskController::class, 'download'])
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.unduh');
 
-        Route::get('/picking/list/{list}', [PickingController::class, 'show'])
+        Route::get('/picking/list/{list}', [PickingTaskController::class, 'show'])
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.show');
 
@@ -786,7 +793,7 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // satu-satunya jalan saat operatornya sudah pulang dan daftarnya
         // tertinggal terkunci. Batas siapa-boleh-melepas-milik-siapa
         // ditegakkan di dalam PickingRun::release(), bukan oleh rute ini.
-        Route::post('/picking/list/{list}/release', [PickingController::class, 'release'])
+        Route::post('/picking/list/{list}/release', [PickingTaskController::class, 'release'])
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.release');
 
@@ -942,19 +949,19 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms,sales'])-
             ->middleware('can:'.Permission::MRF_CREATE)
             ->name('wms.mrf.resend');
 
-        Route::get('/{mrf}/approve', [MaterialRequisitionController::class, 'approveForm'])
+        Route::get('/{mrf}/approve', [MrfLogisticsController::class, 'approveForm'])
             ->middleware('can:'.Permission::MRF_APPROVE)
             ->name('wms.mrf.approve.form');
-        Route::post('/{mrf}/approve', [MaterialRequisitionController::class, 'approve'])
+        Route::post('/{mrf}/approve', [MrfLogisticsController::class, 'approve'])
             ->middleware('can:'.Permission::MRF_APPROVE)
             ->name('wms.mrf.approve');
-        Route::post('/{mrf}/reject', [MaterialRequisitionController::class, 'reject'])
+        Route::post('/{mrf}/reject', [MrfLogisticsController::class, 'reject'])
             ->middleware('can:'.Permission::MRF_APPROVE)
             ->name('wms.mrf.reject');
 
         // Permintaan lewat tautan divisi ditutup di gudang, saat orangnya
         // datang mengambil — pemohonnya tidak punya akun untuk menekan apa pun.
-        Route::post('/{mrf}/collect', [MaterialRequisitionController::class, 'collect'])
+        Route::post('/{mrf}/collect', [MrfLogisticsController::class, 'collect'])
             ->middleware('can:'.Permission::MRF_APPROVE)
             ->name('wms.mrf.collect');
         Route::post('/{mrf}/receive', [MaterialRequisitionController::class, 'receive'])

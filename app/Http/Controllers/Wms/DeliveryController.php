@@ -15,6 +15,7 @@ use App\Support\Activity;
 use App\Support\Messaging\EmailSales;
 use App\Support\Notifier;
 use App\Support\Outbound\ArrivalPhoto;
+use App\Support\Outbound\DeliveryArrival;
 use App\Support\Outbound\Shipment;
 use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
@@ -49,7 +50,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DeliveryController extends Controller
 {
-    public function __construct(private readonly Shipment $pengiriman) {}
+    public function __construct(
+        private readonly Shipment $pengiriman,
+        private readonly DeliveryArrival $kedatangan,
+    ) {}
 
     /**
      * Sudah dipicking, belum berangkat — PEKERJAAN YANG BERHENTI DI TENGAH.
@@ -183,7 +187,7 @@ class DeliveryController extends Controller
      * "Tandai Sampai" — jalan keluar ketika supir tidak bisa konfirmasi.
      *
      * Alasannya wajib dan disimpan apa adanya; lihat
-     * Shipment::markArrivedManually() untuk kenapa jalur ini tanpa foto.
+     * DeliveryArrival::markArrivedManually() untuk kenapa jalur ini tanpa foto.
      */
     public function markArrived(Request $request, DeliveryNote $note): RedirectResponse
     {
@@ -201,7 +205,7 @@ class DeliveryController extends Controller
         ]);
 
         try {
-            $this->pengiriman->markArrivedManually(
+            $this->kedatangan->markArrivedManually(
                 $note,
                 $data['received_by_name'],
                 $data['arrival_manual_reason'],

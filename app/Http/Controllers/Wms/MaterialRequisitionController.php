@@ -5,16 +5,15 @@ namespace App\Http\Controllers\Wms;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendMrfApprovalRequest;
 use App\Models\ActivityLog;
-use App\Models\InventoryStock;
 use App\Models\MaterialRequisition;
 use App\Models\MrfApproverContact;
-use App\Models\Notification;
 use App\Models\Product;
 use App\Models\Warehouse;
 use App\Support\Activity;
-use App\Support\Notifier;
 use App\Support\Permission;
-use App\Support\Production\MaterialRequisitionRun;
+use App\Support\Production\MaterialRequisitionDecision;
+use App\Support\Production\MaterialRequisitionHandover;
+use App\Support\Production\MaterialRequisitionSubmission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -24,17 +23,18 @@ use Illuminate\View\View;
 use RuntimeException;
 
 /**
- * MRF — Material Requisition Form, layar-layarnya.
+ * MRF — Material Requisition Form, sisi peminta.
  *
- * SATU CONTROLLER, TIGA PERAN, dan tiap pintu berdiri di balik izin yang
- * berbeda:
+ * Tiap pintu berdiri di balik izin yang berbeda:
  *
- *   create/store   Produksi  menyusun permintaan, memilih atasan penyetuju
- *   approveForm    Logistik  memilih batch sungguhannya dari rak
- *   receive        Produksi  menyatakan barangnya sudah diambil
+ *   create/store/edit/update  Produksi  menyusun permintaan, memilih atasan
+ *   receive                   Produksi  menyatakan barangnya sudah diambil
+ *   cancel                    Produksi & Logistik (batasnya keadaan dokumen)
  *
- * Persetujuan atasan TIDAK ada di sini — ia terjadi di halaman publik
- * MrfApprovalController, karena yang menekannya tidak punya akun WMS.
+ * Keputusan Logistik — memilih batch, menyetujui, menolak, dan serah terima
+ * permintaan lewat tautan divisi — ada di MrfLogisticsController. Persetujuan
+ * atasan ada di halaman publik MrfApprovalController, karena yang menekannya
+ * tidak punya akun WMS.
  *
  * PEMBATASAN GUDANG. Permintaan material selalu menyangkut satu gudang saja,
  * jadi penyaringannya WarehouseScope::apply() biasa dan tiap titik masuk yang
@@ -47,11 +47,14 @@ use RuntimeException;
  *                 $filters, $gudangOptions, $stats
  * create()      : $produk Collection<Product>, $kontak Collection, $gudang
  * show()        : $mrf, $bolehMemutus bool, $bolehMenerima bool
- * approveForm() : $mrf, $batch Collection<InventoryStock> dikelompokkan produk
  */
 class MaterialRequisitionController extends Controller
 {
-    public function __construct(private readonly MaterialRequisitionRun $mrf) {}
+    public function __construct(
+        private readonly MaterialRequisitionSubmission $pengajuan,
+        private readonly MaterialRequisitionHandover $serahTerima,
+        private readonly MaterialRequisitionDecision $keputusan,
+    ) {}
 
     /* ------------------------------------------------------------- Daftar */
 
@@ -182,7 +185,7 @@ class MaterialRequisitionController extends Controller
         $data = $request->validate($this->aturanFormulir(), $this->pesanFormulir(), $this->namaFormulir());
 
         try {
-            $mrf = $this->mrf->ajukanUlang(
+            $mrf = $this->pengajuan->ajukanUlang(
                 mrf: $mrf,
                 jenis: $data['request_type'],
                 keperluan: $data['purpose'],
@@ -327,7 +330,7 @@ class MaterialRequisitionController extends Controller
         WarehouseScope::assert((int) $data['warehouse_id'], $user);
 
         try {
-            $mrf = $this->mrf->ajukan(
+            $mrf = $this->pengajuan->ajukan(
                 pemohon: $user,
                 warehouseId: (int) $data['warehouse_id'],
                 jenis: $data['request_type'],
@@ -478,186 +481,7 @@ class MaterialRequisitionController extends Controller
         ));
     }
 
-    /* ------------------------------------------------ Logistik: pilih batch */
-
-    public function approveForm(Request $request, MaterialRequisition $mrf): View|RedirectResponse
-    {
-        WarehouseScope::assert($mrf->warehouse_id, $request->user());
-
-        if (! $mrf->menungguLogistik()) {
-            return redirect()->route('wms.mrf.show', $mrf)->with('error', sprintf(
-                'MRF %s berstatus "%s", bukan menunggu keputusan Logistik.',
-                $mrf->mrf_number,
-                $mrf->status_label,
-            ));
-        }
-
-        $mrf->load(['items.product:id,sku,name,uom', 'warehouse:id,code,name', 'requestedBy:id,full_name']);
-
-        return view('wms.produksi.mrf-approve', [
-            'mrf' => $mrf,
-            // Batch per produk yang diminta saja. Menyodorkan seluruh isi
-            // gudang membuat layar ini tidak terbaca, dan yang dicari Logistik
-            // memang cuma produk yang tertulis di permintaannya.
-            'batchPerProduk' => $this->batchUntukPermintaan($mrf),
-        ]);
-    }
-
-    public function approve(Request $request, MaterialRequisition $mrf): RedirectResponse
-    {
-        WarehouseScope::assert($mrf->warehouse_id, $request->user());
-
-        $data = $request->validate([
-            'baris' => ['required', 'array', 'min:1'],
-            'baris.*.item_id' => ['required', 'integer'],
-            'baris.*.stock_id' => ['required', 'integer'],
-            'baris.*.qty' => ['required', 'integer', 'min:1'],
-        ], [
-            'baris.required' => 'Belum ada satu batch pun yang dipilih. Isi qty pada batch yang akan diambilkan.',
-        ]);
-
-        try {
-            $mrf = $this->mrf->setujuiLogistik($mrf, array_values($data['baris']), $request->user()?->id);
-        } catch (RuntimeException $e) {
-            return back()->withInput()->with('error', $e->getMessage());
-        }
-
-        $mrf->load('pickingList:id,list_number');
-
-        Activity::record(
-            ActivityLog::MRF_LOGISTICS_APPROVE,
-            sprintf(
-                'Menyetujui permintaan material %s: %d batch dicadangkan, daftar picking %s dibuat.',
-                $mrf->mrf_number,
-                $mrf->allocations()->count(),
-                $mrf->pickingList?->list_number ?? '—',
-            ),
-            $mrf,
-            $mrf->warehouse_id,
-            [
-                'nomor' => $mrf->mrf_number,
-                'daftar_picking' => $mrf->pickingList?->list_number,
-                'batch' => $mrf->allocations()->count(),
-            ],
-        );
-
-        Notifier::toUser(
-            $mrf->requested_by,
-            Notification::MRF_DECIDED,
-            'Permintaan material disetujui Logistik',
-            sprintf(
-                'MRF %s disetujui. Barangnya sedang diambilkan operator; Anda akan dikabari lagi begitu siap diambil.',
-                $mrf->mrf_number,
-            ),
-            route('wms.mrf.show', $mrf),
-            $mrf->warehouse_id,
-            $mrf,
-        );
-
-        return redirect()->route('wms.mrf.show', $mrf)->with('success', sprintf(
-            'MRF %s disetujui. Daftar picking %s sudah masuk antrean operator.',
-            $mrf->mrf_number,
-            $mrf->pickingList?->list_number ?? '—',
-        ));
-    }
-
-    public function reject(Request $request, MaterialRequisition $mrf): RedirectResponse
-    {
-        WarehouseScope::assert($mrf->warehouse_id, $request->user());
-
-        $data = $request->validate([
-            'reason' => ['required', 'string', 'min:5', 'max:500'],
-        ], [
-            'reason.required' => 'Alasan penolakan wajib diisi — Produksi perlu tahu apakah harus menunggu atau mencari jalan lain.',
-        ], ['reason' => 'alasan penolakan']);
-
-        try {
-            $mrf = $this->mrf->tolakLogistik($mrf, $data['reason'], $request->user()?->id);
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
-        }
-
-        Activity::record(
-            ActivityLog::MRF_LOGISTICS_REJECT,
-            sprintf('Menolak permintaan material %s. Alasan: %s', $mrf->mrf_number, $data['reason']),
-            $mrf,
-            $mrf->warehouse_id,
-            ['nomor' => $mrf->mrf_number, 'alasan' => $data['reason']],
-        );
-
-        Notifier::toUser(
-            $mrf->requested_by,
-            Notification::MRF_DECIDED,
-            'Permintaan material ditolak Logistik',
-            sprintf('MRF %s ditolak. Alasan: %s', $mrf->mrf_number, $data['reason']),
-            route('wms.mrf.show', $mrf),
-            $mrf->warehouse_id,
-            $mrf,
-        );
-
-        return redirect()->route('wms.mrf.show', $mrf)->with('warning', sprintf(
-            'MRF %s ditolak dan Produksi sudah dikabari.',
-            $mrf->mrf_number,
-        ));
-    }
-
     /* -------------------------------------------------- Produksi: menerima */
-
-    /**
-     * Barang permintaan lewat tautan divisi DIAMBIL pemohonnya. Selesai.
-     *
-     * Ditekan orang gudang saat orangnya datang, bukan oleh pemohonnya —
-     * pemohon dari QC atau R&D tidak punya akun dan tidak akan membuka WMS.
-     * Yang dicatat adalah nama orang yang benar-benar membawa barangnya
-     * keluar, dan itulah satu-satunya jejak siapa yang memegangnya.
-     */
-    public function collect(Request $request, MaterialRequisition $mrf): RedirectResponse
-    {
-        WarehouseScope::assert($mrf->warehouse_id, $request->user());
-
-        abort_unless($mrf->lewatTautan(), 404);
-
-        $data = $request->validate([
-            'collected_by_name' => ['required', 'string', 'max:100'],
-        ], [
-            'collected_by_name.required' => 'Isi nama orang yang mengambil — inilah satu-satunya catatan '.
-                'siapa yang membawa barang ini keluar gudang.',
-        ], ['collected_by_name' => 'nama pengambil']);
-
-        try {
-            $hasil = $this->mrf->tandaiDiambil($mrf, $data['collected_by_name'], $request->user()?->id);
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
-        }
-
-        Activity::record(
-            ActivityLog::MRF_RECEIVE,
-            sprintf(
-                '%s diambil %s dari divisi %s: %d unit dalam %d batch, dan permintaannya ditutup.',
-                $mrf->mrf_number,
-                trim($data['collected_by_name']),
-                $mrf->department_name ?? '—',
-                $hasil['unit'],
-                $hasil['baris'],
-            ),
-            $mrf,
-            $mrf->warehouse_id,
-            [
-                'nomor' => $mrf->mrf_number,
-                'lewat_tautan' => true,
-                'divisi' => $mrf->department_name,
-                'diambil_oleh' => trim($data['collected_by_name']),
-                'unit' => $hasil['unit'],
-            ],
-        );
-
-        return back()->with('success', sprintf(
-            '%s ditutup: %d unit diambil %s. Pemakaiannya tercatat di Riwayat Pemakaian MRF.',
-            $mrf->mrf_number,
-            $hasil['unit'],
-            trim($data['collected_by_name']),
-        ));
-    }
 
     public function receive(Request $request, MaterialRequisition $mrf): RedirectResponse
     {
@@ -668,7 +492,7 @@ class MaterialRequisitionController extends Controller
         ], [], ['production_area' => 'lokasi di area produksi']);
 
         try {
-            $hasil = $this->mrf->terima(
+            $hasil = $this->serahTerima->terima(
                 $mrf,
                 $data['production_area'] ?? 'Transit Produksi',
                 $request->user()?->id,
@@ -716,7 +540,7 @@ class MaterialRequisitionController extends Controller
         ], [], ['reason' => 'alasan pembatalan']);
 
         try {
-            $this->mrf->batal($mrf, $data['reason'], $request->user()?->id);
+            $this->keputusan->batal($mrf, $data['reason'], $request->user()?->id);
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -755,44 +579,5 @@ class MaterialRequisitionController extends Controller
             'Nomor %s dihapus dari daftar tersimpan. MRF yang sudah pernah dikirim ke nomor itu tidak berubah.',
             $nama,
         ));
-    }
-
-    /* --------------------------------------------------------------- Dalam */
-
-    /**
-     * Batch yang bisa dipilih Logistik, dikelompokkan per baris permintaan.
-     *
-     * DDP IKUT, dan itu justru intinya. Jenis permintaan yang paling sering
-     * dipakai adalah reproses barang DDP; menyaringnya keluar seperti pada
-     * penjualan membuat layar ini kosong persis pada perkara yang paling
-     * sering terjadi. Barang karantina TIDAK ikut — ia sedang ditahan QC dan
-     * belum boleh ke mana-mana.
-     *
-     * @return array<int, Collection> dikunci id baris permintaan
-     */
-    private function batchUntukPermintaan(MaterialRequisition $mrf): array
-    {
-        $produkId = $mrf->items->pluck('product_id')->unique()->all();
-
-        $batch = InventoryStock::query()
-            ->where('warehouse_id', $mrf->warehouse_id)
-            ->whereIn('product_id', $produkId)
-            ->where('qty_available', '>', 0)
-            ->whereIn('status', [InventoryStock::STATUS_ACTIVE, InventoryStock::STATUS_DDP])
-            ->with(['location:id,code', 'product:id,sku,name,uom'])
-            // FIFO: yang paling dekat kedaluwarsa di atas. Untuk reproses,
-            // itu pula yang paling pantas didahulukan.
-            ->orderBy('expiry_date')
-            ->orderBy('id')
-            ->get()
-            ->groupBy('product_id');
-
-        $hasil = [];
-
-        foreach ($mrf->items as $item) {
-            $hasil[$item->id] = $batch->get($item->product_id, collect());
-        }
-
-        return $hasil;
     }
 }

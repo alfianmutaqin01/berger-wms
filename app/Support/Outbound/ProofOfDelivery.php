@@ -38,7 +38,7 @@ class ProofOfDelivery
      *
      * HANYA SETELAH SUPIR MENYATAKAN SAMPAI (keputusan pemilik produk).
      * Pesanan berpindah ke PROOF_UPLOADED persis ketika supir menekan
-     * konfirmasi di tautan ePOD-nya — lihat Shipment::confirmDelivery() — dan
+     * konfirmasi di tautan ePOD-nya — lihat DeliveryArrival::confirmDelivery() — dan
      * saat itu pula Sales dikabari lewat lonceng dan WhatsApp. Jadi daftar
      * ini adalah "sudah tiba", bukan "sudah berangkat".
      *

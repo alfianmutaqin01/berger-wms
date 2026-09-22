@@ -10,7 +10,7 @@ use App\Models\ProductionMaterialConsumption;
 use App\Models\ProductionMaterialHolding;
 use App\Support\Activity;
 use App\Support\FilterTanggal;
-use App\Support\Production\MaterialRequisitionRun;
+use App\Support\Production\MaterialRequisitionHandover;
 use App\Support\WarehouseScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,7 +41,7 @@ class ProductionMaterialController extends Controller
     /** Sisa yang lebih tua dari ini dianggap menunggak dan ditandai merah. */
     private const AMBANG_MENUNGGAK_HARI = 30;
 
-    public function __construct(private readonly MaterialRequisitionRun $mrf) {}
+    public function __construct(private readonly MaterialRequisitionHandover $mrf) {}
 
     public function index(Request $request): View
     {
