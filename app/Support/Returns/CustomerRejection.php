@@ -11,7 +11,6 @@ use App\Models\SalesReturnDetail;
 use App\Models\User;
 use App\Support\DocumentNumber;
 use App\Support\Inventory\StockActivator;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -536,16 +535,6 @@ class CustomerRejection
         }
 
         return $lokasi->id;
-    }
-
-    /** Baris pesanan yang masih boleh dilaporkan ditolak. */
-    public function barisBolehDitolak(SalesOrder $order): Collection
-    {
-        return SalesOrderDetail::query()
-            ->where('sales_order_id', $order->id)
-            ->where('qty_shipped', '>', 0)
-            ->with('product:id,sku,name,uom')
-            ->get();
     }
 
     /**

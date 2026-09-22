@@ -54,12 +54,6 @@ class MrfApproverContact extends Model
             ->orWhereNull('warehouse_id'));
     }
 
-    /** Nomor siap kirim WhatsApp; NULL bila tersimpan dalam bentuk yang tidak wajar. */
-    public function nomorWhatsApp(): ?string
-    {
-        return PhoneNumber::forWhatsApp($this->phone);
-    }
-
     public function getPhoneLabelAttribute(): string
     {
         return PhoneNumber::label($this->phone);
