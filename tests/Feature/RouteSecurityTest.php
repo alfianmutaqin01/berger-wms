@@ -46,9 +46,14 @@ class RouteSecurityTest extends TestCase
      * akun WMS (QC, R&D). Pengamannya bukan kerahasiaan tautannya melainkan
      * dua pintu persetujuan yang tetap harus dilewati — atasan divisi lewat
      * WhatsApp, lalu Logistik. Keduanya bukan pengisi formulir.
+     *
+     * lupa-sandi: dipakai justru oleh orang yang tidak bisa masuk. Yang
+     * dihasilkannya hanya kabar ke admin, bukan sandi baru; pengamannya
+     * throttle per IP dan jawaban yang sama untuk email terdaftar maupun
+     * tidak (LupaSandiTest).
      */
     private const PUBLIK = [
-        '/', 'login', 'logout', 'health', 'up',
+        '/', 'login', 'logout', 'health', 'up', 'lupa-sandi',
         'epod/{token}', 'epod/{token}/confirm',
         'mrf/{token}', 'mrf/{token}/approve', 'mrf/{token}/reject',
         'mrf/minta/{token}', 'mrf/minta/{token}/selesai', 'mrf/minta/{token}/produk',

@@ -57,7 +57,10 @@ class NotificationController extends Controller
             $notification->forceFill(['read_at' => now()])->save();
         }
 
-        return redirect($notification->url ?: route('wms.notifications.index'));
+        // Dinormalkan juga di sini, bukan hanya saat disimpan: baris lama di
+        // basis data masih membawa host tempat ia dibuat (localhost, IP LAN
+        // yang sudah berganti, tunnel). Lihat Notification::tautanRelatif().
+        return redirect(Notification::tautanRelatif($notification->url) ?? route('wms.notifications.index'));
     }
 
     public function readAll(Request $request): RedirectResponse

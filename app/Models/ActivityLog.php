@@ -151,6 +151,17 @@ class ActivityLog extends Model
     public const USER_DEACTIVATE = 'user.deactivate';
 
     /**
+     * Permintaan "Lupa sandi?" dari halaman login. Pelakunya sengaja KOSONG:
+     * yang menekan tombolnya belum membuktikan dirinya pemilik akun, jadi
+     * mencatatnya atas nama pemilik akun adalah pengakuan yang tidak pernah
+     * diberikan. Akunnya menjadi subjek, IP-nya disimpan di properties.
+     */
+    public const PASSWORD_RESET_REQUEST = 'user.password_reset_request';
+
+    /** Pemilik akun mengganti sandi sementara dari admin dengan sandinya sendiri. */
+    public const PASSWORD_FORCED_CHANGE = 'user.password_forced_change';
+
+    /**
      * Produk, pelanggan, dan lokasi rak dipakai bersama-sama.
      *
      * Satu nama tindakan untuk ketiganya, bukan sembilan: yang membedakan
@@ -228,6 +239,8 @@ class ActivityLog extends Model
         self::USER_CREATE => 'Tambah Pengguna',
         self::USER_UPDATE => 'Ubah Pengguna',
         self::USER_DEACTIVATE => 'Aktifkan / Nonaktifkan Pengguna',
+        self::PASSWORD_RESET_REQUEST => 'Permintaan Lupa Sandi',
+        self::PASSWORD_FORCED_CHANGE => 'Ganti Sandi Sementara',
         self::MASTER_CREATE => 'Tambah Master Data',
         self::MASTER_UPDATE => 'Ubah Master Data',
         self::MASTER_DEACTIVATE => 'Nonaktifkan Master Data',

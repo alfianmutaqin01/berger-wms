@@ -49,6 +49,10 @@ class User extends Authenticatable
             'last_lockout_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            // Keduanya sengaja TIDAK ada di $fillable: hanya kode sistem yang
+            // boleh menyalakan atau memadamkannya, tidak pernah isian request.
+            'must_change_password' => 'boolean',
+            'password_reset_requested_at' => 'datetime',
         ];
     }
 

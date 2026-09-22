@@ -125,7 +125,7 @@ class Notifier
             'type' => $type,
             'title' => $title,
             'body' => $body,
-            'url' => $url,
+            'url' => Notification::tautanRelatif($url),
             'subject_type' => $subject !== null ? $subject::class : null,
             'subject_id' => $subject?->getKey(),
             'warehouse_id' => $warehouseId,

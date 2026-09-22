@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\UpdatePasswordRequest;
+use App\Models\ActivityLog;
 use App\Models\Role;
 use App\Models\UserSession;
+use App\Support\Activity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -59,6 +61,10 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
+        // Dibaca SEBELUM disimpan: sesudahnya penandanya sudah padam, dan
+        // cara menjawabnya bergantung pada dari mana orang ini datang.
+        $dariSandiSementara = (bool) $user->must_change_password;
+
         $user->forceFill([
             'password' => $request->validated('new_password'),
             // Penghitung gagal login ikut bersih. Orang yang lupa sandinya
@@ -66,6 +72,8 @@ class ProfileController extends Controller
             // yang bisa mengunci akunnya pada kesalahan ketik berikutnya.
             'failed_login_attempts' => 0,
             'locked_until' => null,
+            // Sandinya sekarang miliknya sendiri, tidak lagi diketahui admin.
+            'must_change_password' => false,
         ])->save();
 
         /*
@@ -77,6 +85,24 @@ class ProfileController extends Controller
          */
         $diputus = $this->sesiLain($request)->count();
         $this->sesiLain($request)->delete();
+
+        /*
+         * DARI SANDI SEMENTARA: diantar ke pekerjaannya, bukan kembali ke
+         * halaman ganti sandi. back() di sini akan mengembalikannya ke
+         * formulir yang barusan diisi — layar yang sekarang tidak punya arti
+         * lagi — dan ia mengira penyimpanannya gagal.
+         */
+        if ($dariSandiSementara) {
+            Activity::record(
+                ActivityLog::PASSWORD_FORCED_CHANGE,
+                sprintf('%s mengganti sandi sementara dari admin dengan sandinya sendiri.', $user->full_name),
+                $user,
+                $user->warehouse_id,
+            );
+
+            return redirect(DashboardController::pathFor($user))
+                ->with('success', 'Sandi baru tersimpan. Mulai sekarang hanya Anda yang mengetahuinya.');
+        }
 
         return back()->with('success', $diputus > 0
             ? sprintf('Kata sandi diperbarui. %d perangkat lain ikut dikeluarkan.', $diputus)

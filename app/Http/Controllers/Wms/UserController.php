@@ -105,6 +105,12 @@ class UserController extends Controller
 
         $user = User::create($data);
 
+        // Sandi akun baru diketik admin, jadi admin mengetahuinya. Sandi itu
+        // hanya untuk masuk pertama kali; sesudahnya pemiliknya wajib
+        // membuat sendiri — dijaga App\Http\Middleware\WajibGantiSandi.
+        // forceFill karena kolomnya sengaja tidak ada di $fillable.
+        $user->forceFill(['must_change_password' => true])->save();
+
         Activity::record(
             ActivityLog::USER_CREATE,
             sprintf(
@@ -175,6 +181,21 @@ class UserController extends Controller
         // sini, ia tetap masuk dengan sandi lama sampai idle satu jam.
         if (array_key_exists('password', $data)) {
             $user->sessions()->delete();
+
+            /*
+             * SANDI YANG DIISI ADMIN = SANDI SEMENTARA. Pemiliknya wajib
+             * menggantinya saat masuk berikutnya. Permintaan "Lupa sandi?"
+             * yang menunggu ikut dianggap selesai — tanda di Manajemen
+             * Pengguna padam.
+             *
+             * KECUALI admin yang mengganti sandi AKUNNYA SENDIRI lewat layar
+             * ini: sandi itu tidak diketahui orang lain, jadi memaksanya
+             * mengganti lagi hanya menambah satu langkah tanpa alasan.
+             */
+            $user->forceFill([
+                'must_change_password' => $user->id !== CurrentActor::get()?->id,
+                'password_reset_requested_at' => null,
+            ])->save();
         }
 
         Activity::record(
