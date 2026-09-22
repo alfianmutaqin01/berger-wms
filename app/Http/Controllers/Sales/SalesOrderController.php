@@ -4,31 +4,24 @@ namespace App\Http\Controllers\Sales;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Sales\SalesOrderRequest;
-use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Models\CustomerBilling;
 use App\Models\DeliveryProof;
-use App\Models\Notification;
 use App\Models\PaymentTerm;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesReturn;
-use App\Support\Activity;
-use App\Support\Notifier;
 use App\Support\OrderCutoff;
 use App\Support\Outbound\OrderComposer;
-use App\Support\Permission;
 use App\Support\Returns\CustomerRejection;
 use App\Support\StockIndicator;
 use App\Support\WarehouseScope;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use RuntimeException;
 
 /**
  * Portal Sales — pembuatan dan riwayat pesanan (PRD §6.5 F-OUT-01).
@@ -50,12 +43,6 @@ class SalesOrderController extends Controller
 {
     /** Disk berkas dokumen PO — pemiliknya OrderComposer, bukan layar ini. */
     private const DISK = OrderComposer::DISK;
-
-    /** Panjang minimal kata kunci sebelum pencarian dijalankan. */
-    private const MIN_CARI = 2;
-
-    /** Batas saran yang ditampilkan; cukup untuk dibaca sekali lihat di HP. */
-    private const MAKS_SARAN = 20;
 
     /**
      * Cara pesanan dibentuk tinggal di OrderComposer, bukan di sini.
@@ -308,175 +295,6 @@ class SalesOrderController extends Controller
         return Storage::disk(self::DISK)->download($order->document_path, $order->document_name);
     }
 
-    /* ------------------------------------------------------- Penolakan */
-
-    /**
-     * Sales melaporkan barang yang ditolak customer, dari depan toko.
-     *
-     * MENEMPEL DI HALAMAN DETAIL PESANAN, bukan halaman sendiri — aturan yang
-     * sama dengan unggah bukti Surat Jalan: keduanya dikerjakan bersamaan
-     * dalam satu kunjungan, sambil memegang HP, sebelum truk pergi.
-     */
-    public function reportReturn(Request $request, CustomerRejection $penolakan): RedirectResponse
-    {
-        $order = SalesOrder::query()->findOrFail((int) $request->input('order_id'));
-
-        $this->pastikanMilikSendiri($request, $order);
-
-        $data = $request->validate([
-            'order_id' => ['required', 'integer'],
-            // Alasan WAJIB dan tidak boleh sepatah kata. Logistik yang
-            // menilai klaim ini tidak ikut ke toko; kalimat "ditolak" saja
-            // tidak memberinya apa pun untuk dinilai.
-            'reason' => ['required', 'string', 'min:10', 'max:1000'],
-            'qty' => ['required', 'array', 'min:1'],
-            'qty.*' => ['nullable', 'integer', 'min:0'],
-        ], [], ['reason' => 'alasan penolakan', 'qty' => 'jumlah yang ditolak']);
-
-        // Baris berjumlah nol atau kosong bukan kesalahan — Sales mencentang
-        // sebagian item saja dan sisanya dibiarkan kosong.
-        $baris = [];
-
-        foreach ($data['qty'] as $detailId => $qty) {
-            if ((int) $qty > 0) {
-                $baris[] = ['detail_id' => (int) $detailId, 'qty' => (int) $qty];
-            }
-        }
-
-        try {
-            $retur = $penolakan->report($order, $baris, $data['reason'], $request->user()?->id);
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
-        }
-
-        Activity::record(
-            ActivityLog::RETURN_REPORT,
-            sprintf(
-                'Melaporkan penolakan %s pada pesanan %s (%d baris) — %s',
-                $retur->reference,
-                $order->order_number,
-                count($baris),
-                $data['reason'],
-            ),
-            $retur,
-            $order->warehouse_id,
-            ['pesanan' => $order->order_number, 'baris' => $baris, 'alasan' => $data['reason']],
-        );
-
-        Notifier::toPermission(
-            Permission::RETURN_APPROVE,
-            $order->warehouse_id,
-            Notification::RETURN_REPORTED,
-            'Laporan penolakan customer baru',
-            sprintf(
-                '%s pada pesanan %s (%s) — %s',
-                $retur->reference,
-                $order->order_number,
-                $order->customer?->name ?? 'pelanggan',
-                $data['reason'],
-            ),
-            route('wms.returns.show', $retur),
-            $retur,
-        );
-
-        return back()->with('success', sprintf(
-            'Laporan penolakan %s terkirim. Logistik akan memeriksanya bersama foto Surat Jalan Anda.',
-            $retur->reference,
-        ));
-    }
-
-    /* -------------------------------------------------------- Pencarian */
-
-    /**
-     * Cari customer sambil mengetik.
-     *
-     * MINIMAL DUA HURUF. Tanpa batas ini, kolom kosong akan mengembalikan
-     * seluruh pelanggan — persis daftar raksasa yang justru mau dihindari.
-     */
-    public function lookupCustomers(Request $request): JsonResponse
-    {
-        $q = trim((string) $request->query('q'));
-
-        if (mb_strlen($q) < self::MIN_CARI) {
-            return response()->json([]);
-        }
-
-        $hasil = Customer::active()
-            // Sales hanya menemukan pelanggan yang gudangnya memang melayani
-            // wilayah itu. Penyaringan yang sama diulang saat menyimpan di
-            // SalesOrderRequest — daftar ini kenyamanan, bukan pengamanan.
-            ->servedBy($request->user()?->warehouse)
-            ->search($q)
-            ->orderBy('name')
-            ->limit(self::MAKS_SARAN)
-            ->get(['id', 'code', 'name']);
-
-        // F-BILL-03: penanda di form Buat Pesanan. HANYA informasi — Sales
-        // tetap bisa memilih customer ini dan mengajukan pesanannya; yang
-        // memutuskan tetap Logistik saat approval.
-        $piutang = CustomerBilling::penandaCustomer($hasil->pluck('id')->all());
-
-        return response()->json($hasil->map(fn (Customer $c) => [
-            'id' => $c->id,
-            'code' => $c->code,
-            'name' => $c->name,
-            'menunggak' => $piutang[$c->id]['lewat_terlama'] ?? 0,
-        ]));
-    }
-
-    /**
-     * Cari produk sambil mengetik, lengkap dengan indikator ketersediaannya.
-     *
-     * Yang dikembalikan HANYA yang cocok dengan yang diketik — mengetik
-     * "APKO" tidak boleh memunculkan satu pun produk non-APKO.
-     *
-     * Indikator ikut di sini, BUKAN angka stoknya (Semi-Blind, F-INV-03).
-     * Karena ini titik satu-satunya tempat Sales melihat ketersediaan, aturan
-     * itu ditegakkan di sini juga, bukan hanya di halaman formulirnya.
-     */
-    public function lookupProducts(Request $request): JsonResponse
-    {
-        $q = trim((string) $request->query('q'));
-
-        // Gudang TIDAK lagi dibaca dari URL. Indikator ketersediaan adalah
-        // angka stok yang disamarkan; membiarkan gudangnya dipilih dari
-        // permintaan berarti Sales bisa mengintip keadaan gudang lain satu
-        // SKU demi satu SKU hanya dengan mengganti parameter.
-        $warehouseId = (int) WarehouseScope::boundary($request->user());
-
-        if (mb_strlen($q) < self::MIN_CARI) {
-            return response()->json([]);
-        }
-
-        $produk = Product::query()
-            ->where('is_active', true)
-            ->search($q)
-            ->orderBy('sku')
-            ->limit(self::MAKS_SARAN)
-            ->get(['id', 'sku', 'name', 'uom', 'stock_threshold_low']);
-
-        // Ketersediaan diambil sekali untuk seluruh hasil, bukan per produk.
-        $tersedia = $warehouseId > 0
-            ? StockIndicator::availabilityByWarehouse($warehouseId)
-            : collect();
-
-        return response()->json($produk->map(function (Product $p) use ($tersedia, $warehouseId) {
-            $kode = $warehouseId > 0
-                ? StockIndicator::for($p, $tersedia->get($p->id, 0))
-                : null;
-
-            return [
-                'id' => $p->id,
-                'sku' => $p->sku,
-                'name' => $p->name,
-                'uom' => $p->uom,
-                'indicator' => $kode,
-                'label' => $kode ? StockIndicator::label($kode) : null,
-                'badge' => $kode ? StockIndicator::badge($kode) : null,
-            ];
-        }));
-    }
-
     /* ------------------------------------------------------- Pembantu */
 
     /**
@@ -496,8 +314,8 @@ class SalesOrderController extends Controller
      * DAFTAR PRODUK DAN CUSTOMER TIDAK DIKIRIM KE SINI. Keduanya berjumlah
      * ribuan; menaruhnya di halaman berarti Sales di lapangan mengunduh
      * berkas raksasa lewat kuota, lalu menggulir ribuan baris di layar HP
-     * untuk mencari satu SKU. Keduanya dicari lewat lookupProducts() dan
-     * lookupCustomers() sambil mengetik. Yang dikirim di sini hanya nilai
+     * untuk mencari satu SKU. Keduanya dicari lewat OrderLookupController
+     * sambil mengetik. Yang dikirim di sini hanya nilai
      * yang SUDAH terpilih, supaya labelnya tampil saat halaman dibuka.
      */
     private function formData(Request $request, ?SalesOrder $order = null): array

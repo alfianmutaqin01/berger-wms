@@ -4,11 +4,14 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EpodController;
 use App\Http\Controllers\MrfApprovalController;
 use App\Http\Controllers\MrfRequestLinkController;
+use App\Http\Controllers\Sales\CustomerRejectionController as SalesCustomerRejectionController;
 use App\Http\Controllers\Sales\DashboardController as SalesDashboardController;
 use App\Http\Controllers\Sales\DeliveryProofController;
+use App\Http\Controllers\Sales\OrderLookupController;
 use App\Http\Controllers\Sales\SalesOrderController;
 use App\Http\Controllers\Wms\ActivityLogController;
 use App\Http\Controllers\Wms\AdminController;
+use App\Http\Controllers\Wms\BatchFlagController;
 use App\Http\Controllers\Wms\BillingController;
 use App\Http\Controllers\Wms\BookingController;
 use App\Http\Controllers\Wms\CustomerController;
@@ -23,6 +26,8 @@ use App\Http\Controllers\Wms\LocationController;
 use App\Http\Controllers\Wms\MaterialRequisitionController;
 use App\Http\Controllers\Wms\NotificationController;
 use App\Http\Controllers\Wms\OrderApprovalController;
+use App\Http\Controllers\Wms\OrderApprovalHistoryController;
+use App\Http\Controllers\Wms\OrderCancellationController;
 use App\Http\Controllers\Wms\OutstandingController;
 use App\Http\Controllers\Wms\PalletCapacityController;
 use App\Http\Controllers\Wms\PickingController;
@@ -31,7 +36,10 @@ use App\Http\Controllers\Wms\ProductionMaterialController;
 use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ProofVerificationController;
 use App\Http\Controllers\Wms\ReportController;
+use App\Http\Controllers\Wms\SoNumberController;
+use App\Http\Controllers\Wms\StockAdjustmentController;
 use App\Http\Controllers\Wms\StockLedgerController;
+use App\Http\Controllers\Wms\StockRelocationController;
 use App\Http\Controllers\Wms\StockTakeController;
 use App\Http\Controllers\Wms\StockTransferController;
 use App\Http\Controllers\Wms\UserController;
@@ -152,7 +160,7 @@ Route::prefix('sales')->middleware(['auth', 'session.track', 'portal:sales'])->g
     Route::get('/dashboard', [SalesDashboardController::class, 'index'])
         ->name('sales.dashboard');
     Route::get('/my-orders', [SalesOrderController::class, 'history']);
-    Route::post('/report-return', [SalesOrderController::class, 'reportReturn']);
+    Route::post('/report-return', [SalesCustomerRejectionController::class, 'reportReturn']);
     Route::get('/new-order', [SalesOrderController::class, 'create']);
     Route::post('/new-order', [SalesOrderController::class, 'store']);
 
@@ -165,8 +173,8 @@ Route::prefix('sales')->middleware(['auth', 'session.track', 'portal:sales'])->g
     | membatasi hasilnya, sehingga kolom kosong tidak pernah menumpahkan
     | seluruh isi tabel.
     */
-    Route::get('/lookup/customers', [SalesOrderController::class, 'lookupCustomers']);
-    Route::get('/lookup/products', [SalesOrderController::class, 'lookupProducts']);
+    Route::get('/lookup/customers', [OrderLookupController::class, 'lookupCustomers']);
+    Route::get('/lookup/products', [OrderLookupController::class, 'lookupProducts']);
 
     /*
     | Pesanan milik Sales sendiri. Kepemilikan diperiksa di controller
@@ -344,15 +352,15 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     // Pergerakan Stok yang sudah ada — alur, tampilan, batas baris, dan
     // pencatatan log-nya jadi persis sama dengan menu Laporan, dan tidak ada
     // definisi "stok" kedua yang suatu hari menyimpang dari yang pertama.
-    Route::post('/inventory/adjust', [InventoryController::class, 'adjust'])
+    Route::post('/inventory/adjust', [StockAdjustmentController::class, 'adjust'])
         ->middleware('can:'.Permission::INVENTORY_ADJUST);
     // Menambah baris stok yang belum pernah tercatat — gate yang SAMA dengan
     // adjust (Manager & Super Admin), karena keduanya sama-sama menciptakan
     // angka stok tanpa dokumen inbound di belakangnya.
-    Route::post('/inventory/stocks', [InventoryController::class, 'store'])
+    Route::post('/inventory/stocks', [StockAdjustmentController::class, 'store'])
         ->middleware('can:'.Permission::INVENTORY_ADJUST)
         ->name('wms.inventory.store');
-    Route::post('/inventory/transfer', [InventoryController::class, 'transfer'])
+    Route::post('/inventory/transfer', [StockRelocationController::class, 'transfer'])
         ->middleware('can:'.Permission::INVENTORY_TRANSFER);
 
     // Penanda batch (Karantina, Quality Issue, Dahulukan Keluar) —
@@ -360,15 +368,15 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     // dari INVENTORY_ADJUST: ini wewenang Logistik sehari-hari (hasil
     // pemeriksaan QC), bukan koreksi qty yang perlu naik ke Manager.
     Route::middleware('can:'.Permission::INVENTORY_QUARANTINE)->group(function () {
-        Route::post('/inventory/quarantine', [InventoryController::class, 'quarantine'])
+        Route::post('/inventory/quarantine', [BatchFlagController::class, 'quarantine'])
             ->name('wms.inventory.quarantine');
-        Route::post('/inventory/quarantine/{stock}/release', [InventoryController::class, 'releaseQuarantine'])
+        Route::post('/inventory/quarantine/{stock}/release', [BatchFlagController::class, 'releaseQuarantine'])
             ->name('wms.inventory.quarantine.release');
-        Route::post('/inventory/{stock}/quality-issue', [InventoryController::class, 'toggleQualityIssue'])
+        Route::post('/inventory/{stock}/quality-issue', [BatchFlagController::class, 'toggleQualityIssue'])
             ->name('wms.inventory.quality-issue');
-        Route::post('/inventory/prioritize', [InventoryController::class, 'prioritize'])
+        Route::post('/inventory/prioritize', [BatchFlagController::class, 'prioritize'])
             ->name('wms.inventory.prioritize');
-        Route::post('/inventory/{stock}/prioritize/release', [InventoryController::class, 'releasePriority'])
+        Route::post('/inventory/{stock}/prioritize/release', [BatchFlagController::class, 'releasePriority'])
             ->name('wms.inventory.prioritize.release');
     });
 
@@ -637,12 +645,12 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         Route::middleware('can:'.Permission::OUTBOUND_APPROVAL)->group(function () {
             Route::get('/approval', [OrderApprovalController::class, 'index'])
                 ->name('wms.approval.index');
-            Route::get('/approval/history', [OrderApprovalController::class, 'history'])
+            Route::get('/approval/history', [OrderApprovalHistoryController::class, 'history'])
                 ->name('wms.approval.history');
             // Rincian pesanan yang SUDAH dinilai — hanya untuk dibaca.
             // Terpisah dari '/approval/{order}' yang merupakan layar keputusan
             // dan menolak pesanan yang sudah selesai dinilai.
-            Route::get('/approval/history/{order}', [OrderApprovalController::class, 'historyShow'])
+            Route::get('/approval/history/{order}', [OrderApprovalHistoryController::class, 'historyShow'])
                 ->name('wms.approval.history.show');
             Route::get('/approval/{order}', [OrderApprovalController::class, 'show'])
                 ->name('wms.approval.show');
@@ -657,18 +665,18 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // Memeriksa nomor SO sambil diketik, sebelum Terima ditekan —
             // pada pesanan bermetode dokumen, ditolak setelah menekan Terima
             // berarti seluruh tempelan dari BC harus diulang.
-            Route::post('/approval/{order}/check-so', [OrderApprovalController::class, 'checkSoNumber'])
+            Route::post('/approval/{order}/check-so', [SoNumberController::class, 'checkSoNumber'])
                 ->name('wms.approval.check-so');
             // Pembatalan pesanan yang SUDAH diterima: customer batal, atau BC
             // tidak menyetujui. Nomor SO-nya kembali bisa dipakai.
-            Route::post('/approval/{order}/cancel', [OrderApprovalController::class, 'cancel'])
+            Route::post('/approval/{order}/cancel', [OrderCancellationController::class, 'cancel'])
                 ->name('wms.approval.cancel');
 
             // Koreksi nomor SO yang salah ketik (Fase 6 tahap 5). Pintu KECIL:
             // hanya berlaku selama pesanan belum berangkat. Sesudah itu
             // koreksinya lewat wms.delivery.pair, supaya nomornya disalin dari
             // dokumen BC dan bukan diketik ulang.
-            Route::post('/approval/{order}/so-number', [OrderApprovalController::class, 'renameSoNumber'])
+            Route::post('/approval/{order}/so-number', [SoNumberController::class, 'renameSoNumber'])
                 ->name('wms.approval.so-number');
 
             // RIWAYAT OUTSTANDING. Menumpang izin yang sama dengan penerimaan

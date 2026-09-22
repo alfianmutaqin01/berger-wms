@@ -10,7 +10,6 @@ use App\Models\CustomerBilling;
 use App\Models\Notification;
 use App\Models\Product;
 use App\Models\SalesOrder;
-use App\Models\SalesOrderCancellation;
 use App\Models\SalesOrderDetail;
 use App\Models\SalesOrderEmail;
 use App\Models\SalesOrderOutstanding;
@@ -19,10 +18,8 @@ use App\Support\Activity;
 use App\Support\Messaging\EmailSales;
 use App\Support\Notifier;
 use App\Support\Outbound\FifoAllocator;
-use App\Support\Outbound\OrderCanceller;
 use App\Support\Outbound\OutstandingRecorder;
 use App\Support\Outbound\ProductBooking;
-use App\Support\Outbound\SoNumberFixer;
 use App\Support\Permission;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -62,13 +59,15 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * index()   : $orders LengthAwarePaginator<SalesOrder>, $warehouses,
  *             $filters{search,warehouse}, $stats{menunggu,dokumen}
  * show()    : $order SalesOrder, $baris list<array>
- * history() : $orders LengthAwarePaginator<SalesOrder>, $filters{search,hasil}
+ *
+ * Yang terjadi sesudah keputusan ada di controller sendiri: nomor SO
+ * (SoNumberController), pembatalan pesanan yang sudah diterima
+ * (OrderCancellationController), dan riwayat (OrderApprovalHistoryController).
  */
 class OrderApprovalController extends Controller
 {
     public function __construct(
         private readonly FifoAllocator $allocator,
-        private readonly OrderCanceller $canceller,
         private readonly OutstandingRecorder $outstanding,
         private readonly ProductBooking $booking,
     ) {}
@@ -511,248 +510,6 @@ class OrderApprovalController extends Controller
 
         return redirect()->route('wms.approval.index')
             ->with('success', "Pesanan {$order->order_number} ditolak.");
-    }
-
-    /**
-     * Memeriksa nomor SO sambil diketik, sebelum tombol Terima ditekan.
-     *
-     * Tanpa ini, satu-satunya cara Logistik tahu nomornya bentrok adalah
-     * menekan Terima lalu ditolak — dan pada pesanan bermetode dokumen itu
-     * berarti seluruh tempelan dari BC harus diulang. Jawabannya membedakan
-     * tiga keadaan, karena tindak lanjutnya berbeda:
-     *
-     *   bebas          -> lanjut seperti biasa
-     *   dapat_digabung -> pelanggan sama, tawarkan penggabungan invoice
-     *   terpakai       -> pelanggan lain, tidak ada jalan selain memeriksa BC
-     *
-     * Sumber kebenarannya SATU dengan validasi (AcceptSalesOrderRequest::
-     * pemegangNomorSo), supaya layar dan server tidak pernah berbeda jawaban.
-     */
-    public function checkSoNumber(Request $request, SalesOrder $order): JsonResponse
-    {
-        WarehouseScope::assert($order->warehouse_id, $request->user());
-
-        $data = $request->validate(['bc_so_number' => ['required', 'string', 'max:50']]);
-
-        $pemegang = AcceptSalesOrderRequest::pemegangNomorSo(
-            $data['bc_so_number'],
-            $request->user(),
-            $order->id,
-        );
-
-        if ($pemegang === null) {
-            return response()->json(['status' => 'bebas']);
-        }
-
-        $sama = $pemegang->customer_id === $order->customer_id;
-
-        return response()->json([
-            'status' => $sama ? 'dapat_digabung' : 'terpakai',
-            'pesanan' => [
-                'id' => $pemegang->id,
-                'nomor' => $pemegang->order_number,
-                'customer' => $pemegang->customer?->name,
-                'diterima' => $pemegang->approved_at?->format('d M Y H:i'),
-            ],
-        ]);
-    }
-
-    /**
-     * Membatalkan pesanan yang SUDAH diterima — temuan lapangan.
-     *
-     * Customer bisa membatalkan setelah pesanan diterima, atau BC ternyata
-     * tidak menyetujuinya. Di BC nomor SO yang gagal dipakai ulang untuk
-     * pesanan berikutnya; tanpa jalan ini, nomor itu terkunci selamanya di
-     * WMS dan pesanan berikutnya ditolak dengan alasan yang keliru.
-     *
-     * Seluruh aturannya ada di App\Support\Outbound\OrderCanceller.
-     */
-    public function cancel(Request $request, SalesOrder $order): RedirectResponse
-    {
-        WarehouseScope::assert($order->warehouse_id, $request->user());
-
-        $data = $request->validate([
-            'cancellation_source' => ['required', 'in:'.implode(',', array_keys(SalesOrderCancellation::SOURCE_LABELS))],
-            'cancellation_reason' => ['required', 'string', 'min:10', 'max:1000'],
-        ], [], [
-            'cancellation_source' => 'sumber pembatalan',
-            'cancellation_reason' => 'alasan pembatalan',
-        ]);
-
-        try {
-            $hasil = $this->canceller->cancel(
-                $order,
-                $data['cancellation_source'],
-                $data['cancellation_reason'],
-                $request->user()?->id,
-            );
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
-        }
-
-        Activity::record(
-            ActivityLog::ORDER_CANCEL,
-            sprintf(
-                'Membatalkan pesanan %s (%s) — %s',
-                $order->order_number,
-                SalesOrderCancellation::SOURCE_LABELS[$data['cancellation_source']] ?? $data['cancellation_source'],
-                $data['cancellation_reason'],
-            ),
-            $order,
-            $order->warehouse_id,
-            [
-                'sumber' => $data['cancellation_source'],
-                'alasan' => $data['cancellation_reason'],
-                'qty_dilepas' => $hasil['qty_dilepas'],
-                'nomor_so_dibebaskan' => $hasil['nomor_so'],
-            ],
-        );
-
-        return redirect()->route('wms.approval.history')->with('warning', sprintf(
-            'Pesanan %s dibatalkan. %d unit dikembalikan ke stok%s, dan pesanannya kembali ke antrean — '.
-            'terima lagi bila sudah diperbaiki, atau tolak bila memang final.',
-            $order->order_number,
-            $hasil['qty_dilepas'],
-            $hasil['nomor_so'] ? ", nomor SO {$hasil['nomor_so']} kembali bisa dipakai" : '',
-        ));
-    }
-
-    /**
-     * Koreksi manual nomor SO yang salah ketik (Fase 6 tahap 5).
-     *
-     * PINTU KECIL, bukan alur utama. Dipakai untuk salah ketik yang ketahuan
-     * sendiri SEBELUM Surat Jalan-nya terbit — saat itu belum ada dokumen
-     * yang bisa disalin. Setelah SJ terbit, jalannya lewat tombol Pasangkan
-     * di Surat Jalan, supaya nomornya diambil dari dokumen BC dan bukan
-     * diketik ulang oleh jari yang tadi salah. Batasnya ditegakkan
-     * SoNumberFixer, bukan di sini.
-     */
-    public function renameSoNumber(Request $request, SalesOrder $order, SoNumberFixer $koreksi): RedirectResponse
-    {
-        WarehouseScope::assert($order->warehouse_id, $request->user());
-
-        $data = $request->validate([
-            'bc_so_number' => ['required', 'string', 'max:50'],
-            'reason' => ['nullable', 'string', 'max:1000'],
-        ], [
-            'bc_so_number.required' => 'Nomor SO yang benar wajib diisi.',
-        ], [
-            'bc_so_number' => 'nomor SO',
-            'reason' => 'alasan koreksi',
-        ]);
-
-        $lama = $order->bc_so_number;
-
-        try {
-            $koreksi->rename($order, $data['bc_so_number'], $data['reason'] ?? null, $request->user()->id);
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
-        }
-
-        return back()->with('success', sprintf(
-            'Nomor SO pesanan %s diubah dari %s menjadi %s. Perubahannya tercatat.',
-            $order->order_number,
-            $lama ?: '(kosong)',
-            $order->fresh()->bc_so_number,
-        ));
-    }
-
-    /** Riwayat penerimaan, penolakan, dan pembatalan (permintaan pemilik produk). */
-    /**
-     * Rincian pesanan yang sudah dinilai — hanya untuk dibaca.
-     *
-     * KENAPA LAYAR SENDIRI, BUKAN show() YANG DILONGGARKAN
-     * ----------------------------------------------------
-     * show() adalah layar KEPUTUSAN: ia menghitung stok tersedia, mencari
-     * barang yang sama di gudang lain, dan memasang tombol Terima/Tolak.
-     * Melonggarkannya agar juga melayani pesanan yang sudah dinilai berarti
-     * satu layar dengan dua watak, dan cepat atau lambat sebuah tombol
-     * keputusan muncul di keadaan yang seharusnya tidak menerimanya lagi.
-     *
-     * YANG DIJAWAB LAYAR INI
-     * ----------------------
-     * "Waktu itu apa saja yang saya setujui, dan berapa." Sebelum ada layar
-     * ini, daftar riwayat hanya menyebut "12 item" tanpa satu pun cara
-     * membukanya — sehingga pertanyaan yang paling wajar tentang penerimaan
-     * yang sudah lewat justru tidak bisa dijawab dari menu penerimaan.
-     *
-     * Ditampilkan APA ADANYA sampai hari ini: qty dipesan, disetujui,
-     * terkirim, dan sisa outstanding. Tiga angka terakhir memang bergerak
-     * setelah penerimaan, dan itu bukan alasan menyembunyikannya — justru
-     * di situlah terlihat apakah yang disetujui benar-benar sampai.
-     */
-    public function historyShow(Request $request, SalesOrder $order): View
-    {
-        WarehouseScope::assert($order->warehouse_id, $request->user());
-
-        $order->load([
-            'customer', 'user:id,full_name', 'warehouse', 'paymentTerm',
-            'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name',
-            'placedBy:id,full_name',
-            'details.product:id,sku,name,uom',
-            'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->orderByDesc('attempt_no'),
-            'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
-            'emails' => fn ($q) => $q->with('deliveryNote:id,document_no')->orderBy('id'),
-        ]);
-
-        return view('wms.outbound.approval-history-detail', [
-            'order' => $order,
-            'totals' => [
-                'dipesan' => (int) $order->details->sum('qty_ordered'),
-                'disetujui' => (int) $order->details->sum('qty_approved'),
-                'terkirim' => (int) $order->details->sum('qty_shipped'),
-                'outstanding' => (int) $order->details->sum('outstanding_qty'),
-            ],
-        ]);
-    }
-
-    public function history(Request $request): View
-    {
-        $filters = [
-            'search' => $request->query('search'),
-            'hasil' => $request->query('hasil'),
-        ];
-
-        $orders = WarehouseScope::apply(SalesOrder::query(), $request->user())
-            // Dibungkus where() sendiri: tanpa itu orWhere di dalamnya akan
-            // membatalkan filter pencarian dan filter hasil di sebelahnya,
-            // sehingga riwayat memunculkan pesanan yang tidak dicari.
-            ->where(fn ($q) => $q->whereNotNull('approved_at')
-                ->orWhereNotNull('rejected_at')
-                ->orWhereNotNull('cancelled_at')
-                // Pesanan yang PERNAH dibatalkan lalu diterima lagi: kolom
-                // cancelled_at-nya sudah dibersihkan supaya keadaan sekarang
-                // jujur, jadi hanya tabel riwayat yang masih mengingatnya.
-                ->orWhereHas('cancellations')
-                // Sama halnya dengan penolakan: pesanan yang ditolak lalu
-                // diperbaiki dan diajukan ulang sudah tidak punya rejected_at
-                // lagi, dan hanya tabel riwayatnya yang masih mengingat.
-                ->orWhereHas('rejections'))
-            ->search($filters['search'])
-            // "diterima" TIDAK mencakup yang sudah dibatalkan: pesanan yang
-            // dibatalkan memang pernah diterima, tetapi hasil akhirnya bukan
-            // itu lagi, dan menghitungnya sebagai diterima membuat rekap
-            // penerimaan lebih besar daripada yang benar-benar berjalan.
-            ->when($filters['hasil'] === 'diterima', fn ($q) => $q->whereNotNull('approved_at')->whereNull('cancelled_at'))
-            ->when($filters['hasil'] === 'ditolak', fn ($q) => $q->whereHas('rejections'))
-            // Menyaring lewat tabel riwayat, bukan lewat cancelled_at: pesanan
-            // yang dibatalkan lalu diterima lagi tetap harus bisa ditemukan di
-            // sini — pembatalannya benar-benar pernah terjadi, dan justru
-            // pesanan seperti itulah yang paling perlu ditelusuri.
-            ->when($filters['hasil'] === 'dibatalkan', fn ($q) => $q->whereHas('cancellations'))
-            ->with(['customer:id,code,name', 'warehouse:id,code,name',
-                'approvedBy:id,full_name', 'rejectedBy:id,full_name', 'cancelledBy:id,full_name',
-                'cancellations' => fn ($q) => $q->with('cancelledBy:id,full_name')->latest('cancelled_at'),
-                'rejections' => fn ($q) => $q->with('rejectedBy:id,full_name')->latest('rejected_at')])
-            ->withCount(['details', 'cancellations', 'rejections'])
-            ->orderByDesc(DB::raw("GREATEST(COALESCE(approved_at, 'epoch'), COALESCE(rejected_at, 'epoch'), COALESCE(cancelled_at, 'epoch'))"))
-            ->paginate(15)
-            ->withQueryString();
-
-        return view('wms.outbound.approval-history', [
-            'orders' => $orders,
-            'filters' => $filters,
-        ]);
     }
 
     /**
