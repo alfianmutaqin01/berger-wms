@@ -493,7 +493,12 @@
         document.querySelectorAll('.js-confirm-toggle').forEach(function (form) {
             form.addEventListener('submit', function (event) {
                 event.preventDefault();
-                const name = this.dataset.name;
+                // Nama akun diketik admin lain dan masuk ke HTML dialog di
+                // bawah; tanpa diloloskan, nama berisi tag menjalankan skrip
+                // di layar siapa pun yang menekan tombol ini.
+                const kotak = document.createElement('div');
+                kotak.textContent = this.dataset.name ?? '';
+                const name = kotak.innerHTML;
                 const action = this.dataset.action;
 
                 Swal.fire({
