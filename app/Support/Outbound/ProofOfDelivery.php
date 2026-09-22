@@ -249,19 +249,6 @@ class ProofOfDelivery
         });
     }
 
-    /** Alasan penolakan terakhir, untuk ditampilkan ke Sales. */
-    public function alasanTerakhir(SalesOrder $order): ?string
-    {
-        if ($order->proofs()->menunggu()->exists()) {
-            return null;
-        }
-
-        return $order->proofs()
-            ->where('status', DeliveryProof::STATUS_REJECTED)
-            ->latest('verified_at')
-            ->value('rejection_reason');
-    }
-
     /** Unduhan foto; dipakai Sales maupun Logistik. */
     public function download(DeliveryProof $proof)
     {

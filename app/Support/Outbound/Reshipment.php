@@ -151,17 +151,4 @@ class Reshipment
             ];
         });
     }
-
-    /**
-     * Apakah pesanan ini bisa dikirim ulang sekarang.
-     *
-     * Dipakai layar untuk menampilkan tombolnya. Penegakan sebenarnya tetap
-     * di open(), di dalam kunci — angka di layar sudah basi begitu terbaca.
-     */
-    public function bolehDikirimUlang(?SalesOrder $order): bool
-    {
-        return $order !== null
-            && in_array($order->status, self::STATUS_BOLEH, true)
-            && $order->details()->where('outstanding_qty', '>', 0)->exists();
-    }
 }

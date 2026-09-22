@@ -74,31 +74,6 @@ class PalletCapacity
     }
 
     /**
-     * Daftar ukuran yang dikenal untuk satu satuan — dipakai pesan bantuan di
-     * form agar yang mengisi tahu ukuran apa saja yang terhitung otomatis.
-     *
-     * @return list<string>
-     */
-    public static function knownSizes(string $unit): array
-    {
-        $unit = mb_strtoupper(trim($unit));
-        $hasil = [];
-
-        foreach (array_keys(self::aturan()) as $kunci) {
-            [$satuan, $ukuran] = explode('|', $kunci);
-
-            if ($satuan === $unit) {
-                $hasil[$ukuran] = true;
-            }
-        }
-
-        $hasil = array_keys($hasil);
-        sort($hasil, SORT_NATURAL);
-
-        return $hasil;
-    }
-
-    /**
      * Memecah total qty menjadi beberapa palet (PRD §7.1).
      *
      * Palet diisi penuh lebih dulu, sisanya menjadi palet terakhir:

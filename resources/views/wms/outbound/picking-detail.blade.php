@@ -489,14 +489,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let pewaktuKabar = null;
 
     /*
-     | Toast dan Modal DITANGANI TANPA API JavaScript Bootstrap.
-     |
-     | `bootstrap` di proyek ini diimpor ke dalam modul app.js dan TIDAK
-     | diekspos ke window (lihat resources/js/app.js), jadi
-     | `new bootstrap.Toast(...)` dari skrip inline seperti ini akan mati
-     | dengan ReferenceError — dan matinya diam-diam, hanya di console.
-     | Atribut data-bs-* tetap bekerja karena penanganannya didelegasikan
-     | dari modul itu; yang tidak ada hanyalah pemanggilan langsungnya.
+     | Toast dan Modal ditangani tanpa API JavaScript Bootstrap.
      |
      | Menampilkan toast cukup dengan menambah kelas .show (Bootstrap
      | menanganinya lewat CSS), dan menutup modal cukup dengan menekan
