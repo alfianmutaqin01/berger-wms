@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.5  
-> **Tanggal:** 15 September 2026 *(revisi dari v1.4, 14 September 2026)*  
+> **Versi:** 1.6  
+> **Tanggal:** 21 September 2026 *(revisi dari v1.5, 15 September 2026)*  
 > **Status:** Scope go-live dikunci — menunggu UAT sign-off  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
@@ -10,6 +10,15 @@
 ---
 
 ## Riwayat Revisi
+
+### Versi 1.6 — 21 September 2026 (Penyelarasan dengan Sistem yang Dibangun)
+
+Dua butir yang selama ini berbeda antara dokumen dan sistem. Ditemukan saat penelusuran kode fitur PRD terhadap kode yang benar-benar ada.
+
+| # | Perubahan | Alasan | Bagian Terdampak |
+|---|---|---|---|
+| 1 | **Penghapusan transaksi diganti pembatalan berjejak.** Super Admin TIDAK menghapus transaksi. Pesanan yang salah dibatalkan lewat jalur pembatalan yang menyimpan alasan, pelaku, dan waktunya; barang yang sudah dipicking dikembalikan ke rak oleh sistem. | Menghapus transaksi yang stoknya sudah bergerak membuat mutasi stok kehilangan dokumen asalnya. Angka gudang tetap berubah, tetapi tidak ada lagi yang bisa menjelaskan kenapa — dan justru pada transaksi bermasalah, yaitu satu-satunya saat penjelasan itu dicari. Pembatalan menjawab kebutuhan yang sama ("transaksi salah harus bisa dikoreksi") tanpa memutus rantai penjelasannya. | §6.7 F-AUDIT-02 |
+| 2 | **Master Kategori Produk dibangun.** CRUD kategori untuk Super Admin dan Manager, memakai izin `master.products`. Kategori dinonaktifkan, tidak dihapus — aturan yang sama dengan Master Produk dan Master Pelanggan. | Tabel, model, dan `products.category_id` sudah ada sejak awal dan kategorinya dipakai sebagai saringan, tetapi tidak pernah ada layar untuk mengelolanya. Kategori baru menuntut impor berkas atau orang yang bisa menyentuh basis data. | §6.2 F-MASTER-03 |
 
 ### Versi 1.5 — 15 September 2026 (Audit Keamanan Pra-Go-Live)
 
@@ -258,7 +267,7 @@ graph TD
 | **Riwayat Produksi (lihat)** | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **Laporan & Ekspor Excel** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Audit Log (Lihat)** | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Hapus Transaksi** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Pembatalan Pesanan (berjejak)** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **Pengaturan Dokumen (Sequence)** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Pengaturan Sistem** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Akses Portal Sales (Buat PO)** | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -272,7 +281,7 @@ graph TD
 | Membuat atau mengubah akun ber-role **Super Admin** | ❌ | ✅ |
 | Pengawasan alur outbound (approve pesanan, berangkatkan SJ, verifikasi bukti SJ, billing) | ✅ | ✅ |
 | Tugas operasional **tangan langsung** (input produksi, put-away, proses picking, penerimaan retur) | ❌ | ✅ |
-| Hapus transaksi | ❌ | ✅ |
+| Pembatalan pesanan berjejak | ✅ | ✅ |
 | Pengaturan Sistem (cutoff, threshold, session, lockout) | ❌ | ✅ |
 | Unlock akun terkunci (progressive lockout) | ❌ | ✅ |
 
@@ -372,8 +381,12 @@ Dua lapis *(v1.5)*:
 - **Aturan:** Kapasitas palet dapat diubah per produk oleh Manager/Super Admin.
 
 #### F-MASTER-03: Manajemen Kategori Produk
-- **Akses:** Super Admin, Manager
-- **Fungsi:** CRUD kategori produk (misal: Cat Tembok, Cat Kayu, Thinner, dll.).
+- **Akses:** Super Admin, Manager (izin `master.products` — kategori adalah bagian dari master produk).
+- **Fungsi:** Tambah, sunting, dan aktif/non-aktifkan kategori produk (misal: Cat Tembok, Cat Kayu, Thinner, dll.).
+- **Aturan:**
+  - Nama kategori **unik**.
+  - Kategori **tidak dihapus, hanya dinonaktifkan** — aturan yang sama dengan Master Produk dan Master Pelanggan. Yang non-aktif hilang dari pilihan saat menambah produk baru; produk yang sudah memakainya **tidak berubah sama sekali**.
+  - Layar menyebut jumlah produk yang memakai tiap kategori, supaya yang menonaktifkan tahu persis cakupan tindakannya.
 
 #### F-MASTER-04: Manajemen Lokasi Rak
 - **Akses:** Super Admin, Manager
@@ -740,12 +753,15 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
   - Transaksi dihapus oleh Super Admin.
 - **Data yang dicatat:** User ID, Timestamp, Tabel yang terpengaruh, Data sebelum perubahan (old values), Data setelah perubahan (new values), IP Address.
 
-#### F-AUDIT-02: Hapus Transaksi
-- **Akses:** Hanya **Super Admin**.
+#### F-AUDIT-02: Koreksi Transaksi yang Salah *(direvisi v1.6)*
+- **Akses:** Logistik dan Manager membatalkan pesanan; Super Admin punya akses yang sama.
 - **Aturan:**
-  - Super Admin boleh **menghapus transaksi** yang salah.
-  - Fitur edit transaksi **tidak disediakan** (jika ada kesalahan, hapus dan buat ulang).
-  - Setiap penghapusan dicatat permanen di `audit_logs` dan **tidak bisa dihapus** oleh siapapun termasuk Super Admin.
+  - Transaksi yang salah **dibatalkan, bukan dihapus**. Barisnya tetap ada beserta alasan, pelaku, dan waktu pembatalannya.
+  - Fitur edit transaksi **tidak disediakan** (jika ada kesalahan, batalkan dan buat ulang).
+  - Barang yang sudah dipicking **dikembalikan ke rak oleh sistem** saat pembatalan, lengkap dengan mutasi stoknya — bukan dikembalikan dengan tangan.
+  - Setiap pembatalan dicatat permanen di `activity_logs` dan **tidak bisa dihapus** oleh siapa pun termasuk Super Admin.
+
+> **Kenapa tidak dihapus.** Menghapus transaksi yang stoknya sudah bergerak membuat mutasi stok kehilangan dokumen asalnya: angka gudang tetap berubah, tetapi tidak ada lagi yang bisa menjelaskan kenapa. Itu terjadi persis pada transaksi bermasalah — satu-satunya saat penjelasan tersebut dicari orang.
 
 #### F-AUDIT-03: Archival
 - Data audit log yang sudah melewati umur tertentu (misal: >2 tahun) dapat dipindahkan ke tabel **archive** untuk menjaga performa query.

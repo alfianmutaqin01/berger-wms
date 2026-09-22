@@ -385,6 +385,12 @@
                             <li class="nav-item {{ request()->is('wms/master/products') ? 'active' : '' }}">
                                 <a href="/wms/master/products" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Master Products</span></a>
                             </li>
+                            {{-- Izinnya menumpang MASTER_PRODUCTS: kategori
+                                 memang bagian dari master produk, dan cakupan
+                                 rolenya sudah persis yang diminta F-MASTER-03. --}}
+                            <li class="nav-item {{ request()->is('wms/master/product-categories') ? 'active' : '' }}">
+                                <a href="/wms/master/product-categories" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kategori Produk</span></a>
+                            </li>
                         @endcan
                         @can(\App\Support\Permission::MASTER_LOCATIONS)
                             <li class="nav-item {{ request()->is('wms/master/locations') ? 'active' : '' }}">
