@@ -15,6 +15,7 @@ use App\Models\SalesReturnDetail;
 use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Warehouse;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -254,7 +255,7 @@ class ProofOfDeliveryTest extends TestCase
             'delivered_at' => null,
         ]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
 
         $note->forceFill([
             'status' => DeliveryNote::STATUS_DELIVERED,
