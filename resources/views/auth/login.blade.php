@@ -168,7 +168,6 @@
                     <div class="mb-3">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <label class="form-label mb-0">Kata Sandi</label>
-                            <a href="#" class="text-decoration-none" style="color: #1B4F8A; font-size: 0.85rem; font-weight: 500;">Lupa Sandi?</a>
                         </div>
                         <div class="input-group">
                             <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-lock"></i></span>
@@ -179,9 +178,12 @@
                         </div>
                     </div>
 
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" name="remember" class="form-check-input" id="remember">
-                        <label class="form-check-label text-muted" for="remember" style="font-size: 0.85rem;">Biarkan saya tetap masuk</label>
+                    <div class="mb-3 d-flex justify-content-between align-items-center">
+                        <div class="form-check mb-0">
+                            <input type="checkbox" name="remember" class="form-check-input" id="remember">
+                            <label class="form-check-label text-muted" for="remember" style="font-size: 0.85rem;">Biarkan saya tetap masuk</label>
+                        </div>
+                        <a href="{{ route('password.lupa') }}" class="text-decoration-none" style="font-size: 0.85rem;">Lupa sandi?</a>
                     </div>
 
                     @if (config('services.recaptcha.site_key'))

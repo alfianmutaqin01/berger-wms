@@ -75,6 +75,9 @@ class Notification extends Model
     /** Tagihan tempo lewat jatuh tempo dan belum lunas; untuk Manager (Fase 8). */
     public const BILLING_OVERDUE = 'billing.overdue';
 
+    /** Seseorang menekan "Lupa sandi?" — admin perlu mengisi sandi sementara. */
+    public const PASSWORD_RESET_REQUESTED = 'password.reset_requested';
+
     /**
      * Ikon & warna per jenis.
      *
@@ -102,6 +105,7 @@ class Notification extends Model
         self::MRF_DECIDED => ['bi-clipboard2-check', 'info'],
         self::BILLING_DUE_SOON => ['bi-hourglass-split', 'warning'],
         self::BILLING_OVERDUE => ['bi-exclamation-octagon-fill', 'danger'],
+        self::PASSWORD_RESET_REQUESTED => ['bi-key-fill', 'warning'],
     ];
 
     /** Yang ditampilkan di dalam lonceng sebelum "Lihat Semua". */

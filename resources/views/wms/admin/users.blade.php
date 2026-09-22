@@ -152,6 +152,21 @@
                         <td class="{{ $dimmed }}">
                             <div class="fw-bold text-dark">{{ $user->full_name }}</div>
                             <div class="small text-muted">{{ $user->email }}</div>
+                            {{-- Lonceng membawa admin ke sini; tanda ini yang
+                                 menunjukkan baris mana. Padam begitu admin
+                                 mengisi sandi sementaranya. --}}
+                            @if($user->password_reset_requested_at)
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning mt-1"
+                                      title="Diminta {{ $user->password_reset_requested_at->format('d/m/Y H:i') }}">
+                                    <i class="bi bi-key-fill me-1"></i>Minta reset sandi
+                                </span>
+                            @endif
+                            @if($user->must_change_password)
+                                <span class="badge bg-info-subtle text-info-emphasis border border-info mt-1"
+                                      title="Pemiliknya akan diminta membuat sandi sendiri saat masuk berikutnya">
+                                    Sandi sementara
+                                </span>
+                            @endif
                         </td>
                         <td class="{{ $dimmed }}">
                             <span class="badge bg-light text-dark border font-monospace">{{ $user->employee_id ?? '—' }}</span>

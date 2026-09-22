@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\GantiSandiWajibController;
+use App\Http\Controllers\Auth\LupaSandiController;
 use App\Http\Controllers\EpodController;
 use App\Http\Controllers\MrfApprovalController;
 use App\Http\Controllers\MrfRequestLinkController;
@@ -63,6 +65,14 @@ Route::get('/', function () {
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login')->name('login.attempt');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+// Lupa sandi = permintaan ke admin, bukan reset mandiri lewat email. Alasannya
+// di LupaSandiController. Dibatasi 5 kali per 15 menit per IP: formulir tanpa
+// login yang membunyikan lonceng admin tidak boleh bisa ditekan tanpa batas.
+Route::get('/lupa-sandi', [LupaSandiController::class, 'show'])->name('password.lupa');
+Route::post('/lupa-sandi', [LupaSandiController::class, 'kirim'])
+    ->middleware('throttle:5,15')
+    ->name('password.lupa.kirim');
 
 /*
 |--------------------------------------------------------------------------
@@ -128,6 +138,10 @@ Route::get('/health', function () {
 | dan `session.track`, tanpa `portal:` maupun `can:`.
 */
 Route::middleware(['auth', 'session.track'])->group(function () {
+    // Pemilik sandi sementara dari admin tertahan di sini sampai membuat
+    // sandinya sendiri — penjaganya App\Http\Middleware\WajibGantiSandi.
+    Route::get('/ganti-sandi', [GantiSandiWajibController::class, 'show'])->name('password.wajib-ganti');
+
     Route::get('/profile', [ProfileController::class, 'index'])->name('profile');
     Route::post('/profile/password', [ProfileController::class, 'updatePassword'])
         ->name('profile.password');

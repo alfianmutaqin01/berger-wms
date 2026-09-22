@@ -4,6 +4,7 @@ use App\Http\Middleware\EnsurePortalAccess;
 use App\Http\Middleware\NormalizeQueryString;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrackUserSession;
+use App\Http\Middleware\WajibGantiSandi;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -25,7 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // X-Forwarded-* kiriman pengguna.
         $middleware->trustProxies(at: '*');
 
-        $middleware->web(append: [SecurityHeaders::class, NormalizeQueryString::class]);
+        $middleware->web(append: [SecurityHeaders::class, NormalizeQueryString::class, WajibGantiSandi::class]);
 
         $middleware->alias([
             'session.track' => TrackUserSession::class,
