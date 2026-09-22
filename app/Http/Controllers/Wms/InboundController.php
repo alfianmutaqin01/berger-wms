@@ -331,8 +331,60 @@ class InboundController extends Controller
             'documentNumber' => DocumentNumber::peek(DocumentNumber::PREFIX_INBOUND, 'inbound_headers'),
             'productionDate' => Carbon::parse($request->input('production_date')),
             'rows' => $rows,
-            'summary' => $plan['summary'] + DuplikatProduksi::ringkas($rows),
+            'summary' => $this->ringkasanPratinjau($plan['summary'], $rows),
         ]);
+    }
+
+    /**
+     * Angka yang ditampilkan layar pratinjau — bukan angka mentah pembacaan.
+     *
+     * plan()['summary']['siap'] berarti "barisnya TERBACA utuh", bukan "baris
+     * ini akan tersimpan": pemeriksaan duplikat baru berjalan sesudahnya. Dua
+     * baris yang terkunci karena sudah pernah masuk tetap terhitung siap,
+     * sehingga layar pernah menulis "Siap Disimpan 2" tepat di atas peringatan
+     * "2 baris tidak akan disimpan" — dua angka yang saling membantah pada
+     * layar yang sama, dan yang membaca tidak punya cara tahu mana yang benar.
+     *
+     * Yang dihitung di sini adalah apa yang BENAR-BENAR akan tersimpan bila
+     * Submit ditekan sekarang, berikut berapa jadinya bila "Timpa data yang
+     * sudah ada" dicentang. Keduanya dikirim sekaligus karena centangnya
+     * berpindah di peramban tanpa memuat ulang halaman.
+     *
+     * @param  array<string, int>  $ringkas  plan()['summary']
+     * @param  list<array<string, mixed>>  $rows  sudah lewat DuplikatProduksi::tandai()
+     * @return array<string, int>
+     */
+    private function ringkasanPratinjau(array $ringkas, array $rows): array
+    {
+        $hitung = function (callable $lolos) use ($rows): array {
+            $baris = 0;
+            $palet = 0;
+
+            foreach ($rows as $row) {
+                if (($row['status'] ?? null) !== 'siap' || ! $lolos($row['duplikat']['keadaan'] ?? null)) {
+                    continue;
+                }
+
+                $baris++;
+                $palet += count($row['pallets'] ?? []);
+            }
+
+            return [$baris, $palet];
+        };
+
+        // Tanpa centang: baris duplikat mana pun dilewati, termasuk yang
+        // sebenarnya boleh ditimpa.
+        [$baris, $palet] = $hitung(fn (?string $keadaan) => $keadaan === null);
+
+        // Dengan centang: hanya yang TERKUNCI yang tetap dilewati.
+        [$barisTimpa, $paletTimpa] = $hitung(fn (?string $keadaan) => $keadaan !== DuplikatProduksi::TERKUNCI);
+
+        return $ringkas + DuplikatProduksi::ringkas($rows) + [
+            'akan_disimpan' => $baris,
+            'palet_disimpan' => $palet,
+            'akan_disimpan_timpa' => $barisTimpa,
+            'palet_disimpan_timpa' => $paletTimpa,
+        ];
     }
 
     /**
@@ -474,7 +526,7 @@ class InboundController extends Controller
             $message .= sprintf(
                 ' %d baris DILEWATI karena RMO + batch-nya sudah pernah masuk%s.',
                 $terkunci->count(),
-                $bolehTimpa ? ' dan paletnya sudah disentuh gudang' : '',
+                $bolehTimpa ? ' dan paletnya sudah naik rak atau sudah diverifikasi' : '',
             );
         }
 
@@ -562,7 +614,7 @@ class InboundController extends Controller
         }
 
         return sprintf(
-            'Seluruh baris pada berkas ini sudah pernah masuk lewat dokumen %s, dan paletnya sudah disentuh gudang '
+            'Seluruh baris pada berkas ini sudah pernah masuk lewat dokumen %s, dan paletnya sudah naik rak atau sudah diverifikasi '
                 .'(sudah naik rak atau sudah diverifikasi) sehingga tidak boleh ditimpa. '
                 .'Barangnya sudah berdiri di rak dan angkanya sudah dihitung — menimpanya akan membuat catatan sistem '
                 .'berbeda dari isi gudang. Kalau ada yang keliru, perbaiki lewat koreksi stok, bukan lewat unggah ulang.',

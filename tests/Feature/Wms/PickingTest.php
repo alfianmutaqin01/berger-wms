@@ -964,4 +964,69 @@ class PickingTest extends TestCase
             'release_reason' => 'Percobaan lintas gudang.',
         ])->assertForbidden();
     }
+
+    /* ------------------------------------------- Unduhan untuk cocok BC */
+
+    /**
+     * Unduhan BARU ADA setelah daftarnya selesai dipicking.
+     *
+     * Selama picking berjalan, qty diambil masih berubah tiap kali operator
+     * menandai satu baris. Berkas yang keluar di tengah jalan menyatakan
+     * "diambil 0" untuk barang yang lima menit lagi sudah di troli, lalu
+     * beredar di luar sistem sebagai angka yang terlihat resmi — dan
+     * memunculkan selisih terhadap BC yang tidak pernah ada.
+     */
+    public function test_unduhan_tertutup_selama_daftar_belum_selesai(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        // Sedang dikerjakan: belum ada angka yang pantas dicocokkan.
+        $this->get(route('wms.picking.unduh', $daftar))->assertNotFound();
+
+        // Tombolnya pun tidak ditawarkan.
+        $this->get(route('wms.picking.show', $daftar))
+            ->assertOk()
+            ->assertDontSee(route('wms.picking.unduh', $daftar));
+    }
+
+    public function test_daftar_yang_selesai_bisa_diunduh_sebagai_excel(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->post(route('wms.picking.item.pick', [$daftar, $daftar->items()->first()]));
+        $this->post(route('wms.picking.complete', $daftar));
+
+        $this->assertSame(PickingList::STATUS_COMPLETED, $daftar->refresh()->status);
+
+        // Tombolnya muncul di rinciannya.
+        $this->get(route('wms.picking.show', $daftar))
+            ->assertOk()
+            ->assertSee(route('wms.picking.unduh', $daftar));
+
+        $respons = $this->get(route('wms.picking.unduh', $daftar));
+
+        $respons->assertOk()
+            ->assertHeader(
+                'content-type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            );
+
+        $this->assertStringContainsString(
+            'daftar-picking-'.$daftar->list_number,
+            $respons->headers->get('content-disposition') ?? '',
+        );
+    }
+
+    /** Daftar gudang lain tidak bisa diunduh lewat URL tebakan. */
+    public function test_unduhan_daftar_gudang_lain_ditolak(): void
+    {
+        $daftar = $this->daftarSiapDikerjakan();
+
+        $this->post(route('wms.picking.item.pick', [$daftar, $daftar->items()->first()]));
+        $this->post(route('wms.picking.complete', $daftar));
+
+        $this->loginAt($this->pekanbaru, Role::WAREHOUSE_OPERATOR);
+
+        $this->get(route('wms.picking.unduh', $daftar))->assertForbidden();
+    }
 }

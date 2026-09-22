@@ -1478,4 +1478,61 @@ class ShipmentTest extends TestCase
     {
         return UploadedFile::fake()->image('bukti-sampai.jpg', 800, 600);
     }
+
+    /* ------------------------------------------ Sudah dipicking, belum berangkat */
+
+    /**
+     * Pesanan yang barangnya sudah turun dari rak tetapi Surat Jalannya belum
+     * terbit TIDAK MUNCUL DI LAYAR MANA PUN sebelum halaman ini ada: daftar
+     * Surat Jalan hanya memuat dokumen, dan dokumennya justru yang belum ada.
+     * Jumlahnya terlihat sebagai angka di kartu, tanpa cara tahu yang mana.
+     */
+    public function test_layar_siap_kirim_menyebut_pesanan_yang_belum_punya_surat_jalan(): void
+    {
+        $order = $this->pesananSudahDipicking(50, 50);
+
+        $this->loginAt($this->karawang);
+
+        $this->get(route('wms.delivery.siap-kirim'))
+            ->assertOk()
+            ->assertSee($order->order_number)
+            ->assertSee('Belum ada');
+    }
+
+    /**
+     * Dokumennya sudah masuk = tindakannya berbeda: tinggal ditekan Berangkat.
+     * Keduanya wajib terlihat di layar yang sama, karena keduanya sama-sama
+     * barang yang belum berangkat — memisahkannya membuat salah satu kelompok
+     * jadi tidak ada yang menjaga.
+     */
+    public function test_siap_kirim_membedakan_yang_dokumennya_sudah_masuk(): void
+    {
+        $order = $this->pesananSudahDipicking(50, 50);
+        $this->suratJalan($order, 50);
+
+        $this->loginAt($this->karawang);
+
+        $this->get(route('wms.delivery.siap-kirim'))
+            ->assertOk()
+            ->assertSee($order->order_number)
+            ->assertSee('tinggal diberangkatkan');
+
+        // Saringan "belum ada SJ" menyisakan yang benar-benar perlu ditunggu
+        // dokumennya — dan pesanan ini bukan salah satunya.
+        $this->get(route('wms.delivery.siap-kirim', ['belum_sj' => 1]))
+            ->assertOk()
+            ->assertDontSee($order->order_number);
+    }
+
+    /** Batas gudang berlaku di sini juga — layar baru paling mudah terlewat. */
+    public function test_siap_kirim_dibatasi_gudang(): void
+    {
+        $order = $this->pesananSudahDipicking(50, 50);
+
+        $this->loginAt($this->pekanbaru);
+
+        $this->get(route('wms.delivery.siap-kirim'))
+            ->assertOk()
+            ->assertDontSee($order->order_number);
+    }
 }

@@ -12,6 +12,7 @@
     </style>
 </head>
 <body class="py-4 px-3">
+@include('partials.pemuat')
 {{-- HALAMAN ATASAN — TANPA LOGIN.
 
      Dibuka dari WhatsApp, di HP, sering sambil berjalan di lantai produksi.

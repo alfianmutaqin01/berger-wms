@@ -151,6 +151,17 @@ class Warehouse extends Model
      *   MRF & pengujian Kode pendek. Reproses dan pengujian kadang mengambil
      *                   barang DDP, kadang barang bagus; mengunci layarnya ke
      *                   "_1001" menyebut jenis yang belum tentu benar.
+     *   Audit & jejak   Kode pendek. Layar yang memuat BERBAGAI jenis mutasi
+     *                   sekaligus — item ledger, log aktivitas — tidak boleh
+     *                   memakai kode penuh: lihat alasannya di bawah.
+     *
+     * AKHIRANNYA MELEKAT PADA BARIS GUDANGNYA, BUKAN PADA MUTASINYA. Tiap
+     * cabang cuma punya satu baris gudang, dan kodenya berakhiran "_1001"
+     * apa pun yang bergerak di dalamnya. Jadi menuliskan kode penuh di baris
+     * pengeluaran MRF yang barangnya DDP tidak sekadar bertele-tele — ia
+     * menyatakan barang itu finish good, dan itu salah. Di layar yang mencampur
+     * banyak jenis mutasi, kode cabang adalah satu-satunya yang benar untuk
+     * semua barisnya.
      *
      * Jadi jangan "merapikan" layar penjualan menjadi kode pendek — itu
      * menghapus keterangan, bukan memendekkan tulisan. Kode PENUH juga tetap

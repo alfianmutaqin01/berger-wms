@@ -72,7 +72,7 @@
             <li>
                 <a class="dropdown-item py-2" href="{{ route('wms.reports.show', array_filter(['key' => 'pergerakan-stok', 'warehouse_id' => $gudangKini])) }}">
                     <i class="bi bi-arrow-left-right me-2 text-danger"></i>Pergerakan Stok
-                    <small class="d-block text-muted ms-4">Kartu stok: tiap tambah &amp; kurang beserta pelakunya</small>
+                    <small class="d-block text-muted ms-4">Item ledger: tiap tambah &amp; kurang beserta pelakunya</small>
                 </a>
             </li>
         </ul>

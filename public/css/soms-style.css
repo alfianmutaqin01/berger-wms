@@ -326,7 +326,9 @@ html, body {
 
 .form-control:focus, .form-select:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.15);
+    /* Sengaja diturunkan dari --primary: sebelumnya biru bawaan Bootstrap,
+       sehingga garis tepinya navy Berger tetapi cahaya fokusnya biru. */
+    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.15);
 }
 
 /* ============================================

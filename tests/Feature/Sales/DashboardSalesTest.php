@@ -101,7 +101,7 @@ class DashboardSalesTest extends TestCase
         $this->pesanan($sales, SalesOrder::STATUS_DRAFT);
         $this->pesanan($sales, SalesOrder::STATUS_DRAFT);
         $this->pesanan($sales, SalesOrder::STATUS_REJECTED);
-        $this->pesanan($sales, SalesOrder::STATUS_SHIPPING);
+        $this->pesanan($sales, SalesOrder::STATUS_PROOF_UPLOADED);
 
         // Yang ini menunggu GUDANG, bukan Sales — tidak boleh ikut.
         $this->pesanan($sales, SalesOrder::STATUS_PENDING);
@@ -240,8 +240,8 @@ class DashboardSalesTest extends TestCase
     {
         $sales = $this->login();
 
-        $pesanan = $this->pesanan($sales, SalesOrder::STATUS_SHIPPING, [
-            'shipped_at' => now()->subHours(3),
+        $pesanan = $this->pesanan($sales, SalesOrder::STATUS_PROOF_UPLOADED, [
+            'delivered_at' => now()->subHours(3),
         ]);
 
         $respons = $this->get('/sales/dashboard')->assertOk();

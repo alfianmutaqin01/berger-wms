@@ -74,7 +74,7 @@
                                 <div class="text-muted text-truncate" title="{{ $foto->uploadedBy?->full_name }}">
                                     {{ $foto->uploadedBy?->full_name ?? '—' }}
                                 </div>
-                                <a href="{{ route('wms.verification.download', $foto) }}" class="d-inline-block mt-1">
+                                <a href="{{ route('wms.verification.download', $foto) }}" data-tanpa-pemuat class="d-inline-block mt-1">
                                     <i class="bi bi-download me-1"></i> Unduh
                                 </a>
                                 @if($foto->status === \App\Models\DeliveryProof::STATUS_REJECTED)

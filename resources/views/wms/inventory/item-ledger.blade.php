@@ -1,13 +1,13 @@
 @extends('layouts.wms')
 
-@section('title', 'Kartu Stok')
+@section('title', 'Item Ledger')
 
 @section('content')
 @include('wms.partials.tab-audit')
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
-        <h4 class="fw-bold mb-1"><i class="bi bi-journal-text me-2"></i>Kartu Stok</h4>
+        <h4 class="fw-bold mb-1"><i class="bi bi-journal-text me-2"></i>Item Ledger</h4>
         <p class="text-muted small mb-0">
             Buku besar mutasi barang: setiap pertambahan dan pengurangan, beserta dokumen penyebabnya.
             Tidak dapat diubah maupun dihapus — koreksi dilakukan dengan menambah baris lawan.
@@ -63,16 +63,17 @@
             @if($gudangOptions->count() > 1)
                 <div class="col-md-2">
                     <label class="form-label small fw-semibold mb-1">Gudang</label>
-                    {{-- KODE PENUH di layar audit, termasuk akhiran jenis
-                         barangnya. Buku besar ini memuat pengiriman ke
-                         pelanggan — yang selalu finish good — bersama mutasi
-                         MRF yang bisa datang dari barang DDP. Memendekkannya
-                         menghapus justru keterangan yang membedakan keduanya. --}}
+                    {{-- KODE CABANG, bukan kode penuh. Akhiran "_1001" berarti
+                         finish good, tetapi ia melekat pada BARIS GUDANGNYA —
+                         bukan pada mutasinya. Buku besar ini memuat mutasi MRF
+                         yang barangnya sering DDP, dan menuliskan "_1001" di
+                         baris itu menyebut jenis barang yang justru salah.
+                         Kode cabang benar untuk semua jenis mutasi. --}}
                     <select name="warehouse_id" class="form-select form-select-sm">
                         <option value="">Semua</option>
                         @foreach($gudangOptions as $g)
                             <option value="{{ $g->id }}" @selected((string) $filters['warehouse_id'] === (string) $g->id)>
-                                {{ $g->code }}
+                                {{ $g->kode_pendek }}
                             </option>
                         @endforeach
                     </select>
@@ -87,7 +88,7 @@
             </div>
             <div class="col-12 d-flex gap-2 mt-2">
                 <button class="btn btn-sm btn-dark px-3"><i class="bi bi-funnel me-1"></i>Terapkan</button>
-                <a href="{{ route('wms.inventory.kartu-stok') }}" class="btn btn-sm btn-outline-secondary">
+                <a href="{{ route('wms.inventory.item-ledger') }}" class="btn btn-sm btn-outline-secondary">
                     <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Filter
                 </a>
             </div>
@@ -160,7 +161,7 @@
                     <td class="small font-monospace text-break">{{ $acuan['nomor'] ?? '—' }}</td>
                     <td class="small text-break">{{ $acuan['pihak'] ?? '—' }}</td>
                     <td class="small">
-                        <span class="font-monospace">{{ $baris->warehouse?->code ?? '—' }}</span>
+                        <span class="font-monospace">{{ $baris->warehouse?->kode_pendek ?? '—' }}</span>
                         <div class="text-muted font-monospace" style="font-size:.72rem">
                             {{ $baris->location?->code ?? '—' }}
                         </div>

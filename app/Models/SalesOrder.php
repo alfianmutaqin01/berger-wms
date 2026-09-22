@@ -99,7 +99,13 @@ class SalesOrder extends Model
 
     public function details(): HasMany
     {
-        return $this->hasMany(SalesOrderDetail::class);
+        // chaperone(): setiap baris yang ditarik lewat relasi ini langsung
+        // memegang induknya sebagai relasi salesOrder. FifoAllocator dan
+        // ProductBooking membaca $detail->salesOrder untuk tahu gudang dan
+        // customer pesanan; tanpa ini keduanya memicu lazy load — di lokal
+        // melempar (preventLazyLoading) dan di produksi diam-diam menjadi
+        // satu query tambahan per baris.
+        return $this->hasMany(SalesOrderDetail::class)->chaperone('salesOrder');
     }
 
     public function customer(): BelongsTo

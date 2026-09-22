@@ -333,20 +333,20 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         ->name('wms.inventory.index');
 
     /*
-    | KARTU STOK — buku besar mutasi, hanya baca.
+    | ITEM LEDGER — buku besar mutasi, hanya baca.
     |
     | Gate-nya SENDIRI, bukan INVENTORY_VIEW. Data Stok menjawab "berapa
     | sisanya sekarang" dan memang dipakai Produksi serta Operator tiap hari;
-    | kartu stok menjawab "bagaimana ia sampai ke angka itu", bahan
+    | item ledger menjawab "bagaimana ia sampai ke angka itu", bahan
     | rekonsiliasi yang dikerjakan Logistik dan Manager.
     |
     | Didaftarkan SEBELUM rute /inventory ber-parameter apa pun kelak, dengan
-    | alasan yang sama seperti di tempat lain: "kartu-stok" bukan angka, tetapi
+    | alasan yang sama seperti di tempat lain: "item-ledger" bukan angka, tetapi
     | urutannya dijaga supaya tidak pernah menjadi jebakan.
     */
-    Route::get('/inventory/kartu-stok', [StockLedgerController::class, 'index'])
+    Route::get('/inventory/item-ledger', [StockLedgerController::class, 'index'])
         ->middleware('can:'.Permission::INVENTORY_LEDGER)
-        ->name('wms.inventory.kartu-stok');
+        ->name('wms.inventory.item-ledger');
     // TIDAK ADA rute unduhan tersendiri di sini. Tombol Export Excel pada
     // halaman Data Stok mengarah ke pratinjau laporan Posisi Stok /
     // Pergerakan Stok yang sudah ada — alur, tampilan, batas baris, dan
@@ -755,6 +755,13 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
         // susunannya, Operator mengerjakannya. Gate-nya "salah satu boleh",
         // bukan salah satunya saja — karena itu fiturnya sendiri, bukan
         // menumpang salah satu dari keduanya.
+        // Unduhan didaftarkan SEBELUM '/picking/list/{list}', kalau tidak
+        // "unduh" tertangkap sebagai id daftar. Gate-nya sama dengan rincian:
+        // isinya persis isi layar itu, hanya dalam bentuk berkas.
+        Route::get('/picking/list/{list}/unduh', [PickingController::class, 'download'])
+            ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
+            ->name('wms.picking.unduh');
+
         Route::get('/picking/list/{list}', [PickingController::class, 'show'])
             ->middleware('can:'.Permission::OUTBOUND_PICKING_VIEW)
             ->name('wms.picking.show');
@@ -785,15 +792,25 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->defaults('type', 'delivery-notes')
                 ->name('wms.delivery.import.cancel');
 
-            // URUTAN PENTING: '/delivery/import*' di atas harus didaftarkan
-            // SEBELUM '/delivery/{note}', kalau tidak "import" tertangkap
-            // sebagai id dokumen.
+            // Pesanan yang sudah dipicking tetapi belum berangkat. Alasan
+            // halaman ini ada di DeliveryController::siapKirim().
+            Route::get('/delivery/siap-kirim', [DeliveryController::class, 'siapKirim'])
+                ->name('wms.delivery.siap-kirim');
+
+            // URUTAN PENTING: '/delivery/import*' dan '/delivery/siap-kirim'
+            // di atas harus didaftarkan SEBELUM '/delivery/{note}', kalau
+            // tidak keduanya tertangkap sebagai id dokumen.
             Route::get('/delivery/{note}', [DeliveryController::class, 'show'])
                 ->name('wms.delivery.show');
             Route::post('/delivery/{note}/ship', [DeliveryController::class, 'ship'])
                 ->name('wms.delivery.ship');
             Route::post('/delivery/{note}/resend', [DeliveryController::class, 'resend'])
                 ->name('wms.delivery.resend');
+
+            // Jalan keluar saat supir tidak bisa menekan konfirmasinya
+            // sendiri — alasannya di Shipment::markArrivedManually().
+            Route::post('/delivery/{note}/tandai-sampai', [DeliveryController::class, 'markArrived'])
+                ->name('wms.delivery.tandai-sampai');
 
             // Foto bukti sampai yang dijepret supir (Fase 12). Lewat rute
             // berizin, BUKAN dari folder publik: fotonya memperlihatkan

@@ -27,7 +27,7 @@ class MaterialRequisitionFactory extends Factory
             'request_type' => MaterialRequisition::TYPE_REPROSES,
             'purpose' => 'Reproses DDP batch lama menjadi warna Off White.',
             'status' => MaterialRequisition::STATUS_PENDING_APPROVAL,
-            'approver_name' => 'Pak Ganti',
+            'approver_name' => 'Pak Gandhi',
             'approver_phone' => '628123456789',
             'approval_token' => Str::random(64),
             'notify_status' => MaterialRequisition::NOTIFY_PENDING,

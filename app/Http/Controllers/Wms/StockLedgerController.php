@@ -19,14 +19,14 @@ use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 /**
- * Kartu stok — buku besar mutasi barang, HANYA BACA.
+ * Item ledger — buku besar mutasi barang, HANYA BACA.
  *
  * KENAPA LAYAR TERSENDIRI, BUKAN BAGIAN LOG AKTIVITAS. Keduanya sama-sama
  * jejak audit, tetapi menjawab pertanyaan yang berbeda dan tidak bisa saling
  * menggantikan:
  *
  *   Log aktivitas  siapa melakukan apa — "Manager mengoreksi stok pukul 10:14"
- *   Kartu stok     bagaimana angkanya bergerak — "APKO-001 turun 300, sisa 700"
+ *   Item ledger     bagaimana angkanya bergerak — "APKO-001 turun 300, sisa 700"
  *
  * Satu tindakan bisa menggerakkan puluhan baris stok, dan satu baris stok bisa
  * bergerak tanpa ada orang yang menekan apa pun (alokasi otomatis saat pesanan
@@ -39,7 +39,7 @@ use Illuminate\View\View;
  * seluruh riwayat — dan kalau ada baris yang hilang, lompatan angkanya
  * langsung terlihat di kolom itu juga.
  *
- * DATA CONTRACT (view: wms.inventory.kartu-stok)
+ * DATA CONTRACT (view: wms.inventory.item-ledger)
  * ---------------------------------------------
  * $halaman  : LengthAwarePaginator<StockMovement>
  * $dokumen  : array<string, array{kode:string, nomor:?string, pihak:?string}>
@@ -102,7 +102,7 @@ class StockLedgerController extends Controller
             ->paginate(30)
             ->withQueryString();
 
-        return view('wms.inventory.kartu-stok', [
+        return view('wms.inventory.item-ledger', [
             'halaman' => $halaman,
             'dokumen' => $this->dokumen(collect($halaman->items())),
             'filters' => $filters,

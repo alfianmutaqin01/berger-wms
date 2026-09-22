@@ -4,17 +4,21 @@ namespace App\Http\Controllers\Wms;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Wms\ShipDeliveryNoteRequest;
+use App\Jobs\SendArrivalNoticeToSales;
 use App\Jobs\SendDeliveryNotification;
 use App\Models\ActivityLog;
 use App\Models\DeliveryNote;
+use App\Models\Notification;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderEmail;
 use App\Support\Activity;
 use App\Support\Messaging\EmailSales;
+use App\Support\Notifier;
 use App\Support\Outbound\ArrivalPhoto;
 use App\Support\Outbound\Shipment;
 use App\Support\Outbound\SoNumberFixer;
 use App\Support\WarehouseScope;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -37,13 +41,82 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *
  * DATA CONTRACT
  * -------------
- * index() : $notes LengthAwarePaginator<DeliveryNote>, $filters,
- *           $statuses, $stats{menunggu,tanpa_pasangan,siap_kirim},
- *           $gudangSaya
+ * index()     : $notes LengthAwarePaginator<DeliveryNote>, $filters,
+ *               $statuses, $stats{menunggu,tanpa_pasangan,siap_kirim},
+ *               $gudangSaya
+ * siapKirim() : $pesanan LengthAwarePaginator<SalesOrder>, $filters{search,
+ *               belum_sj}, $stats{semua,belum_sj,terlama_hari}
  */
 class DeliveryController extends Controller
 {
     public function __construct(private readonly Shipment $pengiriman) {}
+
+    /**
+     * Sudah dipicking, belum berangkat — PEKERJAAN YANG BERHENTI DI TENGAH.
+     *
+     * KENAPA HALAMAN SENDIRI. Angkanya sudah lama ada sebagai kartu di layar
+     * Surat Jalan, tetapi hanya sebagai angka: Logistik tahu ADA tujuh
+     * pesanan yang menggantung tanpa bisa tahu YANG MANA. Satu-satunya jalan
+     * adalah menggulir Daftar Picking dan mencocokkan sendiri nomor SO-nya
+     * dengan dokumen yang sudah masuk — bisa dikerjakan selama datanya
+     * sedikit, dan berhenti bisa dikerjakan persis ketika datanya banyak.
+     *
+     * Barangnya sudah turun dari rak dan berdiri di dermaga. Pesanan yang
+     * tertinggal di sini bukan angka yang salah, melainkan barang sungguhan
+     * yang tidak berangkat dan tidak ada yang menyadarinya.
+     *
+     * YANG BELUM PUNYA SURAT JALAN SELALU DI ATAS, lalu yang paling lama
+     * menunggu. Dua-duanya perlu terlihat: yang belum punya SJ menunggu
+     * dokumennya terbit di BC, sementara yang sudah punya hanya menunggu
+     * seseorang menekan Berangkat — sebab berbeda, tindakan berbeda, dan
+     * menyembunyikan salah satunya membuat layar ini berbohong.
+     */
+    public function siapKirim(Request $request): View
+    {
+        $user = $request->user();
+
+        $filters = [
+            'search' => $request->query('search'),
+            'belum_sj' => $request->boolean('belum_sj'),
+        ];
+
+        $dasar = fn () => WarehouseScope::apply(SalesOrder::query(), $user)
+            ->where('status', SalesOrder::STATUS_READY_TO_SHIP);
+
+        $pesanan = $dasar()
+            ->with(['customer:id,code,name', 'warehouse:id,code,name'])
+            ->withCount('details')
+            ->withSum('details as unit_disetujui', 'qty_approved')
+            // Dipakai untuk menandai baris yang dokumennya sudah masuk;
+            // withExists supaya tidak menarik seluruh SJ hanya demi tahu ada.
+            ->withExists('deliveryNotes as punya_sj')
+            ->when($filters['belum_sj'], fn ($q) => $q->whereDoesntHave('deliveryNotes'))
+            ->when($filters['search'], fn ($q, $cari) => $q->where(
+                fn ($w) => $w->where('order_number', 'ilike', '%'.$cari.'%')
+                    ->orWhere('bc_so_number', 'ilike', '%'.$cari.'%')
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'ilike', '%'.$cari.'%'))
+            ))
+            ->orderByRaw('CASE WHEN EXISTS (
+                SELECT 1 FROM delivery_notes WHERE delivery_notes.sales_order_id = sales_orders.id
+            ) THEN 1 ELSE 0 END')
+            ->orderBy('picking_completed_at')
+            ->paginate(20)
+            ->withQueryString();
+
+        // Yang paling lama menunggu di antara yang belum punya SJ. Satu angka
+        // yang menjawab "seberapa buruk keadaannya" tanpa membaca tabelnya.
+        $tertua = $dasar()->whereDoesntHave('deliveryNotes')->min('picking_completed_at');
+
+        return view('wms.outbound.siap-kirim', [
+            'pesanan' => $pesanan,
+            'filters' => $filters,
+            'stats' => [
+                'semua' => $dasar()->count(),
+                'belum_sj' => $dasar()->whereDoesntHave('deliveryNotes')->count(),
+                'terlama_hari' => $tertua === null ? 0 : (int) Carbon::parse($tertua)->startOfDay()->diffInDays(now()->startOfDay()),
+            ],
+        ]);
+    }
 
     public function index(Request $request): View
     {
@@ -104,6 +177,88 @@ class DeliveryController extends Controller
                     ->count(),
             ],
         ]);
+    }
+
+    /**
+     * "Tandai Sampai" — jalan keluar ketika supir tidak bisa konfirmasi.
+     *
+     * Alasannya wajib dan disimpan apa adanya; lihat
+     * Shipment::markArrivedManually() untuk kenapa jalur ini tanpa foto.
+     */
+    public function markArrived(Request $request, DeliveryNote $note): RedirectResponse
+    {
+        WarehouseScope::assert($note->warehouse_id, $request->user());
+
+        $data = $request->validate([
+            'received_by_name' => ['required', 'string', 'max:100'],
+            'arrival_manual_reason' => ['required', 'string', 'max:500'],
+        ], [
+            'received_by_name.required' => 'Tulis nama orang yang menerima barangnya.',
+            'arrival_manual_reason.required' => 'Tulis alasan kenapa supir tidak menekan konfirmasinya sendiri.',
+        ], [
+            'received_by_name' => 'nama penerima',
+            'arrival_manual_reason' => 'alasan',
+        ]);
+
+        try {
+            $this->pengiriman->markArrivedManually(
+                $note,
+                $data['received_by_name'],
+                $data['arrival_manual_reason'],
+                $request->user()?->id,
+            );
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $note->refresh();
+
+        Activity::record(
+            ActivityLog::ARRIVAL_MANUAL,
+            sprintf(
+                'Menandai Surat Jalan %s sampai secara manual (diterima %s). Alasan: %s',
+                $note->document_no,
+                $data['received_by_name'],
+                $data['arrival_manual_reason'],
+            ),
+            $note,
+            $note->warehouse_id,
+            ['alasan' => $data['arrival_manual_reason']],
+        );
+
+        /*
+         * KABAR KE SALES LEWAT JALUR YANG SAMA dengan konfirmasi supir.
+         * Sales tidak perlu tahu siapa yang menekan tombolnya — yang ia
+         * tunggu adalah izin mengunggah bukti, dan izin itu sekarang ada.
+         * Menghilangkan kabarnya di jalur ini berarti pesanan yang justru
+         * sudah bermasalah menjadi yang paling sunyi.
+         */
+        Notifier::toUser(
+            $note->salesOrder?->user_id,
+            Notification::PROOF_NEEDED,
+            'Barang sampai — unggah bukti Surat Jalan',
+            sprintf(
+                'Surat Jalan %s ditandai sampai oleh Logistik. Pesanan %s belum bisa ditutup sebelum foto '.
+                'Surat Jalan bertanda tangan diunggah.',
+                $note->document_no,
+                $note->salesOrder?->order_number ?? '',
+            ),
+            $note->sales_order_id ? url('/sales/orders/'.$note->sales_order_id) : null,
+            $note->warehouse_id,
+            $note,
+        );
+
+        $note->forceFill(['sales_notify_status' => DeliveryNote::NOTIFY_PENDING])->save();
+        SendArrivalNoticeToSales::dispatch($note->id);
+
+        if ($note->sales_order_id !== null) {
+            EmailSales::antrekan($note->sales_order_id, SalesOrderEmail::TYPE_DELIVERED, $note->id);
+        }
+
+        return back()->with('success', sprintf(
+            'Surat Jalan %s ditandai sampai. Sales sudah dikabari untuk mengunggah buktinya.',
+            $note->document_no,
+        ));
     }
 
     /**

@@ -304,7 +304,7 @@ return new class extends Migration
          | kepada siapa permintaan hari ini harus dikirim adalah orang yang
          | membuatnya, bukan administrator yang tidak ikut di lantai produksi.
          |
-         | DIPAKAI BERSAMA satu gudang, bukan milik satu akun. Pak Ganti
+         | DIPAKAI BERSAMA satu gudang, bukan milik satu akun. Pak Gandhi
          | menyetujui permintaan siapa pun di Karawang; menyimpannya per akun
          | berarti tiap orang mengetik nomor yang sama berulang kali — dan
          | nomor yang diketik ulang adalah nomor yang cepat atau lambat salah

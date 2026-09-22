@@ -97,6 +97,9 @@ class ActivityLog extends Model
 
     public const EPOD_CONFIRM = 'epod.confirm';
 
+    /** Logistik menandai sampai karena supir tidak bisa menekan tautannya. */
+    public const ARRIVAL_MANUAL = 'delivery.arrival_manual';
+
     public const PROOF_UPLOAD = 'proof.upload';
 
     public const PROOF_VERIFY = 'proof.verify';
@@ -205,6 +208,7 @@ class ActivityLog extends Model
         self::DELIVERY_SHIP => 'Nyatakan Berangkat',
         self::DELIVERY_SUBSTITUTION => 'Konfirmasi Barang Beda SKU',
         self::EPOD_CONFIRM => 'Konfirmasi Sampai (Supir)',
+        self::ARRIVAL_MANUAL => 'Tandai Sampai (Logistik, manual)',
         self::PROOF_UPLOAD => 'Unggah Bukti Surat Jalan',
         self::PROOF_VERIFY => 'Sahkan Bukti Surat Jalan',
         self::PROOF_REJECT => 'Tolak Bukti Surat Jalan',

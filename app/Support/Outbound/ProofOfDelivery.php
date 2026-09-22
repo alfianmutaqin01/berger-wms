@@ -36,13 +36,26 @@ class ProofOfDelivery
     /**
      * Status pesanan yang buktinya boleh diunggah.
      *
-     * SHIPPING ikut, bukan hanya PROOF_UPLOADED: Sales sering sudah sampai di
-     * toko dan memegang Surat Jalan bertanda tangan sebelum supir sempat
-     * menekan tautan konfirmasinya. Menolak unggahan karena supir belum
-     * menekan tombol berarti menahan pekerjaan yang sudah selesai.
+     * HANYA SETELAH SUPIR MENYATAKAN SAMPAI (keputusan pemilik produk).
+     * Pesanan berpindah ke PROOF_UPLOADED persis ketika supir menekan
+     * konfirmasi di tautan ePOD-nya — lihat Shipment::confirmDelivery() — dan
+     * saat itu pula Sales dikabari lewat lonceng dan WhatsApp. Jadi daftar
+     * ini adalah "sudah tiba", bukan "sudah berangkat".
+     *
+     * SHIPPING DIKELUARKAN, dan itu membalik keputusan sebelumnya. Dulu
+     * dibolehkan karena Sales kerap sudah memegang Surat Jalan bertanda
+     * tangan sebelum supir sempat menekan tautannya. Akibatnya layar Sales
+     * meminta bukti untuk barang yang menurut sistem masih di jalan — dua
+     * layar menceritakan hal yang berbeda tentang satu pesanan yang sama, dan
+     * yang paling merugikan: bukti bisa masuk untuk kiriman yang ternyata
+     * tidak pernah sampai.
+     *
+     * KONSEKUENSINYA HARUS DISADARI: konfirmasi tiba hanya bisa dilakukan
+     * supir lewat tautannya. Selama belum ada jalur manual untuk Logistik,
+     * supir yang kehilangan tautan atau kehabisan baterai berarti pesanan
+     * yang tidak bisa diselesaikan siapa pun.
      */
     private const BOLEH_UNGGAH = [
-        SalesOrder::STATUS_SHIPPING,
         SalesOrder::STATUS_PROOF_UPLOADED,
     ];
 
@@ -285,10 +298,17 @@ class ProofOfDelivery
         }
 
         if (! in_array($order->status, self::BOLEH_UNGGAH, true)) {
-            throw new RuntimeException(sprintf(
-                'Bukti hanya bisa diunggah setelah barang berangkat. Pesanan ini masih berstatus "%s".',
-                $order->status_label,
-            ));
+            // Pesan dibedakan: "masih di jalan" punya jalan keluar yang jelas
+            // (supir menekan konfirmasi), sementara status lain tidak — dan
+            // menyamakan keduanya membuat Sales menunggu sesuatu yang tidak
+            // akan datang.
+            throw new RuntimeException($order->status === SalesOrder::STATUS_SHIPPING
+                ? 'Barang ini masih tercatat dalam perjalanan. Bukti bisa diunggah setelah supir menekan '.
+                  'konfirmasi "sampai di tujuan" — Anda akan dikabari lewat lonceng dan WhatsApp saat itu terjadi.'
+                : sprintf(
+                    'Bukti hanya bisa diunggah setelah barang dinyatakan sampai. Pesanan ini berstatus "%s".',
+                    $order->status_label,
+                ));
         }
     }
 

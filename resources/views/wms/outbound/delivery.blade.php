@@ -36,6 +36,12 @@
             <div class="card-body">
                 <div class="small text-muted">Sudah dipicking, siap kirim</div>
                 <div class="h3 fw-bold mb-0">{{ $stats['siap_kirim'] }}</div>
+                {{-- Dulu angka ini jalan buntu: Logistik tahu ADA sekian
+                     pesanan menggantung tanpa bisa tahu YANG MANA. --}}
+                @if($stats['siap_kirim'] > 0)
+                    <a href="{{ route('wms.delivery.siap-kirim') }}"
+                       class="small text-decoration-none">Lihat daftarnya</a>
+                @endif
             </div>
         </div>
     </div>

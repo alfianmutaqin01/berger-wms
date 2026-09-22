@@ -401,27 +401,99 @@ class Shipment
                 throw new RuntimeException('Pengiriman ini belum dinyatakan berangkat, jadi belum bisa dikonfirmasi.');
             }
 
-            $terkunci->fill(array_merge([
-                'status' => DeliveryNote::STATUS_DELIVERED,
-                'delivered_at' => now(),
+            $this->tandaiSampai($terkunci, array_merge([
                 'received_by_name' => filled($penerima) ? trim($penerima) : null,
-            ], $foto))->save();
+            ], $foto));
+        });
+    }
 
-            $order = SalesOrder::query()->lockForUpdate()->find($terkunci->sales_order_id);
+    /**
+     * Logistik menandai sampai karena supir tidak bisa melakukannya sendiri.
+     *
+     * JALAN KELUAR, BUKAN JALAN PINTAS. Sejak bukti Surat Jalan hanya terbuka
+     * setelah barang dinyatakan sampai, tautan ePOD supir menjadi satu-satunya
+     * pintu — dan supir yang kehilangan tautannya atau nomornya salah ketik
+     * membuat pesanan itu macet tanpa ada seorang pun yang bisa menutupnya.
+     *
+     * TANPA FOTO, DAN ITU DISENGAJA. confirmDelivery() mewajibkan foto karena
+     * yang menekannya berdiri di tempat tujuan; yang memakai jalur ini justru
+     * TIDAK di sana, jadi meminta foto hanya akan melahirkan foto karangan.
+     * Gantinya: pelakunya dicatat bernama, alasannya wajib, dan keduanya
+     * disimpan di kolom tersendiri supaya audit tidak pernah salah membaca
+     * keterangan kantor sebagai kesaksian lapangan.
+     *
+     * @throws RuntimeException
+     */
+    public function markArrivedManually(
+        DeliveryNote $note,
+        string $penerima,
+        string $alasan,
+        ?int $userId,
+    ): void {
+        if (trim($alasan) === '') {
+            throw new RuntimeException(
+                'Alasan wajib diisi — ini satu-satunya catatan kenapa supir tidak menekan konfirmasinya sendiri.'
+            );
+        }
 
-            if ($order !== null && $order->status === SalesOrder::STATUS_SHIPPING) {
-                $order->forceFill([
-                    // Barang sampai, tetapi belum selesai: bukti Surat Jalan
-                    // bertanda tangan masih harus diunggah dan diverifikasi
-                    // (F-OUT-05, tahap 5).
-                    'status' => SalesOrder::STATUS_PROOF_UPLOADED,
-                    'delivered_at' => now(),
-                ])->save();
+        DB::transaction(function () use ($note, $penerima, $alasan, $userId) {
+            $terkunci = DeliveryNote::query()->lockForUpdate()->findOrFail($note->id);
+
+            if ($terkunci->status === DeliveryNote::STATUS_DELIVERED) {
+                throw new RuntimeException(sprintf(
+                    'Surat Jalan %s sudah tercatat sampai, jadi tidak perlu ditandai lagi.',
+                    $terkunci->document_no,
+                ));
             }
+
+            if ($terkunci->status !== DeliveryNote::STATUS_SHIPPED) {
+                throw new RuntimeException(
+                    'Pengiriman ini belum dinyatakan berangkat, jadi belum bisa ditandai sampai.'
+                );
+            }
+
+            $this->tandaiSampai($terkunci, [
+                'received_by_name' => trim($penerima),
+                'arrival_manual_by' => $userId,
+                'arrival_manual_reason' => trim($alasan),
+            ]);
         });
     }
 
     /* ------------------------------------------------------------- Dalam */
+
+    /**
+     * Satu tempat yang memindahkan SJ dan pesanannya ke keadaan "sampai".
+     *
+     * Dipakai kedua jalur — konfirmasi supir dan penandaan manual Logistik —
+     * supaya keduanya tidak pernah bisa berbeda dalam hal yang sama: waktu
+     * sampainya, status SJ-nya, dan perpindahan pesanan ke antrean bukti.
+     * Yang membedakan keduanya hanya kolom yang dititipkan lewat $kolom.
+     *
+     * WAJIB dipanggil di dalam transaksi pemanggilnya, pada baris yang sudah
+     * dikunci dan sudah diperiksa statusnya.
+     *
+     * @param  array<string, mixed>  $kolom
+     */
+    private function tandaiSampai(DeliveryNote $terkunci, array $kolom): void
+    {
+        $terkunci->fill(array_merge([
+            'status' => DeliveryNote::STATUS_DELIVERED,
+            'delivered_at' => now(),
+        ], $kolom))->save();
+
+        $order = SalesOrder::query()->lockForUpdate()->find($terkunci->sales_order_id);
+
+        if ($order !== null && $order->status === SalesOrder::STATUS_SHIPPING) {
+            $order->forceFill([
+                // Barang sampai, tetapi belum selesai: bukti Surat Jalan
+                // bertanda tangan masih harus diunggah dan diverifikasi
+                // (F-OUT-05, tahap 5).
+                'status' => SalesOrder::STATUS_PROOF_UPLOADED,
+                'delivered_at' => now(),
+            ])->save();
+        }
+    }
 
     /**
      * Mengeluarkan qty yang tertulis di SJ tetapi tidak tercatat dipicking.

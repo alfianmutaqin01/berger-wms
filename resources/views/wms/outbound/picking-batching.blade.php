@@ -192,6 +192,19 @@
                             <i class="bi bi-x-circle me-1"></i> Batalkan Daftar
                         </button>
                         @endif
+
+                        {{-- Unduhan juga di sini, bukan hanya di rinciannya:
+                             yang mencocokkan dengan BC mengerjakan beberapa
+                             daftar sekaligus, dan membuka satu per satu cuma
+                             untuk menekan tombol yang sama adalah perjalanan
+                             yang tidak perlu. Hanya yang SUDAH SELESAI —
+                             alasannya di PickingController::download(). --}}
+                        @if($daftar->status === \App\Models\PickingList::STATUS_COMPLETED)
+                            <a href="{{ route('wms.picking.unduh', $daftar) }}" data-tanpa-pemuat
+                               class="btn btn-sm btn-outline-success rounded-3 mt-2">
+                                <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
+                            </a>
+                        @endif
                     </div>
                 @empty
                     <div class="text-center py-5 text-muted">

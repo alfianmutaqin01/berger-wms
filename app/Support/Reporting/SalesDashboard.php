@@ -118,7 +118,11 @@ class SalesDashboard
     {
         $draft = $this->hitung($userId, [SalesOrder::STATUS_DRAFT]);
         $ditolak = $this->hitung($userId, [SalesOrder::STATUS_REJECTED]);
-        $bukti = $this->hitung($userId, [SalesOrder::STATUS_SHIPPING]);
+        // PROOF_UPLOADED, bukan SHIPPING: barang yang masih di jalan belum
+        // menunggu apa pun dari Sales. Menghitungnya di sini membuat "Butuh
+        // Tindakan Anda" meminta pekerjaan yang belum boleh dikerjakan —
+        // unggahannya akan ditolak ProofOfDelivery::BOLEH_UNGGAH.
+        $bukti = $this->hitung($userId, [SalesOrder::STATUS_PROOF_UPLOADED]);
 
         return [
             'draft' => $draft,
@@ -196,9 +200,11 @@ class SalesDashboard
     private function daftarBukti(?int $userId)
     {
         return $this->milik($userId)
-            ->where('status', SalesOrder::STATUS_SHIPPING)
+            // Sudah dinyatakan sampai oleh supir. Sebelum itu tidak ada yang
+            // bisa dikerjakan Sales — lihat catatan di perluTindakan().
+            ->where('status', SalesOrder::STATUS_PROOF_UPLOADED)
             ->with('customer:id,code,name')
-            ->orderBy('shipped_at')
+            ->orderBy('delivered_at')
             ->limit(5)
             ->get();
     }

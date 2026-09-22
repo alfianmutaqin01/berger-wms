@@ -193,7 +193,15 @@ class MaterialRequisition extends Model
      */
     public function getNamaPemohonAttribute(): string
     {
-        return $this->requestedBy?->full_name ?? $this->requester_name ?? '—';
+        // relationLoaded() dulu, baru relasinya. Lazy loading dimatikan di
+        // aplikasi ini, jadi accessor yang menyentuh relasi tanpa memeriksa
+        // MELEMPAR di layar mana pun yang lupa meng-eager-load-nya — dan
+        // pemanggilnya ada di tujuh layar. Lihat catatan di nama_divisi.
+        if ($this->relationLoaded('requestedBy') && $this->requestedBy !== null) {
+            return (string) $this->requestedBy->full_name;
+        }
+
+        return $this->requester_name ?? '—';
     }
 
     /**
@@ -204,9 +212,29 @@ class MaterialRequisition extends Model
      * meminta, dan operator yang membaca "Produksi" di atas permintaan Sales
      * akan menaruh barangnya di tempat yang salah.
      */
+    /*
+     | TIDAK MENYENTUH RELASI KECUALI SUDAH TERMUAT.
+     |
+     | Versi sebelumnya jatuh ke $this->department saat kolom teksnya kosong.
+     | Lazy loading dimatikan di aplikasi ini, jadi baris itu MELEMPAR — dan
+     | melemparnya di dalam Blade, di halaman Daftar Picking, yang membuat
+     | halamannya balas 504 alih-alih menyebut kesalahannya.
+     |
+     | Kolom department_name memang disalin sebagai teks saat permintaan
+     | dibuat; relasinya cuma jaring pengaman untuk baris lama, dan jaring
+     | pengaman tidak boleh lebih berbahaya daripada yang dijaganya.
+     */
     public function getNamaDivisiAttribute(): string
     {
-        return $this->department_name ?: ($this->department?->name ?? 'Divisi peminta');
+        if (filled($this->department_name)) {
+            return (string) $this->department_name;
+        }
+
+        if ($this->relationLoaded('department') && $this->department !== null) {
+            return (string) $this->department->name;
+        }
+
+        return 'Divisi peminta';
     }
 
     /**

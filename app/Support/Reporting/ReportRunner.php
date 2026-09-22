@@ -467,7 +467,7 @@ class ReportRunner
     {
         // Baris nol TIDAK dibuang. Batch yang habis tetapi masih terdaftar
         // adalah keterangan yang berguna saat menelusuri ke mana barangnya
-        // pergi — dan menyembunyikannya membuat kartu stok tampak terputus.
+        // pergi — dan menyembunyikannya membuat item ledger tampak terputus.
         $q = $this->gudang(InventoryStock::query(), $user, $filter);
 
         $total = (clone $q)->count();
