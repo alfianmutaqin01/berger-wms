@@ -39,6 +39,7 @@ use App\Http\Controllers\Wms\PickingCompletionController;
 use App\Http\Controllers\Wms\PickingController;
 use App\Http\Controllers\Wms\PickingLineController;
 use App\Http\Controllers\Wms\PickingTaskController;
+use App\Http\Controllers\Wms\ProductCategoryController;
 use App\Http\Controllers\Wms\ProductController;
 use App\Http\Controllers\Wms\ProductionMaterialController;
 use App\Http\Controllers\Wms\ProfileController;
@@ -527,6 +528,20 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             Route::post('/products', [ProductController::class, 'store'])->name('wms.products.store');
             Route::put('/products/{product}', [ProductController::class, 'update'])->name('wms.products.update');
             Route::patch('/products/{product}/status', [ProductController::class, 'toggleStatus'])->name('wms.products.status');
+
+            // Master Kategori Produk (PRD §6.2 F-MASTER-03). Izinnya menumpang
+            // MASTER_PRODUCTS — cakupan rolenya sudah persis yang diminta
+            // (Super Admin + Manager), dan kategori memang bagian dari master
+            // produk. Izin baru hanya akan menambah baris matriks yang selalu
+            // bergerak bersamaan.
+            Route::get('/product-categories', [ProductCategoryController::class, 'index'])
+                ->name('wms.product-categories.index');
+            Route::post('/product-categories', [ProductCategoryController::class, 'store'])
+                ->name('wms.product-categories.store');
+            Route::put('/product-categories/{category}', [ProductCategoryController::class, 'update'])
+                ->name('wms.product-categories.update');
+            Route::patch('/product-categories/{category}/status', [ProductCategoryController::class, 'toggleStatus'])
+                ->name('wms.product-categories.status');
         });
 
         // Master Lokasi Rak (PRD §5.2) — sudah terhubung ke database.
