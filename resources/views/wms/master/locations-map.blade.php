@@ -434,8 +434,9 @@
                     + '<th class="text-end">Teralokasi</th><th>Status</th>'
                     + '</tr></thead><tbody>'
                     + data.baris.map((b) => '<tr>'
-                        + '<td><div class="fw-semibold font-monospace small">' + lolos(b.sku) + '</div>'
-                            + '<div class="text-muted" style="font-size:.72rem">' + lolos(b.nama) + '</div>'
+                        // SKU dan deskripsi berdampingan, bukan bertumpuk.
+                        + '<td><div class="small"><span class="fw-semibold font-monospace">' + lolos(b.sku) + '</span>'
+                            + ' <span class="text-muted">— ' + lolos(b.nama) + '</span></div>'
                             + (b.masalah_kualitas
                                 ? '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger">Quality Issue</span>'
                                 : '')

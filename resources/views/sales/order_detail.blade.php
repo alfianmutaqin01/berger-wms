@@ -215,8 +215,11 @@
                         <li class="list-group-item px-3 px-md-4 py-3">
                             <div class="d-flex justify-content-between align-items-start gap-3">
                                 <div style="min-width: 0;">
-                                    <div class="fw-semibold text-dark">{{ $d->product?->name }}</div>
-                                    <small class="font-monospace text-muted">{{ $d->product?->sku }}</small>
+                                    {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                                    <div>
+                                        <span class="fw-semibold font-monospace text-dark">{{ $d->product?->sku }}</span>
+                                        <span class="small text-muted">— {{ $d->product?->name }}</span>
+                                    </div>
                                 </div>
                                 {{-- Diberi label, karena artinya BERUBAH begitu
                                      pesanan berangkat. Angka telanjang yang diam-diam

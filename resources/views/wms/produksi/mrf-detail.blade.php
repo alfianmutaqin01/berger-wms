@@ -156,8 +156,11 @@
                         @foreach($mrf->items as $item)
                             <tr>
                                 <td>
+                                    {{-- SKU dan deskripsi berdampingan, bukan
+                                         bertumpuk: mata membacanya sebagai satu
+                                         kalimat, kode lalu namanya. --}}
                                     <span class="font-monospace fw-semibold">{{ $item->product?->sku }}</span>
-                                    <div class="small text-muted">{{ $item->product?->name }}</div>
+                                    <span class="small text-muted">— {{ $item->product?->name }}</span>
                                     @if(filled($item->note))
                                         <div class="small text-primary">
                                             <i class="bi bi-chat-left-quote me-1"></i>{{ $item->note }}

@@ -107,9 +107,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     ? '<span class="badge ' + p.badge + ' ms-1 flex-shrink-0">' + p.label + '</span>'
                     : '';
 
+                // SKU dan deskripsi berdampingan, bukan bertumpuk.
                 return '<div class="d-flex justify-content-between align-items-center gap-2">'
-                    + '<span><span class="font-monospace small text-muted">' + p.sku + '</span>'
-                    + '<br>' + p.name + '</span>' + badge + '</div>';
+                    + '<span class="text-truncate"><span class="font-monospace small text-muted">' + p.sku + '</span>'
+                    + ' — ' + p.name + '</span>' + badge + '</div>';
             },
             label: function (p) { return p.sku + ' — ' + p.name; },
             setelahPilih: function (p) { pasangBadge(baris, p); },

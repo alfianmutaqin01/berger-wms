@@ -98,8 +98,9 @@
                                             </small>
                                         </td>
                                         <td>
-                                            <span class="badge bg-light text-dark border font-monospace mb-1">{{ $detail->product?->sku ?? '—' }}</span><br>
-                                            <small class="text-muted">{{ $detail->product?->name ?? '—' }}</small>
+                                            {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                                            <span class="badge bg-light text-dark border font-monospace">{{ $detail->product?->sku ?? '—' }}</span>
+                                            <small class="text-muted">— {{ $detail->product?->name ?? '—' }}</small>
                                         </td>
                                         <td><small class="font-monospace text-muted">{{ $detail->batch_no }}</small></td>
                                         <td class="text-center">

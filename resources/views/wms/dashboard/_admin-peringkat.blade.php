@@ -31,8 +31,14 @@
                                      {{ $i === 0 ? 'bg-warning text-dark' : 'bg-light text-secondary border' }}"
                               style="width:28px;height:28px;">{{ $i + 1 }}</span>
                         <div class="flex-grow-1 min-w-0">
-                            <div class="fw-semibold text-dark text-truncate" style="font-size:.85rem">{{ $p['nama'] }}</div>
-                            <small class="text-muted font-monospace" style="font-size:.72rem">{{ $p['sku'] }}</small>
+                            {{-- SKU dan deskripsi berdampingan, bukan bertumpuk.
+                                 Dipotong di ujung kalau kartunya sempit; SKU di
+                                 depan supaya bagian yang paling dicari mata
+                                 tidak pernah ikut terpotong. --}}
+                            <div class="text-truncate" style="font-size:.85rem" title="{{ $p['sku'] }} — {{ $p['nama'] }}">
+                                <span class="fw-semibold font-monospace text-dark">{{ $p['sku'] }}</span>
+                                <span class="text-muted">— {{ $p['nama'] }}</span>
+                            </div>
                         </div>
                         <div class="text-end flex-shrink-0">
                             <div class="fw-bold text-dark">{{ number_format($p['terkirim']) }}</div>

@@ -119,8 +119,11 @@
                                 <input type="checkbox" class="form-check-input pilih-batch" data-baris="{{ $i }}">
                             </td>
                             <td>
-                                <div class="font-monospace small text-muted">{{ $s->product?->sku }}</div>
-                                <div>{{ $s->product?->name }}</div>
+                                {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                                <div>
+                                    <span class="font-monospace small text-muted">{{ $s->product?->sku }}</span>
+                                    <span>— {{ $s->product?->name }}</span>
+                                </div>
                                 @if($s->status === \App\Models\InventoryStock::STATUS_DDP)
                                     <span class="badge bg-danger-subtle text-danger-emphasis">DDP — {{ \App\Models\InventoryStock::DDP_REASON_LABELS[$s->ddp_reason] ?? 'karantina' }}</span>
                                 @endif

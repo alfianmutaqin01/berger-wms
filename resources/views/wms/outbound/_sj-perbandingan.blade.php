@@ -138,8 +138,9 @@
                             @php($mustahil = $baris['selisih'] < 0)
                             <tr class="{{ $mustahil ? 'table-danger' : ($baris['selisih'] > 0 ? 'table-warning' : '') }}">
                                 <td>
-                                    <div class="fw-semibold font-monospace small">{{ $baris['sku'] }}</div>
-                                    <small class="text-muted">{{ $baris['nama'] }}</small>
+                                    {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                                    <span class="fw-semibold font-monospace small">{{ $baris['sku'] }}</span>
+                                    <small class="text-muted">— {{ $baris['nama'] }}</small>
                                 </td>
                                 <td class="text-end fw-bold">{{ $baris['qty_sj'] }}</td>
                                 <td class="text-end">{{ $baris['qty_picking'] }}</td>

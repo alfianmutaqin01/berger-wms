@@ -64,8 +64,11 @@
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                 <div>
-                    <h6 class="fw-bold mb-0 font-monospace">{{ $item->product?->sku }}</h6>
-                    <div class="small text-muted">{{ $item->product?->name }}</div>
+                    {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                    <h6 class="fw-bold mb-0 d-flex align-items-baseline flex-wrap gap-2">
+                        <span class="font-monospace">{{ $item->product?->sku }}</span>
+                        <span class="small fw-normal text-muted">— {{ $item->product?->name }}</span>
+                    </h6>
                     @if(filled($item->note))
                     <div class="small text-primary mt-1">
                         <i class="bi bi-chat-left-quote me-1"></i>Usulan Produksi: {{ $item->note }}

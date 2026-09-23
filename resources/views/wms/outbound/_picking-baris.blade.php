@@ -131,8 +131,9 @@
                             <span class="fw-bold fs-5 font-monospace">{{ $item->location?->code ?? '—' }}</span>
                         </td>
                         <td>
-                            <div class="fw-semibold">{{ $item->product?->sku }}</div>
-                            <small class="text-muted">{{ $item->product?->name }}</small>
+                            {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                            <span class="fw-semibold font-monospace">{{ $item->product?->sku }}</span>
+                            <small class="text-muted">— {{ $item->product?->name }}</small>
                         </td>
                         <td>
                             <span class="font-monospace">{{ $item->batch_no ?? '—' }}</span>

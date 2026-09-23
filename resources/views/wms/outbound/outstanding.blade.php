@@ -225,8 +225,9 @@
                                     @foreach($k['sku'] as $s)
                                         <tr>
                                             <td>
-                                                <div class="fw-semibold font-monospace small">{{ $s['produk']?->sku ?? '—' }}</div>
-                                                <small class="text-muted">{{ $s['produk']?->name }}</small>
+                                                {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                                                <span class="fw-semibold font-monospace small">{{ $s['produk']?->sku ?? '—' }}</span>
+                                                <small class="text-muted">— {{ $s['produk']?->name }}</small>
                                             </td>
                                             <td class="text-end">{{ number_format($s['dipesan']) }}</td>
                                             <td class="text-end">{{ number_format($s['disetujui']) }}</td>
