@@ -211,13 +211,35 @@ class StockTakeRun
      *
      * SATU-SATUNYA titik di mana stocktake menyentuh angka stok.
      *
+     * @param  array{
+     *     approval_doc_path: string, approval_doc_name: string,
+     *     approval_doc_mime: string, approval_doc_size: int
+     * }  $lampiran  Dasar persetujuan yang sudah tersimpan — lihat
+     *                `StockTakeApproval::simpan()`.
      * @return array{baris:int, disesuaikan:int, naik:int, turun:int, belum:int}
      *
      * @throws RuntimeException
      */
-    public function finalize(StockTake $sesi, ?int $userId): array
+    public function finalize(StockTake $sesi, ?int $userId, array $lampiran): array
     {
-        return DB::transaction(function () use ($sesi, $userId) {
+        /*
+         | KEWAJIBAN LAMPIRAN DITEGAKKAN DI SINI, bukan hanya di formulirnya.
+         |
+         | Pengesahan menghapus atau menambah stok tanpa jalan pulang, dan
+         | dasar persetujuannya adalah satu-satunya keterangan kenapa selisih
+         | itu diterima. Aturan yang hanya hidup di Blade akan lolos begitu
+         | ada pemanggil kedua — perintah artisan, penyesuaian massal, atau
+         | test yang meniru formulirnya — dan yang tertinggal adalah stok yang
+         | sudah berubah tanpa dasar apa pun.
+         */
+        if (blank($lampiran['approval_doc_path'] ?? null)) {
+            throw new RuntimeException(
+                'Laporan tidak bisa disahkan tanpa lampiran dasar persetujuan. '
+                .'Unggah berita acara yang sudah ditandatangani lebih dulu.'
+            );
+        }
+
+        return DB::transaction(function () use ($sesi, $userId, $lampiran) {
             $terkunci = StockTake::query()->lockForUpdate()->findOrFail($sesi->id);
 
             if (! $terkunci->sedangDihitung()) {
@@ -257,7 +279,7 @@ class StockTakeRun
                 'status' => StockTake::STATUS_FINALIZED,
                 'finalized_at' => now(),
                 'finalized_by' => $userId,
-            ])->save();
+            ] + $lampiran)->save();
 
             return $ringkasan;
         });

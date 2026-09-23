@@ -74,8 +74,11 @@
                     @foreach($transfer->details as $d)
                         <tr data-dikirim="{{ $d->qty_shipped }}">
                             <td>
-                                <div class="font-monospace small text-muted">{{ $d->product?->sku }}</div>
-                                <div>{{ $d->product?->name }}</div>
+                                {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                                <div>
+                                    <span class="font-monospace small text-muted">{{ $d->product?->sku }}</span>
+                                    <span>— {{ $d->product?->name }}</span>
+                                </div>
                                 @if($d->status === \App\Models\InventoryStock::STATUS_DDP)
                                     <span class="badge bg-danger-subtle text-danger-emphasis">DDP — tetap DDP setelah pindah</span>
                                 @endif

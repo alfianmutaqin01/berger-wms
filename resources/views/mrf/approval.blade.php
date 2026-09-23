@@ -81,8 +81,11 @@
                 @foreach($mrf->items as $item)
                 <li class="list-group-item px-0 d-flex justify-content-between align-items-start gap-3">
                     <div>
-                        <div class="font-monospace small fw-semibold">{{ $item->product?->sku }}</div>
-                        <div class="small text-muted">{{ $item->product?->name }}</div>
+                        {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                        <div class="small">
+                            <span class="font-monospace fw-semibold">{{ $item->product?->sku }}</span>
+                            <span class="text-muted">— {{ $item->product?->name }}</span>
+                        </div>
                         @if(filled($item->note))
                             <div class="small text-primary">{{ $item->note }}</div>
                         @endif

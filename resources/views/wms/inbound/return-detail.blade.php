@@ -94,8 +94,9 @@
                         @foreach($retur->details as $d)
                             <tr>
                                 <td>
-                                    <div class="fw-semibold">{{ $d->product?->sku }}</div>
-                                    <small class="text-muted">{{ $d->product?->name }}</small>
+                                    {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                                    <span class="fw-semibold font-monospace">{{ $d->product?->sku }}</span>
+                                    <small class="text-muted">— {{ $d->product?->name }}</small>
                                 </td>
                                 <td>
                                     <div>{{ $d->batch_no }}</div>

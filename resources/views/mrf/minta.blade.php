@@ -230,8 +230,9 @@
             minimal: 2,
             kosong: 'Produk tidak ketemu. Coba potongan SKU-nya.',
             tampilan: function (item) {
+                // SKU dan deskripsi berdampingan, bukan bertumpuk.
                 return '<span class="fw-semibold font-monospace">' + item.sku + '</span>'
-                    + '<span class="small text-muted d-block">' + item.name + ' · ' + (item.uom || '-') + '</span>';
+                    + '<span class="small text-muted"> — ' + item.name + ' · ' + (item.uom || '-') + '</span>';
             },
             label: function (item) { return item.sku + ' — ' + item.name; },
         });

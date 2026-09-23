@@ -96,8 +96,10 @@ class MaterialRequisition extends Model
 
     public const TYPE_SAMPLE = 'sample_material';
 
+    public const TYPE_LAINNYA = 'lainnya';
+
     /**
-     * Empat jenis yang diakui pemilik produk, beserta keterangannya.
+     * Jenis yang diakui pemilik produk, beserta keterangannya.
      *
      * Keterangan ikut di sini, bukan di Blade: ia dibaca di formulir Produksi
      * DAN di layar persetujuan Logistik, dan dua salinan kalimat yang sama
@@ -122,6 +124,10 @@ class MaterialRequisition extends Model
         self::TYPE_SAMPLE => [
             'label' => 'Sample Material',
             'bantuan' => 'Contoh untuk pelanggan, pameran, atau pengembangan warna baru.',
+        ],
+        self::TYPE_LAINNYA => [
+            'label' => 'Lain-lain',
+            'bantuan' => 'Keperluan di luar keempat jenis di atas. Tulis alasannya di kolom Keperluan.',
         ],
     ];
 

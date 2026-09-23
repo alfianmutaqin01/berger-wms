@@ -39,8 +39,8 @@
 {{-- DAFTAR MRF — dibaca empat peran dengan kepentingan yang berbeda:
      Produksi memantau permintaannya, Logistik mencari yang menunggu
      keputusannya, Operator memastikan tugas yang ia pegang milik siapa, dan
-     Manager melihat keseluruhannya. Kolom "Menunggu Tindakan" dengan jelas
-     menampilkan posisi berkas dan pihak penanggung jawab aksi selanjutnya. --}}
+     Manager melihat keseluruhannya. Kolom Status menyebut posisi berkas
+     sekaligus pihak yang memegang langkah berikutnya. --}}
 
 @foreach(['success' => 'check-circle-fill', 'warning' => 'exclamation-circle-fill', 'error' => 'exclamation-triangle-fill'] as $jenis => $ikon)
     @if(session($jenis))
@@ -151,9 +151,8 @@
                         <th style="min-width: 190px;">Jenis &amp; Keperluan</th>
                         <th style="min-width: 150px;">Pemohon</th>
                         <th class="text-end" style="min-width: 110px;">Diminta</th>
-                        <th style="min-width: 130px;">Status</th>
-                        <th style="min-width: 220px;"><i class="bi bi-clock-history me-1 text-primary"></i> Menunggu Tindakan</th>
-                        <th class="text-end" style="min-width: 90px;">Aksi</th>
+                        <th style="min-width: 300px;">Status</th>
+                        <th class="text-end text-nowrap" style="min-width: 90px;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -188,94 +187,49 @@
                             </div>
                         </td>
                         <td>
-                            <span class="badge {{ $mrf->status_badge }} rounded-pill px-3 py-1 fw-medium" style="font-size: 0.75rem;">
-                                {{ $mrf->status_label }}
-                            </span>
+                            {{-- STATUS SEKALIGUS POSISI BERKAS. Dulu dua kolom:
+                                 "Status" dan "Menunggu Tindakan". Keduanya
+                                 mengulang hal yang sama — label statusnya
+                                 sendiri sudah berbunyi "Menunggu Persetujuan
+                                 Atasan", "Menunggu Logistik", dan seterusnya.
+                                 Yang TIDAK terulang hanyalah siapa/di mana
+                                 penanggung jawabnya, jadi hanya itu yang
+                                 dipertahankan, sebaris di sebelah statusnya. --}}
+                            @php
+                                $penanggung = match ($mrf->status) {
+                                    \App\Models\MaterialRequisition::STATUS_PENDING_APPROVAL => ['person', $mrf->approver_name, 'text-muted'],
+                                    \App\Models\MaterialRequisition::STATUS_PENDING_LOGISTICS => ['building-gear', 'Tim Logistik Gudang', 'text-muted'],
+                                    \App\Models\MaterialRequisition::STATUS_PENDING_PICKING => ['person-badge', 'Operator Gudang', 'text-muted'],
+                                    \App\Models\MaterialRequisition::STATUS_READY_FOR_PICKUP => ['geo-alt', $mrf->handoverLocation?->code ?? 'Rak Serah Terima', 'text-primary fw-semibold'],
+                                    default => null,
+                                };
+                            @endphp
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="badge {{ $mrf->status_badge }} rounded-pill px-3 py-1 fw-medium text-nowrap" style="font-size: 0.75rem;">
+                                    {{ $mrf->status_label }}
+                                </span>
+                                @if($penanggung)
+                                    <span class="small {{ $penanggung[2] }} text-truncate" style="max-width: 180px; font-size: 0.72rem;"
+                                          title="{{ $penanggung[1] }}">
+                                        <i class="bi bi-{{ $penanggung[0] }} me-1"></i>{{ $penanggung[1] }}
+                                    </span>
+                                @endif
+                            </div>
                         </td>
-                        <td>
-                            {{-- POSISI & TINDAKAN SELANJUTNYA: Sangat jelas siapa dan langkah apa yang sedang berjalan --}}
-                            @switch($mrf->status)
-                                @case(\App\Models\MaterialRequisition::STATUS_PENDING_APPROVAL)
-                                    <div class="d-flex align-items-center gap-2 mb-1">
-                                        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                            <i class="bi bi-whatsapp me-1"></i>Persetujuan Atasan
-                                        </span>
-                                    </div>
-                                    <div class="small text-muted text-truncate" style="max-width: 190px;" title="{{ $mrf->approver_name }}">
-                                        <i class="bi bi-person me-1"></i>{{ $mrf->approver_name }}
-                                    </div>
-                                    @break
-
-                                @case(\App\Models\MaterialRequisition::STATUS_PENDING_LOGISTICS)
-                                    <div class="d-flex align-items-center gap-2 mb-1">
-                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                            <i class="bi bi-boxes me-1"></i>Alokasi Batch
-                                        </span>
-                                    </div>
-                                    <div class="small text-muted" style="font-size: 0.72rem;">
-                                        <i class="bi bi-building-gear me-1"></i>Tim Logistik Gudang
-                                    </div>
-                                    @break
-
-                                @case(\App\Models\MaterialRequisition::STATUS_PENDING_PICKING)
-                                    <div class="d-flex align-items-center gap-2 mb-1">
-                                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                            <i class="bi bi-cart-check me-1"></i>Picking Rak
-                                        </span>
-                                    </div>
-                                    <div class="small text-muted" style="font-size: 0.72rem;">
-                                        <i class="bi bi-person-badge me-1"></i>Operator Gudang
-                                    </div>
-                                    @break
-
-                                @case(\App\Models\MaterialRequisition::STATUS_READY_FOR_PICKUP)
-                                    <div class="d-flex align-items-center gap-2 mb-1">
-                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                            <i class="bi bi-box-arrow-up-right me-1"></i>Serah Terima
-                                        </span>
-                                    </div>
-                                    <div class="small fw-semibold text-primary text-truncate" style="max-width: 190px;" title="{{ $mrf->handoverLocation?->code ?? 'Rak Serah Terima' }}">
-                                        <i class="bi bi-geo-alt me-1"></i>{{ $mrf->handoverLocation?->code ?? 'Rak Serah Terima' }}
-                                    </div>
-                                    @break
-
-                                @case(\App\Models\MaterialRequisition::STATUS_RECEIVED)
-                                    <span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                        <i class="bi bi-check2-all me-1"></i>Tuntas Diterima
-                                    </span>
-                                    @break
-
-                                @case(\App\Models\MaterialRequisition::STATUS_REJECTED_APPROVAL)
-                                    <span class="badge bg-danger-subtle text-danger rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                        <i class="bi bi-x-circle me-1"></i>Ditolak Atasan
-                                    </span>
-                                    @break
-
-                                @case(\App\Models\MaterialRequisition::STATUS_REJECTED_LOGISTICS)
-                                    <span class="badge bg-danger-subtle text-danger rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                        <i class="bi bi-x-circle me-1"></i>Ditolak Logistik
-                                    </span>
-                                    @break
-
-                                @case(\App\Models\MaterialRequisition::STATUS_CANCELLED)
-                                    <span class="badge bg-light text-muted border rounded-pill px-2 py-1" style="font-size: 0.72rem;">
-                                        <i class="bi bi-dash-circle me-1"></i>Dibatalkan
-                                    </span>
-                                    @break
-
-                                @default
-                                    <span class="text-muted">—</span>
-                            @endswitch
-                        </td>
-                        <td class="text-end">
-                            <a href="{{ route('wms.mrf.show', $mrf) }}" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-medium" style="font-size: 0.78rem;">
+                        <td class="text-end text-nowrap">
+                            {{-- text-nowrap + d-inline-flex: tanpa ini tulisan
+                                 "Detail" dan tanda panahnya pecah ke dua baris
+                                 saat kolomnya sempit. --}}
+                            <a href="{{ route('wms.mrf.show', $mrf) }}"
+                               class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-medium d-inline-flex align-items-center text-nowrap"
+                               style="font-size: 0.78rem;">
                                 Detail <i class="bi bi-chevron-right ms-1"></i>
                             </a>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-5">
+                        <td colspan="6" class="text-center text-muted py-5">
                             <div class="py-3">
                                 <i class="bi bi-clipboard2-x fs-1 d-block mb-2 opacity-25 text-primary"></i>
                                 <div class="fw-semibold text-dark">Belum ada permintaan material</div>

@@ -68,8 +68,11 @@
                 @foreach($note->lines as $line)
                 <li class="list-group-item px-0 d-flex justify-content-between align-items-start">
                     <div class="me-2">
-                        <div class="small fw-semibold">{{ $line->product?->name ?? $line->description ?? $line->sku }}</div>
-                        <small class="text-muted font-monospace">{{ $line->sku }}</small>
+                        {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                        <div class="small">
+                            <span class="fw-semibold font-monospace">{{ $line->sku }}</span>
+                            <span class="text-muted">— {{ $line->product?->name ?? $line->description ?? '—' }}</span>
+                        </div>
                     </div>
                     <span class="fw-bold text-nowrap">{{ $line->qty }} {{ $line->product?->uom ?? $line->uom_code }}</span>
                 </li>

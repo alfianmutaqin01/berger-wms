@@ -189,8 +189,9 @@
                             <small class="text-muted font-monospace">{{ $b->customer?->code }}</small>
                         </td>
                         <td>
-                            <div class="fw-semibold font-monospace small">{{ $b->product?->sku ?? '—' }}</div>
-                            <small class="text-muted">{{ $b->product?->name }}</small>
+                            {{-- SKU dan deskripsi berdampingan, bukan bertumpuk. --}}
+                            <span class="fw-semibold font-monospace small">{{ $b->product?->sku ?? '—' }}</span>
+                            <small class="text-muted">— {{ $b->product?->name }}</small>
                             @if($b->allocations->isNotEmpty())
                                 {{-- Batch mana persisnya yang ditahan. Ini yang
                                      dipakai orang gudang untuk memastikan
@@ -331,9 +332,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const sisa = Number(p.tersedia || 0);
             const warna = sisa > 0 ? 'text-success' : 'text-warning';
 
-            return '<span class="fw-semibold small d-block text-truncate">' + escapeHtml(p.name) + '</span>'
-                + '<small class="text-muted font-monospace">' + escapeHtml(p.sku) + '</small>'
-                + '<small class="' + warna + ' ms-2">bebas ' + sisa.toLocaleString('id-ID')
+            // SKU dan deskripsi berdampingan, bukan bertumpuk.
+            return '<span class="small d-block text-truncate">'
+                + '<span class="fw-semibold font-monospace">' + escapeHtml(p.sku) + '</span>'
+                + ' <span class="text-muted">— ' + escapeHtml(p.name) + '</span></span>'
+                + '<small class="' + warna + '">bebas ' + sisa.toLocaleString('id-ID')
                 + ' ' + escapeHtml(p.uom || '') + '</small>';
         },
         label: (p) => p.sku + ' — ' + p.name,
