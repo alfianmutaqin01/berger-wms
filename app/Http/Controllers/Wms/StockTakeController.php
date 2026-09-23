@@ -12,6 +12,7 @@ use App\Models\Warehouse;
 use App\Support\Activity;
 use App\Support\Export\XlsxWriter;
 use App\Support\Inventory\BatchProduksi;
+use App\Support\Inventory\StockTakeApproval;
 use App\Support\Inventory\StockTakeRun;
 use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
@@ -63,7 +64,10 @@ class StockTakeController extends Controller
 
     private const HASIL = [self::HASIL_SELISIH, self::HASIL_COCOK, self::HASIL_BELUM];
 
-    public function __construct(private readonly StockTakeRun $stocktake) {}
+    public function __construct(
+        private readonly StockTakeRun $stocktake,
+        private readonly StockTakeApproval $lampiran,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -420,6 +424,11 @@ class StockTakeController extends Controller
     /**
      * Mengesahkan laporan. INILAH yang mengubah stok.
      *
+     * Dasar persetujuannya WAJIB dilampirkan di permintaan yang sama, bukan
+     * diunggah menyusul: begitu tombol ini ditekan stok sudah berubah, dan
+     * lampiran susulan hanya akan menjelaskan perubahan yang sudah terjadi —
+     * kalau orangnya sempat mengunggahnya sama sekali.
+     *
      * Sesudahnya pengguna dibawa kembali ke halaman laporan; stok terbaru
      * berlaku bersamaan dengan disahkannya laporan itu.
      */
@@ -427,21 +436,42 @@ class StockTakeController extends Controller
     {
         WarehouseScope::assert($stocktake->warehouse_id, $request->user());
 
+        $request->validate([
+            'approval_doc' => [
+                'required', 'file',
+                'mimes:'.implode(',', StockTakeApproval::EKSTENSI_DIIZINKAN),
+                'max:'.StockTakeApproval::MAKS_KB,
+            ],
+        ], [
+            'approval_doc.required' => 'Lampirkan dulu dasar persetujuannya — berita acara yang sudah ditandatangani, berupa PDF atau foto.',
+            'approval_doc.mimes' => 'Lampiran harus berupa PDF atau foto (JPG, PNG, WEBP).',
+            'approval_doc.max' => 'Lampiran maksimal 10 MB. Pindai ulang dengan resolusi lebih rendah bila perlu.',
+        ], [
+            'approval_doc' => 'lampiran dasar persetujuan',
+        ]);
+
+        // Berkas disimpan LEBIH DULU, di luar transaksi pengesahan. Kalau
+        // pengesahannya gagal, berkasnya dibuang lagi di bawah.
+        $dokumen = $this->lampiran->simpan($request->file('approval_doc'));
+
         try {
-            $hasil = $this->stocktake->finalize($stocktake, $request->user()?->id);
+            $hasil = $this->stocktake->finalize($stocktake, $request->user()?->id, $dokumen);
         } catch (RuntimeException $e) {
+            $this->lampiran->buang($dokumen['approval_doc_path']);
+
             return back()->with('error', $e->getMessage());
         }
 
         Activity::record(
             ActivityLog::STOCKTAKE_FINALIZE,
             sprintf(
-                'Mengesahkan laporan stocktake %s: %d baris disesuaikan (+%d / -%d unit), %d baris belum dihitung.',
+                'Mengesahkan laporan stocktake %s: %d baris disesuaikan (+%d / -%d unit), %d baris belum dihitung. Dasar: %s.',
                 $stocktake->reference,
                 $hasil['disesuaikan'],
                 $hasil['naik'],
                 $hasil['turun'],
                 $hasil['belum'],
+                $dokumen['approval_doc_name'],
             ),
             $stocktake,
             $stocktake->warehouse_id,
@@ -451,6 +481,7 @@ class StockTakeController extends Controller
                 'naik' => $hasil['naik'],
                 'turun' => $hasil['turun'],
                 'belum_dihitung' => $hasil['belum'],
+                'lampiran' => $dokumen['approval_doc_name'],
             ],
         );
 
@@ -473,6 +504,21 @@ class StockTakeController extends Controller
 
         return redirect()->route('wms.stocktake.report', $stocktake)
             ->with($hasil['belum'] > 0 ? 'warning' : 'success', $pesan);
+    }
+
+    /**
+     * Membuka dasar persetujuan yang dilampirkan saat pengesahan.
+     *
+     * Batas gudang berlaku di sini juga. Berkas yang disajikan lewat rute
+     * sendiri mudah terlupakan saat pembatasan ditambahkan ke halamannya —
+     * dan berita acara berisi selisih stok gudang lain sama bocornya dengan
+     * tabelnya.
+     */
+    public function approvalDoc(Request $request, StockTake $stocktake): StreamedResponse
+    {
+        WarehouseScope::assert($stocktake->warehouse_id, $request->user());
+
+        return $this->lampiran->tampilkan($stocktake);
     }
 
     public function cancel(Request $request, StockTake $stocktake): RedirectResponse

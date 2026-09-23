@@ -54,6 +54,7 @@ class StockTake extends Model
         'reference', 'warehouse_id', 'scope_type', 'scope_value',
         'status', 'note',
         'opened_at', 'opened_by', 'finalized_at', 'finalized_by',
+        'approval_doc_path', 'approval_doc_name', 'approval_doc_mime', 'approval_doc_size',
     ];
 
     protected function casts(): array
@@ -61,7 +62,34 @@ class StockTake extends Model
         return [
             'opened_at' => 'datetime',
             'finalized_at' => 'datetime',
+            'approval_doc_size' => 'integer',
         ];
+    }
+
+    /**
+     * Ada dasar persetujuan yang tersimpan untuk pengesahan ini?
+     *
+     * Bisa `false` pada sesi yang disahkan sebelum lampiran diwajibkan
+     * (23 Oktober 2026). Layar laporan menyebutkannya apa adanya, bukan
+     * berpura-pura berkasnya hilang.
+     */
+    public function adaLampiran(): bool
+    {
+        return filled($this->approval_doc_path);
+    }
+
+    /** Ukuran lampiran dalam satuan yang enak dibaca, mis. "1,2 MB". */
+    public function getApprovalDocSizeLabelAttribute(): ?string
+    {
+        $byte = (int) $this->approval_doc_size;
+
+        if ($byte < 1) {
+            return null;
+        }
+
+        return $byte < 1024 * 1024
+            ? number_format($byte / 1024, 0, ',', '.').' KB'
+            : number_format($byte / 1024 / 1024, 1, ',', '.').' MB';
     }
 
     /* ------------------------------------------------------------ Relasi */

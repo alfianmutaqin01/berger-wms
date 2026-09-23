@@ -48,6 +48,24 @@
                         <span class="text-danger">BELUM DISAHKAN</span>
                     @endif
                 </div>
+                {{-- Dasar persetujuannya ditampilkan berdampingan dengan nama
+                     penyahnya: keduanya menjawab pertanyaan yang sama, yaitu
+                     atas dasar apa stok sebanyak ini digeser. --}}
+                @if($sesi->sudahDisahkan())
+                <div><strong>Dasar persetujuan:</strong>
+                    @if($sesi->adaLampiran())
+                        <a href="{{ route('wms.stocktake.approval.doc', $sesi) }}" target="_blank" rel="noopener">
+                            <i class="bi bi-paperclip"></i> {{ $sesi->approval_doc_name }}
+                        </a>
+                        @if($sesi->approval_doc_size_label)
+                            <span class="text-muted">({{ $sesi->approval_doc_size_label }})</span>
+                        @endif
+                    @else
+                        {{-- Sesi lama, disahkan sebelum lampiran diwajibkan. --}}
+                        <span class="text-muted">tidak dilampirkan</span>
+                    @endif
+                </div>
+                @endif
             </div>
         </div>
 
@@ -178,18 +196,45 @@
                     </div>
                 @endif
 
-                <div class="d-flex flex-wrap gap-2">
-                    <a href="{{ route('wms.stocktake.show', $sesi) }}" class="btn btn-outline-secondary rounded-3">
-                        <i class="bi bi-arrow-left me-1"></i> Kembali Menghitung
-                    </a>
-                    <form method="POST" action="{{ route('wms.stocktake.finalize', $sesi) }}"
-                          onsubmit="return confirm('Sahkan laporan {{ $sesi->reference }}? Seluruh selisih akan diterapkan ke stok dan tidak bisa ditarik kembali.');">
-                        @csrf
+                {{-- Lampiran dan tombolnya berada di DALAM satu form.
+                     Dipisah, tombol pengesahan akan mengirim permintaan tanpa
+                     berkas dan orang membaca "lampiran wajib" pada formulir
+                     yang kolom unggahnya jelas-jelas sudah ia isi. --}}
+                <form method="POST" action="{{ route('wms.stocktake.finalize', $sesi) }}"
+                      enctype="multipart/form-data"
+                      onsubmit="return confirm('Sahkan laporan {{ $sesi->reference }}? Seluruh selisih akan diterapkan ke stok dan tidak bisa ditarik kembali.');">
+                    @csrf
+
+                    <div class="border rounded-3 p-3 mb-3 bg-light bg-opacity-50">
+                        <label for="approvalDoc" class="form-label fw-semibold text-dark small mb-1">
+                            <i class="bi bi-paperclip me-1"></i>
+                            Dasar Persetujuan <span class="text-danger">*</span>
+                        </label>
+                        <p class="text-muted small mb-2" style="font-size: 0.75rem;">
+                            Unggah berita acara stock opname yang sudah ditandatangani — hasil pindai PDF
+                            atau foto lembarnya. Inilah keterangan yang dicari saat selisihnya ditanyakan
+                            kembali berbulan-bulan kemudian.
+                        </p>
+                        <input type="file" name="approval_doc" id="approvalDoc" required
+                               accept=".pdf,.jpg,.jpeg,.png,.webp,image/*,application/pdf"
+                               class="form-control form-control-sm rounded-2 @error('approval_doc') is-invalid @enderror">
+                        @error('approval_doc')
+                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                        @enderror
+                        <div class="form-text small text-muted mt-1" style="font-size: 0.7rem;">
+                            PDF atau foto (JPG, PNG, WEBP), maksimal 10 MB.
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{{ route('wms.stocktake.show', $sesi) }}" class="btn btn-outline-secondary rounded-3">
+                            <i class="bi bi-arrow-left me-1"></i> Kembali Menghitung
+                        </a>
                         <button class="btn btn-success fw-bold rounded-3">
                             <i class="bi bi-check2-circle me-1"></i> Sahkan Laporan
                         </button>
-                    </form>
-                </div>
+                    </div>
+                </form>
             </div>
         </div>
         @else

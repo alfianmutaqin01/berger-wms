@@ -43,20 +43,20 @@
         display: inline-block !important;
     }
 
-    /* Saran pencarian produk, muncul mengambang di dalam sel tabel. */
+    /* Saran pencarian produk. Bentuk dan kerapatannya saja yang diatur di
+       sini; warna latar dan warna sorotnya tinggal di
+       `partials/pencarian-ketik.blade.php` bersama perilakunya, karena daftar
+       ini melayang di atas halaman dan latar yang tembus pandang di sana
+       menjadi cacat tampilan, bukan sekadar selera warna. */
     .cari-saran {
         border-radius: 0.5rem !important;
         border: 1px solid var(--bs-border-color) !important;
         box-shadow: 0 8px 24px rgba(var(--bs-primary-rgb), .12) !important;
-        z-index: 1050;
     }
     .cari-saran .list-group-item {
         font-size: 0.8rem;
         padding: 0.45rem 0.75rem;
         border-bottom: 1px solid var(--bs-border-color-translucent);
-    }
-    .cari-saran .list-group-item:hover, .cari-saran .list-group-item:focus {
-        background-color: rgba(var(--bs-primary-rgb), .06);
     }
 </style>
 @endpush

@@ -442,6 +442,16 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             ->name('wms.stocktake.report');
         Route::get('/stocktake/{stocktake}/report/excel', [StockTakeController::class, 'download'])
             ->name('wms.stocktake.report.download');
+        /*
+        | Dasar persetujuan yang dilampirkan saat pengesahan.
+        |
+        | Izinnya MEMBACA (stocktake.count), bukan mengesahkan: yang perlu
+        | membuka berita acaranya justru orang yang memeriksa laporan —
+        | Logistik, auditor internal — bukan hanya Manager yang menekan
+        | tombolnya.
+        */
+        Route::get('/stocktake/{stocktake}/approval-doc', [StockTakeController::class, 'approvalDoc'])
+            ->name('wms.stocktake.approval.doc');
     });
 
     Route::middleware('can:'.Permission::STOCKTAKE_MANAGE)->group(function () {

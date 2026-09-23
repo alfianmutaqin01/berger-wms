@@ -16,6 +16,8 @@ use App\Models\Warehouse;
 use App\Support\Inventory\BatchProduksi;
 use App\Support\Inventory\StockTakeRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
@@ -97,6 +99,25 @@ class StockTakeTest extends TestCase
         ]);
     }
 
+    /**
+     * Mengesahkan laporan LENGKAP dengan lampiran dasar persetujuannya.
+     *
+     * Sejak 23 Oktober 2026 pengesahan tanpa lampiran ditolak, jadi jalur
+     * normal di test mana pun harus membawa berkasnya. Yang menguji
+     * penolakannya memanggil `post()` langsung — lihat
+     * test_pengesahan_tanpa_lampiran_ditolak().
+     */
+    private function sahkan(StockTake $sesi, ?UploadedFile $berkas = null)
+    {
+        Storage::fake('local');
+
+        return $this->post(route('wms.stocktake.finalize', $sesi), [
+            'approval_doc' => $berkas ?? UploadedFile::fake()->create(
+                'berita-acara.pdf', 120, 'application/pdf'
+            ),
+        ]);
+    }
+
     private function bukaSesi(array $ubah = [])
     {
         return $this->post(route('wms.stocktake.store'), array_merge([
@@ -138,7 +159,7 @@ class StockTakeTest extends TestCase
 
         $this->loginAs(Role::WAREHOUSE_OPERATOR);
 
-        $this->post(route('wms.stocktake.finalize', $sesi))->assertForbidden();
+        $this->sahkan($sesi)->assertForbidden();
     }
 
     public function test_sales_tidak_boleh_membuka_stok_stocktake(): void
@@ -270,7 +291,7 @@ class StockTakeTest extends TestCase
 
         $item = StockTakeItem::firstOrFail();
         $this->hitung($item, 10);
-        $this->post(route('wms.stocktake.finalize', StockTake::firstOrFail()));
+        $this->sahkan(StockTake::firstOrFail());
 
         $this->hitung($item, 99)->assertSessionHas('error');
 
@@ -350,7 +371,7 @@ class StockTakeTest extends TestCase
         $this->bukaSesi();
 
         $this->hitung(StockTakeItem::firstOrFail(), 25);
-        $this->post(route('wms.stocktake.finalize', StockTake::firstOrFail()))
+        $this->sahkan(StockTake::firstOrFail())
             ->assertSessionHasNoErrors();
 
         $this->assertSame(25, $stok->fresh()->qty_available);
@@ -387,7 +408,7 @@ class StockTakeTest extends TestCase
         // Pengiriman yang sah terjadi setelah raknya dihitung.
         $stok->forceFill(['qty_available' => 20])->save();
 
-        $this->post(route('wms.stocktake.finalize', StockTake::firstOrFail()))
+        $this->sahkan(StockTake::firstOrFail())
             ->assertSessionHasNoErrors();
 
         $this->assertSame(15, $stok->fresh()->qty_available);
@@ -404,7 +425,7 @@ class StockTakeTest extends TestCase
         $item = StockTakeItem::where('inventory_stock_id', $dihitung->id)->firstOrFail();
         $this->hitung($item, 28);
 
-        $this->post(route('wms.stocktake.finalize', StockTake::firstOrFail()))
+        $this->sahkan(StockTake::firstOrFail())
             ->assertSessionHas('warning');
 
         $this->assertSame(28, $dihitung->fresh()->qty_available);
@@ -423,7 +444,7 @@ class StockTakeTest extends TestCase
         $this->bukaSesi();
 
         $this->hitung(StockTakeItem::firstOrFail(), 30);
-        $this->post(route('wms.stocktake.finalize', StockTake::firstOrFail()));
+        $this->sahkan(StockTake::firstOrFail());
 
         $this->assertSame(0, StockMovement::count(), 'Tidak ada yang berubah, jadi tidak ada yang dicatat.');
     }
@@ -436,11 +457,84 @@ class StockTakeTest extends TestCase
         $sesi = StockTake::firstOrFail();
 
         $this->hitung(StockTakeItem::firstOrFail(), 25);
-        $this->post(route('wms.stocktake.finalize', $sesi));
-        $this->post(route('wms.stocktake.finalize', $sesi))->assertSessionHas('error');
+        $this->sahkan($sesi);
+        $this->sahkan($sesi)->assertSessionHas('error');
 
         $this->assertSame(25, $stok->fresh()->qty_available, 'Selisihnya tidak boleh diterapkan dua kali.');
         $this->assertSame(1, StockMovement::count());
+    }
+
+    /* ------------------------------------- Dasar persetujuan pengesahan */
+
+    public function test_pengesahan_tanpa_lampiran_ditolak_dan_stok_tidak_bergerak(): void
+    {
+        $this->loginAs();
+        $stok = $this->stok(30);
+        $this->bukaSesi();
+        $sesi = StockTake::firstOrFail();
+
+        $this->hitung(StockTakeItem::firstOrFail(), 25);
+
+        $this->post(route('wms.stocktake.finalize', $sesi))
+            ->assertSessionHasErrors('approval_doc');
+
+        $this->assertSame(StockTake::STATUS_COUNTING, $sesi->fresh()->status);
+        $this->assertSame(30, $stok->fresh()->qty_available, 'Stok tidak boleh bergeser tanpa dasar persetujuan.');
+        $this->assertSame(0, StockMovement::count());
+    }
+
+    public function test_lampiran_selain_pdf_atau_foto_ditolak(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->bukaSesi();
+        $sesi = StockTake::firstOrFail();
+
+        $this->hitung(StockTakeItem::firstOrFail(), 25);
+
+        $this->sahkan($sesi, UploadedFile::fake()->create('berita-acara.docx', 50))
+            ->assertSessionHasErrors('approval_doc');
+
+        $this->assertSame(StockTake::STATUS_COUNTING, $sesi->fresh()->status);
+    }
+
+    public function test_lampiran_tersimpan_dan_bisa_dibuka_lagi(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->bukaSesi();
+        $sesi = StockTake::firstOrFail();
+
+        $this->hitung(StockTakeItem::firstOrFail(), 25);
+        $this->sahkan($sesi, UploadedFile::fake()->create('BA Opname Oktober.pdf', 200, 'application/pdf'))
+            ->assertSessionHasNoErrors();
+
+        $sesi->refresh();
+
+        $this->assertSame(StockTake::STATUS_FINALIZED, $sesi->status);
+        $this->assertTrue($sesi->adaLampiran());
+        $this->assertSame('BA Opname Oktober.pdf', $sesi->approval_doc_name);
+        Storage::disk('local')->assertExists($sesi->approval_doc_path);
+
+        $this->get(route('wms.stocktake.approval.doc', $sesi))->assertOk();
+    }
+
+    public function test_lampiran_gudang_lain_tidak_bisa_dibuka(): void
+    {
+        $this->loginAs();
+        $this->stok(30);
+        $this->bukaSesi();
+        $sesi = StockTake::firstOrFail();
+
+        $this->hitung(StockTakeItem::firstOrFail(), 25);
+        $this->sahkan($sesi);
+
+        // Pengguna gudang lain: berkasnya memuat selisih stok gudang ini.
+        $gudangLain = Warehouse::factory()->create(['code' => 'WH-02', 'name' => 'Cikarang']);
+        $orangLain = User::factory()->withRole(Role::MANAGER)->create(['warehouse_id' => $gudangLain->id]);
+        $this->actingAs($orangLain);
+
+        $this->get(route('wms.stocktake.approval.doc', $sesi))->assertForbidden();
     }
 
     public function test_pembatalan_sesi_tidak_mengubah_stok(): void
@@ -470,7 +564,7 @@ class StockTakeTest extends TestCase
 
         $this->hitung(StockTakeItem::firstOrFail(), 25);
         $sesi = StockTake::firstOrFail();
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $this->get(route('wms.stocktake.report', $sesi))
             ->assertOk()
@@ -503,7 +597,7 @@ class StockTakeTest extends TestCase
         }
 
         $sesi = StockTake::firstOrFail();
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $this->get(route('wms.stocktake.report', $sesi))
             ->assertOk()
@@ -543,7 +637,7 @@ class StockTakeTest extends TestCase
 
         $this->hitung(StockTakeItem::orderBy('id')->firstOrFail(), 30);
         $sesi = StockTake::firstOrFail();
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $this->get(route('wms.stocktake.report', $sesi))
             ->assertOk()
@@ -579,7 +673,7 @@ class StockTakeTest extends TestCase
         $this->loginAs(Role::MANAGER);
 
         $this->get(route('wms.stocktake.show', $sesiLain))->assertForbidden();
-        $this->post(route('wms.stocktake.finalize', $sesiLain))->assertForbidden();
+        $this->sahkan($sesiLain)->assertForbidden();
     }
 
     /* =========================================== Penyaring deret & cari SKU */
@@ -777,7 +871,7 @@ class StockTakeTest extends TestCase
         $this->catatTemuan($sesi);
         $this->hitung(StockTakeItem::where('is_found', false)->first(), 10);
 
-        $this->post(route('wms.stocktake.finalize', $sesi))->assertSessionHasNoErrors();
+        $this->sahkan($sesi)->assertSessionHasNoErrors();
 
         $baru = InventoryStock::where('batch_no', 'BT-TEMUAN')->firstOrFail();
 
@@ -801,7 +895,7 @@ class StockTakeTest extends TestCase
 
         $sesi = StockTake::first();
         $this->catatTemuan($sesi);
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $gerak = StockMovement::where('batch_no', 'BT-TEMUAN')->firstOrFail();
 
@@ -882,7 +976,7 @@ class StockTakeTest extends TestCase
             'status' => InventoryStock::STATUS_ACTIVE,
         ]);
 
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $this->assertSame(1, InventoryStock::where('batch_no', 'BT-TEMUAN')->count());
         $this->assertSame(45, InventoryStock::where('batch_no', 'BT-TEMUAN')->first()->qty_available);
@@ -926,7 +1020,7 @@ class StockTakeTest extends TestCase
         $sesi = StockTake::first();
         $this->catatTemuan($sesi);
         $this->hitung(StockTakeItem::where('is_found', false)->first(), 10);
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $baris = collect($this->get(route('wms.stocktake.report', $sesi))->viewData('baris'));
 
@@ -998,7 +1092,7 @@ class StockTakeTest extends TestCase
 
         $sesi = StockTake::first();
         $this->hitung(StockTakeItem::first(), 10);
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $html = $this->get(route('wms.stocktake.report', $sesi))->assertOk()->getContent();
 
@@ -1037,7 +1131,7 @@ class StockTakeTest extends TestCase
 
         $sesi = StockTake::first();
         $this->hitung(StockTakeItem::first(), 12);
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $isi = $this->unduhLaporan($sesi->fresh());
 
@@ -1081,7 +1175,7 @@ class StockTakeTest extends TestCase
 
         $sesi = StockTake::first();
         $this->hitung(StockTakeItem::first(), 10);
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $isi = $this->unduhLaporan($sesi->fresh());
 
@@ -1202,7 +1296,7 @@ class StockTakeTest extends TestCase
         $sesi = StockTake::firstOrFail();
         $pratinjau = $this->get(route('wms.stocktake.report', $sesi))->viewData('baris');
 
-        $this->post(route('wms.stocktake.finalize', $sesi));
+        $this->sahkan($sesi);
 
         $this->assertSame($pratinjau, $this->get(route('wms.stocktake.report', $sesi))->viewData('baris'));
     }
