@@ -44,8 +44,8 @@ class UserManagementTest extends TestCase
     /**
      * Login sungguhan lewat guard (bukan cuma CurrentActor::fake()) supaya
      * request menembus middleware `auth` + `session.track` yang sekarang
-     * membungkus seluruh rute /wms — lihat Fase 1 Autentikasi,
-     * rencana pembangunan. Baris `user_sessions` dan cookie
+     * membungkus seluruh rute /wms (Fase 1 Autentikasi). Baris
+     * `user_sessions` dan cookie
      * `device_token` di sini meniru persis apa yang AuthController::login()
      * lakukan pada login sungguhan.
      */

@@ -100,10 +100,10 @@
                           </div>
                       </div>
                       
-                      {{-- Role Switcher dihapus: sejak login sungguhan aktif (Fase 1,
-                           rencana pembangunan), peran ditentukan oleh akun
-                           yang login, bukan lagi dipilih bebas lewat menu ini. Lihat
-                           dokumen arsitektur §5.3. --}}
+                      {{-- Role Switcher dihapus: sejak login sungguhan aktif (Fase 1),
+                           peran ditentukan oleh akun yang login, bukan lagi dipilih
+                           bebas lewat menu ini. Penegakannya ada di middleware
+                           `auth`, `session.track`, dan `portal:{wms|sales}`. --}}
 
                       <!-- User Profile -->
                       <div class="dropdown">

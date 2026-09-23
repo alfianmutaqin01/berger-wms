@@ -12,9 +12,9 @@
 # berkas milik root, sehingga halaman mati dengan "touch(): Utime failed:
 # Operation not permitted". Sudah lima kali terjadi di proyek ini.
 #
-# Aturannya sudah ditulis di rencana pembangunan §5b, tapi aturan yang bergantung pada
-# ingatan akan dilanggar lagi. Berkas ini membuat cara yang BENAR menjadi
-# cara yang paling mudah diketik.
+# Aturan ini sudah pernah ditulis di dokumen, tapi aturan yang bergantung
+# pada ingatan akan dilanggar lagi. Berkas ini membuat cara yang BENAR
+# menjadi cara yang paling mudah diketik.
 
 set -euo pipefail
 

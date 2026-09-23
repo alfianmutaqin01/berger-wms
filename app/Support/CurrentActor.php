@@ -19,7 +19,8 @@ use App\Models\User;
  * Admin. Pengaman yang bergantung pada satu nilai konfigurasi yang benar
  * bukan pengaman, jadi jalurnya dihapus.
  *
- * @see dokumen arsitektur §5.3 — Role Switcher sudah dihapus.
+ * Satu-satunya pintu masuk kini AuthController, dan Role Switcher di navbar
+ * sudah dihapus sejak login sungguhan aktif.
  */
 class CurrentActor
 {
