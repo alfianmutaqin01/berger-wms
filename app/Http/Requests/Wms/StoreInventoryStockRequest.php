@@ -25,7 +25,7 @@ use Illuminate\Validation\Validator;
  * Stok DDP. Kalau boleh kosong, seluruh mesin kedaluwarsa yang dibangun di
  * Fase 4 melemah diam-diam, dan justru di kondisi ini dampaknya paling
  * besar karena hampir seluruh stok gudang masuk lewat pintu ini.
- * Keputusan pemilik produk, tercatat di rencana pembangunan Fase 6.
+ * Keputusan pemilik produk pada Fase 6.
  */
 class StoreInventoryStockRequest extends FormRequest
 {

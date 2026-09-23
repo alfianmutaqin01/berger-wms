@@ -84,7 +84,7 @@ Revisi ini menyelaraskan PRD dengan keputusan bisnis terbaru dan dengan prototip
 | 9 | **Scan QR lokasi rak masuk scope.** | §3.2, §6.3 F-INB-02 |
 
 > [!NOTE]
-> **Role Switcher** yang sebelumnya terlihat di navbar prototipe sudah **dihapus** sejak Fase 1 (Autentikasi Nyata). Peran kini ditentukan oleh akun yang login sungguhan, ditegakkan oleh middleware RBAC — lihat dokumen arsitektur §5.3.
+> **Role Switcher** yang sebelumnya terlihat di navbar prototipe sudah **dihapus** sejak Fase 1 (Autentikasi Nyata). Peran kini ditentukan oleh akun yang login sungguhan, ditegakkan oleh middleware RBAC di `bootstrap/app.php` dan `routes/web.php`.
 
 ---
 

@@ -161,8 +161,7 @@ class InboundVerificationController extends Controller
      *    menyebut "qty, lokasi, batch", tapi batch adalah nomor QC yang
      *    menjadi jejak telusur balik ke dokumen produksi — mengubahnya di
      *    gudang memutus rantai itu tanpa jejak. Dikunci mengikuti rancangan
-     *    layar (mock) dan konsisten dengan put-away; lihat catatan Fase 3c
-     *    di rencana pembangunan.
+     *    layar (mock) dan konsisten dengan put-away.
      * 4. Perpindahan lokasi tetap tunduk aturan kapasitas bin yang SAMA
      *    dengan put-away — lewat App\Support\Inbound\BinAllocator.
      *

@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Penomoran dokumen otomatis (PO, Surat Jalan).
  *
- * DIBUAT LEBIH AWAL DARI RENCANA. rencana pembangunan menjadwalkannya di Fase 10, tapi
+ * DIBUAT LEBIH AWAL DARI RENCANA. Rencana pembangunan menjadwalkannya di
+ * Fase 10, tapi
  * Fase 5 sudah butuh nomor PO dan Fase 6 butuh nomor Surat Jalan. Menunda
  * berarti menulis logika penomoran dua kali lalu membuangnya. Fase 10 kini
  * tinggal menambahkan layar pengaturannya untuk Super Admin.
