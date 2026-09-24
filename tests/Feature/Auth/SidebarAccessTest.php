@@ -44,7 +44,11 @@ class SidebarAccessTest extends TestCase
         '/wms/billing' => Permission::BILLING_VIEW,
         '/wms/master/customers' => Permission::MASTER_CUSTOMERS,
         '/wms/master/products' => Permission::MASTER_PRODUCTS,
-        '/wms/master/locations' => Permission::MASTER_LOCATIONS,
+        // MEMBACA, bukan mengubah. Logistik boleh membuka master rak untuk
+        // menandai deret rak DDP dan melihat rak kosong; tambah/sunting rak
+        // tetap milik Manager dan dijaga MASTER_LOCATIONS di berkas rute.
+        '/wms/master/locations' => Permission::MASTER_LOCATIONS_VIEW,
+        '/wms/inventory/ddp' => Permission::INVENTORY_DDP_VIEW,
         '/wms/admin/users' => Permission::ADMIN_USERS,
         '/wms/admin/sequence' => Permission::ADMIN_SEQUENCE,
     ];
@@ -66,7 +70,8 @@ class SidebarAccessTest extends TestCase
         Permission::BILLING_VIEW => 'Billing & Piutang',
         Permission::MASTER_CUSTOMERS => 'Master Customers',
         Permission::MASTER_PRODUCTS => 'Master Products',
-        Permission::MASTER_LOCATIONS => 'Master Lokasi Rak',
+        Permission::MASTER_LOCATIONS_VIEW => 'Master Lokasi Rak',
+        Permission::INVENTORY_DDP_VIEW => 'Pemindahan DDP',
         Permission::ADMIN_USERS => 'User Management',
         Permission::ADMIN_SEQUENCE => 'Penomoran Dokumen',
         Permission::REPORTS_VIEW => 'Laporan & Analisis',

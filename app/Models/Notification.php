@@ -57,6 +57,12 @@ class Notification extends Model
 
     public const TRANSFER_INCOMING = 'transfer.incoming';
 
+    /** Stok jatuh ke DDP dan masih berdiri di rak FG; Logistik menentukan rak tujuannya. */
+    public const STOCK_DDP_PENDING = 'stock.ddp_pending';
+
+    /** Rak DDP tujuan sudah ditetapkan Logistik; Operator yang mengangkat barangnya. */
+    public const STOCK_DDP_ASSIGNED = 'stock.ddp_assigned';
+
     /** Supir mengonfirmasi barang sampai; untuk Logistik gudang pengirim. */
     public const DELIVERY_ARRIVED = 'delivery.arrived';
 
@@ -99,6 +105,8 @@ class Notification extends Model
         self::RETURN_APPROVED => ['bi-check2-square', 'success'],
         self::RETURN_VERIFY_READY => ['bi-clipboard-check', 'info'],
         self::TRANSFER_INCOMING => ['bi-truck', 'info'],
+        self::STOCK_DDP_PENDING => ['bi-exclamation-octagon-fill', 'danger'],
+        self::STOCK_DDP_ASSIGNED => ['bi-signpost-split-fill', 'warning'],
         self::DELIVERY_ARRIVED => ['bi-geo-alt-fill', 'success'],
         self::MRF_NEEDS_LOGISTICS => ['bi-clipboard2-plus', 'warning'],
         self::MRF_READY_FOR_PICKUP => ['bi-box-seam', 'primary'],

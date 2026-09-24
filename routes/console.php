@@ -141,3 +141,29 @@ Schedule::job(new DetakAntrean)
     ->name('detak:antrean')
     ->everyFiveMinutes()
     ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
+| Kabar stok DDP yang belum turun ke rak DDP
+|--------------------------------------------------------------------------
+|
+| SEKALI SEHARI, MENYUSUL SWEEP-NYA. Masa simpan dihitung per HARI, jadi
+| daftar barang kedaluwarsa hanya berubah sekali sehari — memeriksanya tiap
+| sepuluh menit berarti 143 kali menanyakan sesuatu yang jawabannya sudah pasti
+| sama. Pukul 00:15: sesudah sweep kedaluwarsa (00:05) dan pelepasan karantina
+| (00:10), sehingga kabarnya memuat hasil keduanya sekaligus dan sudah menunggu
+| di lonceng saat Logistik login pagi hari.
+|
+| DIBACA DARI KEADAAN, BUKAN DARI KEJADIAN. Perintah ini menanyakan "stok DDP
+| mana yang masih di rak barang bagus", bukan "apa yang berubah semalam". Jadi
+| stok yang jatuh ke DDP dari jalur lain — retur rusak, write-off, temuan
+| stocktake — ikut terbawa dengan sendirinya tanpa perlu disisipi pemberitahuan
+| satu per satu di tiap sumbernya. Barisnya tetap langsung tampil di layar
+| Pemindahan DDP begitu terjadi; yang menunggu putaran berikutnya hanyalah
+| dentang loncengnya.
+*/
+Schedule::command('stock:kabarkan-ddp')
+    ->dailyAt('00:15')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping()
+    ->onOneServer();

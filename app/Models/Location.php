@@ -59,6 +59,32 @@ class Location extends Model
 
     public const ZONES_TRANSIT = [self::ZONE_TRANSIT_PRODUKSI, self::ZONE_TRANSIT_LOGISTIK];
 
+    /*
+    | RAK DDP — tempat barang yang TIDAK BOLEH DIJUAL disimpan terpisah dari
+    | barang bagus: kedaluwarsa, retur rusak, write-off, dan temuan stocktake.
+    |
+    | Sebelum zona ini ada, sistem menandai stok sebagai DDP tetapi tidak punya
+    | cara mengetahui barangnya sudah dipindah atau belum — barang kedaluwarsa
+    | tetap berdiri di rak FG, bercampur dengan yang masih dijual, dan tidak ada
+    | satu layar pun yang bisa menyebutnya.
+    |
+    | TEMPAT PENYIMPANAN SUNGGUHAN, jadi ikut scope penyimpanan() — barangnya
+    | memang disimpan di sana, bukan sekadar lewat seperti rak transit. Yang
+    | dikecualikan hanyalah SARAN PUT-AWAY barang bagus: menaruh barang baru di
+    | rak DDP persis kesalahan yang ingin dicegah rak ini.
+    */
+    public const ZONE_DDP = 'DDP Area';
+
+    /**
+     * Untuk penyaring dan ringkasan layar — BUKAN untuk strategi put-away.
+     *
+     * ZONES sengaja tetap berisi tiga zona pergerakan saja: ia dipakai sebagai
+     * daftar pilihan saat rak dibuat dan sebagai sumber acak di factory. Rak
+     * DDP tidak lahir dari sana; ia ditandai belakangan pada deret rak yang
+     * sudah ada.
+     */
+    public const ZONES_SEMUA = [self::ZONE_FAST, self::ZONE_SLOW, self::ZONE_MIDDLE, self::ZONE_DDP];
+
     protected $fillable = [
         'warehouse_id',
         'code',
@@ -168,6 +194,31 @@ class Location extends Model
     public function scopeTransit(Builder $query): Builder
     {
         return $query->whereIn('zone', self::ZONES_TRANSIT);
+    }
+
+    /** Hanya rak khusus barang tidak layak jual. */
+    public function scopeDdp(Builder $query): Builder
+    {
+        return $query->where('zone', self::ZONE_DDP);
+    }
+
+    /**
+     * Rak yang boleh menampung barang BAGUS.
+     *
+     * Rak DDP dikecualikan di sini, bukan di penyimpanan(): barang DDP memang
+     * disimpan di rak DDP, yang tidak boleh hanyalah barang siap jual masuk
+     * ke sana.
+     */
+    public function scopeUntukBarangBagus(Builder $query): Builder
+    {
+        return $query->penyimpanan()->where(fn (Builder $q) => $q
+            ->where('zone', '!=', self::ZONE_DDP)
+            ->orWhereNull('zone'));
+    }
+
+    public function isDdp(): bool
+    {
+        return $this->zone === self::ZONE_DDP;
     }
 
     /**

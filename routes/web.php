@@ -19,6 +19,7 @@ use App\Http\Controllers\Wms\BookingController;
 use App\Http\Controllers\Wms\CustomerController;
 use App\Http\Controllers\Wms\CustomerRejectionController;
 use App\Http\Controllers\Wms\DashboardController;
+use App\Http\Controllers\Wms\DdpRelocationController;
 use App\Http\Controllers\Wms\DeliveryController;
 use App\Http\Controllers\Wms\ImportController;
 use App\Http\Controllers\Wms\InboundController;
@@ -385,6 +386,24 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
     Route::post('/inventory/transfer', [StockRelocationController::class, 'transfer'])
         ->middleware('can:'.Permission::INVENTORY_TRANSFER);
 
+    /*
+    | Pemindahan stok DDP ke rak DDP.
+    |
+    | Halamannya dibaca dua peran dengan wewenang berbeda — Logistik
+    | menyerahkan daftarnya, Operator mengangkat barangnya — jadi pintunya
+    | punya izin sendiri, sementara kedua aksinya dipagari izinnya
+    | masing-masing.
+    */
+    Route::get('/inventory/ddp', [DdpRelocationController::class, 'index'])
+        ->middleware('can:'.Permission::INVENTORY_DDP_VIEW)
+        ->name('wms.ddp.index');
+    Route::post('/inventory/ddp/serahkan', [DdpRelocationController::class, 'serahkan'])
+        ->middleware('can:'.Permission::INVENTORY_DDP_ASSIGN)
+        ->name('wms.ddp.serahkan');
+    Route::post('/inventory/ddp/pindahkan', [DdpRelocationController::class, 'pindahkan'])
+        ->middleware('can:'.Permission::INVENTORY_DDP_MOVE)
+        ->name('wms.ddp.pindahkan');
+
     // Penanda batch (Karantina, Quality Issue, Dahulukan Keluar) —
     // permintaan pemilik produk. Gate TERPISAH
     // dari INVENTORY_ADJUST: ini wewenang Logistik sehari-hari (hasil
@@ -554,8 +573,15 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.product-categories.status');
         });
 
-        // Master Lokasi Rak (PRD §5.2) — sudah terhubung ke database.
-        Route::middleware('can:'.Permission::MASTER_LOCATIONS)->group(function () {
+        /*
+        | Master Lokasi Rak (PRD §5.2) — sudah terhubung ke database.
+        |
+        | MEMBACA DAN MENGUBAH DIPISAH. Logistik perlu membuka denah untuk
+        | menandai deret rak DDP dan melihat rak mana yang masih kosong, tetapi
+        | menambah atau menghapus rak tetap keputusan Manager: itu menyentuh
+        | tata letak gudang yang dipakai seluruh alur put-away.
+        */
+        Route::middleware('can:'.Permission::MASTER_LOCATIONS_VIEW)->group(function () {
             Route::get('/locations', [LocationController::class, 'index'])->name('wms.locations.index');
             // Denah gudang — didaftarkan SEBELUM /locations/{location} agar
             // "map" tidak tertangkap sebagai parameter route model binding.
@@ -565,6 +591,15 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             // perlu membawa rincian batch yang 99% tidak pernah dibuka.
             Route::get('/locations/{location}/contents', [LocationController::class, 'contents'])
                 ->name('wms.locations.contents');
+        });
+
+        // Menandai satu DERET rak sebagai rak DDP, atau melepas tandanya.
+        // Izinnya milik Logistik juga — lihat INVENTORY_DDP_ASSIGN.
+        Route::patch('/locations/deret/{rack}/ddp', [LocationController::class, 'tandaiDeretDdp'])
+            ->middleware('can:'.Permission::INVENTORY_DDP_ASSIGN)
+            ->name('wms.locations.deret-ddp');
+
+        Route::middleware('can:'.Permission::MASTER_LOCATIONS)->group(function () {
             Route::post('/locations', [LocationController::class, 'store'])->name('wms.locations.store');
             Route::put('/locations/{location}', [LocationController::class, 'update'])->name('wms.locations.update');
             Route::patch('/locations/{location}/status', [LocationController::class, 'toggleStatus'])->name('wms.locations.status');

@@ -35,11 +35,12 @@
             </div>
         </div>
     </div>
-    @foreach($zones as $zone)
+    @foreach($zonesRingkas as $zone)
         @php
             $warna = match($zone) {
                 \App\Models\Location::ZONE_FAST => 'success',
                 \App\Models\Location::ZONE_SLOW => 'secondary',
+                \App\Models\Location::ZONE_DDP => 'danger',
                 default => 'info',
             };
         @endphp
@@ -67,9 +68,15 @@
             <a href="{{ route('wms.locations.map') }}" class="btn btn-outline-secondary fw-bold shadow-sm me-2">
                 <i class="bi bi-map me-1"></i> Denah Gudang
             </a>
+            {{-- Logistik boleh MEMBACA halaman ini dan menandai deret rak DDP
+                 di denah, tetapi menambah dan menyunting rak tetap milik
+                 Manager. Tombolnya disembunyikan; rutenya tetap dijaga gate
+                 sendiri, karena menyembunyikan tombol bukan pengamanan. --}}
+            @can(\App\Support\Permission::MASTER_LOCATIONS)
             <button class="btn btn-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#locationModal" onclick="openLocationModal('add')">
                 <i class="bi bi-plus-circle me-1"></i> Tambah Lokasi
             </button>
+            @endcan
         </div>
     </div>
 
@@ -109,7 +116,7 @@
             <div class="col-8 col-md-2">
                 <select name="zone" class="form-select h-100">
                     <option value="">Semua Zona</option>
-                    @foreach($zones as $zone)
+                    @foreach($zonesRingkas as $zone)
                         <option value="{{ $zone }}" @selected($filters['zone'] === $zone)>{{ $zone }}</option>
                     @endforeach
                 </select>
@@ -162,6 +169,7 @@
                                         $warna = match($location->zone) {
                                             \App\Models\Location::ZONE_FAST => 'success',
                                             \App\Models\Location::ZONE_SLOW => 'secondary',
+                                            \App\Models\Location::ZONE_DDP => 'danger',
                                             default => 'info',
                                         };
                                     @endphp
@@ -178,6 +186,7 @@
                                 @endif
                             </td>
                             <td class="text-center pe-3 text-nowrap">
+                                @can(\App\Support\Permission::MASTER_LOCATIONS)
                                 <button class="btn btn-sm btn-outline-secondary" title="Sunting"
                                         data-bs-toggle="modal" data-bs-target="#locationModal"
                                         onclick='openLocationModal("edit", @json($payload))'>
@@ -192,6 +201,9 @@
                                         <i class="bi {{ $location->is_active ? 'bi-toggle-on' : 'bi-toggle-off' }}"></i>
                                     </button>
                                 </form>
+                                @else
+                                    <span class="text-muted small">—</span>
+                                @endcan
                             </td>
                         </tr>
                     @empty
@@ -248,6 +260,11 @@
                         <label class="form-label small fw-semibold text-secondary">Zona</label>
                         <select name="zone" id="inpZone" class="form-select">
                             <option value="">— Tanpa zona —</option>
+                            {{-- Sengaja $zones, bukan $zonesRingkas: rak DDP
+                                 ditandai per DERET lewat denah gudang, bukan
+                                 dipilih satu sel di sini. Satu sel DDP di
+                                 tengah deret barang bagus adalah keadaan yang
+                                 tidak bisa dijelaskan kepada siapa pun. --}}
                             @foreach($zones as $zone)
                                 <option value="{{ $zone }}">{{ $zone }}</option>
                             @endforeach
