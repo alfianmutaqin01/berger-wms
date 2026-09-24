@@ -55,7 +55,15 @@
                 <dt class="col-5 text-muted fw-normal small">Tujuan</dt>
                 <dd class="col-7 fw-semibold">{{ $note->customer?->name ?? '—' }}</dd>
 
-                @if($note->vehicle_plate)
+                {{-- Kiriman luar pulau: yang membuka halaman ini PELANGGAN,
+                     dan plat truk yang mengangkut ke pelabuhan dua minggu lalu
+                     tidak membantunya memastikan ini kirimannya. Nomor
+                     kontainer yang membantu — itu yang tertera di dokumen yang
+                     ia terima dari ekspedisi. --}}
+                @if($note->epod_to_customer && $note->container_no)
+                <dt class="col-5 text-muted fw-normal small">Kontainer</dt>
+                <dd class="col-7 font-monospace">{{ $note->container_no }}</dd>
+                @elseif($note->vehicle_plate)
                 <dt class="col-5 text-muted fw-normal small">Kendaraan</dt>
                 <dd class="col-7">{{ $note->vehicle_plate }}</dd>
                 @endif

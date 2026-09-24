@@ -67,6 +67,26 @@ Schedule::command('stock:sweep-priority')
 
 /*
 |--------------------------------------------------------------------------
+| Tautan konfirmasi pelanggan untuk kiriman luar pulau
+|--------------------------------------------------------------------------
+|
+| PUKUL 08:00, bukan dini hari seperti sweep stok di atas. Yang dihasilkannya
+| pesan WhatsApp untuk PELANGGAN — orang di luar organisasi ini, yang tidak
+| pernah meminta pesan tersebut. Pesan dari pemasok yang masuk pukul 00:20
+| akan dibaca sebagai gangguan, dan toko belum tentu sudah buka untuk
+| memastikan barangnya benar-benar ada.
+|
+| Terlambat sehari tidak berakibat apa pun: perintahnya membaca keadaan, jadi
+| kiriman yang tanggalnya sudah lewat tetap terjaring pada jalan berikutnya.
+*/
+Schedule::command('epod:kirim-pelanggan')
+    ->dailyAt('08:00')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
 | Bersihkan sisa data: sesi mati, berkas impor telantar, riwayat login lama
 |--------------------------------------------------------------------------
 |

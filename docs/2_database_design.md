@@ -728,6 +728,11 @@ Surat Jalan — **salinan dokumen yang terbit di sistem BC**, bukan dokumen yang
 | `driver_name`, `driver_phone`, `vehicle_plate` | VARCHAR | Wajib saat berangkat | Data pengiriman |
 | `shipped_at`, `shipped_by` | TIMESTAMP, FK users | | Waktu berangkat — awal SLA |
 | `epod_token` | VARCHAR(64) | UNIQUE, NULLABLE | Tautan konfirmasi supir tanpa login |
+| `epod_expires_at` | TIMESTAMP | NULLABLE | Masa berlaku tautan (v1.5) — kolom, bukan dihitung dari `shipped_at` |
+| `epod_to_customer` | BOOLEAN | DEFAULT false | Kiriman luar pulau: tautan konfirmasi ke pelanggan, bukan ke supir (v1.7) |
+| `eta_date` | DATE | NULLABLE, INDEX bersama `epod_to_customer` | Perkiraan tanggal sampai; tautan baru terbit pada tanggal ini |
+| `customer_phone` | VARCHAR(20) | NULLABLE | Nomor WA penerima di toko, ternormalisasi (62…) |
+| `forwarder_name`, `container_no` | VARCHAR(100), VARCHAR(30) | NULLABLE | Pengganti plat nomor pada kiriman kontainer |
 | `delivered_at`, `received_by_name` | TIMESTAMP, VARCHAR(100) | | Konfirmasi sampai |
 | `arrival_photo_path/mime/size/source/taken_at` | | CHECK: lengkap bersama; source `camera`/`file` | Foto barang sampai dari supir |
 | `substitution_confirmed_at/by`, `substitution_reason`, `substitution_note` | | | Konfirmasi SKU pengganti |
@@ -736,6 +741,8 @@ Surat Jalan — **salinan dokumen yang terbit di sistem BC**, bukan dokumen yang
 | `created_at`, `updated_at` | TIMESTAMP | | |
 
 Baris barangnya ada di `delivery_note_lines` (`delivery_note_id`, `sku`, `product_id`, `description`, `qty`, `qty_invoiced`, `uom_code`; UNIQUE `delivery_note_id + sku`).
+
+CHECK `delivery_notes_epod_pelanggan_lengkap`: kiriman yang `epod_to_customer` dan sudah `shipped` **wajib** punya `eta_date` dan `customer_phone`. Tanpa keduanya penjadwal tidak punya apa pun untuk dikerjakan, dan kirimannya diam di status "berangkat" sampai ada yang kebetulan menanyakannya berminggu-minggu kemudian.
 
 #### `delivery_proofs`
 Bukti foto Surat Jalan yang ditandatangani.

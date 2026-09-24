@@ -85,6 +85,7 @@ return [
             'konfirmasi_pengiriman' => env('WHATSAPP_TEMPLATE', 'konfirmasi_pengiriman'),
             'persetujuan_mrf' => env('WHATSAPP_TEMPLATE_MRF', 'persetujuan_mrf'),
             'barang_sampai_sales' => env('WHATSAPP_TEMPLATE_BARANG_SAMPAI', 'barang_sampai_sales'),
+            'konfirmasi_pelanggan' => env('WHATSAPP_TEMPLATE_KONFIRMASI_PELANGGAN', 'konfirmasi_pelanggan'),
         ],
 
         // --- Fonnte

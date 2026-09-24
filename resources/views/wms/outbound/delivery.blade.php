@@ -151,6 +151,23 @@
                             <span class="badge bg-{{ $note->status_color }}-subtle text-{{ $note->status_color }}-emphasis">
                                 {{ $note->status_label }}
                             </span>
+                            {{-- Kiriman kontainer bisa berstatus "Dalam
+                                 Pengiriman" berminggu-minggu, dan tanpa
+                                 penanda ini ia terlihat persis seperti
+                                 kiriman lokal yang macet — lalu dikejar
+                                 padahal tidak ada yang perlu dikejar. --}}
+                            @if($note->epod_to_customer)
+                                <div class="mt-1">
+                                    <span class="badge bg-info-subtle text-info-emphasis">
+                                        <i class="bi bi-box-seam me-1"></i>Luar pulau
+                                    </span>
+                                    @if($note->menungguTautanPelanggan())
+                                        <div class="small text-muted mt-1">
+                                            Perkiraan sampai {{ $note->eta_date?->translatedFormat('d M Y') ?? '—' }}
+                                        </div>
+                                    @endif
+                                </div>
+                            @endif
                         </td>
                         {{-- Pintu masuk ke rincian. Tanpa kolom ini, halaman
                              "Nyatakan Berangkat" tidak bisa dicapai sama sekali

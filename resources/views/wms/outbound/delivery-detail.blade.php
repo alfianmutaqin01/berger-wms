@@ -155,7 +155,7 @@
         <div class="card shadow-sm border-0 rounded-4">
             <div class="card-header bg-white border-bottom-0 pt-4 pb-0 px-4">
                 <h5 class="fw-bold text-dark mb-0"><i class="bi bi-truck text-primary me-2"></i> Data Pengiriman</h5>
-                <small class="text-muted">Tautan konfirmasi dikirim ke nomor ini.</small>
+                <small class="text-muted">Tautan konfirmasi dikirim ke nomor yang diisi di bawah.</small>
             </div>
 
             @if($note->substitution_confirmed_at)
@@ -171,6 +171,33 @@
             <form method="POST" action="{{ route('wms.delivery.ship', $note) }}" class="card-body px-4 pt-3"
                   onsubmit="return confirm('Nyatakan barang berangkat? Stok dan status pesanan akan berubah.');">
                 @csrf
+
+                {{-- SUPIR BERGANTI DI JALAN — ditentukan Logistik, bukan
+                     ditebak sistem dari alamat pelanggan.
+
+                     Yang menentukan bukan jaraknya dan bukan pulaunya,
+                     melainkan apakah supirnya berganti — dan itu ikut cara
+                     armadanya dipesan, yang hanya Logistik tahu. Karawang ke
+                     Lampung juga menyeberang laut, tetapi truknya naik feri
+                     dan supir yang sama yang tiba di toko; di situ konfirmasi
+                     supir justru yang benar. Tebakan otomatis akan keliru
+                     persis pada kiriman yang paling mirip aturannya. --}}
+                <div class="border rounded-3 p-3 mb-3 bg-light-subtle">
+                    <div class="form-check mb-0">
+                        <input type="checkbox" name="epod_to_customer" value="1" id="luarPulau"
+                               class="form-check-input" @checked(old('epod_to_customer'))>
+                        <label class="form-check-label fw-semibold" for="luarPulau">
+                            Supir berganti di perjalanan (luar pulau / kontainer)
+                        </label>
+                        <div class="form-text mb-0">
+                            Tautan konfirmasi dikirim ke <strong>pelanggan</strong>, bukan ke supir, dan baru
+                            terkirim pada perkiraan tanggal sampai.
+                            @if($note->customer?->territory_code)
+                                <br>Territory pelanggan ini: <strong>{{ $note->customer->territory_code }}</strong>.
+                            @endif
+                        </div>
+                    </div>
+                </div>
 
                 <label class="form-label small fw-semibold">Nama supir <span class="text-danger">*</span></label>
                 <input type="text" name="driver_name" value="{{ old('driver_name') }}"
@@ -188,13 +215,71 @@
                      gagalnya diam: pesan "terkirim" ke nomor orang lain, dan
                      yang menemukan masalahnya adalah Logistik keesokan
                      harinya saat menanyakan kenapa belum dikonfirmasi. --}}
-                <div class="form-text mb-3">
+                <div class="form-text mb-3" id="barisNomorSupir">
                     Akan dikirim ke: <strong id="nomorTerbaca" class="font-monospace">—</strong>
                 </div>
 
-                <label class="form-label small fw-semibold">Plat nomor kendaraan <span class="text-danger">*</span></label>
-                <input type="text" name="vehicle_plate" value="{{ old('vehicle_plate') }}"
-                       class="form-control mb-3 text-uppercase" maxlength="20" required placeholder="B 1234 XYZ">
+                {{-- Tetap diminta pada kiriman luar pulau: barangnya tetap
+                     diangkut seseorang keluar dari gudang ini, dan tanpa
+                     catatan itu dua minggu kemudian tidak ada jawaban untuk
+                     "tadi diambil siapa". --}}
+                <div class="alert alert-secondary border-0 rounded-3 small py-2 d-none" id="catatanSupirPertama">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Data supir di atas dicatat sebagai pengangkut ke pelabuhan. Tautan konfirmasi
+                    <strong>tidak</strong> dikirim kepadanya.
+                </div>
+
+                <div id="isianDarat">
+                    <label class="form-label small fw-semibold">Plat nomor kendaraan <span class="text-danger">*</span></label>
+                    <input type="text" name="vehicle_plate" value="{{ old('vehicle_plate') }}"
+                           class="form-control mb-3 text-uppercase" maxlength="20" required placeholder="B 1234 XYZ">
+                </div>
+
+                {{-- Pengganti plat, bukan tambahan: plat truk ke pelabuhan
+                     tidak menjawab pertanyaan apa pun dua minggu kemudian.
+                     Yang dicari saat barangnya dipertanyakan adalah lewat
+                     ekspedisi mana dan kontainer nomor berapa. --}}
+                <div id="isianLautan" class="d-none">
+                    <label class="form-label small fw-semibold">Nomor kontainer <span class="text-danger">*</span></label>
+                    <input type="text" name="container_no" value="{{ old('container_no') }}"
+                           class="form-control mb-3 text-uppercase" maxlength="30" placeholder="ABCU1234567">
+
+                    <label class="form-label small fw-semibold">Nama ekspedisi</label>
+                    <input type="text" name="forwarder_name" value="{{ old('forwarder_name') }}"
+                           class="form-control mb-3" maxlength="100" placeholder="mis. Meratus, SPIL">
+
+                    <label class="form-label small fw-semibold">
+                        Nomor WhatsApp penerima di toko <span class="text-danger">*</span>
+                    </label>
+                    <div class="input-group mb-1">
+                        <span class="input-group-text bg-white"><i class="bi bi-whatsapp text-success"></i></span>
+                        <input type="text" name="customer_phone" id="nomorPelanggan"
+                               value="{{ old('customer_phone', $note->customer?->phone) }}"
+                               class="form-control" maxlength="30" placeholder="081234567890" autocomplete="off">
+                    </div>
+                    {{-- Diisi awal dari master pelanggan, TETAPI bisa diubah:
+                         toko penerima di seberang pulau sering bukan nomor
+                         yang tercatat di kantor pusat pelanggan. --}}
+                    <div class="form-text mb-3">
+                        Akan dikirim ke: <strong id="nomorPelangganTerbaca" class="font-monospace">—</strong>
+                        @if($note->customer?->phone)
+                            <br>Terisi dari master pelanggan — ubah bila toko penerimanya memakai nomor lain.
+                        @endif
+                    </div>
+
+                    <label class="form-label small fw-semibold">
+                        Perkiraan tanggal sampai di toko <span class="text-danger">*</span>
+                    </label>
+                    <input type="date" name="eta_date" value="{{ old('eta_date') }}"
+                           min="{{ now()->toDateString() }}"
+                           max="{{ now()->addYear()->toDateString() }}"
+                           class="form-control mb-1">
+                    <div class="form-text mb-3">
+                        Tautan konfirmasi terbit pada tanggal ini, berlaku
+                        {{ (int) config('wms.epod.berlaku_jam') }} jam. Masih bisa digeser dari halaman ini
+                        selama tautannya belum terbit.
+                    </div>
+                </div>
 
                 {{-- Bukan master data supir: supir berganti tiap hari dan
                      sebagian besar dari perusahaan jasa lain. Daftar ini
@@ -243,6 +328,57 @@ document.addEventListener('DOMContentLoaded', function () {
         const perbarui = () => { terbaca.textContent = bentukKirim(nomor.value); };
         nomor.addEventListener('input', perbarui);
         perbarui();
+    }
+
+    const nomorPelanggan = document.getElementById('nomorPelanggan');
+    const pelangganTerbaca = document.getElementById('nomorPelangganTerbaca');
+
+    if (nomorPelanggan && pelangganTerbaca) {
+        const perbarui = () => { pelangganTerbaca.textContent = bentukKirim(nomorPelanggan.value); };
+        nomorPelanggan.addEventListener('input', perbarui);
+        perbarui();
+    }
+
+    // Centang "supir berganti di perjalanan" MENGGANTI isian wajibnya, bukan
+    // menambahinya. Atribut required ikut dipindahkan, bukan hanya
+    // disembunyikan: kolom wajib yang tersembunyi membuat peramban menolak
+    // mengirim formulir sambil menunjuk kolom yang tidak terlihat di layar,
+    // dan yang menekan tombolnya tidak akan pernah menemukan apa salahnya.
+    const luarPulau = document.getElementById('luarPulau');
+    const isianDarat = document.getElementById('isianDarat');
+    const isianLautan = document.getElementById('isianLautan');
+    const catatanSupir = document.getElementById('catatanSupirPertama');
+    const barisNomorSupir = document.getElementById('barisNomorSupir');
+
+    if (luarPulau && isianDarat && isianLautan) {
+        const wajibDarat = ['vehicle_plate'];
+        const wajibLautan = ['container_no', 'customer_phone', 'eta_date'];
+        const cari = (nama) => document.querySelector('[name="' + nama + '"]');
+
+        const terapkan = () => {
+            const aktif = luarPulau.checked;
+
+            isianDarat.classList.toggle('d-none', aktif);
+            isianLautan.classList.toggle('d-none', !aktif);
+            catatanSupir.classList.toggle('d-none', !aktif);
+
+            // Baris "akan dikirim ke" di bawah nomor supir menjadi keliru
+            // begitu tautannya tidak lagi menuju supir.
+            barisNomorSupir.classList.toggle('d-none', aktif);
+
+            wajibDarat.forEach((nama) => {
+                const isian = cari(nama);
+                if (isian) { isian.required = !aktif; }
+            });
+
+            wajibLautan.forEach((nama) => {
+                const isian = cari(nama);
+                if (isian) { isian.required = aktif; }
+            });
+        };
+
+        luarPulau.addEventListener('change', terapkan);
+        terapkan();
     }
 
     const salin = document.getElementById('salinTautan');

@@ -39,7 +39,18 @@ class BarangDikirim extends EmailPesanan
             // di mana" tidak perlu menelepon gudang dulu.
             'supir' => ($this->note->driver_name ?: '—')
                 .($this->note->driver_phone ? ' ('.$this->note->driver_phone.')' : ''),
-            'plat' => $this->note->vehicle_plate ?: '—',
+            // Kiriman luar pulau: plat truk ke pelabuhan tidak menolong Sales
+            // yang ditanya "barang saya di mana" dua minggu kemudian. Yang
+            // bisa ia teruskan ke customer adalah nomor kontainer dan
+            // perkiraan tanggal sampainya.
+            'plat' => $this->note->epod_to_customer
+                ? trim(sprintf(
+                    'Kontainer %s%s — perkiraan sampai %s',
+                    $this->note->container_no ?: '—',
+                    $this->note->forwarder_name ? ' ('.$this->note->forwarder_name.')' : '',
+                    $this->note->eta_date?->translatedFormat('d M Y') ?? '—',
+                ))
+                : ($this->note->vehicle_plate ?: '—'),
             'muatan' => $this->note->lines->map(fn (DeliveryNoteLine $l) => [
                 'sku' => self::sel($l->product?->sku ?? $l->sku),
                 'nama' => self::sel($l->product?->name),
