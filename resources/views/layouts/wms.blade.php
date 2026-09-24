@@ -178,6 +178,14 @@
                                 <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok</span></a>
                             </li>
                         @endcan
+                        {{-- Pemindahan DDP dibuka dua peran dengan pekerjaan
+                             berbeda di layar yang sama: Logistik menyerahkan
+                             daftarnya, Operator mengangkat barangnya. --}}
+                        @can(\App\Support\Permission::INVENTORY_DDP_VIEW)
+                            <li class="nav-item {{ request()->is('wms/inventory/ddp') ? 'active' : '' }}">
+                                <a href="/wms/inventory/ddp" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Pemindahan DDP</span></a>
+                            </li>
+                        @endcan
                         {{-- Item Ledger TIDAK di sini melainkan di menu Audit,
                              satu pintu dengan Log Aktivitas: keduanya dibuka
                              untuk menelusuri, bukan untuk mengerjakan sesuatu
@@ -343,7 +351,7 @@
                 \App\Support\Permission::BILLING_VIEW,
                 \App\Support\Permission::MASTER_CUSTOMERS,
                 \App\Support\Permission::MASTER_PRODUCTS,
-                \App\Support\Permission::MASTER_LOCATIONS,
+                \App\Support\Permission::MASTER_LOCATIONS_VIEW,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
                 \App\Support\Permission::ADMIN_SETTINGS,
@@ -363,7 +371,7 @@
             @canany([
                 \App\Support\Permission::MASTER_CUSTOMERS,
                 \App\Support\Permission::MASTER_PRODUCTS,
-                \App\Support\Permission::MASTER_LOCATIONS,
+                \App\Support\Permission::MASTER_LOCATIONS_VIEW,
                 \App\Support\Permission::ADMIN_USERS,
                 \App\Support\Permission::ADMIN_SEQUENCE,
                 \App\Support\Permission::ADMIN_SETTINGS,
@@ -392,7 +400,11 @@
                                 <a href="/wms/master/product-categories" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kategori Produk</span></a>
                             </li>
                         @endcan
-                        @can(\App\Support\Permission::MASTER_LOCATIONS)
+                        {{-- Izin LIHAT, bukan izin ubah: Logistik membuka
+                             halaman ini untuk menandai deret rak DDP dan
+                             melihat rak kosong. Tombol tambah/sunting tetap
+                             disembunyikan dari mereka di dalam halamannya. --}}
+                        @can(\App\Support\Permission::MASTER_LOCATIONS_VIEW)
                             <li class="nav-item {{ request()->is('wms/master/locations') ? 'active' : '' }}">
                                 <a href="/wms/master/locations" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Master Lokasi Rak</span></a>
                             </li>

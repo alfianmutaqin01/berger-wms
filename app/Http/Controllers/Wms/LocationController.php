@@ -13,6 +13,7 @@ use App\Support\WarehouseScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
@@ -76,7 +77,10 @@ class LocationController extends Controller
             'locations' => $locations,
             'warehouses' => WarehouseScope::options($user),
             'racks' => (clone $base)->distinct()->orderBy('rack')->pluck('rack'),
+            // Formulir tambah/sunting hanya menawarkan tiga zona pergerakan;
+            // rak DDP ditandai per deret, bukan dipilih per sel.
             'zones' => Location::ZONES,
+            'zonesRingkas' => Location::ZONES_SEMUA,
             'stats' => [
                 'total' => (clone $base)->count(),
                 'active' => (clone $base)->where('is_active', true)->count(),
@@ -166,7 +170,7 @@ class LocationController extends Controller
             'rackMeta' => $rackMeta,
             'warehouses' => $pilihan,
             'warehouse' => $warehouse,
-            'zones' => Location::ZONES,
+            'zones' => Location::ZONES_SEMUA,
             'stats' => [
                 'total' => (clone $base)->count(),
                 'active' => (clone $base)->where('is_active', true)->count(),
@@ -328,6 +332,98 @@ class LocationController extends Controller
             'Lokasi %s berhasil %s.',
             $location->code,
             $location->is_active ? 'diaktifkan' : 'dinonaktifkan'
+        ));
+    }
+
+    /**
+     * Menandai SATU DERET rak sebagai rak DDP, atau melepas tandanya.
+     *
+     * PER DERET, BUKAN PER SEL. Di gudang, yang dipisahkan adalah deretnya:
+     * "barang DDP taruh di deret W". Deret W di sini berisi 90 sel — meminta
+     * Logistik menandainya satu per satu berarti 90 kali keputusan yang sama,
+     * dan satu sel terlewat sudah cukup membuat barang bagus tetap disarankan
+     * masuk ke sana.
+     *
+     * AKIBATNYA DUA, DAN KEDUANYA OTOMATIS: deret ini hilang dari saran
+     * put-away barang bagus, dan hanya deret seperti inilah yang ditawarkan
+     * saat operator memindahkan stok DDP.
+     *
+     * ZONA LAMANYA DISIMPAN DI CATATAN AKTIVITAS, bukan di kolom tersembunyi.
+     * Melepas tanda DDP mengembalikan deret ke zona yang dipilih Logistik saat
+     * itu; menebak-nebak zona asalnya justru membuat strategi put-away berubah
+     * diam-diam tanpa ada yang memutuskan.
+     */
+    public function tandaiDeretDdp(Request $request, string $rack): RedirectResponse
+    {
+        $validated = $request->validate([
+            'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
+            'jadikan_ddp' => ['required', 'boolean'],
+            // Hanya dipakai saat tanda DDP DILEPAS: deret ini mau dikembalikan
+            // menjadi zona apa.
+            'zona_kembali' => ['nullable', 'string', Rule::in(Location::ZONES)],
+        ]);
+
+        WarehouseScope::assert((int) $validated['warehouse_id'], $request->user());
+
+        $deret = strtoupper(trim($rack));
+        $jadikanDdp = (bool) $validated['jadikan_ddp'];
+
+        $baris = Location::where('warehouse_id', $validated['warehouse_id'])
+            ->whereRaw('UPPER(rack) = ?', [$deret]);
+
+        if ((clone $baris)->doesntExist()) {
+            return back()->with('error', sprintf('Deret rak %s tidak ada di gudang ini.', $deret));
+        }
+
+        if ($jadikanDdp) {
+            /*
+             * BARANG BAGUS DI DERET INI MENGHALANGI. Menandai deret yang masih
+             * berisi stok siap jual akan menyembunyikan barang itu dari saran
+             * put-away sekaligus menaruhnya di rak yang seharusnya hanya berisi
+             * barang tak layak jual — persis percampuran yang ingin dicegah,
+             * hanya terbalik arahnya.
+             */
+            $barangBagus = InventoryStock::whereIn('location_id', (clone $baris)->pluck('id'))
+                ->whereIn('status', [InventoryStock::STATUS_ACTIVE, InventoryStock::STATUS_QUARANTINE])
+                ->where('qty_available', '>', 0)
+                ->count();
+
+            if ($barangBagus > 0) {
+                return back()->with('error', sprintf(
+                    'Deret %s masih menyimpan %d baris stok siap jual atau karantina. Pindahkan dulu isinya, baru deret ini bisa dijadikan rak DDP.',
+                    $deret,
+                    $barangBagus,
+                ));
+            }
+        }
+
+        $zonaBaru = $jadikanDdp
+            ? Location::ZONE_DDP
+            : ($validated['zona_kembali'] ?? Location::ZONE_MIDDLE);
+
+        $jumlah = (clone $baris)->update(['zone' => $zonaBaru]);
+
+        Activity::record(
+            ActivityLog::MASTER_UPDATE,
+            sprintf(
+                $jadikanDdp
+                    ? 'Menandai deret rak %s (%d sel) sebagai rak DDP.'
+                    : 'Melepas tanda DDP dari deret rak %s (%d sel).',
+                $deret,
+                $jumlah,
+            ),
+            null,
+            (int) $validated['warehouse_id'],
+            ['deret' => $deret, 'sel' => $jumlah, 'zona' => $zonaBaru],
+        );
+
+        return back()->with('success', sprintf(
+            $jadikanDdp
+                ? 'Deret %s (%d sel) kini rak DDP: tidak lagi disarankan untuk barang bagus, dan menjadi pilihan saat stok DDP dipindahkan.'
+                : 'Tanda DDP pada deret %s (%d sel) dilepas; zonanya kembali ke %s.',
+            $deret,
+            $jumlah,
+            $zonaBaru,
         ));
     }
 }

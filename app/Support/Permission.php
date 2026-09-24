@@ -87,6 +87,53 @@ class Permission
     public const INVENTORY_QUARANTINE = 'inventory.quarantine';
 
     /**
+     * Menetapkan rak DDP tujuan bagi stok yang harus dipindah dari rak FG.
+     *
+     * SENGAJA BUKAN INVENTORY_TRANSFER, yang dipegang Operator juga. Yang
+     * mengangkat barangnya memang Operator, tetapi rak DDP mana yang dipakai
+     * bukan keputusannya: ia tidak melihat rak DDP mana yang hampir penuh,
+     * mana yang sedang disiapkan untuk pemusnahan, dan mana yang disisakan
+     * untuk retur yang belum selesai diperiksa. Operator yang menebak sendiri
+     * akan menyebar barang DDP ke rak mana pun yang kosong, dan pekerjaan
+     * merapikannya jatuh ke Logistik juga — hanya lebih lambat.
+     */
+    public const INVENTORY_DDP_ASSIGN = 'inventory.ddp_assign';
+
+    /**
+     * MELIHAT master rak, tanpa boleh mengubah isinya.
+     *
+     * DIPISAH dari MASTER_LOCATIONS yang memegang tambah, sunting, dan
+     * aktif/non-aktif rak. Logistik butuh membuka denah gudang untuk menandai
+     * deret rak DDP dan untuk tahu rak mana yang masih kosong, tetapi
+     * menambah atau menghapus rak tetap keputusan Manager — salah satu
+     * menyentuh tata letak gudang yang dipakai seluruh alur put-away.
+     */
+    public const MASTER_LOCATIONS_VIEW = 'master.locations_view';
+
+    /**
+     * Mengangkat stok DDP dari rak FG ke rak DDP.
+     *
+     * PEKERJAAN TANGAN, jadi pemiliknya Operator Gudang — bukan Logistik yang
+     * menyerahkan daftarnya. Dipisah dari INVENTORY_TRANSFER supaya notifikasi
+     * "daftar pemindahan DDP sudah siap" jatuh ke orang yang benar-benar akan
+     * mengangkatnya, bukan ke semua orang yang kebetulan boleh memindahkan
+     * stok.
+     */
+    public const INVENTORY_DDP_MOVE = 'inventory.ddp_move';
+
+    /**
+     * MEMBUKA layar pemindahan DDP.
+     *
+     * Ada tersendiri karena layarnya dibaca dua peran dengan pekerjaan yang
+     * berbeda — Logistik menyerahkan daftarnya, Operator mengangkat barangnya —
+     * sehingga tidak ada satu pun izin tindakan yang bisa dipakai sebagai
+     * gerbang pintunya. Memeriksanya di dalam controller saja pernah dicoba dan
+     * ditolak RouteSecurityTest: setiap rute WMS harus menyebut gate-nya di
+     * berkas rute, supaya daftar rute bisa dibaca sebagai daftar wewenang.
+     */
+    public const INVENTORY_DDP_VIEW = 'inventory.ddp_view';
+
+    /**
      * Membaca buku besar mutasi stok — item ledger.
      *
      * DIPISAH dari INVENTORY_VIEW, yang menjawab "berapa sisa barang ini
@@ -319,6 +366,11 @@ class Permission
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
         ],
         self::INVENTORY_QUARANTINE => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::INVENTORY_DDP_ASSIGN => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::INVENTORY_DDP_MOVE => [Role::SUPER_ADMIN, Role::WAREHOUSE_OPERATOR],
+        self::INVENTORY_DDP_VIEW => [
+            Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
+        ],
         self::INVENTORY_LEDGER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::STOCKTAKE_COUNT => [
             Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS, Role::WAREHOUSE_OPERATOR,
@@ -383,6 +435,7 @@ class Permission
         // tetap melihat lokasi saat put-away/picking, tapi lewat layar
         // prosesnya masing-masing — bukan lewat halaman master ini.
         self::MASTER_LOCATIONS => [Role::SUPER_ADMIN, Role::MANAGER],
+        self::MASTER_LOCATIONS_VIEW => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::ADMIN_USERS => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_SEQUENCE => [Role::SUPER_ADMIN, Role::MANAGER],
         self::ADMIN_SETTINGS => [Role::SUPER_ADMIN],

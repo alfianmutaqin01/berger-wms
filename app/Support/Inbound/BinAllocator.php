@@ -58,7 +58,11 @@ class BinAllocator
             // Rak transit bukan tempat menyimpan: barang di sana sudah bukan
             // milik gudang, dan menyarankannya untuk put-away akan menumpuk
             // barang baru di atas barang yang sedang menunggu diambil.
-            ->penyimpanan()
+            //
+            // Rak DDP juga dikecualikan: isinya barang yang justru sedang
+            // dijauhkan dari barang bagus, dan menaruh barang baru di sana
+            // mengembalikan percampuran yang ingin dicegah rak itu.
+            ->untukBarangBagus()
             ->get(['id', 'code'])
             ->keyBy(fn (Location $l) => strtoupper($l->code));
 

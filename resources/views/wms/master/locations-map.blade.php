@@ -50,6 +50,9 @@
     .rak-zone-fast   { background: #d1e7dd; color: #0a3622; border-color: #a3cfbb; }
     .rak-zone-slow   { background: #e2e3e5; color: #2b2f32; border-color: #c4c8cb; }
     .rak-zone-middle { background: #cff4fc; color: #055160; border-color: #9eeaf9; }
+    /* Rak DDP sengaja merah: satu-satunya deret yang isinya TIDAK boleh
+       dijual, dan yang paling mahal kalau tertukar saat picking. */
+    .rak-zone-ddp    { background: #f8d7da; color: #58151c; border-color: #f1aeb5; }
 
     /* Rak non-aktif: dicoret agar jelas tidak boleh dipakai put-away. */
     .rak-inactive {
@@ -173,6 +176,7 @@
             <span><span class="rak rak-zone-fast d-inline-flex align-middle" style="width:26px;height:20px;"></span> Fast Moving</span>
             <span><span class="rak rak-zone-slow d-inline-flex align-middle" style="width:26px;height:20px;"></span> Slow Moving</span>
             <span><span class="rak rak-zone-middle d-inline-flex align-middle" style="width:26px;height:20px;"></span> Middle Moving</span>
+            <span><span class="rak rak-zone-ddp d-inline-flex align-middle" style="width:26px;height:20px;"></span> Rak DDP</span>
             <span><span class="rak rak-inactive d-inline-flex align-middle" style="width:26px;height:20px;"></span> Non-aktif</span>
             <span><span class="rak rak-zone-middle rak-terisi d-inline-flex align-middle" style="width:26px;height:20px;"></span> Ada isinya</span>
         </div>
@@ -215,11 +219,41 @@
                             $warna = match($meta['zone']) {
                                 \App\Models\Location::ZONE_FAST => 'success',
                                 \App\Models\Location::ZONE_SLOW => 'secondary',
+                                \App\Models\Location::ZONE_DDP => 'danger',
                                 default => 'info',
                             };
                         @endphp
                         <span class="badge bg-{{ $warna }}-subtle text-{{ $warna }}-emphasis border border-{{ $warna }}">{{ $meta['zone'] }}</span>
                     @endif
+
+                    {{-- PENANDAAN PER DERET, bukan per sel: di gudang yang
+                         dipisahkan memang deretnya. Wewenangnya Logistik,
+                         terpisah dari tambah/sunting rak yang tetap milik
+                         Manager. --}}
+                    @can(\App\Support\Permission::INVENTORY_DDP_ASSIGN)
+                    {{-- Bentuk blok, sama seperti sisa berkas ini. Dua bentuk
+                         direktif PHP yang berbeda dalam satu berkas Blade
+                         saling menelan, dan galatnya menunjuk baris yang tidak
+                         bersalah. --}}
+                    @php $deretDdp = $meta['zone'] === \App\Models\Location::ZONE_DDP; @endphp
+                    <form method="POST" action="{{ route('wms.locations.deret-ddp', $rack) }}"
+                          class="d-inline js-tandai-ddp">
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="warehouse_id" value="{{ $warehouse?->id }}">
+                        <input type="hidden" name="jadikan_ddp" value="{{ $deretDdp ? 0 : 1 }}">
+                        <input type="hidden" name="zona_kembali" value="{{ \App\Models\Location::ZONE_MIDDLE }}">
+                        <button type="submit"
+                                class="btn btn-sm {{ $deretDdp ? 'btn-danger' : 'btn-outline-danger' }} rounded-pill px-3 py-0"
+                                style="font-size:.72rem"
+                                data-deret="{{ $rack }}"
+                                data-jadikan="{{ $deretDdp ? 0 : 1 }}"
+                                data-terisi="{{ $meta['terisi'] }}">
+                            <i class="bi bi-{{ $deretDdp ? 'check-circle-fill' : 'slash-circle' }} me-1"></i>
+                            {{ $deretDdp ? 'Rak DDP' : 'Jadikan rak DDP' }}
+                        </button>
+                    </form>
+                    @endcan
                 </div>
             </div>
 
@@ -239,6 +273,7 @@
                                 $zoneClass = match($titik->zone) {
                                     \App\Models\Location::ZONE_FAST => 'rak-zone-fast',
                                     \App\Models\Location::ZONE_SLOW => 'rak-zone-slow',
+                                    \App\Models\Location::ZONE_DDP => 'rak-zone-ddp',
                                     default => 'rak-zone-middle',
                                 };
                                 $isHighlighted = $filters['highlight'] !== ''
@@ -479,6 +514,44 @@
         if (firstMatch) {
             firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
+
+        // Menandai deret rak DDP mengubah puluhan sel sekaligus dan langsung
+        // mengubah ke mana barang baru disarankan. Jumlah sel yang terisi ikut
+        // disebut: menandai deret yang masih penuh barang punya akibat yang
+        // jauh berbeda dari menandai deret kosong.
+        document.querySelectorAll('.js-tandai-ddp').forEach(function (form) {
+            form.addEventListener('submit', function (e) {
+                if (form.dataset.confirmed === 'yes') {
+                    return;
+                }
+                e.preventDefault();
+
+                const btn = form.querySelector('button[type="submit"]');
+                const jadikan = btn.dataset.jadikan === '1';
+                const terisi = parseInt(btn.dataset.terisi || '0', 10);
+                const deret = btn.dataset.deret;
+
+                Swal.fire({
+                    title: jadikan ? 'Jadikan deret ' + deret + ' rak DDP?' : 'Lepas tanda DDP deret ' + deret + '?',
+                    html: jadikan
+                        ? 'Seluruh sel di deret <strong>' + deret + '</strong> berhenti disarankan untuk barang bagus, '
+                          + 'dan hanya deret bertanda DDP yang ditawarkan saat stok DDP dipindahkan.'
+                          + (terisi > 0
+                              ? '<br><br><span class="text-danger small">' + terisi + ' sel di deret ini masih ada isinya.</span>'
+                              : '')
+                        : 'Deret <strong>' + deret + '</strong> kembali menjadi rak biasa dan ikut disarankan untuk barang bagus.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Ya, lanjutkan',
+                    cancelButtonText: 'Batal',
+                }).then(function (hasil) {
+                    if (hasil.isConfirmed) {
+                        form.dataset.confirmed = 'yes';
+                        form.submit();
+                    }
+                });
+            });
+        });
     });
 </script>
 @endpush

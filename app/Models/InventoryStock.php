@@ -73,6 +73,9 @@ class InventoryStock extends Model
         'expiry_date',
         'status',
         'ddp_reason',
+        'ddp_assigned_at',
+        'ddp_assigned_by',
+        'ddp_notified_at',
         'has_quality_issue',
         'prioritize_out',
         'prioritize_reason',
@@ -99,6 +102,8 @@ class InventoryStock extends Model
             'production_date' => 'date',
             'expiry_date' => 'date',
             'verified_at' => 'datetime',
+            'ddp_assigned_at' => 'datetime',
+            'ddp_notified_at' => 'datetime',
             'has_quality_issue' => 'boolean',
             'prioritize_out' => 'boolean',
             'prioritized_at' => 'datetime',
@@ -124,6 +129,12 @@ class InventoryStock extends Model
     public function location(): BelongsTo
     {
         return $this->belongsTo(Location::class);
+    }
+
+    /** Logistik yang menyerahkan baris ini ke daftar kerja operator. */
+    public function ddpAssignedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'ddp_assigned_by');
     }
 
     public function warehouse(): BelongsTo
@@ -218,6 +229,30 @@ class InventoryStock extends Model
     public function scopeDdpOrExpired(Builder $query): Builder
     {
         return $query->whereIn('status', [self::STATUS_DDP, self::STATUS_EXPIRED]);
+    }
+
+    /**
+     * DAFTAR PEKERJAAN PEMINDAHAN DDP — dan sengaja berupa query, bukan tabel.
+     *
+     * Barang tidak layak jual yang masih berdiri di rak barang bagus adalah
+     * pekerjaan yang belum selesai, apa pun yang menyebabkannya menjadi DDP.
+     * Karena daftarnya disimpulkan dari lokasi barangnya sendiri, tidak ada
+     * yang perlu ditandai selesai: barisnya hilang pada detik barang itu
+     * benar-benar berada di rak DDP. Tidak ada tugas yang bisa lupa dibuat,
+     * dan tidak ada tugas yang menyatakan selesai padahal barangnya belum
+     * pindah.
+     *
+     * Stok karantina TIDAK ikut: penahanannya sementara, dan sebagiannya
+     * kembali menjadi barang siap jual — memindahkannya bolak-balik ke rak DDP
+     * hanya menambah pekerjaan yang batal sendiri.
+     */
+    public function scopeMenungguRakDdp(Builder $query): Builder
+    {
+        return $query->ddpOrExpired()
+            ->where('qty_available', '>', 0)
+            ->whereHas('location', fn (Builder $q) => $q->where(fn (Builder $w) => $w
+                ->where('zone', '!=', Location::ZONE_DDP)
+                ->orWhereNull('zone')));
     }
 
     /** Stok yang sedang ditahan sementara, menunggu jangka waktunya lewat. */

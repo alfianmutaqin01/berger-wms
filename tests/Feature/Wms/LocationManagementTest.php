@@ -72,9 +72,35 @@ class LocationManagementTest extends TestCase
         }
     }
 
+    /**
+     * Logistik MEMBACA halaman ini, dan itu disengaja: ia yang menandai deret
+     * rak DDP dan yang perlu tahu rak mana masih kosong. Yang tidak boleh
+     * adalah mengubah tata letaknya — dijaga test berikutnya.
+     */
+    public function test_logistik_boleh_membuka_tanpa_tombol_ubah(): void
+    {
+        $this->loginAs(Role::LOGISTICS);
+
+        $this->get('/wms/master/locations')
+            ->assertOk()
+            ->assertViewHas('locations')
+            ->assertDontSee('Tambah Lokasi');
+    }
+
+    public function test_logistik_tidak_bisa_menambah_atau_mengubah_rak(): void
+    {
+        $lokasi = Location::factory()->at('B', 2, 5)->create(['warehouse_id' => $this->warehouse->id]);
+
+        $this->loginAs(Role::LOGISTICS);
+
+        $this->post('/wms/master/locations', $this->validPayload(['code' => 'C-01-01']))->assertForbidden();
+        $this->put('/wms/master/locations/'.$lokasi->id, $this->validPayload(['code' => 'B-02-05']))->assertForbidden();
+        $this->patch('/wms/master/locations/'.$lokasi->id.'/status')->assertForbidden();
+    }
+
     public function test_role_operasional_ditolak(): void
     {
-        foreach ([Role::LOGISTICS, Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
+        foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
             $this->loginAs($slug);
             $this->get('/wms/master/locations')->assertForbidden();
         }
@@ -248,9 +274,10 @@ class LocationManagementTest extends TestCase
         $this->assertCount(3, $racks['B'][1]);
     }
 
+    /** Logistik tidak ikut: denah adalah tempat ia menandai deret rak DDP. */
     public function test_denah_ditolak_untuk_role_operasional(): void
     {
-        foreach ([Role::LOGISTICS, Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
+        foreach ([Role::PRODUCTION, Role::WAREHOUSE_OPERATOR] as $slug) {
             $this->loginAs($slug);
             $this->get('/wms/master/locations/map')->assertForbidden();
         }
