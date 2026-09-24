@@ -226,6 +226,10 @@
 @endsection
 
 @push('modals')
+{{-- Formulirnya ikut disembunyikan dari yang hanya boleh membaca. Mengirim
+     modal tambah/sunting kepada orang yang pasti ditolak servernya cuma
+     menawarkan pekerjaan yang berakhir dengan halaman 403. --}}
+@can(\App\Support\Permission::MASTER_LOCATIONS)
 <div class="modal fade" id="locationModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <form id="locationForm" method="POST" action="{{ route('wms.locations.store') }}">
@@ -287,9 +291,13 @@
         </form>
     </div>
 </div>
+@endcan
 @endpush
 
 @push('scripts')
+{{-- Skrip ini seluruhnya melayani modal tambah/sunting, jadi ikut dipagari
+     izin yang sama; tanpa modalnya ia hanya mencari elemen yang tidak ada. --}}
+@can(\App\Support\Permission::MASTER_LOCATIONS)
 <script>
     const LOCATION_STORE_URL = @json(route('wms.locations.store'));
     const MAX_LEVEL = @json(\App\Models\Location::MAX_LEVEL);
@@ -382,4 +390,5 @@
         @endif
     });
 </script>
+@endcan
 @endpush
