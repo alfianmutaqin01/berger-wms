@@ -299,7 +299,14 @@ class DeliveryController extends Controller
                 : null,
             'note' => $note->load([
                 'lines.product:id,sku,name,uom', 'salesOrder.details.product:id,sku,name',
-                'customer:id,code,name', 'warehouse:id,code,name',
+                // phone & territory_code ikut dibaca untuk formulir kiriman
+                // luar pulau: nomornya mengisi awal isian penerima, dan
+                // territory-nya ditampilkan sebagai PENGINGAT — bukan penentu.
+                // Lima dari empat belas kode territory (OTHERS, MTO, PROJECT,
+                // MPC, EXPORT) bukan nama tempat, dan menyeberang laut pun
+                // belum tentu berarti supirnya berganti: truk ke Lampung naik
+                // feri bersama supirnya.
+                'customer:id,code,name,phone,territory_code', 'warehouse:id,code,name',
                 'importedBy:id,full_name', 'shippedBy:id,full_name',
                 'substitutionConfirmedBy:id,full_name',
             ]),
@@ -319,6 +326,11 @@ class DeliveryController extends Controller
                 'driver_name' => $request->validated('driver_name'),
                 'driver_phone' => $request->validated('driver_phone'),
                 'vehicle_plate' => $request->validated('vehicle_plate'),
+                'epod_to_customer' => $request->boolean('epod_to_customer'),
+                'eta_date' => $request->validated('eta_date'),
+                'customer_phone' => $request->validated('customer_phone'),
+                'forwarder_name' => $request->validated('forwarder_name'),
+                'container_no' => $request->validated('container_no'),
             ], $request->user()?->id);
         } catch (RuntimeException $e) {
             return back()->withInput()->with('error', $e->getMessage());
@@ -327,11 +339,20 @@ class DeliveryController extends Controller
         // Diantrekan SETELAH transaksi selesai. Kalau dikirim dari dalam
         // transaksi, job bisa berjalan lebih dulu daripada commit dan membaca
         // dokumen yang belum punya token.
-        SendDeliveryNotification::dispatch($note->id);
+        //
+        // TIDAK DIKIRIM pada kiriman luar pulau: supir yang baru saja
+        // berangkat bukan yang akan tiba di toko, dan tautannya memang belum
+        // ada. Pengirimannya menunggu tanggal perkiraan sampai — lihat
+        // App\Console\Commands\KirimEpodPelanggan.
+        if (! $request->boolean('epod_to_customer')) {
+            SendDeliveryNotification::dispatch($note->id);
+        }
 
         if ($note->sales_order_id !== null) {
             EmailSales::antrekan($note->sales_order_id, SalesOrderEmail::TYPE_SHIPPED, $note->id);
         }
+
+        $luarPulau = $request->boolean('epod_to_customer');
 
         Activity::record(
             ActivityLog::DELIVERY_SHIP,
@@ -340,7 +361,13 @@ class DeliveryController extends Controller
                 $note->document_no,
                 $hasil['dikirim'],
                 $request->validated('driver_name'),
-                $request->validated('vehicle_plate'),
+                // Yang dicatat adalah penanda yang MASIH berarti nanti. Pada
+                // kiriman luar pulau, plat truk ke pelabuhan tidak menjawab
+                // pertanyaan apa pun dua minggu kemudian; nomor kontainernya
+                // yang menjawab.
+                $luarPulau
+                    ? 'kontainer '.$request->validated('container_no')
+                    : $request->validated('vehicle_plate'),
             ),
             $note,
             $note->warehouse_id,
@@ -352,6 +379,10 @@ class DeliveryController extends Controller
                 'substitusi' => $hasil['substitusi'],
                 'supir' => $request->validated('driver_name'),
                 'plat' => $request->validated('vehicle_plate'),
+                'luar_pulau' => $luarPulau,
+                'ekspedisi' => $request->validated('forwarder_name'),
+                'kontainer' => $request->validated('container_no'),
+                'perkiraan_sampai' => $request->validated('eta_date'),
             ],
         );
 
@@ -360,6 +391,18 @@ class DeliveryController extends Controller
             $note->document_no,
             $hasil['dikirim'],
         );
+
+        // Dikatakan TERANG-TERANGAN bahwa tautannya belum dikirim. Pada
+        // pengiriman biasa, pesan ke supir berangkat seketika; kalau kalimat
+        // ini tidak ada, Logistik akan menganggap hal yang sama terjadi di
+        // sini dan baru menyadari sebaliknya berminggu-minggu kemudian.
+        if ($luarPulau) {
+            $pesan .= sprintf(
+                ' Tautan konfirmasi belum dikirim: akan terkirim ke pelanggan pada %s, '.
+                'perkiraan tanggal sampai. Tanggalnya masih bisa digeser dari halaman ini bila kapal tertahan.',
+                Carbon::parse($request->validated('eta_date'))->translatedFormat('d F Y'),
+            );
+        }
 
         // Keadaan yang TIDAK boleh lewat sebagai pesan sukses hijau, karena
         // semuanya menuntut tindakan orang di lapangan.
@@ -511,6 +554,18 @@ class DeliveryController extends Controller
     {
         WarehouseScope::assert($note->warehouse_id, $request->user());
 
+        // Menunggu tanggal perkiraan BUKAN kegagalan, dan tidak boleh dijawab
+        // seperti kegagalan. Tanpa kalimat ini, Logistik yang menekan "kirim
+        // ulang" pada kiriman kontainer akan membaca "belum berangkat" untuk
+        // barang yang jelas-jelas sudah berlayar.
+        if ($note->menungguTautanPelanggan()) {
+            return back()->with('error', sprintf(
+                'Tautan konfirmasi kiriman ini memang belum diterbitkan: dijadwalkan terbit ke pelanggan pada %s. '.
+                'Kalau barangnya sudah sampai lebih cepat, majukan dulu perkiraan tanggal sampainya.',
+                $note->eta_date?->translatedFormat('d F Y') ?? 'tanggal yang belum diisi',
+            ));
+        }
+
         if ($note->epod_token === null) {
             return back()->with('error', 'Surat Jalan ini belum dinyatakan berangkat, jadi belum ada tautan untuk dikirim.');
         }
@@ -527,9 +582,77 @@ class DeliveryController extends Controller
 
         SendDeliveryNotification::dispatch($note->id);
 
+        $tujuan = $note->epod_to_customer ? 'pelanggan' : 'supir';
+
         return back()->with('success', $tautanBaru
-            ? 'Tautan baru diterbitkan dan dikirim ke supir. Tautan lama tidak bisa dibuka lagi.'
+            ? 'Tautan baru diterbitkan dan dikirim ke '.$tujuan.'. Tautan lama tidak bisa dibuka lagi.'
             : 'Pengiriman pesan dicoba lagi.');
+    }
+
+    /**
+     * Menggeser perkiraan tanggal sampai kiriman luar pulau.
+     *
+     * KENAPA HARUS BISA DIGESER. Tanggalnya tebakan yang dibuat saat memesan
+     * kontainer, dan kapal tertahan adalah kejadian biasa. Tanggal yang mati
+     * berarti tautan konfirmasi terbit ke pelanggan untuk barang yang belum
+     * ada di tokonya — dan pelanggan yang sekali menerima pesan semacam itu
+     * tidak akan membaca pesan berikutnya.
+     *
+     * HANYA SELAMA TAUTANNYA BELUM TERBIT. Sesudah terbit, menggeser
+     * tanggalnya tidak menarik kembali pesan yang sudah masuk ke HP pelanggan;
+     * yang berubah cuma angka di layar Logistik, dan angka yang berbeda dari
+     * kenyataan lebih buruk daripada angka yang jelas-jelas sudah lewat.
+     */
+    public function ubahPerkiraanSampai(Request $request, DeliveryNote $note): RedirectResponse
+    {
+        WarehouseScope::assert($note->warehouse_id, $request->user());
+
+        if (! $note->menungguTautanPelanggan()) {
+            return back()->with('error',
+                'Perkiraan tanggal sampai hanya bisa diubah selama tautan konfirmasinya belum diterbitkan.'
+            );
+        }
+
+        $data = $request->validate([
+            'eta_date' => [
+                'required', 'date', 'after_or_equal:today',
+                'before_or_equal:'.now()->addYear()->toDateString(),
+            ],
+            'alasan' => ['required', 'string', 'min:4', 'max:200'],
+        ], [
+            'eta_date.after_or_equal' => 'Perkiraan tanggal sampai tidak boleh sebelum hari ini.',
+            'alasan.required' => 'Sebutkan kenapa tanggalnya digeser — mis. kapal tertahan di pelabuhan.',
+        ], [
+            'eta_date' => 'perkiraan tanggal sampai',
+        ]);
+
+        $sebelum = $note->eta_date?->toDateString();
+
+        $note->forceFill(['eta_date' => $data['eta_date']])->save();
+
+        Activity::record(
+            ActivityLog::DELIVERY_SHIP,
+            sprintf(
+                'Menggeser perkiraan sampai Surat Jalan %s dari %s ke %s — %s.',
+                $note->document_no,
+                $sebelum ?? '—',
+                $data['eta_date'],
+                $data['alasan'],
+            ),
+            $note,
+            $note->warehouse_id,
+            [
+                'surat_jalan' => $note->document_no,
+                'perkiraan_lama' => $sebelum,
+                'perkiraan_baru' => $data['eta_date'],
+                'alasan' => $data['alasan'],
+            ],
+        );
+
+        return back()->with('success', sprintf(
+            'Perkiraan sampai digeser ke %s. Tautan konfirmasi akan dikirim ke pelanggan pada tanggal itu.',
+            Carbon::parse($data['eta_date'])->translatedFormat('d F Y'),
+        ));
     }
 
     /* --------------------------------------------------------------- Dalam */

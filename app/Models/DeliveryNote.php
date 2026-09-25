@@ -61,6 +61,8 @@ class DeliveryNote extends Model
         'imported_at', 'imported_by',
         'driver_name', 'driver_phone', 'vehicle_plate',
         'shipped_at', 'shipped_by', 'epod_token', 'epod_expires_at',
+        'epod_to_customer', 'eta_date', 'customer_phone',
+        'forwarder_name', 'container_no',
         'delivered_at', 'received_by_name',
         'arrival_manual_by', 'arrival_manual_reason',
         'arrival_photo_path', 'arrival_photo_mime', 'arrival_photo_size',
@@ -78,6 +80,8 @@ class DeliveryNote extends Model
             'imported_at' => 'datetime',
             'shipped_at' => 'datetime',
             'epod_expires_at' => 'datetime',
+            'epod_to_customer' => 'boolean',
+            'eta_date' => 'date',
             'delivered_at' => 'datetime',
             'arrival_photo_taken_at' => 'datetime',
             'arrival_photo_size' => 'integer',
@@ -257,6 +261,79 @@ class DeliveryNote extends Model
             template: PesanWhatsApp::TEMPLATE_KONFIRMASI_SUPIR,
             variabel: [(string) $this->epodUrl()],
         );
+    }
+
+    /**
+     * Nomor tujuan tautan konfirmasi — supir, atau pelanggan bila supirnya
+     * berganti di perjalanan.
+     *
+     * SATU TEMPAT YANG MEMUTUSKAN. Pertanyaan "tautannya ke siapa" muncul di
+     * job pengirim, di tombol wa.me mode manual, dan di layar Logistik. Kalau
+     * masing-masing memutuskannya sendiri, cukup satu yang tertinggal saat
+     * aturannya berubah untuk membuat tautan berisi nama pelanggan terkirim
+     * ke nomor supir yang sudah pulang ke Karawang.
+     */
+    public function nomorEpod(): ?string
+    {
+        return $this->epod_to_customer ? $this->customer_phone : $this->driver_phone;
+    }
+
+    /**
+     * Pesan konfirmasi untuk penerima di toko.
+     *
+     * DITULIS UNTUK ORANG DI LUAR ORGANISASI, bukan untuk supir rekanan.
+     * Pembacanya tidak tahu apa itu Surat Jalan dan tidak pernah meminta
+     * pesan ini; kalimat pertamanya harus sudah menerangkan kenapa ia
+     * menerimanya, kalau tidak ia akan terbaca sebagai penipuan — dan pesan
+     * yang dicurigai tidak akan pernah dijawab.
+     */
+    public function pesanUntukPelanggan(): string
+    {
+        return implode("\n", array_filter([
+            'Halo'.($this->customer?->name ? ' '.$this->customer->name : '').',',
+            '',
+            'Pengiriman dari Berger Paints Indonesia sudah dijadwalkan tiba di tempat Anda.',
+            'Surat Jalan: '.$this->document_no,
+            $this->container_no ? 'Kontainer: '.$this->container_no : null,
+            $this->forwarder_name ? 'Ekspedisi: '.$this->forwarder_name : null,
+            '',
+            'Bila barangnya sudah Anda terima, mohon buka tautan ini, foto barangnya, lalu tekan tombol konfirmasi:',
+            $this->epodUrl(),
+            '',
+            'Terima kasih.',
+        ], fn ($baris) => $baris !== null));
+    }
+
+    /** Pesan pelanggan dalam bentuk yang diterima seluruh penyedia WhatsApp. */
+    public function pesanWhatsAppPelanggan(): PesanWhatsApp
+    {
+        return new PesanWhatsApp(
+            teks: $this->pesanUntukPelanggan(),
+            template: PesanWhatsApp::TEMPLATE_KONFIRMASI_PELANGGAN,
+            variabel: [$this->customer?->name ?? 'Pelanggan', $this->document_no, (string) $this->epodUrl()],
+        );
+    }
+
+    /** Pesan konfirmasi yang benar untuk kiriman ini, siapa pun penerimanya. */
+    public function pesanWhatsAppEpod(): PesanWhatsApp
+    {
+        return $this->epod_to_customer
+            ? $this->pesanWhatsAppPelanggan()
+            : $this->pesanWhatsAppSupir();
+    }
+
+    /**
+     * Sudah berangkat, tautannya sengaja BELUM diterbitkan.
+     *
+     * Bukan keadaan gagal, dan tidak boleh terbaca begitu di layar: inilah
+     * keadaan normal sebuah kontainer selama berminggu-minggu di laut.
+     * Tautannya terbit sendiri pada eta_date — lihat KirimEpodPelanggan.
+     */
+    public function menungguTautanPelanggan(): bool
+    {
+        return $this->status === self::STATUS_SHIPPED
+            && $this->epod_to_customer
+            && $this->epod_token === null;
     }
 
     /**

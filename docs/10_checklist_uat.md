@@ -85,6 +85,12 @@ Alur yang sama sudah diuji otomatis (`tests/Feature/Alur/AlurPesananTest.php`). 
 | 4.6 | *(setelah §5)* Surat Jalan (BC) → impor ekspor SJ dari BC | SJ berpasangan dengan pesanan lewat nomor SO; yang tidak cocok tampil sebagai "yatim" | ☐ |
 | 4.7 | Pasangkan SJ yatim ke pesanannya | Nomor SO pesanan disamakan dengan dokumen BC | ☐ |
 | 4.8 | Buka SJ, isi supir, No. WA, plat → Berangkatkan | Status "Dalam Pengiriman"; tautan konfirmasi terkirim ke WA supir | ☐ |
+| 4.8a | SJ lain: centang **"Supir berganti di perjalanan"** | Kolom plat hilang, berganti nomor kontainer, ekspedisi, No. WA penerima di toko (terisi dari master pelanggan), dan perkiraan tanggal sampai | ☐ |
+| 4.8b | Isi semuanya dengan perkiraan sampai **besok** → Berangkatkan | Status "Dalam Pengiriman"; pesan sukses menyebut tautan **belum** dikirim dan tanggal kirimnya; **tidak ada** WA ke supir | ☐ |
+| 4.8c | Buka SJ itu lagi | Panel biru "Menunggu perkiraan tanggal sampai" berisi nomor pelanggan dan tanggalnya | ☐ |
+| 4.8d | Geser tanggal ke lusa, isi alasan | Tanggal berubah; tercatat di Log Aktivitas beserta alasannya | ☐ |
+| 4.8e | Majukan tanggal ke **hari ini**, lalu jalankan `epod:kirim-pelanggan` | Tautan terbit; WA masuk ke nomor penerima, menyebut nama pelanggan & nomor kontainer | ☐ |
+| 4.8f | **Penerima**: buka tautan, foto barang, konfirmasi | Status "Menunggu Verifikasi Bukti"; foto tampil di SJ | ☐ |
 | 4.9 | **Sales A**: email | Email "barang dikirim" berisi nama & nomor supir | ☐ |
 | 4.10 | *(setelah §6)* Verifikasi Bukti SJ → buka foto, Selesaikan | Pesanan tunai "Selesai"; pesanan tempo "Selesai – Menunggu Pembayaran" | ☐ |
 | 4.11 | **Sales A**: email | Email ringkasan pesanan selesai | ☐ |

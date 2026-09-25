@@ -9,7 +9,14 @@ use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
 /**
- * Mengirim tautan konfirmasi ke WhatsApp supir — PRD §6.5 F-OUT-04 #10.
+ * Mengirim tautan konfirmasi lewat WhatsApp — PRD §6.5 F-OUT-04 #10.
+ *
+ * Tujuannya ditentukan dokumennya, bukan job ini: supir pada pengiriman
+ * biasa, pelanggan pada kiriman yang supirnya berganti di perjalanan. Lihat
+ * DeliveryNote::nomorEpod(). Yang membedakan keduanya hanya nomor dan isi
+ * pesan — kegagalan, pengulangan, dan pencatatan statusnya sama persis, dan
+ * menduplikasi job ini untuk pelanggan berarti dua tempat yang harus sama-
+ * sama diperbaiki setiap kali aturan pengulangannya berubah.
  *
  * DIANTREKAN, BUKAN DIJALANKAN SAAT TOMBOL DITEKAN. Panggilan ke penyedia
  * pihak ketiga bisa lambat atau menggantung; menjalankannya di dalam
@@ -42,7 +49,10 @@ class SendDeliveryNotification implements ShouldQueue
     {
         $note = DeliveryNote::with('customer:id,name')->find($this->deliveryNoteId);
 
-        if ($note === null || blank($note->driver_phone) || $note->epod_token === null) {
+        // nomorEpod(), BUKAN driver_phone: pada kiriman luar pulau tautannya
+        // menuju penerima di toko, sebab supir yang berangkat dari gudang
+        // menurunkan barang di pelabuhan dan tidak pernah melihat tokonya.
+        if ($note === null || blank($note->nomorEpod()) || $note->epod_token === null) {
             return;
         }
 
@@ -53,7 +63,7 @@ class SendDeliveryNotification implements ShouldQueue
             return;
         }
 
-        $hasil = $sender->send($note->driver_phone, $note->pesanWhatsAppSupir());
+        $hasil = $sender->send($note->nomorEpod(), $note->pesanWhatsAppEpod());
 
         $note->forceFill([
             'notify_status' => $hasil->status,

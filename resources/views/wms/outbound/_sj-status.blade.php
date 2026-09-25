@@ -8,8 +8,23 @@
                     <dd class="col-7">{{ $note->driver_name ?? '—' }}</dd>
                     <dt class="col-5 text-muted fw-normal">Nomor WhatsApp</dt>
                     <dd class="col-7 font-monospace">{{ $note->driver_phone ?? '—' }}</dd>
+                    @if($note->epod_to_customer)
+                    {{-- Pada kiriman luar pulau, plat truk ke pelabuhan tidak
+                         menjawab pertanyaan apa pun berminggu-minggu kemudian.
+                         Nomor kontainernya yang menjawab, jadi itu yang
+                         ditaruh di tempat paling terbaca. --}}
+                    <dt class="col-5 text-muted fw-normal">Kontainer</dt>
+                    <dd class="col-7 font-monospace">{{ $note->container_no ?? '—' }}</dd>
+                    <dt class="col-5 text-muted fw-normal">Ekspedisi</dt>
+                    <dd class="col-7">{{ $note->forwarder_name ?? '—' }}</dd>
+                    <dt class="col-5 text-muted fw-normal">Penerima di toko</dt>
+                    <dd class="col-7 font-monospace">{{ $note->customer_phone ?? '—' }}</dd>
+                    <dt class="col-5 text-muted fw-normal">Perkiraan sampai</dt>
+                    <dd class="col-7">{{ $note->eta_date?->translatedFormat('d M Y') ?? '—' }}</dd>
+                    @else
                     <dt class="col-5 text-muted fw-normal">Kendaraan</dt>
                     <dd class="col-7">{{ $note->vehicle_plate ?? '—' }}</dd>
+                    @endif
                     <dt class="col-5 text-muted fw-normal">Berangkat</dt>
                     <dd class="col-7">{{ $note->shipped_at?->format('d M Y H:i') ?? '—' }}</dd>
                     @if($note->delivered_at)
@@ -33,16 +48,75 @@
                     @endif
                 </dl>
 
+                {{-- MENUNGGU TANGGAL, BUKAN GAGAL — dan harus terbaca begitu.
+
+                     Inilah keadaan normal sebuah kontainer selama berminggu-
+                     minggu di laut: sudah berangkat, tautannya sengaja belum
+                     ada. Tanpa panel ini, layarnya cuma menampilkan kekosongan
+                     yang sama persis dengan pengiriman yang pesannya gagal
+                     terkirim — dan Logistik akan mengejar sesuatu yang tidak
+                     perlu dikejar. --}}
+                @if($note->menungguTautanPelanggan())
+                <div class="alert alert-info border-0 rounded-3 small">
+                    <div class="fw-semibold mb-1">
+                        <i class="bi bi-hourglass-split me-1"></i>
+                        Menunggu perkiraan tanggal sampai
+                    </div>
+                    <div class="mb-2">
+                        Tautan konfirmasi belum diterbitkan. Akan dikirim ke pelanggan
+                        (<span class="font-monospace">{{ $note->customer_phone }}</span>) pada
+                        <strong>{{ $note->eta_date?->translatedFormat('d F Y') ?? '—' }}</strong>,
+                        lalu berlaku {{ (int) config('wms.epod.berlaku_jam') }} jam.
+                    </div>
+                    {{-- Tanggalnya tebakan yang dibuat saat memesan kontainer,
+                         dan kapal tertahan adalah kejadian biasa. Tautan yang
+                         terbit sebelum barangnya ada di toko membuat pelanggan
+                         berhenti membaca pesan berikutnya. --}}
+                    <form method="POST" action="{{ route('wms.delivery.perkiraan-sampai', $note) }}"
+                          class="row g-2 align-items-end">
+                        @csrf
+                        <div class="col-12 col-sm-5">
+                            <label class="form-label small text-muted mb-1">Geser ke tanggal</label>
+                            <input type="date" name="eta_date" required
+                                   min="{{ now()->toDateString() }}"
+                                   max="{{ now()->addYear()->toDateString() }}"
+                                   value="{{ old('eta_date', $note->eta_date?->toDateString()) }}"
+                                   class="form-control form-control-sm rounded-3">
+                        </div>
+                        <div class="col-12 col-sm-7">
+                            <label class="form-label small text-muted mb-1">Alasan</label>
+                            <input type="text" name="alasan" maxlength="200" required
+                                   value="{{ old('alasan') }}"
+                                   class="form-control form-control-sm rounded-3"
+                                   placeholder="mis. kapal tertahan di Tanjung Priok">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-sm btn-outline-primary rounded-3">
+                                <i class="bi bi-calendar-event me-1"></i> Geser perkiraan sampai
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                @endif
+
                 {{-- JALAN KELUAR, bukan jalan pintas: hanya muncul pada
                      pengiriman yang sudah berangkat tetapi belum dikonfirmasi
                      supir. Tanpa ini, supir yang kehilangan tautannya membuat
                      pesanan itu macet tanpa ada yang bisa menutupnya. --}}
                 @if($note->status === \App\Models\DeliveryNote::STATUS_SHIPPED)
                 <div class="border rounded-3 p-3 mt-3 bg-light-subtle">
-                    <div class="fw-semibold small mb-1">Supir tidak bisa konfirmasi?</div>
+                    <div class="fw-semibold small mb-1">
+                        {{ $note->epod_to_customer ? 'Pelanggan belum konfirmasi?' : 'Supir tidak bisa konfirmasi?' }}
+                    </div>
                     <p class="text-muted small mb-2">
-                        Pakai ini hanya kalau supir benar-benar tidak bisa menekan tautannya sendiri —
-                        tautannya hilang, HP mati, atau nomornya salah. Tercatat atas nama Anda.
+                        @if($note->epod_to_customer)
+                            Pakai ini kalau barangnya sudah Anda pastikan diterima tetapi pelanggan tidak
+                            menekan tautannya — sibuk, tautannya terlewat, atau nomornya sudah ganti.
+                            Tercatat atas nama Anda.
+                        @else
+                            Pakai ini hanya kalau supir benar-benar tidak bisa menekan tautannya sendiri —
+                            tautannya hilang, HP mati, atau nomornya salah. Tercatat atas nama Anda.
+                        @endif
                     </p>
                     <form method="POST" action="{{ route('wms.delivery.tandai-sampai', $note) }}">
                         @csrf
@@ -115,6 +189,7 @@
                 @php($gagal = $note->notify_status === \App\Models\DeliveryNote::NOTIFY_FAILED)
                 @php($manual = $note->notify_status === \App\Models\DeliveryNote::NOTIFY_MANUAL)
                 @php($kedaluwarsa = $note->tautanEpodKedaluwarsa())
+                @php($sebutanTautan = $note->epod_to_customer ? 'pelanggan' : 'supir')
 
                 <div class="alert alert-{{ $gagal ? 'danger' : ($manual ? 'warning' : 'success') }} border-0 rounded-3 small">
                     <div class="fw-semibold mb-1">
@@ -129,10 +204,10 @@
                              sana hanyalah halaman 404. --}}
                         <div class="mb-2 text-danger fw-semibold">
                             <i class="bi bi-clock-history me-1"></i>
-                            Tautan supir kedaluwarsa {{ $note->epod_expires_at?->translatedFormat('d M, H:i') }}. Terbitkan tautan baru bila barangnya belum dikonfirmasi sampai.
+                            Tautan {{ $sebutanTautan }} kedaluwarsa {{ $note->epod_expires_at?->translatedFormat('d M, H:i') }}. Terbitkan tautan baru bila barangnya belum dikonfirmasi sampai.
                         </div>
                     @elseif($note->epod_expires_at && $note->status === \App\Models\DeliveryNote::STATUS_SHIPPED)
-                        <div class="mb-2 text-muted">Tautan supir berlaku sampai {{ $note->epod_expires_at->translatedFormat('d M, H:i') }}.</div>
+                        <div class="mb-2 text-muted">Tautan {{ $sebutanTautan }} berlaku sampai {{ $note->epod_expires_at->translatedFormat('d M, H:i') }}.</div>
                     @endif
                     @if($manual)
                         <div class="mb-2">
@@ -141,9 +216,14 @@
                     @endif
 
                     <div class="d-flex flex-wrap gap-2 mt-2">
-                        @if($note->driver_phone && ! $kedaluwarsa)
+                        {{-- nomorEpod(), bukan driver_phone: mode manual
+                             mengirim pesannya lewat WhatsApp Logistik sendiri,
+                             dan membuka percakapan ke supir yang sudah pulang
+                             ke Karawang berarti tautan berisi nama pelanggan
+                             mendarat di HP orang yang salah. --}}
+                        @if($note->nomorEpod() && ! $kedaluwarsa)
                         <a class="btn btn-sm btn-success rounded-3"
-                           href="https://wa.me/{{ $note->driver_phone }}?text={{ rawurlencode($note->pesanUntukSupir()) }}"
+                           href="https://wa.me/{{ $note->nomorEpod() }}?text={{ rawurlencode($note->epod_to_customer ? $note->pesanUntukPelanggan() : $note->pesanUntukSupir()) }}"
                            target="_blank" rel="noopener">
                             <i class="bi bi-whatsapp me-1"></i> Buka WhatsApp
                         </a>

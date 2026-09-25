@@ -32,6 +32,18 @@ final readonly class PesanWhatsApp
     /** Tautan konfirmasi sampai untuk supir. Variabel: [tautan]. */
     public const TEMPLATE_KONFIRMASI_SUPIR = 'konfirmasi_pengiriman';
 
+    /**
+     * Tautan konfirmasi sampai untuk PELANGGAN, pada kiriman yang supirnya
+     * berganti di perjalanan. Variabel: [nama pelanggan, nomor Surat Jalan, tautan].
+     *
+     * Template tersendiri, bukan menumpang milik supir. Pembacanya orang di
+     * luar organisasi yang tidak pernah meminta pesan ini; template berbunyi
+     * "konfirmasi pengiriman" tanpa menyebut namanya dan nomor dokumennya
+     * akan terbaca sebagai pesan nyasar — dan pesan yang dicurigai tidak
+     * pernah dijawab.
+     */
+    public const TEMPLATE_KONFIRMASI_PELANGGAN = 'konfirmasi_pelanggan';
+
     /** Permintaan persetujuan MRF. Variabel: [nama atasan, nomor MRF, pemohon, tautan]. */
     public const TEMPLATE_PERSETUJUAN_MRF = 'persetujuan_mrf';
 

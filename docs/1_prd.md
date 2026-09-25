@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.6  
-> **Tanggal:** 21 September 2026 *(revisi dari v1.5, 15 September 2026)*  
+> **Versi:** 1.7  
+> **Tanggal:** 24 September 2026 *(revisi dari v1.6, 21 September 2026)*  
 > **Status:** Scope go-live dikunci — menunggu UAT sign-off  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
@@ -10,6 +10,15 @@
 ---
 
 ## Riwayat Revisi
+
+### Versi 1.7 — 24 September 2026 (Pengiriman Luar Pulau)
+
+Masukan pemilik produk setelah meeting. Pengiriman antarpulau tidak pernah bisa dikonfirmasi supir, dan sampai sekarang satu-satunya jalan keluarnya adalah penandaan manual Logistik — yaitu keterangan orang yang tidak berada di tempat tujuan.
+
+| # | Perubahan | Alasan | Bagian Terdampak |
+|---|---|---|---|
+| 1 | **Konfirmasi sampai dikirim ke pelanggan pada kiriman luar pulau**, bukan ke supir. Ditentukan Logistik lewat centang saat memberangkatkan; nomor kontainer menggantikan plat nomor, dan nomor WA penerima di toko menggantikan nomor supir sebagai tujuan tautan. | Supir yang berangkat dari gudang menurunkan barang di pelabuhan dan pulang; penggantinya di seberang tidak diketahui saat barang berangkat dan tidak akan pernah diketahui. Tautan yang dikirim kepadanya berarti "barang sampai" ditekan orang yang tidak pernah melihat tokonya. Pelanggan justru satu-satunya pihak yang benar-benar berdiri di tempat tujuan. | §6.5 F-OUT-04 #10, F-OUT-04a |
+| 2 | **Tautan baru diterbitkan pada perkiraan tanggal sampai**, bukan saat barang berangkat. Tanggalnya diisi Logistik dan bisa digeser beralasan selama tautannya belum terbit. | Masa berlaku tautan 72 jam (v1.5). Pelayaran memakan waktu sampai dua minggu, jadi tautan yang terbit saat berangkat sudah mati jauh sebelum kapal sandar. Menerbitkannya belakangan juga berarti selama barangnya di laut tidak ada tautan hidup yang menyebut nama pelanggan dan isi kiriman. | §6.5 F-OUT-04a |
 
 ### Versi 1.6 — 21 September 2026 (Penyelarasan dengan Sistem yang Dibangun)
 
@@ -597,6 +606,24 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
   7. Notifikasi dikirim ke Sales (lonceng + email): *"Pesanan Anda sedang dalam pengiriman."*
   8. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
   9. **Masa berlaku tautan supir** *(v1.5)*: 72 jam sejak diterbitkan. Setelah dikonfirmasi, tautan hanya menampilkan "sudah tercatat" (tanpa nama pelanggan dan isi kiriman) selama 24 jam, lalu mati. Tautan yang kedaluwarsa sebelum dikonfirmasi diganti Logistik dengan tautan baru dari halaman Surat Jalan; tautan lama tidak bisa dibuka lagi.
+  10. **Kiriman luar pulau — konfirmasi oleh pelanggan** *(v1.7, keputusan pemilik produk)*: pada pengiriman antarpulau/kontainer, supir berganti di pelabuhan dan penggantinya tidak diketahui saat barang berangkat. Tautan konfirmasi karena itu **dikirim ke pelanggan**, bukan ke supir. Rinciannya di **F-OUT-04a**.
+
+##### F-OUT-04a: Kiriman luar pulau (v1.7)
+
+> [!IMPORTANT]
+> **Ditentukan Logistik lewat centang, bukan ditebak sistem dari alamat pelanggan.** Yang menentukan bukan jarak atau pulaunya, melainkan **apakah supirnya berganti** — dan itu ikut cara armadanya dipesan. Karawang → Lampung juga menyeberang laut, tetapi truknya naik feri dan supir yang sama yang tiba di toko; di situ konfirmasi supir justru yang benar. Territory pelanggan tidak bisa dipakai menebak: lima dari empat belas kodenya (OTHERS, MTO, PROJECT, MPC, EXPORT) bukan nama tempat.
+
+- **Saat berangkat**, Logistik mencentang *"Supir berganti di perjalanan (luar pulau / kontainer)"*. Isian wajibnya **berganti**, bukan bertambah:
+  - **Plat nomor** tidak diminta; digantikan **nomor kontainer** (wajib) dan **nama ekspedisi** (opsional). Plat truk ke pelabuhan tidak menjawab pertanyaan apa pun dua minggu kemudian.
+  - **Nomor WA penerima di toko** (wajib), terisi awal dari master pelanggan dan bisa diubah — toko penerima di seberang pulau sering bukan nomor yang tercatat di kantor pusat pelanggan.
+  - **Perkiraan tanggal sampai** (wajib, tidak boleh sebelum hari ini).
+  - Nama dan nomor **supir pertama tetap dicatat**: barangnya nyata diangkut seseorang keluar dari gudang, dan tanpa catatan itu tidak ada jawaban untuk "tadi diambil siapa".
+- **Tautan TIDAK diterbitkan saat berangkat.** Masa berlakunya 72 jam; tautan yang terbit hari keberangkatan sudah mati jauh sebelum kapal sandar. Selama barangnya di laut tidak ada satu pun tautan hidup yang menyebut nama pelanggan dan isi kiriman.
+- **Pada perkiraan tanggal sampai** (penjadwal harian pukul 08:00 WIB), sistem menerbitkan tautan baru dan mengirimkannya ke nomor pelanggan lewat WhatsApp, dengan template pesan tersendiri yang menyebut nama pelanggan dan nomor Surat Jalan. Jadwal jam kerja, bukan dini hari: pembacanya orang di luar organisasi.
+- **Tanggalnya bisa digeser** Logistik (dengan alasan, tercatat di log aktivitas) selama tautannya belum terbit. Sesudah terbit tidak bisa lagi — menggeser tanggal tidak menarik kembali pesan yang sudah masuk ke HP pelanggan.
+- Penjadwal membaca **keadaan**, bukan kejadian: kiriman yang tanggalnya sudah lewat tetap terjaring pada jalan berikutnya, sehingga penjadwal yang tidak berjalan sehari tidak membuat kirimannya hilang.
+- **Konfirmasinya sendiri sama persis** dengan konfirmasi supir: foto barang di lokasi tetap wajib. Pelanggan berdiri di tempat barangnya, jadi kesaksiannya justru lebih kuat daripada kesaksian supir.
+- **Bila pelanggan tidak menjawab**, Logistik tetap bisa menandai sampai secara manual beralasan — jalan keluar yang sudah ada sejak v1.5, tidak berubah.
 
 #### F-OUT-05: Upload Bukti & Penyelesaian
 - **Proses:**

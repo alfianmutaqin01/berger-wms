@@ -888,6 +888,14 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
             Route::post('/delivery/{note}/resend', [DeliveryController::class, 'resend'])
                 ->name('wms.delivery.resend');
 
+            // Menggeser perkiraan tanggal sampai kiriman luar pulau. Kapal
+            // tertahan adalah kejadian biasa, dan tanggal yang tidak bisa
+            // digeser berarti tautan konfirmasi terkirim ke pelanggan sebelum
+            // barangnya ada di sana — sekali itu terjadi, pesan berikutnya
+            // tidak akan dibaca lagi.
+            Route::post('/delivery/{note}/perkiraan-sampai', [DeliveryController::class, 'ubahPerkiraanSampai'])
+                ->name('wms.delivery.perkiraan-sampai');
+
             // Jalan keluar saat supir tidak bisa menekan konfirmasinya
             // sendiri — alasannya di Shipment::markArrivedManually().
             Route::post('/delivery/{note}/tandai-sampai', [DeliveryController::class, 'markArrived'])

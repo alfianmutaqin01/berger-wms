@@ -183,7 +183,9 @@ class Shipment
     }
 
     /**
-     * @param  array{driver_name:string, driver_phone:string, vehicle_plate:string}  $supir
+     * @param  array{driver_name:string, driver_phone:string, vehicle_plate:?string,
+     *              epod_to_customer?:bool, eta_date?:?string, customer_phone?:?string,
+     *              forwarder_name?:?string, container_no?:?string}  $supir
      * @return array{dikirim:int, dikembalikan:int, kurang_di_rak:int, tidak_tertutup:list<string>, substitusi:bool}
      *
      * @throws RuntimeException
@@ -322,25 +324,57 @@ class Shipment
                 'shipped_at' => now(),
             ])->save();
 
+            $kePelanggan = (bool) ($supir['epod_to_customer'] ?? false);
+
             $terkunci->fill([
                 'status' => DeliveryNote::STATUS_SHIPPED,
+                // Nama dan nomor supir pertama TETAP DICATAT pada kiriman
+                // luar pulau, meski tautannya tidak dikirim kepadanya.
+                // Barangnya tetap diangkut seseorang keluar dari gudang ini;
+                // tanpa catatan itu, dua minggu kemudian tidak ada jawaban
+                // untuk "tadi diambil siapa".
                 'driver_name' => $supir['driver_name'],
                 // Disimpan dalam bentuk kirim WhatsApp (62…), bukan bentuk
                 // yang diketik. Satu bentuk simpan berarti saran ketik dan
                 // pengiriman pesan membaca hal yang sama — nomor yang sama
                 // ditulis dua cara adalah dua baris berbeda di daftar saran.
                 'driver_phone' => PhoneNumber::forWhatsApp($supir['driver_phone']),
-                'vehicle_plate' => strtoupper(trim($supir['vehicle_plate'])),
+                'vehicle_plate' => filled($supir['vehicle_plate'] ?? null)
+                    ? strtoupper(trim($supir['vehicle_plate']))
+                    : null,
                 'shipped_at' => now(),
                 'shipped_by' => $userId,
-                // Token dibuat SEKARANG, sekali seumur dokumen. Panjang dan
-                // acak: tautan tanpa login berarti tokennya sendiri yang
-                // menjadi kunci, dan token yang bisa ditebak dari nomor urut
-                // membuat siapa pun bisa mengonfirmasi kiriman orang lain.
-                'epod_token' => $terkunci->epod_token ?? Str::random(48),
-                // ...tetapi tidak berlaku selamanya: tautannya tinggal di chat
-                // supir dari perusahaan lain. Lihat config wms.epod.
-                'epod_expires_at' => now()->addHours((int) config('wms.epod.berlaku_jam')),
+
+                'epod_to_customer' => $kePelanggan,
+                'eta_date' => $kePelanggan ? ($supir['eta_date'] ?? null) : null,
+                'customer_phone' => $kePelanggan
+                    ? PhoneNumber::forWhatsApp($supir['customer_phone'] ?? null)
+                    : null,
+                'forwarder_name' => $kePelanggan ? ($supir['forwarder_name'] ?? null) : null,
+                'container_no' => $kePelanggan && filled($supir['container_no'] ?? null)
+                    ? strtoupper(trim($supir['container_no']))
+                    : null,
+
+                /*
+                 * Token dibuat SEKARANG — kecuali pada kiriman luar pulau.
+                 *
+                 * Panjang dan acak: tautan tanpa login berarti tokennya
+                 * sendiri yang menjadi kunci, dan token yang bisa ditebak dari
+                 * nomor urut membuat siapa pun bisa mengonfirmasi kiriman
+                 * orang lain. Ia juga tidak berlaku selamanya, sebab tautannya
+                 * tinggal di chat orang luar — lihat config wms.epod.
+                 *
+                 * Justru masa berlaku itulah yang membuat kiriman luar pulau
+                 * TIDAK boleh mendapat tokennya di sini: 72 jam akan habis
+                 * jauh sebelum kapalnya sandar. Tokennya terbit pada eta_date,
+                 * lewat App\Console\Commands\KirimEpodPelanggan, dan selama
+                 * barangnya di laut tidak ada satu pun tautan hidup yang
+                 * menyebut nama pelanggan beserta isi kirimannya.
+                 */
+                'epod_token' => $kePelanggan ? null : ($terkunci->epod_token ?? Str::random(48)),
+                'epod_expires_at' => $kePelanggan
+                    ? null
+                    : now()->addHours((int) config('wms.epod.berlaku_jam')),
                 'notify_status' => DeliveryNote::NOTIFY_PENDING,
                 'notify_attempts' => 0,
                 'notify_error' => null,
