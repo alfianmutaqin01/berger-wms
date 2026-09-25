@@ -110,23 +110,23 @@
         </div>
 
         <ul class="sidebar-nav">
-            <li class="nav-section">Sales Order</li>
+            <li class="nav-section">{{ __('Sales Order') }}</li>
             <li class="nav-item {{ request()->is('sales/dashboard') ? 'active' : '' }}">
                 <a href="/sales/dashboard" class="nav-link">
                     <i class="bi bi-speedometer2"></i>
-                    <span>Dashboard</span>
+                    <span>{{ __('Dashboard') }}</span>
                 </a>
             </li>
             <li class="nav-item {{ request()->is('sales/new-order') ? 'active' : '' }}">
                 <a href="/sales/new-order" class="nav-link">
                     <i class="bi bi-plus-square"></i>
-                    <span>New Order</span>
+                    <span>{{ __('New Order') }}</span>
                 </a>
             </li>
             <li class="nav-item {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'active' : '' }}">
                 <a href="/sales/my-orders" class="nav-link">
                     <i class="bi bi-list-check"></i>
-                    <span>My Orders</span>
+                    <span>{{ __('My Orders') }}</span>
                 </a>
             </li>
             {{-- Menu "My Customers" dihapus pada PRD v1.1: pelanggan didaftarkan
@@ -138,18 +138,18 @@
                  Produksi, dan tanpa pintu ini izin MRF-nya tidak punya jalan
                  masuk sama sekali. Yang dilihatnya berhenti di divisinya. --}}
             @can(\App\Support\Permission::MRF_VIEW)
-                <li class="nav-section">Permintaan Material</li>
+                <li class="nav-section">{{ __('Permintaan Material') }}</li>
                 <li class="nav-item {{ request()->is('wms/mrf*') ? 'active' : '' }}">
                     <a href="/wms/mrf" class="nav-link">
                         <i class="bi bi-clipboard2-check"></i>
-                        <span>MRF</span>
+                        <span>{{ __('MRF') }}</span>
                     </a>
                 </li>
                 @can(\App\Support\Permission::MRF_RECEIVE)
                     <li class="nav-item {{ request()->is('wms/material-produksi*') ? 'active' : '' }}">
                         <a href="/wms/material-produksi" class="nav-link">
                             <i class="bi bi-box-seam"></i>
-                            <span>MRF Picked</span>
+                            <span>{{ __('MRF Picked') }}</span>
                         </a>
                     </li>
                 @endcan
@@ -183,20 +183,20 @@
     <div class="container-fluid d-flex justify-content-around align-items-center px-1">
         <a href="/sales/dashboard" class="nav-link text-center text-decoration-none {{ request()->is('sales/dashboard') ? 'active' : '' }}">
             <i class="bi {{ request()->is('sales/dashboard') ? 'bi-house-fill' : 'bi-house' }}"></i>
-            <span class="d-block">Home</span>
+            <span class="d-block">{{ __('Home') }}</span>
         </a>
         <a href="/sales/new-order" class="nav-link text-center text-decoration-none {{ request()->is('sales/new-order') ? 'active' : '' }}">
             <i class="bi {{ request()->is('sales/new-order') ? 'bi-plus-circle-fill' : 'bi-plus-circle' }}" style="{{ request()->is('sales/new-order') ? 'color: #1B4F8A;' : 'color: #0284c7;' }}; font-size: 1.22rem;"></i>
-            <span class="d-block">Pesanan Baru</span>
+            <span class="d-block">{{ __('Pesanan Baru') }}</span>
         </a>
         <a href="/sales/my-orders" class="nav-link text-center text-decoration-none {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'active' : '' }}">
             <i class="bi {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'bi-clipboard-data-fill' : 'bi-clipboard-data' }}"></i>
-            <span class="d-block">Pesanan Saya</span>
+            <span class="d-block">{{ __('Pesanan Saya') }}</span>
         </a>
         @can(\App\Support\Permission::MRF_VIEW)
         <a href="/wms/mrf" class="nav-link text-center text-decoration-none {{ request()->is('wms/mrf*') ? 'active' : '' }}">
             <i class="bi {{ request()->is('wms/mrf*') ? 'bi-clipboard2-check-fill' : 'bi-clipboard2-check' }}"></i>
-            <span class="d-block">MRF</span>
+            <span class="d-block">{{ __('MRF') }}</span>
         </a>
         @endcan
     </div>
