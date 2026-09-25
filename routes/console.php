@@ -150,9 +150,16 @@ Schedule::job(new DetakAntrean)
 | SEKALI SEHARI, MENYUSUL SWEEP-NYA. Masa simpan dihitung per HARI, jadi
 | daftar barang kedaluwarsa hanya berubah sekali sehari — memeriksanya tiap
 | sepuluh menit berarti 143 kali menanyakan sesuatu yang jawabannya sudah pasti
-| sama. Pukul 00:15: sesudah sweep kedaluwarsa (00:05) dan pelepasan karantina
-| (00:10), sehingga kabarnya memuat hasil keduanya sekaligus dan sudah menunggu
-| di lonceng saat Logistik login pagi hari.
+| sama. Pukul 00:20: sesudah sweep kedaluwarsa (00:05), pelepasan karantina
+| (00:10), dan pelepasan penanda dahulukan (00:15), sehingga kabarnya memuat
+| hasil ketiganya dan sudah menunggu di lonceng saat Logistik login pagi hari.
+|
+| DISELISIHKAN LIMA MENIT dari pekerjaan sebelumnya, mengikuti aturan yang
+| dipakai seluruh berkas ini: bukan karena berat, melainkan supaya pekerjaan
+| yang gagal bisa dikenali dari jamnya saja. Sebelumnya ia berbagi menit 00:15
+| dengan sweep penanda dahulukan — tidak menimbulkan galat, karena keduanya
+| punya penguncinya sendiri, tetapi dua pekerjaan yang mulai pada menit yang
+| sama membuat baris log tengah malam tidak lagi bisa dibaca sebagai urutan.
 |
 | DIBACA DARI KEADAAN, BUKAN DARI KEJADIAN. Perintah ini menanyakan "stok DDP
 | mana yang masih di rak barang bagus", bukan "apa yang berubah semalam". Jadi
@@ -163,7 +170,7 @@ Schedule::job(new DetakAntrean)
 | dentang loncengnya.
 */
 Schedule::command('stock:kabarkan-ddp')
-    ->dailyAt('00:15')
+    ->dailyAt('00:20')
     ->timezone('Asia/Jakarta')
     ->withoutOverlapping()
     ->onOneServer();
