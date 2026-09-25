@@ -4,7 +4,7 @@
     @include('partials.head')
     <style>
         /*
-          Portal Sales memakai navigasi hibrida (docs/4 §3.1):
+          Portal Sales memakai navigasi hibrida (docs/4 A 3.1):
             < 992px  -> bottom navigation (Sales bekerja dari HP di lapangan)
             >= 992px -> sidebar, konsisten dengan Portal WMS
 
@@ -49,12 +49,13 @@
                 gap: 0.5rem !important;
             }
 
-            /* Ruang untuk bottom nav agar konten terakhir tidak tertutup.
-               Angkanya mengikuti tinggi bottom nav yang sudah dirampingkan
-               di bawah; kalau salah satu diubah, ubah keduanya. */
+            /* Ruang dan padding layar mobile yang pas:
+               Mengurangi padding berlebih di ponsel agar konten tidak terpotong. */
             .main-content > .container-fluid {
-                padding-top: 1rem !important;
-                padding-bottom: 4.5rem !important;
+                padding-top: 0.75rem !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
+                padding-bottom: 5.25rem !important;
             }
         }
         @media (min-width: 992px) {
@@ -64,35 +65,31 @@
         }
         .bottom-nav {
             z-index: 1030;
-            /* Bootstrap memberi .navbar padding tegak bawaan; di bar bawah
-               itu menambah tinggi tanpa menambah apa pun yang bisa disentuh. */
             padding-top: 0;
             padding-bottom: 0;
+            height: 56px;
         }
         .bottom-nav .nav-link {
             color: #64748b;
             font-size: 0.65rem;
             line-height: 1.15;
-            padding: 0.35rem 0.5rem;
-            /* Target sentuh minimal 44px sesuai docs/4 §3.1 — INI BATAS
-               BAWAH, jangan dikecilkan lagi demi menghemat ruang. Jari
-               yang meleset lebih mahal daripada beberapa piksel. */
-            min-width: 60px;
-            min-height: 44px;
+            padding: 0.3rem 0.25rem;
+            min-width: 54px;
+            min-height: 48px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s ease;
         }
         .bottom-nav .nav-link.active {
             color: #1B4F8A;
             font-weight: 600;
         }
         .bottom-nav .nav-link i {
-            font-size: 1.1rem;
-        }
-        /* Tombol tengah "Pesanan Baru" sengaja tetap menonjol — itu aksi
-           utama Sales — tapi lingkarannya dikecilkan dan tidak lagi
-           menambah tinggi bar. */
-        .bottom-nav .nav-aksi {
-            width: 38px;
-            height: 38px;
+            font-size: 1.15rem;
+            line-height: 1;
+            margin-bottom: 2px;
         }
     </style>
 </head>
@@ -113,46 +110,46 @@
         </div>
 
         <ul class="sidebar-nav">
-            <li class="nav-section">Sales Order</li>
+            <li class="nav-section">{{ __('Sales Order') }}</li>
             <li class="nav-item {{ request()->is('sales/dashboard') ? 'active' : '' }}">
                 <a href="/sales/dashboard" class="nav-link">
                     <i class="bi bi-speedometer2"></i>
-                    <span>Dashboard</span>
+                    <span>{{ __('Dashboard') }}</span>
                 </a>
             </li>
             <li class="nav-item {{ request()->is('sales/new-order') ? 'active' : '' }}">
                 <a href="/sales/new-order" class="nav-link">
                     <i class="bi bi-plus-square"></i>
-                    <span>New Order</span>
+                    <span>{{ __('New Order') }}</span>
                 </a>
             </li>
             <li class="nav-item {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'active' : '' }}">
                 <a href="/sales/my-orders" class="nav-link">
                     <i class="bi bi-list-check"></i>
-                    <span>My Orders</span>
+                    <span>{{ __('My Orders') }}</span>
                 </a>
             </li>
             {{-- Menu "My Customers" dihapus pada PRD v1.1: pelanggan didaftarkan
                  langsung oleh Manager/Super Admin lewat Master Customer di Portal WMS.
-                 Lihat docs/1_prd.md §6.2 F-MASTER-06. --}}
+                 Lihat docs/1_prd.md A 6.2 F-MASTER-06. --}}
 
             {{-- PERMINTAAN MATERIAL, satu-satunya layar sisi WMS yang dibuka
                  untuk Sales. Contoh untuk calon pelanggan diminta Sales, bukan
                  Produksi, dan tanpa pintu ini izin MRF-nya tidak punya jalan
                  masuk sama sekali. Yang dilihatnya berhenti di divisinya. --}}
             @can(\App\Support\Permission::MRF_VIEW)
-                <li class="nav-section">Permintaan Material</li>
+                <li class="nav-section">{{ __('Permintaan Material') }}</li>
                 <li class="nav-item {{ request()->is('wms/mrf*') ? 'active' : '' }}">
                     <a href="/wms/mrf" class="nav-link">
                         <i class="bi bi-clipboard2-check"></i>
-                        <span>MRF</span>
+                        <span>{{ __('MRF') }}</span>
                     </a>
                 </li>
                 @can(\App\Support\Permission::MRF_RECEIVE)
                     <li class="nav-item {{ request()->is('wms/material-produksi*') ? 'active' : '' }}">
                         <a href="/wms/material-produksi" class="nav-link">
                             <i class="bi bi-box-seam"></i>
-                            <span>MRF Picked</span>
+                            <span>{{ __('MRF Picked') }}</span>
                         </a>
                     </li>
                 @endcan
@@ -180,27 +177,28 @@
     </main>
 </div>
 
-{{-- Bottom navigation — hanya tampil di bawah lg (docs/4 §3.2).
-     Menu Sales dibatasi 3 sesuai kapasitas rolenya: Dashboard, New Order,
-     My Orders. Tidak perlu @can di sini karena seluruh rute /sales sudah
-     dipagari middleware portal:sales — hanya Tim Sales yang bisa sampai
-     ke layout ini sama sekali. --}}
+{{-- Bottom navigation — hanya tampil di layar smartphone/tablet (< 992px).
+     Menyediakan akses instan ke Dashboard, Pesanan Baru, Pesanan Saya, dan MRF (Permintaan Material). --}}
 <nav class="navbar fixed-bottom bg-white border-top shadow-sm bottom-nav">
-    <div class="container-fluid d-flex justify-content-around align-items-center px-2">
+    <div class="container-fluid d-flex justify-content-around align-items-center px-1">
         <a href="/sales/dashboard" class="nav-link text-center text-decoration-none {{ request()->is('sales/dashboard') ? 'active' : '' }}">
             <i class="bi {{ request()->is('sales/dashboard') ? 'bi-house-fill' : 'bi-house' }}"></i>
-            <span class="d-block">Home</span>
+            <span class="d-block">{{ __('Home') }}</span>
         </a>
         <a href="/sales/new-order" class="nav-link text-center text-decoration-none {{ request()->is('sales/new-order') ? 'active' : '' }}">
-            <span class="nav-aksi d-inline-flex align-items-center justify-content-center rounded-circle shadow-sm" style="background-color: #1B4F8A;">
-                <i class="bi bi-plus-lg text-white"></i>
-            </span>
-            <span class="d-block">Pesanan Baru</span>
+            <i class="bi {{ request()->is('sales/new-order') ? 'bi-plus-circle-fill' : 'bi-plus-circle' }}" style="{{ request()->is('sales/new-order') ? 'color: #1B4F8A;' : 'color: #0284c7;' }}; font-size: 1.22rem;"></i>
+            <span class="d-block">{{ __('Pesanan Baru') }}</span>
         </a>
         <a href="/sales/my-orders" class="nav-link text-center text-decoration-none {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'active' : '' }}">
             <i class="bi {{ request()->is('sales/my-orders', 'sales/orders/*') ? 'bi-clipboard-data-fill' : 'bi-clipboard-data' }}"></i>
-            <span class="d-block">Pesanan Saya</span>
+            <span class="d-block">{{ __('Pesanan Saya') }}</span>
         </a>
+        @can(\App\Support\Permission::MRF_VIEW)
+        <a href="/wms/mrf" class="nav-link text-center text-decoration-none {{ request()->is('wms/mrf*') ? 'active' : '' }}">
+            <i class="bi {{ request()->is('wms/mrf*') ? 'bi-clipboard2-check-fill' : 'bi-clipboard2-check' }}"></i>
+            <span class="d-block">{{ __('MRF') }}</span>
+        </a>
+        @endcan
     </div>
 </nav>
 

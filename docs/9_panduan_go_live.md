@@ -213,6 +213,13 @@ Ulangi sampai **tidak ada GAGAL**. Setiap PERINGATAN harus disetujui dengan sada
 
 Lalu kirim satu email uji (`docs/8_panduan_email_gmail.md` bagian uji kirim) dan pastikan masuk ke kotak surat.
 
+### Isi yang WAJIB diganti sebelum dibuka ke pengguna
+
+Ini tidak terdeteksi `wms:cek-produksi` karena bukan kesalahan teknis — sistemnya berjalan sempurna dengan isi yang keliru.
+
+- [ ] **Slide promo di Dashboard Sales** (`config/wms.php` → `promo_sales`). Isinya masih contoh karangan: *"Diskon 20% Cat Interior"*, *"Beli 10 Gratis 1 Galon"*. **Sales akan menawarkannya ke pelanggan sungguhan.** Ganti dengan materi pemasaran yang benar, atau kosongkan `'promo_sales' => []` supaya bagian itu tidak digambar sama sekali.
+- [ ] **`APP_FALLBACK_LOCALE=id`** di `.env` server — lihat peringatan di langkah 4.
+
 ---
 
 ## 9. Cadangan
