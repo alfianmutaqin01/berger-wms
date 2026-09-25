@@ -48,6 +48,8 @@ use App\Http\Controllers\Wms\ProfileController;
 use App\Http\Controllers\Wms\ProofVerificationController;
 use App\Http\Controllers\Wms\PutawayController;
 use App\Http\Controllers\Wms\ReportController;
+use App\Http\Controllers\Wms\SjHandoverController;
+use App\Http\Controllers\Wms\SjHandoverReceiptController;
 use App\Http\Controllers\Wms\SoNumberController;
 use App\Http\Controllers\Wms\StockAdjustmentController;
 use App\Http\Controllers\Wms\StockLedgerController;
@@ -950,6 +952,43 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms'])->group
                 ->name('wms.verification.complete');
             Route::post('/verification/{order}/reject', [ProofVerificationController::class, 'reject'])
                 ->name('wms.verification.reject');
+        });
+
+        /*
+         | SERAH TERIMA SURAT JALAN FISIK KE KANTOR PUSAT.
+         |
+         | URUTAN PENTING: kelompok Kantor Pusat didaftarkan LEBIH DULU karena
+         | alamatnya diawali kata '/sj-fisik/masuk'. Kalau '/sj-fisik/{handover}'
+         | terdaftar duluan, "masuk" tertangkap sebagai id paket dan halaman CA
+         | tidak pernah bisa dibuka.
+         */
+        Route::middleware('can:'.Permission::OUTBOUND_SJ_HANDOVER_RECEIVE)->group(function () {
+            Route::get('/sj-fisik/masuk', [SjHandoverReceiptController::class, 'index'])
+                ->name('wms.sj-fisik.masuk');
+            Route::get('/sj-fisik/masuk/{handover}', [SjHandoverReceiptController::class, 'show'])
+                ->name('wms.sj-fisik.masuk.show');
+            Route::post('/sj-fisik/masuk/{handover}/konfirmasi', [SjHandoverReceiptController::class, 'konfirmasi'])
+                ->name('wms.sj-fisik.konfirmasi');
+        });
+
+        Route::middleware('can:'.Permission::OUTBOUND_SJ_HANDOVER)->group(function () {
+            Route::get('/sj-fisik', [SjHandoverController::class, 'index'])
+                ->name('wms.sj-fisik.index');
+
+            // POST, bukan GET: daftar id Surat Jalan sekali kirim bisa
+            // puluhan — lihat SjHandoverController::pratinjau().
+            Route::post('/sj-fisik/pratinjau', [SjHandoverController::class, 'pratinjau'])
+                ->name('wms.sj-fisik.pratinjau');
+
+            Route::post('/sj-fisik', [SjHandoverController::class, 'store'])
+                ->name('wms.sj-fisik.store');
+
+            Route::get('/sj-fisik/{handover}', [SjHandoverController::class, 'show'])
+                ->name('wms.sj-fisik.show');
+            Route::get('/sj-fisik/{handover}/cetak', [SjHandoverController::class, 'cetak'])
+                ->name('wms.sj-fisik.cetak');
+            Route::post('/sj-fisik/{handover}/batal', [SjHandoverController::class, 'batal'])
+                ->name('wms.sj-fisik.batal');
         });
     });
 

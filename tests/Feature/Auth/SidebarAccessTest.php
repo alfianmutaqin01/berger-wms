@@ -41,6 +41,8 @@ class SidebarAccessTest extends TestCase
         '/wms/outbound/picking' => Permission::OUTBOUND_PICKING_PROCESS,
         '/wms/outbound/delivery' => Permission::OUTBOUND_DELIVERY,
         '/wms/outbound/verification' => Permission::OUTBOUND_VERIFICATION,
+        '/wms/outbound/sj-fisik' => Permission::OUTBOUND_SJ_HANDOVER,
+        '/wms/outbound/sj-fisik/masuk' => Permission::OUTBOUND_SJ_HANDOVER_RECEIVE,
         '/wms/billing' => Permission::BILLING_VIEW,
         '/wms/master/customers' => Permission::MASTER_CUSTOMERS,
         '/wms/master/products' => Permission::MASTER_PRODUCTS,
@@ -67,6 +69,8 @@ class SidebarAccessTest extends TestCase
         Permission::OUTBOUND_PICKING_PROCESS => 'Proses Picking',
         Permission::OUTBOUND_DELIVERY => 'Surat Jalan (BC)',
         Permission::OUTBOUND_VERIFICATION => 'Verifikasi Bukti SJ',
+        Permission::OUTBOUND_SJ_HANDOVER => 'Kirim SJ Fisik',
+        Permission::OUTBOUND_SJ_HANDOVER_RECEIVE => 'Terima SJ Fisik',
         Permission::BILLING_VIEW => 'Billing & Piutang',
         Permission::MASTER_CUSTOMERS => 'Master Customers',
         Permission::MASTER_PRODUCTS => 'Master Products',
@@ -105,6 +109,10 @@ class SidebarAccessTest extends TestCase
             'Logistik' => [Role::LOGISTICS],
             'Produksi' => [Role::PRODUCTION],
             'Operator Gudang' => [Role::WAREHOUSE_OPERATOR],
+            // Peran kantor pusat. Ikut diuji justru karena izinnya paling
+            // sempit: satu halaman boleh, seluruh sisanya harus 403 — dan
+            // itulah yang mudah bocor saat peran baru ditambahkan.
+            'Customer Account' => [Role::CUSTOMER_ACCOUNT],
         ];
     }
 
@@ -137,6 +145,8 @@ class SidebarAccessTest extends TestCase
         $landing = match ($roleSlug) {
             Role::PRODUCTION => '/wms/dashboard/produksi',
             Role::WAREHOUSE_OPERATOR => '/wms/dashboard/operator',
+            // CA tidak punya dasbor — daftar amplop masuk itulah halamannya.
+            Role::CUSTOMER_ACCOUNT => '/wms/outbound/sj-fisik/masuk',
             default => '/wms/dashboard/admin',
         };
 

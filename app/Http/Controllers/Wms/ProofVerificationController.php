@@ -67,6 +67,12 @@ class ProofVerificationController extends Controller
                 'customer:id,code,name', 'warehouse:id,code,name',
                 'paymentTerm:id,code,name,days',
                 'deliveryNotes:id,sales_order_id,document_no,delivered_at',
+                // Status lembar FISIKNYA, sekadar dibaca. Halaman ini tidak
+                // mengirim apa pun ke Kantor Pusat — pekerjaan itu punya
+                // layarnya sendiri — tetapi pertanyaan "kertasnya sudah
+                // berangkat belum?" muncul justru di sini, saat orang sedang
+                // menelusuri satu pesanan yang sudah selesai.
+                'deliveryNotes.handoverAktif.handover:id,code,status,sent_at,received_at',
             ])
             ->withCount([
                 'proofs as bukti_menunggu' => fn ($q) => $q->menunggu(),

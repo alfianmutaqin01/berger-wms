@@ -665,6 +665,45 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
      - **Tempo 30/60/90 hari:** Status menjadi **Complete (Menunggu Pembayaran)**. Pesanan masuk ke **Menu Billing** untuk tracking piutang.
   6. `stock_movements` mencatat entri `OUT` untuk setiap item yang terkirim.
 
+#### F-OUT-07: Serah Terima Surat Jalan Fisik ke Kantor Pusat
+
+> Lembar Surat Jalan bertanda tangan pelanggan adalah dokumen fisik yang pada
+> akhirnya harus diarsipkan di Kantor Pusat. Sebelum fitur ini ada, perpindahan
+> kertas itu tidak tercatat di mana pun — pertanyaan "SJ 206215 sudah dikirim
+> ke HO belum?" hanya bisa dijawab dengan menelepon orangnya.
+
+- **Peran baru:** `customer_account` (CA), pegawai Kantor Pusat. Dua izin saja:
+  melihat dan mengonfirmasi paket. Pemisahan ini yang membuat konfirmasinya
+  bernilai — yang mengirim amplop tidak bisa menyatakan amplopnya sampai.
+- **Yang boleh dikirim:** hanya Surat Jalan yang **buktinya sudah diverifikasi**
+  (F-OUT-06 selesai). Selama fotonya masih bisa ditolak, lembar aslinya harus
+  tetap dalam jangkauan untuk difoto ulang.
+- **Proses (Tim Logistik):**
+  1. Membuka **Kirim SJ Fisik** → tab *Belum Dikirim*, mencentang lembar yang
+     ada di tangannya (boleh satu, boleh banyak).
+  2. **Proses Pengiriman** → halaman pratinjau berisi daftar lengkap, lalu
+     mengisi cara kirim (dititipkan ke orang / ekspedisi / diantar sendiri),
+     nama pembawa, dan nomor resi bila lewat ekspedisi.
+  3. Paket terbit bernomor **PSJ{YYMM}{urut}** berstatus *Dalam Perjalanan*.
+  4. Mencetak **Lembar Serah Terima** dan memasukkannya ke dalam amplop —
+     kertas inilah yang menyambungkan amplop fisik dengan catatan di sistem.
+  5. Paket masih boleh **dibatalkan** selama CA belum mengonfirmasi; isinya
+     kembali ke daftar belum dikirim.
+- **Proses (Customer Account):**
+  1. Membuka amplop, lalu menandai **tiap lembar** dengan salah satu dari:
+     **Sesuai** · **Ada, tapi bermasalah** (wajib beralasan) · **Tidak ada di
+     amplop** (wajib beralasan).
+  2. Tombol *Konfirmasi Diterima* baru aktif setelah seluruh baris ditandai.
+  3. Lembar bertanda **Tidak ada di amplop** otomatis **kembali** ke daftar
+     belum dikirim di gudang, dan gudang menerima lonceng tersendiri. Tanpa
+     langkah ini, lembar yang hilang di jalan tercatat "sudah dikirim"
+     selamanya dan tidak pernah muncul lagi di layar siapa pun.
+- **Penanda terlambat:** paket yang melewati `WMS_SJ_HANDOVER_BATAS_HARI`
+  (bawaan 7 hari) tanpa konfirmasi diberi label merah. Dihitung saat layar
+  dibuka, tanpa kolom dan tanpa penjadwal.
+- **Batas mulai berlaku:** `WMS_SJ_HANDOVER_SEJAK` menahan pesanan lama agar
+  tidak muncul serentak sebagai pekerjaan yang tidak akan pernah dikerjakan.
+
 ---
 
 ### 6.6 Modul Billing (Penagihan)

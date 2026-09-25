@@ -200,6 +200,23 @@ Sebagai Super Admin, lewat aplikasi:
 3. **Master Customer** → Impor Excel.
 4. **Data Stok** → Impor Stok Awal per gudang. Cocokkan totalnya dengan hitung fisik.
 5. **Manajemen Pengguna** — buat akun tiap orang. **Sales wajib punya email yang sah** (kabar pesanan dikirim ke sana) dan nomor HP (kabar barang sampai lewat WhatsApp).
+6. **Akun Customer Account (Kantor Pusat)** — buat minimal satu, **tanpa gudang**
+   (biarkan pilihan gudangnya kosong). Amplop Surat Jalan fisik dari seluruh
+   gudang mendarat di meja yang sama; akun CA yang terlanjur diberi gudang
+   hanya akan melihat sebagian paket, dan sisanya menunggu tanpa ada yang tahu.
+
+### Batas mulai berlaku serah terima SJ fisik
+
+Isi di `.env` **sebelum pengguna masuk**:
+
+```
+WMS_SJ_HANDOVER_SEJAK=2026-10-01   # ganti dengan tanggal fitur mulai dipakai
+```
+
+Tanpa ini, seluruh pesanan lama yang sudah selesai muncul serentak di daftar
+"Belum Dikirim" — bisa ratusan baris yang kertasnya sudah lama entah di mana,
+dan pekerjaan hari itu tenggelam di bawahnya. `wms:cek-produksi` tidak bisa
+menangkapnya: sistemnya berjalan sempurna, isinya saja yang keliru.
 
 ---
 

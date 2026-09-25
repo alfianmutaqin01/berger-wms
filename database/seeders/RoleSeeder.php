@@ -6,7 +6,7 @@ use App\Models\Role;
 use Illuminate\Database\Seeder;
 
 /**
- * Enam peran baku sesuai docs/2_database_design.md §7.1.
+ * Tujuh peran baku sesuai docs/2_database_design.md §7.1.
  *
  * `level` menentukan urutan tampil di dropdown sekaligus hierarki wewenang
  * (angka lebih kecil = wewenang lebih tinggi).
@@ -22,6 +22,7 @@ class RoleSeeder extends Seeder
             ['name' => 'Tim Produksi', 'slug' => Role::PRODUCTION, 'level' => 4, 'description' => 'Input hasil produksi (inbound).'],
             ['name' => 'Operator Gudang', 'slug' => Role::WAREHOUSE_OPERATOR, 'level' => 5, 'description' => 'Put-away dan picking barang di gudang.'],
             ['name' => 'Tim Sales', 'slug' => Role::SALES, 'level' => 6, 'description' => 'Portal Sales: buat pesanan, lacak status, lapor penolakan.'],
+            ['name' => 'Customer Account (Kantor Pusat)', 'slug' => Role::CUSTOMER_ACCOUNT, 'level' => 7, 'description' => 'Kantor Pusat: menerima dan memeriksa kelengkapan Surat Jalan fisik yang dikirim gudang.'],
         ];
 
         foreach ($roles as $role) {

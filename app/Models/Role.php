@@ -30,6 +30,18 @@ class Role extends Model
 
     public const SALES = 'sales';
 
+    /**
+     * Customer Account — orang Kantor Pusat, BUKAN akun milik pelanggan.
+     *
+     * Namanya memang begitu di perusahaan ini, dan itu menyimpan jebakan:
+     * dibaca sekilas ia terdengar seperti akun yang dipegang customer dari
+     * luar. Ia bukan. CA adalah pegawai HO yang menerima Surat Jalan fisik
+     * dari gudang dan memastikan lembarnya lengkap. Karena itu labelnya di
+     * layar selalu ditulis lengkap dengan keterangan kantor pusat — lihat
+     * RoleSeeder — supaya tidak ada yang membuatkan akun ini untuk pelanggan.
+     */
+    public const CUSTOMER_ACCOUNT = 'customer_account';
+
     protected $fillable = [
         'name',
         'slug',
