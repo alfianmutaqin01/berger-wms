@@ -2,6 +2,7 @@
 
 namespace App\Support\Reporting;
 
+use App\Models\DeliveryProof;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
 use App\Models\User;
@@ -32,7 +33,9 @@ use Illuminate\Support\Collection;
  *   DITOLAK   — masih bisa diperbaiki lalu diajukan ulang. Dibiarkan, ia
  *               diam selamanya karena tidak ada yang menagihnya.
  *   BUKTI     — barang sudah sampai pelanggan, tinggal fotonya. Pesanan
- *               tidak pernah dianggap selesai sampai buktinya masuk.
+ *               tidak pernah dianggap selesai sampai buktinya masuk. Yang
+ *               fotonya SUDAH diunggah tidak ikut dihitung lagi — sejak itu
+ *               yang ditunggu adalah pemeriksaan Logistik, bukan Sales.
  *
  * ANGKA YANG DIBUANG. Halaman lama punya grafik "Target vs Realisasi" dengan
  * garis target 700 per minggu. Tidak ada tabel target di sistem ini, dan
@@ -118,11 +121,7 @@ class SalesDashboard
     {
         $draft = $this->hitung($userId, [SalesOrder::STATUS_DRAFT]);
         $ditolak = $this->hitung($userId, [SalesOrder::STATUS_REJECTED]);
-        // PROOF_UPLOADED, bukan SHIPPING: barang yang masih di jalan belum
-        // menunggu apa pun dari Sales. Menghitungnya di sini membuat "Butuh
-        // Tindakan Anda" meminta pekerjaan yang belum boleh dikerjakan —
-        // unggahannya akan ditolak ProofOfDelivery::BOLEH_UNGGAH.
-        $bukti = $this->hitung($userId, [SalesOrder::STATUS_PROOF_UPLOADED]);
+        $bukti = $this->menungguBukti($userId)->count();
 
         return [
             'draft' => $draft,
@@ -183,6 +182,30 @@ class SalesDashboard
     /* ------------------------------------------------------------- Daftar */
 
     /**
+     * Pesanan yang benar-benar sedang menunggu FOTO dari Sales.
+     *
+     * DUA SYARAT, DAN KEDUANYA PERLU
+     * ------------------------------
+     * 1. Statusnya PROOF_UPLOADED, bukan SHIPPING. Barang yang masih di jalan
+     *    belum menunggu apa pun dari Sales; memintanya sekarang berarti
+     *    meminta pekerjaan yang unggahannya justru akan ditolak
+     *    (`ProofOfDelivery::BOLEH_UNGGAH`).
+     * 2. BELUM ADA foto yang masih berlaku. Status pesanan tetap
+     *    PROOF_UPLOADED sampai Logistik memeriksa fotonya, jadi tanpa syarat
+     *    kedua ini "Butuh Tindakan Anda" terus menagih Sales yang sudah
+     *    mengunggah — pekerjaan yang menunggu Logistik ditampilkan seolah
+     *    menunggu dirinya. Foto yang DITOLAK tidak ikut dihitung berlaku,
+     *    sehingga pesanannya muncul lagi di sini, dan itu memang benar:
+     *    Sales harus memotret ulang.
+     */
+    private function menungguBukti(?int $userId)
+    {
+        return $this->milik($userId)
+            ->where('status', SalesOrder::STATUS_PROOF_UPLOADED)
+            ->whereDoesntHave('proofs', fn ($q) => $q->masihBerlaku());
+    }
+
+    /**
      * Pesanan yang menunggu foto bukti, LENGKAP DENGAN TAUTANNYA.
      *
      * Halaman lama punya tombol "Upload Bukti" yang membuka jendela unggah
@@ -199,11 +222,12 @@ class SalesDashboard
      */
     private function daftarBukti(?int $userId)
     {
-        return $this->milik($userId)
-            // Sudah dinyatakan sampai oleh supir. Sebelum itu tidak ada yang
-            // bisa dikerjakan Sales — lihat catatan di perluTindakan().
-            ->where('status', SalesOrder::STATUS_PROOF_UPLOADED)
+        return $this->menungguBukti($userId)
             ->with('customer:id,code,name')
+            // Yang fotonya pernah ditolak ditandai di layar, karena kalimat
+            // "unggah bukti" dan "unggah ULANG bukti" menuntut hal berbeda
+            // dari orang yang membacanya.
+            ->withCount(['proofs as bukti_ditolak_count' => fn ($q) => $q->where('status', DeliveryProof::STATUS_REJECTED)])
             ->orderBy('delivered_at')
             ->limit(5)
             ->get();
