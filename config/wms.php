@@ -52,6 +52,26 @@ return [
     ],
 
     /*
+     |--------------------------------------------------------------------------
+     | Serah terima Surat Jalan fisik ke Kantor Pusat
+     |--------------------------------------------------------------------------
+     |
+     | sejak: tanggal paling awal yang ikut dihitung sebagai "belum dikirim ke
+     | HO". Dikosongkan berarti SEMUA pesanan selesai ikut — termasuk yang
+     | ditutup berbulan-bulan sebelum fitur ini ada, yang kertasnya sudah lama
+     | entah di mana. Isi tanggal hari fitur ini mulai dipakai supaya daftar
+     | kerjanya berisi pekerjaan yang benar-benar masih bisa dikerjakan.
+     |
+     | batas_konfirmasi_hari: setelah sekian hari berjalan tanpa konfirmasi
+     | CA, paketnya ditandai terlambat di layar. Bukan larangan, hanya penanda
+     | — amplop yang nyasar tidak akan mengabarkan dirinya sendiri.
+     */
+    'sj_handover' => [
+        'sejak' => env('WMS_SJ_HANDOVER_SEJAK'),
+        'batas_konfirmasi_hari' => (int) env('WMS_SJ_HANDOVER_BATAS_HARI', 7),
+    ],
+
+    /*
      |--------------------------------------------------------------------
      | Slide iklan di Dashboard Sales
      |--------------------------------------------------------------------

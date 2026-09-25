@@ -1092,7 +1092,14 @@ PROCESS:
 | 4  | Tim Produksi     | production       |
 | 5  | Operator Gudang  | warehouse_operator |
 | 6  | Tim Sales        | sales            |
+| 7  | Customer Account (Kantor Pusat) | customer_account |
 ```
+
+> [!NOTE]
+> `customer_account` adalah pegawai **Kantor Pusat**, bukan akun milik pelanggan.
+> Ia hanya memegang dua izin — melihat dan mengonfirmasi paket Surat Jalan fisik
+> yang dikirim gudang. Akunnya dibuat dengan `warehouse_id` NULL karena amplop
+> dari seluruh gudang mendarat di meja yang sama.
 
 ### 7.2 System Settings
 

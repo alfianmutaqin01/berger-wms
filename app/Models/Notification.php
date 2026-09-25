@@ -84,6 +84,15 @@ class Notification extends Model
     /** Seseorang menekan "Lupa sandi?" — admin perlu mengisi sandi sementara. */
     public const PASSWORD_RESET_REQUESTED = 'password.reset_requested';
 
+    /** Amplop Surat Jalan fisik berangkat dari gudang; untuk CA di HO. */
+    public const SJ_HANDOVER_SENT = 'sj_handover.sent';
+
+    /** CA sudah memeriksa isinya; untuk yang mengirimkannya. */
+    public const SJ_HANDOVER_RECEIVED = 'sj_handover.received';
+
+    /** Ada lembar yang tidak ada di dalam amplop — kertasnya harus dicari. */
+    public const SJ_HANDOVER_MISSING = 'sj_handover.missing';
+
     /**
      * Ikon & warna per jenis.
      *
@@ -114,6 +123,9 @@ class Notification extends Model
         self::BILLING_DUE_SOON => ['bi-hourglass-split', 'warning'],
         self::BILLING_OVERDUE => ['bi-exclamation-octagon-fill', 'danger'],
         self::PASSWORD_RESET_REQUESTED => ['bi-key-fill', 'warning'],
+        self::SJ_HANDOVER_SENT => ['bi-envelope-arrow-up', 'primary'],
+        self::SJ_HANDOVER_RECEIVED => ['bi-envelope-check-fill', 'success'],
+        self::SJ_HANDOVER_MISSING => ['bi-envelope-exclamation-fill', 'danger'],
     ];
 
     /** Yang ditampilkan di dalam lonceng sebelum "Lihat Semua". */

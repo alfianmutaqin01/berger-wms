@@ -273,6 +273,7 @@
                 \App\Support\Permission::OUTBOUND_PICKING_PROCESS,
                 \App\Support\Permission::OUTBOUND_DELIVERY,
                 \App\Support\Permission::OUTBOUND_VERIFICATION,
+                \App\Support\Permission::OUTBOUND_SJ_HANDOVER,
             ])
                 @php $outboundOpen = request()->is('wms/outbound*'); @endphp
                 <li class="nav-item">
@@ -342,9 +343,37 @@
                                 <a href="/wms/outbound/verification" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Verifikasi Bukti SJ') }}</span></a>
                             </li>
                         @endcan
+                        @can(\App\Support\Permission::OUTBOUND_SJ_HANDOVER)
+                            {{-- Langkah TERAKHIR alur outbound, dan letaknya di
+                                 paling bawah memang mengikuti urutan kerjanya:
+                                 kertasnya baru boleh berangkat setelah fotonya
+                                 lolos di menu tepat di atasnya. --}}
+                            {{-- '/sj-fisik/masuk' sengaja dikecualikan: alamat
+                                 CA berada di bawah alamat yang sama, dan pola
+                                 berbintang polos menyalakan kedua menu
+                                 sekaligus bagi Super Admin yang memegang
+                                 keduanya. --}}
+                            <li class="nav-item {{ request()->is('wms/outbound/sj-fisik') || (request()->is('wms/outbound/sj-fisik/*') && ! request()->is('wms/outbound/sj-fisik/masuk*')) ? 'active' : '' }}">
+                                <a href="/wms/outbound/sj-fisik" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Kirim SJ Fisik') }}</span></a>
+                            </li>
+                        @endcan
                     </ul>
                 </li>
             @endcanany
+
+            {{-- KANTOR PUSAT — satu menu, tanpa grup yang bisa dilipat.
+
+                 Customer Account hanya punya satu pekerjaan di sistem ini, dan
+                 membungkus satu menu di dalam grup yang harus dibuka dulu
+                 berarti menambah satu klik pada setiap kali ia masuk. --}}
+            @can(\App\Support\Permission::OUTBOUND_SJ_HANDOVER_RECEIVE)
+                <li class="nav-item {{ request()->is('wms/outbound/sj-fisik/masuk') || request()->is('wms/outbound/sj-fisik/masuk/*') ? 'active' : '' }}">
+                    <a href="/wms/outbound/sj-fisik/masuk" class="nav-link">
+                        <i class="bi bi-envelope-open"></i>
+                        <span>{{ __('Terima SJ Fisik') }}</span>
+                    </a>
+                </li>
+            @endcan
 
             <!-- KEUANGAN & SISTEM -->
             @canany([

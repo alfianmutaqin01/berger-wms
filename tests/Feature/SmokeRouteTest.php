@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Customer;
 use App\Models\DeliveryNote;
+use App\Models\DeliveryNoteHandover;
 use App\Models\DeliveryNoteLine;
 use App\Models\DeliveryProof;
 use App\Models\InboundDetail;
@@ -417,8 +418,20 @@ class SmokeRouteTest extends TestCase
             'consumed_at' => now()->subDays(10),
         ]);
 
+        // --- Amplop Surat Jalan fisik yang sedang dalam perjalanan ke HO ---
+        $paketSj = DeliveryNoteHandover::create([
+            'code' => 'PSJ2609001',
+            'warehouse_id' => $this->warehouse->id,
+            'carrier_type' => DeliveryNoteHandover::CARRIER_TITIPAN,
+            'carrier_name' => 'Pak Budi',
+            'status' => DeliveryNoteHandover::STATUS_SENT,
+            'sent_at' => now(),
+        ]);
+        $paketSj->items()->create(['delivery_note_id' => $suratJalan->id]);
+
         $this->parameter = [
             'mrf' => $mrfMenunggu->id,
+            'handover' => $paketSj->id,
             'proof' => $bukti->id,
             'retur' => $retur->id,
             'order' => $order->id,

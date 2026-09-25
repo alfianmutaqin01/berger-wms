@@ -71,6 +71,10 @@ final class Bahasa
         Role::PRODUCTION => 'Production Team',
         Role::WAREHOUSE_OPERATOR => 'Warehouse Operator',
         Role::SALES => 'Sales Team',
+        // TIDAK diterjemahkan jadi "Akun Pelanggan": "Customer Account" adalah
+        // nama jabatan di kantor pusat, dan jabatan tidak berganti nama karena
+        // layarnya berganti bahasa.
+        Role::CUSTOMER_ACCOUNT => 'Customer Account',
     ];
 
     public static function sah(?string $kode): bool

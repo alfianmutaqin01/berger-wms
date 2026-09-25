@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Surat Jalan — CERMINAN dokumen milik sistem BC, bukan dokumen kami.
@@ -131,6 +132,23 @@ class DeliveryNote extends Model
         return $this->belongsTo(User::class, 'substitution_confirmed_by');
     }
 
+    /** Seluruh riwayat amplop yang pernah membawa lembar fisik SJ ini. */
+    public function handoverItems(): HasMany
+    {
+        return $this->hasMany(DeliveryNoteHandoverItem::class);
+    }
+
+    /**
+     * Amplop yang SEDANG memegang lembar fisiknya — paling banyak satu.
+     *
+     * Dijamin satu oleh indeks unik parsial dnh_items_satu_paket_hidup, bukan
+     * oleh sopan santun kode pemanggilnya.
+     */
+    public function handoverAktif(): HasOne
+    {
+        return $this->hasOne(DeliveryNoteHandoverItem::class)->aktif();
+    }
+
     /* ------------------------------------------------------------- Scope */
 
     /**
@@ -145,6 +163,41 @@ class DeliveryNote extends Model
     public function scopeBelumBerpasangan(Builder $query): Builder
     {
         return $query->whereNull('sales_order_id');
+    }
+
+    /**
+     * Lembar fisiknya siap dikirim ke Kantor Pusat.
+     *
+     * SATU-SATUNYA definisi "layak masuk amplop", dipakai bersama oleh kotak
+     * centang di layar Verifikasi Bukti dan oleh daftar di layar Kirim SJ
+     * Fisik. Dua definisi yang berdiri sendiri cepat atau lambat berbeda, dan
+     * yang terjadi adalah kotak centang muncul untuk baris yang ditolak
+     * halaman berikutnya.
+     *
+     * KENAPA HARUS SUDAH TERVERIFIKASI. Selama fotonya masih bisa ditolak,
+     * lembar aslinya harus tetap berada dalam jangkauan untuk difoto ulang.
+     * Kertas yang sudah berangkat ke HO tidak bisa dipanggil pulang.
+     */
+    public function scopeSiapKeHo(Builder $query): Builder
+    {
+        $sejak = config('wms.sj_handover.sejak');
+
+        return $query
+            ->where('status', self::STATUS_DELIVERED)
+            ->whereHas('salesOrder', fn (Builder $o) => $o
+                ->whereIn('status', [
+                    SalesOrder::STATUS_COMPLETED,
+                    SalesOrder::STATUS_COMPLETED_BILLING,
+                ])
+                ->whereNull('cancelled_at')
+            )
+            ->whereDoesntHave('handoverItems', fn (Builder $item) => $item->aktif())
+            // Batas mulai berlaku. Tanpa ini, hari pertama fitur ini menyala
+            // seluruh pesanan lama yang sudah selesai muncul serentak sebagai
+            // "belum dikirim" — daftar sepanjang ratusan baris yang tidak akan
+            // pernah dikerjakan siapa pun, dan yang menenggelamkan pekerjaan
+            // hari itu. Dikosongkan berarti semuanya ikut.
+            ->when(filled($sejak), fn (Builder $q) => $q->whereDate('delivered_at', '>=', $sejak));
     }
 
     public function scopeSearch(Builder $query, ?string $term): Builder

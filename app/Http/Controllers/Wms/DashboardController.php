@@ -26,6 +26,11 @@ class DashboardController extends Controller
             Role::SALES => '/sales/dashboard',
             Role::PRODUCTION => '/wms/dashboard/produksi',
             Role::WAREHOUSE_OPERATOR => '/wms/dashboard/operator',
+            // CA tidak punya dashboard, dan itu disengaja: pekerjaannya cuma
+            // satu — memeriksa paket Surat Jalan yang datang. Daftar paket itu
+            // SENDIRI sudah merupakan halaman awalnya; sebuah dashboard di
+            // depannya hanya menambah satu klik sebelum pekerjaan yang sama.
+            Role::CUSTOMER_ACCOUNT => '/wms/outbound/sj-fisik/masuk',
             default => '/wms/dashboard/admin',
         };
     }

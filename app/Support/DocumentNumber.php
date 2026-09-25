@@ -46,6 +46,8 @@ class DocumentNumber
 
     public const TYPE_MATERIAL_REQUISITION = 'material_requisition';
 
+    public const TYPE_SJ_HANDOVER = 'sj_handover';
+
     /**
      * Nomor MRF: MRF{YYMM}{urut 3 digit}.
      *
@@ -86,6 +88,39 @@ class DocumentNumber
         );
 
         return 'MRF'.$waktu->format('ym').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Nomor paket Surat Jalan fisik: PSJ{YYMM}{urut 3 digit}.
+     *
+     * PSJ = Paket Surat Jalan. Bukan singkatan dari kata Inggris mana pun,
+     * dan itu memang syaratnya: nomor ini dieja lewat telepon antara gudang
+     * Karawang dan Customer Account di kantor pusat — "PSJ2609001 sudah
+     * sampai belum?" — dan awalan yang perlu diterjemahkan lebih dulu akan
+     * salah disebut pada panggilan pertama.
+     *
+     * TANPA TANGGAL, hanya tahun dan bulan, sama seperti MRF. Amplop
+     * berangkat sekitar seminggu sekali; tanggal di dalam nomor tidak pernah
+     * menjawab pertanyaan siapa pun, sementara nomor yang lebih pendek lebih
+     * mudah dieja.
+     *
+     * LINTAS GUDANG. Yang menerima semua amplop adalah satu meja yang sama di
+     * HO; nomor yang berulang di tiap gudang membuat "PSJ2609001" berarti
+     * tiga amplop berbeda di tumpukan yang sama.
+     *
+     * WAJIB dipanggil di dalam DB::transaction — lihat next().
+     */
+    public static function forSjHandover(?Carbon $waktu = null): string
+    {
+        $waktu = $waktu ?? now();
+
+        $urut = self::next(
+            type: self::TYPE_SJ_HANDOVER,
+            year: (int) $waktu->format('Y'),
+            month: (int) $waktu->format('n'),
+        );
+
+        return 'PSJ'.$waktu->format('ym').str_pad((string) $urut, 3, '0', STR_PAD_LEFT);
     }
 
     /**

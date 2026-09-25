@@ -92,6 +92,13 @@
                         <th>Surat Jalan</th>
                         <th>Sampai</th>
                         <th>Bukti</th>
+                        {{-- Hanya di tab Selesai. Sebelum buktinya lolos,
+                             lembar fisiknya memang belum boleh berangkat ke
+                             mana pun, jadi kolom ini cuma akan berisi garis
+                             datar sepanjang dua tab pertama. --}}
+                        @if($tab === \App\Http\Controllers\Wms\ProofVerificationController::TAB_RIWAYAT)
+                        <th>SJ Fisik</th>
+                        @endif
                         <th class="text-end">Tindakan</th>
                     </tr>
                 </thead>
@@ -129,6 +136,27 @@
                                 <span class="text-muted small">Belum ada</span>
                             @endif
                         </td>
+                        @if($tab === \App\Http\Controllers\Wms\ProofVerificationController::TAB_RIWAYAT)
+                        <td class="small">
+                            @forelse($order->deliveryNotes as $sj)
+                                @if($sj->handoverAktif?->handover === null)
+                                    <span class="text-muted">Belum dikirim</span>
+                                @elseif($sj->handoverAktif->handover->status === \App\Models\DeliveryNoteHandover::STATUS_RECEIVED)
+                                    <span class="badge bg-success-subtle text-success-emphasis">Diterima HO</span>
+                                    <div class="text-muted">
+                                        {{ $sj->handoverAktif->handover->received_at?->format('d M Y') }}
+                                    </div>
+                                @else
+                                    <span class="badge bg-primary-subtle text-primary-emphasis">Dikirim</span>
+                                    <div class="text-muted font-monospace">
+                                        {{ $sj->handoverAktif->handover->code }}
+                                    </div>
+                                @endif
+                            @empty
+                                <span class="text-muted">—</span>
+                            @endforelse
+                        </td>
+                        @endif
                         <td class="text-end">
                             <a href="{{ route('wms.verification.show', $order) }}"
                                class="btn btn-sm rounded-3 {{ $order->bukti_menunggu > 0 ? 'btn-primary' : 'btn-outline-secondary' }}">
@@ -138,7 +166,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="text-center py-5 text-muted">
+                        <td colspan="{{ $tab === \App\Http\Controllers\Wms\ProofVerificationController::TAB_RIWAYAT ? 8 : 7 }}" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox display-6 d-block mb-2 opacity-50"></i>
                             {{ $tabs[$tab]['sub'] }} Tidak ada yang perlu ditampilkan di sini.
                         </td>

@@ -224,6 +224,23 @@ class Permission
 
     public const OUTBOUND_VERIFICATION = 'outbound.verification';
 
+    /*
+     | SERAH TERIMA SURAT JALAN FISIK — dua izin, dan pemisahannya adalah
+     | seluruh guna fiturnya.
+     |
+     | Gudang menyatakan "sudah saya kirim", Kantor Pusat menyatakan "sudah
+     | saya terima, lengkap". Kalau satu peran boleh melakukan keduanya,
+     | pernyataan kedua tidak membuktikan apa pun: amplop yang tidak pernah
+     | berangkat tetap bisa ditandai sampai. Itulah kenapa CA ada sebagai
+     | peran tersendiri, bukan sekadar tambahan izin untuk Logistik.
+     */
+
+    /** Menyusun paket Surat Jalan fisik dan menyatakannya berangkat. */
+    public const OUTBOUND_SJ_HANDOVER = 'outbound.sj_handover';
+
+    /** Memeriksa isi amplop dan menyatakannya diterima — pekerjaan CA. */
+    public const OUTBOUND_SJ_HANDOVER_RECEIVE = 'outbound.sj_handover.receive';
+
     /* ------------------------------------------------------------------ MRF */
 
     /*
@@ -398,6 +415,12 @@ class Permission
         ],
         self::OUTBOUND_DELIVERY => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
         self::OUTBOUND_VERIFICATION => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+
+        // Manager TIDAK ikut menerima. Bukan soal wewenang — ia memang lebih
+        // tinggi dari CA — melainkan soal tempat duduk: yang bisa membuka
+        // amplop hanyalah orang yang amplopnya benar-benar ada di mejanya.
+        self::OUTBOUND_SJ_HANDOVER => [Role::SUPER_ADMIN, Role::MANAGER, Role::LOGISTICS],
+        self::OUTBOUND_SJ_HANDOVER_RECEIVE => [Role::SUPER_ADMIN, Role::CUSTOMER_ACCOUNT],
 
         /*
          | MRF. Operator ikut MELIHAT: daftar picking yang ia kerjakan bisa
