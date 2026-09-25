@@ -49,8 +49,8 @@ class SalesOrderController extends Controller
      *
      * Sejak Admin/Manager boleh membuat pesanan atas nama Sales, ada DUA
      * pintu masuk ke pembentukan pesanan. Menyalin caranya ke masing-masing
-     * berarti dua tempat yang suatu hari berbeda pendapat tentang kapan SLA
-     * mulai dihitung dan siapa yang diberi tahu.
+     * berarti dua tempat yang suatu hari berbeda pendapat tentang kapan
+     * pesanan dianggap mulai berjalan dan siapa yang diberi tahu.
      */
     public function __construct(private readonly OrderComposer $komposer) {}
 

@@ -419,7 +419,16 @@ class ProofOfDeliveryTest extends TestCase
         $this->assertSame(SalesOrder::STATUS_COMPLETED_BILLING, $order->fresh()->status);
     }
 
-    public function test_sla_dihitung_dari_berangkat_sampai_tiba(): void
+    /**
+     * Waktu berangkat dan tiba tetap tercatat utuh setelah pesanan ditutup.
+     *
+     * Menggantikan test_sla_dihitung_dari_berangkat_sampai_tiba, yang hilang
+     * bersama kolom sla_hours. Yang diuji sekarang justru yang lebih penting:
+     * BAHANNYA masih ada. Selama keenam timestamp ini utuh, ukuran waktu apa
+     * pun bisa dihitung ulang kapan saja untuk seluruh riwayat — dan itulah
+     * yang membuat penghapusan angka turunannya aman.
+     */
+    public function test_waktu_berangkat_dan_tiba_tetap_tercatat_setelah_selesai(): void
     {
         $this->login($this->karawang);
         $order = $this->pesananTerkirim(null, null, [
@@ -433,9 +442,13 @@ class ProofOfDeliveryTest extends TestCase
 
         $this->post(route('wms.verification.complete', $order));
 
-        // 5 jam, BUKAN jarak sampai verifikasi: Sales bisa terlambat
-        // berhari-hari ke toko, dan itu bukan pekerjaan gudang.
-        $this->assertSame(5.0, (float) $order->fresh()->sla_hours);
+        $selesai = $order->fresh();
+
+        $this->assertNotNull($selesai->submitted_at);
+        $this->assertNotNull($selesai->shipped_at);
+        $this->assertNotNull($selesai->delivered_at);
+        $this->assertNotNull($selesai->completed_at);
+        $this->assertSame(5, (int) $selesai->shipped_at->diffInHours($selesai->delivered_at));
     }
 
     public function test_pesanan_tanpa_foto_tidak_bisa_diselesaikan(): void

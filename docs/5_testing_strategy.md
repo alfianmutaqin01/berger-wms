@@ -178,9 +178,6 @@ Unit test menguji satu class/method secara terisolasi. Dependencies di-mock jika
 
 | # | Test Case | Expected |
 |---|---|---|
-| 1 | Calculate SLA — normal | Hours between submit and complete |
-| 2 | Calculate SLA — same day | Correct fractional hours |
-| 3 | Calculate SLA — multi-day | Correct total hours across days |
 
 #### `StockMovementServiceTest`
 
@@ -199,7 +196,7 @@ Unit test menguji satu class/method secara terisolasi. Dependencies di-mock jika
 | `User` | Relasi ke role, warehouse. Scope by role. Progressive lockout state. |
 | `Product` | Relasi ke category. Scope aktif. Max pallet qty accessor. |
 | `InventoryStock` | Scope by warehouse. Scope available (qty > 0). FIFO scope (order by production_date). |
-| `SalesOrder` | Relasi ke details, customer, user. Status scopes. SLA accessor. |
+| `SalesOrder` | Relasi ke details, customer, user. Status scopes. |
 | `Customer` | Scope active (`is_active`). Accessor `is_overdue` (punya billing belum lunas) — **informatif, bukan pemblokir**. |
 | `SalesReturn` | Relasi ke details, sales_order, customer. Scope pending_check. Generator `return_number`. |
 | `CustomerBilling` | Scope unpaid. Scope overdue. Due date calculation. |

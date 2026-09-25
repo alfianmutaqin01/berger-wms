@@ -21,8 +21,8 @@ use Illuminate\Support\Facades\Storage;
  * Sejak Admin/Manager boleh membuat pesanan atas nama Sales, pintunya jadi
  * dua — dan kalau masing-masing menyalin caranya sendiri, keduanya akan
  * berbeda pendapat suatu hari tentang hal yang tidak boleh berbeda: kapan
- * SLA mulai dihitung, penanda penolakan lama dibersihkan atau tidak, siapa
- * yang diberi tahu, dan apa yang tercatat di log.
+ * pesanan dianggap mulai berjalan, penanda penolakan lama dibersihkan atau
+ * tidak, siapa yang diberi tahu, dan apa yang tercatat di log.
  *
  * Bedanya kedua pintu itu hanya SATU, dan cuma itu yang boleh berbeda:
  * siapa yang mengetiknya. Selebihnya harus identik, karena begitu masuk
@@ -125,7 +125,13 @@ class OrderComposer
         }
     }
 
-    /** Submit: status berpindah dan SLA (§7.6) mulai dihitung dari sini. */
+    /**
+     * Submit: status berpindah, dan submitted_at diisi di sini.
+     *
+     * Itulah saat customer mulai menunggu — dipakai mengurutkan antrean
+     * picking dan pengisian alokasi tertunda, yang keduanya melayani yang
+     * paling lama menunggu lebih dulu.
+     */
     public function kirimKeLogistik(SalesOrder $order): void
     {
         $order->forceFill([

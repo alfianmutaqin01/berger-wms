@@ -76,7 +76,7 @@ class SalesOrder extends Model
         'cancelled_at', 'cancelled_by', 'cancellation_source', 'cancellation_reason',
         'so_merged_into_id', 'picking_list_id',
         'picking_completed_at', 'shipped_at', 'delivered_at',
-        'completed_at', 'completed_by', 'sla_hours', 'notes',
+        'completed_at', 'completed_by', 'notes',
     ];
 
     protected function casts(): array
@@ -91,7 +91,6 @@ class SalesOrder extends Model
             'delivered_at' => 'datetime',
             'completed_at' => 'datetime',
             'document_size' => 'integer',
-            'sla_hours' => 'decimal:2',
         ];
     }
 

@@ -418,7 +418,6 @@ Portal Sales memakai **dua bentuk navigasi yang bertukar pada breakpoint `lg` (9
 - **Timeline vertikal:** Garis vertikal dengan node bulat berwarna (hijau=selesai, kuning=proses, abu=belum)
 - **Upload foto:** 2 tombol — "Buka Kamera" (HTML5 `capture="camera"`) dan "Pilih dari Galeri"
 - **Preview foto:** Thumbnail foto yang akan diupload sebelum submit
-- **SLA display:** Setelah complete, tampilkan durasi total (contoh: "Selesai dalam 26 jam 45 menit")
 
 #### 3.3.4 Lapor Penolakan Barang
 **Deskripsi:** Modal yang dibuka dari kartu pesanan berstatus **Dalam Pengiriman** atau **Menunggu Verifikasi Bukti** di halaman My Orders.

@@ -129,7 +129,6 @@
                 <i class="bi bi-check2-circle me-1"></i>
                 Diselesaikan {{ $order->completed_at?->format('d M Y H:i') }}
                 @if($order->completedBy) oleh {{ $order->completedBy->full_name }} @endif
-                @if($order->sla_hours) · SLA {{ number_format((float) $order->sla_hours, 1) }} jam @endif
             </div>
             @endif
         </div>

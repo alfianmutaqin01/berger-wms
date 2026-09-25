@@ -15,7 +15,8 @@ use Illuminate\Support\Facades\Schema;
  *      "Simpan Draft", dan §3.3.2 menegaskan tombol itu tetap aktif setelah
  *      pukul 15:00. Tanpa draft, aturan cutoff §7.5 tidak punya jalan keluar:
  *      lewat jam 15:00 Sales tidak bisa menyimpan apa pun. submitted_at
- *      adalah TITIK AWAL SLA (§7.6), jadi draft memang belum boleh punya.
+ *      menandai saat pesanan benar-benar dikirim ke Logistik, jadi draft
+ *      memang belum boleh punya.
  *
  *   2. payment_term_id FK, bukan ENUM. Tabel payment_terms sudah ada sejak
  *      Fase 2 dan migrasinya sendiri menyatakan dibuat agar "dropdown pada
@@ -79,7 +80,14 @@ return new class extends Migration
             $table->timestamp('picking_completed_at')->nullable();
             $table->timestamp('completed_at')->nullable();
 
-            // Durasi SLA (§7.6) dalam jam, dihitung saat order complete.
+            // Durasi SLA dalam jam, dihitung saat order complete.
+            //
+            // DIHAPUS 25 September 2026 oleh migrasi
+            // 2026_10_26_000001_drop_sla_hours_from_sales_orders — alasannya
+            // ada di sana. Barisnya tetap di sini karena migrasi adalah
+            // catatan sejarah: menghapusnya membuat basis data yang sudah
+            // terlanjur punya kolom ini tidak pernah kehilangannya, dan
+            // selisih itu tidak akan terlihat oleh siapa pun.
             $table->decimal('sla_hours', 8, 2)->nullable();
 
             $table->text('notes')->nullable();
@@ -106,8 +114,10 @@ return new class extends Migration
 
         /*
          * Pesanan yang sudah lepas dari draft WAJIB punya submitted_at —
-         * itulah titik awal SLA. Tanpa penjaga ini, satu baris yang lolos
-         * tanpa submitted_at membuat perhitungan SLA diam-diam salah.
+         * itulah saat customer mulai menunggu. Tanpa penjaga ini, satu baris
+         * yang lolos tanpa submitted_at akan tampil tanpa tahap "Dibuat" di
+         * linimasa Sales, dan terlempar ke ujung antrean picking yang
+         * diurutkan dari kolom itu.
          */
         DB::statement("ALTER TABLE sales_orders ADD CONSTRAINT sales_orders_submitted_at_required
             CHECK (status = 'draft' OR submitted_at IS NOT NULL)");

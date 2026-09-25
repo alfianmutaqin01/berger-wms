@@ -113,9 +113,10 @@ class Reshipment
             $terkunci->forceFill([
                 'picking_list_id' => null,
                 'status' => SalesOrder::STATUS_APPROVED,
-                // Argo SLA dimulai ulang untuk putaran ini. Membiarkan
-                // shipped_at putaran pertama membuat pesanan ini terbaca
-                // "sudah berangkat" padahal sisanya belum bergerak.
+                // Dikosongkan untuk putaran ini. Membiarkan shipped_at
+                // putaran pertama membuat pesanan ini terbaca "sudah
+                // berangkat" padahal sisanya belum bergerak — termasuk di
+                // linimasa yang dilihat Sales.
                 'shipped_at' => null,
             ])->save();
 
