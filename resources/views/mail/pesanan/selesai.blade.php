@@ -22,10 +22,6 @@ Barang sudah diterima customer, tetapi pembayarannya masih berjalan ({{ $termin 
 @endforeach
 </x-mail::table>
 
-@if($slaJam !== null)
-Waktu proses (SLA): {{ number_format($slaJam, 1, ',', '.') }} jam.
-@endif
-
 **Rincian qty**
 
 <x-mail::table>

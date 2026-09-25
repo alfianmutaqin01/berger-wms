@@ -207,7 +207,6 @@ erDiagram
         string status
         timestamp submitted_at
         timestamp completed_at
-        decimal sla_hours
     }
     
     stock_movements {
@@ -653,15 +652,14 @@ Header pesanan penjualan.
 | `document_name` | VARCHAR(255) | NULLABLE | Nama berkas asli |
 | `document_size` | INTEGER | NULLABLE | Ukuran berkas (bytes) |
 | `document_mime` | VARCHAR(100) | NULLABLE | Tipe MIME berkas |
-| `submitted_at` | TIMESTAMP | **NULLABLE** | Waktu submit oleh Sales (awal SLA). NULL selama masih draft |
+| `submitted_at` | TIMESTAMP | **NULLABLE** | Waktu submit oleh Sales — saat customer mulai menunggu; dipakai mengurutkan antrean. NULL selama masih draft |
 | `approved_at` | TIMESTAMP | NULLABLE | Waktu approve oleh Logistik |
 | `approved_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | Logistik yang approve |
 | `rejected_at` | TIMESTAMP | NULLABLE | Waktu reject (jika ditolak) |
 | `rejected_by` | BIGINT UNSIGNED | FK → users.id, NULLABLE | |
 | `rejection_reason` | TEXT | NULLABLE | Alasan penolakan |
 | `picking_completed_at` | TIMESTAMP | NULLABLE | Waktu picking selesai |
-| `completed_at` | TIMESTAMP | NULLABLE | Waktu order complete (akhir SLA) |
-| `sla_hours` | DECIMAL(8,2) | NULLABLE | Durasi SLA dalam jam |
+| `completed_at` | TIMESTAMP | NULLABLE | Waktu order complete |
 | `notes` | TEXT | NULLABLE | Catatan dari Sales |
 | `created_at` | TIMESTAMP | | |
 | `updated_at` | TIMESTAMP | | |
@@ -726,7 +724,7 @@ Surat Jalan — **salinan dokumen yang terbit di sistem BC**, bukan dokumen yang
 | `status` | VARCHAR(20) | `imported` → `shipped` → `delivered` | |
 | `imported_at`, `imported_by` | TIMESTAMP, FK users | | Jejak impor |
 | `driver_name`, `driver_phone`, `vehicle_plate` | VARCHAR | Wajib saat berangkat | Data pengiriman |
-| `shipped_at`, `shipped_by` | TIMESTAMP, FK users | | Waktu berangkat — awal SLA |
+| `shipped_at`, `shipped_by` | TIMESTAMP, FK users | | Waktu berangkat |
 | `epod_token` | VARCHAR(64) | UNIQUE, NULLABLE | Tautan konfirmasi supir tanpa login |
 | `epod_expires_at` | TIMESTAMP | NULLABLE | Masa berlaku tautan (v1.5) — kolom, bukan dihitung dari `shipped_at` |
 | `epod_to_customer` | BOOLEAN | DEFAULT false | Kiriman luar pulau: tautan konfirmasi ke pelanggan, bukan ke supir (v1.7) |
@@ -857,7 +855,7 @@ Satu konfirmasi pelunasan oleh Logistik — bisa untuk beberapa invoice satu cus
 ### 3.7 Tabel Tracking & Audit
 
 #### `order_trackings`
-Timeline histori setiap perubahan status PO. Digunakan untuk tampilan timeline di portal Sales dan kalkulasi SLA.
+Timeline histori setiap perubahan status PO. Digunakan untuk tampilan timeline di portal Sales.
 
 | Kolom | Tipe | Constraint | Deskripsi |
 |---|---|---|---|

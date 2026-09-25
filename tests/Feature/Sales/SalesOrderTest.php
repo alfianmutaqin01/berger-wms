@@ -380,7 +380,7 @@ class SalesOrderTest extends TestCase
 
         $this->assertSame(SalesOrder::STATUS_PENDING, $order->status);
         $this->assertSame($sales->id, $order->user_id);
-        $this->assertNotNull($order->submitted_at, 'submitted_at adalah titik awal SLA.');
+        $this->assertNotNull($order->submitted_at, 'submitted_at menandai saat customer mulai menunggu.');
         $this->assertSame(120, $order->details()->sole()->qty_ordered);
     }
 

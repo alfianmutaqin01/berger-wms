@@ -61,7 +61,7 @@ class PickingController extends Controller
             ->with(['customer:id,code,name', 'warehouse:id,code,name'])
             ->withCount('details')
             // Terlama dulu: pesanan yang paling lama menunggu adalah yang
-            // paling dekat melanggar SLA (§7.6).
+            // customernya paling lama tidak mendapat kabar.
             ->orderBy('approved_at')
             ->get();
 

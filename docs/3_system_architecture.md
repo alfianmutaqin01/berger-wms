@@ -161,7 +161,6 @@ graph TB
   - `OrderProcessingService` — Orchestrasi alur order (validate → allocate → track)
   - `StockMovementService` — Pencatatan setiap mutasi stok ke ledger
   - `BillingService` — Pembuatan dan pengecekan billing
-  - `SlaCalculationService` — Perhitungan durasi SLA
   - `NotificationService` — Pengiriman notifikasi
   - `AuditService` — Pencatatan audit log
 - **Events & Listeners:** Event-driven untuk notifikasi dan side-effects
@@ -412,7 +411,7 @@ Monitor      : /health → checks.antrean (detak DetakAntrean tiap 5 menit)
 | 00:05 | `stock:sweep-expired` | Batch lewat kedaluwarsa → DDP |
 | 00:10 | `stock:sweep-quarantine` | Lepas karantina yang habis masanya |
 | 00:15 | `stock:sweep-priority` | Lepas penanda dahulukan keluar yang habis |
-| 00:15 | `stock:kabarkan-ddp` | Kabari Logistik bahwa ada stok DDP yang masih di rak barang bagus |
+| 00:20 | `stock:kabarkan-ddp` | Kabari Logistik bahwa ada stok DDP yang masih di rak barang bagus |
 | 00:25 | `activity:purge` | Pangkas log aktivitas melewati masa simpan |
 | 07:00 | `billing:ingatkan` | Tagihan terlewat + pengingat jatuh tempo untuk Manager |
 | 08:00 | `epod:kirim-pelanggan` | Terbitkan tautan konfirmasi kiriman luar pulau yang diperkirakan sampai hari ini |

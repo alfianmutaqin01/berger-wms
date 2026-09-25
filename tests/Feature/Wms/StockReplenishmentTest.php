@@ -250,7 +250,7 @@ class StockReplenishmentTest extends TestCase
         $this->assertSame(20, $stok->qty_allocated);
     }
 
-    /** Pesanan yang paling lama menunggu dilayani lebih dulu (§7.6 SLA). */
+    /** Pesanan yang paling lama menunggu dilayani lebih dulu (yang customernya paling lama menunggu). */
     public function test_pesanan_terlama_dilayani_lebih_dulu(): void
     {
         $this->loginAs();

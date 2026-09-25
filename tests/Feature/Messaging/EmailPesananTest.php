@@ -344,7 +344,6 @@ class EmailPesananTest extends TestCase
             'shipped_at' => now()->subHours(6),
             'delivered_at' => now()->subHours(2),
             'completed_at' => now(),
-            'sla_hours' => 4.5,
         ])->save();
         $order->details()->update(['qty_shipped' => 6, 'outstanding_qty' => 4]);
 
@@ -390,7 +389,12 @@ class EmailPesananTest extends TestCase
 
         $selesai = new PesananSelesai($order);
         $selesai->assertSeeInHtml('206215');
-        $selesai->assertSeeInHtml('4,5 jam');
+        // Linimasa tahap demi tahap, BUKAN satu angka durasi — angka itu
+        // dihapus bersama kolom sla_hours. Yang berguna bagi pembacanya adalah
+        // kapan tiap tahap terjadi, bukan hasil pengurangan dua di antaranya.
+        $selesai->assertSeeInHtml('Diajukan');
+        $selesai->assertSeeInHtml('Berangkat pertama');
+        $selesai->assertSeeInHtml('Sampai terakhir');
         $selesai->assertSeeInHtml('pembayarannya masih berjalan (Cash / Tunai)');
     }
 

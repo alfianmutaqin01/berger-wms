@@ -14,9 +14,9 @@ use Illuminate\Support\Facades\Schema;
  * serta isi kiriman. Kolom ini membuat tautan mati sendiri; Logistik bisa
  * menerbitkan tautan baru dari halaman Surat Jalan.
  *
- * KOLOM, BUKAN DIHITUNG DARI shipped_at. shipped_at adalah awal argo SLA dan
- * tidak boleh bergeser; tautan yang diterbitkan ulang butuh masa berlaku baru
- * tanpa menyentuh kapan barangnya berangkat.
+ * KOLOM, BUKAN DIHITUNG DARI shipped_at. shipped_at adalah tahap "Dikirim"
+ * pada linimasa pesanan dan tidak boleh bergeser; tautan yang diterbitkan
+ * ulang butuh masa berlaku baru tanpa menyentuh kapan barangnya berangkat.
  */
 return new class extends Migration
 {

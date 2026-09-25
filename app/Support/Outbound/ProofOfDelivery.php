@@ -191,7 +191,6 @@ class ProofOfDelivery
                 'status' => $selesai,
                 'completed_at' => now(),
                 'completed_by' => $userId,
-                'sla_hours' => $this->slaJam($terkunci),
             ])->save();
 
             // Tagihan dicatat di transaksi yang sama: pesanan "menunggu bayar"
@@ -318,20 +317,5 @@ class ProofOfDelivery
             SalesOrder::STATUS_COMPLETED,
             SalesOrder::STATUS_COMPLETED_BILLING,
         ], true);
-    }
-
-    /**
-     * Argo mulai berjalan saat barang berangkat (bukan saat pesanan dibuat),
-     * dan berhenti saat barang sampai. Verifikasi bukti bisa terlambat
-     * berhari-hari karena Sales belum sempat ke toko — memasukkan jeda itu ke
-     * dalam SLA akan menghukum gudang atas pekerjaan yang bukan miliknya.
-     */
-    private function slaJam(SalesOrder $order): ?float
-    {
-        if ($order->shipped_at === null) {
-            return null;
-        }
-
-        return round($order->shipped_at->diffInMinutes($order->delivered_at ?? now()) / 60, 2);
     }
 }

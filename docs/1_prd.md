@@ -621,7 +621,6 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
   3. Logistik mengisi data pengiriman: Nama Supir, nomor WA, Plat Nomor Kendaraan, lalu menekan **"Berangkatkan"**.
   4. Stok keluar dari gudang sebanyak qty Surat Jalan; kekurangan terhadap qty yang diterima menjadi **outstanding** dan bisa dikirim ulang dengan nomor SO yang sama (Surat Jalan putaran berikutnya dipasangkan ke pesanan yang sama).
   5. Status PO berubah menjadi **Dalam Pengiriman**.
-  6. **SLA Timer dimulai** — argo waktu mulai berjalan dari saat ini.
   7. Notifikasi dikirim ke Sales (lonceng + email): *"Pesanan Anda sedang dalam pengiriman."*
   8. sistem mengirimkan link konfirmasi "pengiriman barang selesai" kepada nomer wa driver yang sudah dimasukkan tanpa driver login, sehingga ketika driver meng klik link hanya ada nomer po dan barang apa dan klik sudah terkirim, maka status po berubah menjadi menunggu verifikasi bukti.
   9. **Masa berlaku tautan supir** *(v1.5)*: 72 jam sejak diterbitkan. Setelah dikonfirmasi, tautan hanya menampilkan "sudah tercatat" (tanpa nama pelanggan dan isi kiriman) selama 24 jam, lalu mati. Tautan yang kedaluwarsa sebelum dikonfirmasi diganti Logistik dengan tautan baru dari halaman Surat Jalan; tautan lama tidak bisa dibuka lagi.
@@ -662,7 +661,7 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
   3. Logistik dapat **download foto** untuk arsip.
   4. Jika bukti valid, Logistik menekan **"Order Complete"**.
   5. **Alur berdasarkan Payment Term:**
-     - **Cash / Transfer:** Status langsung menjadi **Complete**. Tidak masuk menu Billing. SLA dihitung final.
+     - **Cash / Transfer:** Status langsung menjadi **Complete**. Tidak masuk menu Billing.
      - **Tempo 30/60/90 hari:** Status menjadi **Complete (Menunggu Pembayaran)**. Pesanan masuk ke **Menu Billing** untuk tracking piutang.
   6. `stock_movements` mencatat entri `OUT` untuk setiap item yang terkirim.
 
@@ -759,7 +758,7 @@ Dashboard komprehensif menampilkan **data keseluruhan (semua sales, semua gudang
   - Laporan Lost Sales
   - Laporan Stok per gudang
   - Laporan Piutang/Billing
-  - Laporan performa Sales (jumlah transaksi, SLA rata-rata)
+  - Laporan performa Sales (jumlah transaksi, qty dipesan vs terkirim, % terpenuhi)
 
 ---
 
@@ -1012,20 +1011,14 @@ THEN:
 CATATAN: Jam cutoff dapat dikonfigurasi di System Settings oleh Super Admin.
 ```
 
-### 7.6 Aturan SLA (Service Level Agreement)
+### 7.6 ~~Aturan SLA (Service Level Agreement)~~ — DIHAPUS v1.9
 
-```
-RULE: SLA_CALCULATION
-START: Tanggal dan jam Sales submit PO (created_at di sales_orders)
-END: Tanggal dan jam bukti Surat Jalan diverifikasi complete oleh Logistik
-
-SLA_DURATION = END - START (dalam jam)
-
-CATATAN: SLA dihitung per PO dan ditampilkan di:
-  - Timeline tracking di Portal Sales
-  - Dashboard Manager/Super Admin
-  - Laporan performa yang bisa diekspor
-```
+> [!NOTE]
+> **Aturan ini dihapus 25 September 2026 atas keputusan pemilik produk.** Angka durasi dalam jam tidak pernah diminta dan tidak pernah dipakai untuk memutuskan apa pun; kolom `sales_orders.sla_hours` beserta seluruh tampilannya ikut dihapus.
+>
+> **Yang menggantikannya sudah ada sejak awal dan tidak berubah: linimasa pesanan.** Portal Sales menampilkan enam tahap beserta jam masing-masing — Dibuat, Diterima, Dikemas, Dikirim, Tiba, Selesai — yang dibangun dari `submitted_at`, `approved_at`, `picking_completed_at`, `shipped_at`, `delivered_at`, dan `completed_at`. Linimasa itu **tidak pernah** membaca `sla_hours`, jadi penghapusannya tidak menyentuhnya sama sekali.
+>
+> Keenam timestamp tersebut tetap tersimpan utuh. Bila suatu hari ukuran durasi memang dibutuhkan, ia bisa dihitung ulang untuk **seluruh** riwayat — termasuk pesanan lama, dan dengan rumus apa pun yang disepakati saat itu.
 
 ---
 
@@ -1141,7 +1134,6 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 - Dashboard & Grafik Analitik
 - Laporan & Ekspor Excel
 - Audit Log & Archival
-- SLA Calculation & Display
 
 ### Fase 4: Polish & Deployment (Minggu 10-11)
 - Testing komprehensif (Unit, Feature, Browser, UAT)
@@ -1169,7 +1161,6 @@ CATATAN: SLA dihitung per PO dan ditampilkan di:
 | **FIFO** | First-In, First-Out — Stok tertua keluar duluan |
 | **RBAC** | Role-Based Access Control — Kontrol akses berbasis peran |
 | **reCAPTCHA** | Layanan verifikasi anti-bot dari Google ("Saya bukan robot") — memverifikasi manusia, bukan identitas pengguna |
-| **SLA** | Service Level Agreement — Standar waktu layanan |
 | **Dispatch Code** | Kode identifikasi gudang |
 | **Put-away** | Proses meletakkan barang di rak gudang |
 | **Picking** | Proses mengambil barang dari rak untuk pesanan |
