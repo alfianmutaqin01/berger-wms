@@ -377,8 +377,7 @@ class ReportRunner
             .' count(*) filter (where o.cancelled_at is not null) as dibatalkan,'
             .' count(*) filter (where o.completed_at is not null) as selesai,'
             ." sum({$qtyPesan}) as qty_pesan,"
-            ." sum({$qtyKirim}) as qty_kirim,"
-            .' avg(o.sla_hours) as sla'
+            ." sum({$qtyKirim}) as qty_kirim"
         );
 
         $baris = [];
@@ -397,14 +396,13 @@ class ReportRunner
                 $pesan,
                 $kirim,
                 $pesan > 0 ? round($kirim / $pesan * 100, 1) : null,
-                $r->sla !== null ? round((float) $r->sla, 1) : null,
             ];
         }
 
         return $this->tabel([
             'Sales', 'Jml Pesanan', 'Disetujui', 'Ditolak', 'Dibatalkan', 'Selesai',
-            'Qty Dipesan', 'Qty Terkirim', '% Terpenuhi', 'Rata-rata SLA (jam)',
-        ], $baris, $total, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+            'Qty Dipesan', 'Qty Terkirim', '% Terpenuhi',
+        ], $baris, $total, [1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
     /* ========================================================= 6. Pengiriman */

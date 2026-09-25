@@ -22,9 +22,10 @@ use Illuminate\Support\Collection;
  * yang tertahan dicadangkan tanpa perlu ada yang mengingatnya.
  *
  * URUT PESANAN TERLAMA LEBIH DULU. Bukan sekadar adil: pesanan yang paling
- * lama menunggu adalah yang paling dekat melanggar SLA (§7.6). Diurutkan
- * dari submitted_at, bukan dari kapan pesanan diterima Logistik, karena
- * itulah titik awal SLA.
+ * lama menunggu adalah yang customernya paling lama tidak mendapat kabar.
+ * Diurutkan dari submitted_at, bukan dari kapan pesanan diterima Logistik,
+ * karena saat itulah customer mulai menunggu — antrean di meja Logistik
+ * adalah urusan kami, bukan urusan dia.
  *
  * WAJIB dipanggil di dalam DB::transaction() bersama perubahan stok yang
  * memicunya. Stok yang bertambah tanpa alokasi menyusul (atau sebaliknya)
@@ -98,9 +99,9 @@ class PendingAllocationFiller
     /**
      * Seluruh janji yang menunggu stok, terurut dari yang paling lama.
      *
-     * Waktu janji pesanan diambil dari `submitted_at` — titik awal SLA §7.6 —
-     * dan janji booking dari kapan booking-nya dibuat. Keduanya adalah saat
-     * customer mulai menunggu, dan itulah yang sebanding.
+     * Waktu janji pesanan diambil dari `submitted_at`, dan janji booking dari
+     * kapan booking-nya dibuat. Keduanya adalah saat customer mulai menunggu,
+     * dan itulah yang sebanding.
      *
      * @return list<array{jenis:string, waktu:mixed, objek:mixed}>
      */

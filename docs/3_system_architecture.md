@@ -161,7 +161,6 @@ graph TB
   - `OrderProcessingService` — Orchestrasi alur order (validate → allocate → track)
   - `StockMovementService` — Pencatatan setiap mutasi stok ke ledger
   - `BillingService` — Pembuatan dan pengecekan billing
-  - `SlaCalculationService` — Perhitungan durasi SLA
   - `NotificationService` — Pengiriman notifikasi
   - `AuditService` — Pencatatan audit log
 - **Events & Listeners:** Event-driven untuk notifikasi dan side-effects

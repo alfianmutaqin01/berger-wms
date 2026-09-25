@@ -54,7 +54,6 @@ class PesananSelesai extends EmailPesanan
                 ['Sampai terakhir', self::jam($suratJalan->max('delivered_at') ?? $this->order->delivered_at)],
                 ['Complete', self::jam($this->order->completed_at)],
             ],
-            'slaJam' => $this->order->sla_hours !== null ? (float) $this->order->sla_hours : null,
             'baris' => $baris,
             'total' => [
                 'dipesan' => array_sum(array_column($baris, 'dipesan')),

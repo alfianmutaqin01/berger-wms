@@ -613,7 +613,7 @@ class ShipmentTest extends TestCase
 
         $this->assertSame(DeliveryNote::STATUS_SHIPPED, $note->status);
         $this->assertSame(SalesOrder::STATUS_SHIPPING, $order->status);
-        $this->assertNotNull($order->shipped_at, 'Argo SLA mulai berjalan di sini.');
+        $this->assertNotNull($order->shipped_at, 'Tahap Dikirim pada linimasa pesanan.');
         $this->assertNotNull($note->epod_token);
         $this->assertSame('6281234567890', $note->driver_phone, 'Nomor disimpan dalam bentuk kirim WhatsApp.');
     }

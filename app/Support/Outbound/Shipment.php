@@ -320,7 +320,7 @@ class Shipment
 
             $order->forceFill([
                 'status' => SalesOrder::STATUS_SHIPPING,
-                // Argo SLA §7.6 mulai berjalan di sini (F-OUT-04 #8).
+                // Tahap "Dikirim" pada linimasa pesanan (F-OUT-04 #8).
                 'shipped_at' => now(),
             ])->save();
 

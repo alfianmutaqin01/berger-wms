@@ -98,13 +98,6 @@
                     </div>
                 </div>
 
-                @if($order->sla_hours)
-                    <div class="alert alert-success border-0 small mb-0 mt-3 py-2">
-                        <i class="bi bi-stopwatch me-1"></i>
-                        Selesai dalam {{ number_format((float) $order->sla_hours, 1) }} jam.
-                    </div>
-                @endif
-
                 {{-- Seluruh penolakan yang pernah terjadi, bukan hanya yang
                      terakhir. Pada pengajuan ketiga dan seterusnya, mengetahui
                      apa saja yang SUDAH diperbaiki sama pentingnya dengan
