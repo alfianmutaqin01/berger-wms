@@ -5,6 +5,7 @@ namespace App\Support\Outbound;
 use App\Models\DeliveryProof;
 use App\Models\SalesOrder;
 use App\Support\Billing\Piutang;
+use App\Support\Imaji\SusutkanFoto;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -22,7 +23,10 @@ use RuntimeException;
  */
 class ProofOfDelivery
 {
-    public function __construct(private readonly Piutang $piutang) {}
+    public function __construct(
+        private readonly Piutang $piutang,
+        private readonly SusutkanFoto $penyusut,
+    ) {}
 
     /**
      * Disk PRIVAT, bukan 'public'. Foto Surat Jalan memuat tanda tangan,
@@ -104,19 +108,18 @@ class ProofOfDelivery
             $tersimpan = 0;
 
             foreach ($berkas as $satu) {
-                $path = $satu->store(self::FOLDER, self::DISK);
-
-                if ($path === false) {
-                    throw new RuntimeException('Foto gagal disimpan. Coba unggah ulang.');
-                }
+                // Disusutkan lebih dulu — lihat App\Support\Imaji\SusutkanFoto.
+                // Ukuran dan mime yang dicatat adalah milik berkas SESUDAH
+                // penyusutan, bukan milik unggahannya.
+                $hasil = $this->penyusut->simpan($satu, self::FOLDER, self::DISK);
 
                 DeliveryProof::create([
                     'sales_order_id' => $terkunci->id,
                     'delivery_note_id' => $noteId,
-                    'path' => $path,
+                    'path' => $hasil['path'],
                     'original_name' => $satu->getClientOriginalName(),
-                    'size' => $satu->getSize(),
-                    'mime' => $satu->getMimeType(),
+                    'size' => $hasil['size'],
+                    'mime' => $hasil['mime'],
                     'status' => DeliveryProof::STATUS_PENDING,
                     'uploaded_by' => $userId,
                     'uploaded_at' => now(),

@@ -72,6 +72,30 @@ return [
     ],
 
     /*
+     |--------------------------------------------------------------------------
+     | Penyusutan foto bukti
+     |--------------------------------------------------------------------------
+     |
+     | Foto dari HP berukuran 2–4 MB dan tidak pernah dihapus. Tanpa
+     | penyusutan, disk server habis sekitar 90 GB setahun pada volume 50
+     | pesanan per hari. Lihat App\Support\Imaji\SusutkanFoto.
+     |
+     | sisi_maks: sisi terpanjang setelah disusutkan. JANGAN diturunkan di
+     | bawah 2000 tanpa mencoba membaca hasilnya lebih dulu — yang difoto
+     | dokumen berangka kecil, bukan pemandangan, dan foto yang tidak terbaca
+     | akan ditolak Logistik lalu dipotret ulang.
+     |
+     | aktif: dimatikan hanya untuk menelusuri masalah. Foto asli tetap
+     | tersimpan utuh saat dimatikan, jadi mematikannya aman — yang tidak
+     | aman adalah lupa menyalakannya lagi.
+     */
+    'foto' => [
+        'aktif' => (bool) env('WMS_FOTO_SUSUT', true),
+        'sisi_maks' => (int) env('WMS_FOTO_SISI_MAKS', 2000),
+        'kualitas' => (int) env('WMS_FOTO_KUALITAS', 82),
+    ],
+
+    /*
      |--------------------------------------------------------------------
      | Slide iklan di Dashboard Sales
      |--------------------------------------------------------------------

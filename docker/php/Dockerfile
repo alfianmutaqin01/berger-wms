@@ -26,8 +26,11 @@ RUN apk add --no-cache \
     libzip-dev \
     zip unzip curl
 
+# exif dipakai SusutkanFoto untuk membaca arah putaran yang dicatat kamera HP.
+# Tanpa ekstensi ini penyusutan tetap jalan, hanya foto yang direkam miring
+# ikut tersimpan miring — lihat SusutkanFoto::luruskan().
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install pdo pdo_pgsql gd zip pcntl bcmath opcache
+    && docker-php-ext-install pdo pdo_pgsql gd zip pcntl bcmath opcache exif
 
 RUN apk add --no-cache pcre-dev $PHPIZE_DEPS \
     && pecl install redis \

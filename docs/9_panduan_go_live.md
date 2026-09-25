@@ -13,7 +13,7 @@ Panduan ini berurutan. Setiap langkah punya cara memeriksa bahwa langkah itu ber
 
 | Kebutuhan | Keterangan |
 |---|---|
-| **VPS** | Ubuntu 22.04/24.04 LTS, minimal **2 vCPU, 4 GB RAM, 40 GB SSD**. Lokasi Jakarta/Singapura supaya cepat dari gudang |
+| **VPS** | Ubuntu 22.04/24.04 LTS, minimal **2 vCPU, 4 GB RAM, 80 GB SSD**. Lokasi Jakarta/Singapura supaya cepat dari gudang. Wajib **KVM** (Docker tidak jalan di OpenVZ) dan image **polos tanpa cPanel/Plesk** — panel memakai port 80/443 yang dibutuhkan nginx |
 | **Domain** | Mis. `wms.bergerpaints.co.id`. Akses ke pengaturan DNS-nya |
 | **Akun Gmail pengirim** | `logisticsbpikrw@gmail.com` dengan App Password (`docs/8_panduan_email_gmail.md`) |
 | **Kunci reCAPTCHA v2** | Dibuat di <https://www.google.com/recaptcha/admin> untuk domain di atas, tipe "Saya bukan robot" |
@@ -236,6 +236,23 @@ Ini tidak terdeteksi `wms:cek-produksi` karena bukan kesalahan teknis — sistem
 
 - [ ] **Slide promo di Dashboard Sales** (`config/wms.php` → `promo_sales`). Isinya masih contoh karangan: *"Diskon 20% Cat Interior"*, *"Beli 10 Gratis 1 Galon"*. **Sales akan menawarkannya ke pelanggan sungguhan.** Ganti dengan materi pemasaran yang benar, atau kosongkan `'promo_sales' => []` supaya bagian itu tidak digambar sama sekali.
 - [ ] **`APP_FALLBACK_LOCALE=id`** di `.env` server — lihat peringatan di langkah 4.
+
+---
+
+### Foto bukti dan pemakaian disk
+
+Foto Surat Jalan dan foto "barang sampai" **tidak pernah dihapus** — riwayatnya memang harus bisa dibuka bertahun-tahun kemudian. Yang menjaga disknya adalah penyusutan otomatis saat unggah: sisi terpanjang 2000 px, sekitar 300 KB per foto, turun dari 2–4 MB. Pada volume 50 pesanan sehari itu sekitar **11 GB setahun**, bukan 90 GB.
+
+Untuk foto yang sudah telanjur masuk sebelum penyusutan ada (mis. dari masa uji coba):
+
+```bash
+C="docker compose -f docker-compose.prod.yml exec -u www-data php-fpm php artisan"
+
+$C wms:susutkan-foto --dry-run     # hitung dulu, tidak mengubah apa pun
+$C wms:susutkan-foto               # jalankan saat jam sepi
+```
+
+Sekali jalan saja, tidak perlu dijadwalkan. Pantau sisa disk dengan `df -h` sesekali; kalau menipis, tambah disk sebelum penuh — server yang kehabisan disk tidak melambat, basis datanya berhenti.
 
 ---
 
