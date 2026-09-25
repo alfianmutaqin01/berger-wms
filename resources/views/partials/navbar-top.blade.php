@@ -8,16 +8,16 @@
                   @php
                       $hour = now()->format('H');
                       if ($hour < 11) {
-                          $greeting = 'Selamat Pagi';
+                          $greeting = __('Selamat Pagi');
                           $icon = 'bi-brightness-alt-high text-warning';
                       } elseif ($hour < 15) {
-                          $greeting = 'Selamat Siang';
+                          $greeting = __('Selamat Siang');
                           $icon = 'bi-brightness-high text-warning';
                       } elseif ($hour < 18) {
-                          $greeting = 'Selamat Sore';
+                          $greeting = __('Selamat Sore');
                           $icon = 'bi-sunset text-danger';
                       } else {
-                          $greeting = 'Selamat Malam';
+                          $greeting = __('Selamat Malam');
                           $icon = 'bi-moon-stars text-primary';
                       }
                       // Identitas diambil dari user yang benar-benar login (Fase 1
@@ -26,8 +26,13 @@
                       // partial ini dirender tanpa actor (semestinya tidak terjadi,
                       // karena semua route pemanggilnya sudah di balik middleware auth).
                       $actor = \App\Support\CurrentActor::get();
-                      $uName = $actor?->full_name ?? ($userName ?? 'Pengguna');
-                      $uLabel = $actor?->role?->name ?? ($userLabel ?? '');
+                      $uName = $actor?->full_name ?? ($userName ?? __('Pengguna'));
+                      // Nama peran diterjemahkan lewat SLUG-nya, bukan lewat isi
+                      // kolom name — lihat App\Support\Bahasa::peran(). Nama
+                      // gudang dan departemen tidak ikut: itu data sungguhan.
+                      $uLabel = $actor?->role
+                          ? \App\Support\Bahasa::peran($actor->role)
+                          : ($userLabel ?? '');
                       $uInitials = $actor?->initials ?? ($userInitials ?? '?');
                   @endphp
                   <h5 class="mb-0 fw-bold text-dark d-none d-md-flex align-items-center" style="letter-spacing: -0.5px;">
@@ -49,21 +54,21 @@
                       <div class="dropdown">
                           <button class="btn btn-light rounded-circle position-relative border-0" type="button"
                                   data-bs-toggle="dropdown" style="width: 40px; height: 40px;"
-                                  aria-label="Notifikasi{{ $belumDibaca > 0 ? ' ('.$belumDibaca.' belum dibaca)' : '' }}">
+                                  aria-label="{{ __('Notifikasi') }}{{ $belumDibaca > 0 ? ' ('.$belumDibaca.' '.__('belum dibaca').')' : '' }}">
                               <i class="bi {{ $belumDibaca > 0 ? 'bi-bell-fill' : 'bi-bell' }}"></i>
                               @if($belumDibaca > 0)
                                   <span class="position-absolute badge rounded-pill bg-danger"
                                         style="top: 2px; left: 60%; font-size: .6rem;">
                                       {{ $belumDibaca > 9 ? '9+' : $belumDibaca }}
-                                      <span class="visually-hidden">belum dibaca</span>
+                                      <span class="visually-hidden">{{ __('belum dibaca') }}</span>
                                   </span>
                               @endif
                           </button>
                           <div class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 mt-2 p-0" style="width: 320px;">
                               <div class="dropdown-header d-flex justify-content-between align-items-center border-bottom p-3 bg-light" style="border-top-left-radius: 0.5rem; border-top-right-radius: 0.5rem;">
-                                  <h6 class="mb-0 fw-bold text-dark">Notifikasi</h6>
+                                  <h6 class="mb-0 fw-bold text-dark">{{ __('Notifikasi') }}</h6>
                                   @if($belumDibaca > 0)
-                                      <span class="badge bg-primary rounded-pill">{{ $belumDibaca }} Baru</span>
+                                      <span class="badge bg-primary rounded-pill">{{ $belumDibaca }} {{ __('Baru') }}</span>
                                   @endif
                               </div>
                               <div class="p-2">
@@ -89,13 +94,13 @@
                                            ditampilkan di sini lagi. --}}
                                       <div class="text-center text-muted small py-4">
                                           <i class="bi bi-bell-slash fs-4 d-block mb-2 opacity-50"></i>
-                                          Tidak ada notifikasi baru.
+                                          {{ __('Tidak ada notifikasi baru.') }}
                                       </div>
                                   @endforelse
                               </div>
                               <div class="dropdown-divider my-0"></div>
                               <a href="{{ route('wms.notifications.index') }}" class="dropdown-item text-center py-2 text-primary fw-bold small bg-light" style="border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem;">
-                                  Lihat Semua Notifikasi <i class="bi bi-arrow-right ms-1"></i>
+                                  {{ __('Lihat Semua Notifikasi') }} <i class="bi bi-arrow-right ms-1"></i>
                               </a>
                           </div>
                       </div>
@@ -123,14 +128,48 @@
                                    role yang paling sering berpindah perangkat justru tidak
                                    bisa mengganti sandinya sendiri. Rutenya kini di /profile,
                                    di luar kedua portal. --}}
-                              <li><a class="dropdown-item py-2 mt-2" href="{{ route('profile') }}"><i class="bi bi-person me-2 text-secondary"></i>Profil Saya</a></li>
+                              <li><a class="dropdown-item py-2 mt-2" href="{{ route('profile') }}"><i class="bi bi-person me-2 text-secondary"></i>{{ __('Profil Saya') }}</a></li>
+
+                              {{-- PENUKAR BAHASA (Fase 0).
+
+                                   Di dalam menu akun, bukan sebagai tombol
+                                   tersendiri di navbar: ia dipakai sekali lalu
+                                   tidak disentuh lagi berminggu-minggu, dan
+                                   tombol permanen untuk pekerjaan sekali itu
+                                   memakan ruang navbar yang di layar HP sudah
+                                   penuh. Tempatnya bersama profil, karena
+                                   keduanya setelan milik akun.
+
+                                   POST, bukan tautan: ia mengubah keadaan
+                                   session, jadi butuh CSRF. Bahasa yang sedang
+                                   aktif tetap ditampilkan dan ditandai centang
+                                   — menyembunyikannya membuat orang tidak tahu
+                                   ia sedang memakai yang mana. --}}
+                              <li><hr class="dropdown-divider"></li>
+                              <li><h6 class="dropdown-header small text-muted">{{ __('Bahasa') }}</h6></li>
+                              @foreach(\App\Support\Bahasa::TERSEDIA as $kodeBahasa => $bahasa)
+                                  <li>
+                                      <form action="{{ route('bahasa.ubah') }}" method="POST">
+                                          @csrf
+                                          <input type="hidden" name="bahasa" value="{{ $kodeBahasa }}">
+                                          <button type="submit"
+                                                  class="dropdown-item py-2 border-0 bg-transparent w-100 text-start d-flex align-items-center">
+                                              <span class="badge bg-light text-dark border me-2 font-monospace">{{ $bahasa['singkat'] }}</span>
+                                              {{ $bahasa['nama'] }}
+                                              @if(app()->getLocale() === $kodeBahasa)
+                                                  <i class="bi bi-check-lg ms-auto text-success"></i>
+                                              @endif
+                                          </button>
+                                      </form>
+                                  </li>
+                              @endforeach
 
                               <li><hr class="dropdown-divider"></li>
                               <li>
                                   <form action="{{ route('logout') }}" method="POST">
                                       @csrf
                                       <button type="submit" class="dropdown-item py-2 text-danger fw-bold border-0 bg-transparent w-100 text-start">
-                                          <i class="bi bi-box-arrow-right me-2"></i>Keluar
+                                          <i class="bi bi-box-arrow-right me-2"></i>{{ __('Keluar') }}
                                       </button>
                                   </form>
                               </li>

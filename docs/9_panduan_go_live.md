@@ -140,6 +140,9 @@ Ganti **setiap** `<ISI>`. Bangkitkan sandi acak dengan `openssl rand -base64 32`
 > [!CAUTION]
 > `.env` berisi sandi basis data, App Password Gmail, dan kunci reCAPTCHA. Jangan dikirim lewat chat, jangan di-commit, jangan disalin ke laptop pribadi. **`APP_KEY` tidak boleh diganti** setelah ada data — sesi dan data terenkripsi menjadi tak terbaca.
 
+> [!WARNING]
+> **`APP_FALLBACK_LOCALE` wajib `id`, bukan `en`.** Terjemahan sistem ini berbasis kalimat: yang tertulis di kode adalah kalimat Indonesia-nya, dan `lang/en.json` memetakannya ke bahasa Inggris. Diisi `en`, **seluruh** layar berbahasa Indonesia akan menemukan kalimatnya di `lang/en.json` lalu menampilkan bahasa Inggris kepada orang yang tidak pernah memintanya. Sudah benar di `.env.production.example`; periksa ulang kalau `.env` disalin dari server atau catatan lama.
+
 ---
 
 ## 5. Bangun dan Jalankan

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\GantiSandiWajibController;
 use App\Http\Controllers\Auth\LupaSandiController;
+use App\Http\Controllers\BahasaController;
 use App\Http\Controllers\EpodController;
 use App\Http\Controllers\MrfApprovalController;
 use App\Http\Controllers\MrfRequestLinkController;
@@ -150,6 +151,16 @@ Route::middleware(['auth', 'session.track'])->group(function () {
     // Pemilik sandi sementara dari admin tertahan di sini sampai membuat
     // sandinya sendiri — penjaganya App\Http\Middleware\WajibGantiSandi.
     Route::get('/ganti-sandi', [GantiSandiWajibController::class, 'show'])->name('password.wajib-ganti');
+
+    /*
+     * Bahasa tampilan — milik akun, bukan milik gudang.
+     *
+     * Di sini bersama profil dan lonceng, dengan alasan yang sama: tanpa
+     * `can:` dan tanpa `portal:`, supaya Tim Sales pun bisa memakainya.
+     * Menaruhnya di balik gate berarti ada role yang terkunci pada satu
+     * bahasa tanpa pernah tahu kenapa.
+     */
+    Route::post('/bahasa', [BahasaController::class, 'ubah'])->name('bahasa.ubah');
 
     Route::get('/profile', [ProfileController::class, 'index'])->name('profile');
     Route::post('/profile/password', [ProfileController::class, 'updatePassword'])
@@ -1094,7 +1105,7 @@ Route::prefix('wms')->middleware(['auth', 'session.track', 'portal:wms,sales'])-
 | Dibatasi kecepatan aksesnya: halaman ini terbuka ke internet, dan token
 | tidak boleh bisa dicari dengan mencoba satu per satu.
 */
-Route::middleware('throttle:30,1')->group(function () {
+Route::middleware(['throttle:30,1', 'bahasa.id'])->group(function () {
     Route::get('/epod/{token}', [EpodController::class, 'show'])->name('epod.show');
     Route::post('/epod/{token}/confirm', [EpodController::class, 'confirm'])->name('epod.confirm');
 });
@@ -1111,7 +1122,7 @@ Route::middleware('throttle:30,1')->group(function () {
 | Dibatasi kecepatan aksesnya: halaman ini terbuka ke internet, dan token 64
 | karakter tidak boleh bisa dicari dengan mencoba satu per satu.
 */
-Route::middleware('throttle:30,1')->group(function () {
+Route::middleware(['throttle:30,1', 'bahasa.id'])->group(function () {
     /*
      | Formulir permintaan untuk divisi tanpa akun (QC, R&D).
      |

@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\EnsurePortalAccess;
 use App\Http\Middleware\NormalizeQueryString;
+use App\Http\Middleware\PaksaBahasaIndonesia;
+use App\Http\Middleware\PilihanBahasa;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrackUserSession;
 use App\Http\Middleware\WajibGantiSandi;
@@ -26,11 +28,25 @@ return Application::configure(basePath: dirname(__DIR__))
         // X-Forwarded-* kiriman pengguna.
         $middleware->trustProxies(at: '*');
 
-        $middleware->web(append: [SecurityHeaders::class, NormalizeQueryString::class, WajibGantiSandi::class]);
+        // PilihanBahasa SEBELUM WajibGantiSandi, dan sebelum seluruh middleware
+        // tingkat rute (portal:, can:, session.track): ia menentukan bahasa
+        // untuk permintaan ini, termasuk pesan penolakan yang dilempar
+        // middleware sesudahnya. Dipasang belakangan, penolakan-penolakan itu
+        // akan selalu berbahasa Indonesia sekalipun penggunanya memilih
+        // English. Ia sendiri wajib SESUDAH StartSession bawaan grup web,
+        // karena yang dibacanya session.
+        $middleware->web(append: [
+            SecurityHeaders::class,
+            NormalizeQueryString::class,
+            PilihanBahasa::class,
+            WajibGantiSandi::class,
+        ]);
 
         $middleware->alias([
             'session.track' => TrackUserSession::class,
             'portal' => EnsurePortalAccess::class,
+            // Halaman bertautan (ePOD, persetujuan MRF) — selalu Indonesia.
+            'bahasa.id' => PaksaBahasaIndonesia::class,
         ]);
 
         // Cookie ini adalah token perangkat kami sendiri (lihat

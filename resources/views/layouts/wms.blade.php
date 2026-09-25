@@ -45,7 +45,7 @@
                 <li class="nav-item {{ request()->is('wms/dashboard') || request()->is('wms/dashboard/admin') ? 'active' : '' }}">
                     <a href="/wms/dashboard/admin" class="nav-link">
                         <i class="bi bi-speedometer2"></i>
-                        <span>Dashboard</span>
+                        <span>{{ __('Dashboard') }}</span>
                     </a>
                 </li>
             @endcan
@@ -54,7 +54,7 @@
                 <li class="nav-item {{ request()->is('wms/dashboard/produksi') ? 'active' : '' }}">
                     <a href="/wms/dashboard/produksi" class="nav-link">
                         <i class="bi bi-tools"></i>
-                        <span>Dashboard Produksi</span>
+                        <span>{{ __('Dashboard Produksi') }}</span>
                     </a>
                 </li>
             @endcan
@@ -63,7 +63,7 @@
                 <li class="nav-item {{ request()->is('wms/dashboard/operator') ? 'active' : '' }}">
                     <a href="/wms/dashboard/operator" class="nav-link">
                         <i class="bi bi-person-badge"></i>
-                        <span>Dashboard Operator</span>
+                        <span>{{ __('Dashboard Operator') }}</span>
                     </a>
                 </li>
             @endcan
@@ -72,7 +72,7 @@
                 <li class="nav-item {{ request()->is('wms/reports*') ? 'active' : '' }}">
                     <a href="/wms/reports" class="nav-link">
                         <i class="bi bi-file-earmark-bar-graph"></i>
-                        <span>Laporan & Analisis</span>
+                        <span>{{ __('Laporan & Analisis') }}</span>
                     </a>
                 </li>
             @endcan
@@ -102,7 +102,7 @@
                 <li class="nav-item {{ $auditAktif ? 'active' : '' }}">
                     <a href="{{ $auditTujuan }}" class="nav-link">
                         <i class="bi bi-search"></i>
-                        <span>Audit & Penelusuran</span>
+                        <span>{{ __('Audit & Penelusuran') }}</span>
                     </a>
                 </li>
             @endcanany
@@ -136,46 +136,46 @@
                     // Akun tanpa gudang (Super Admin) melihat semuanya.
                     $punyaProduksi = auth()->user()?->warehouse?->has_production ?? true;
                 @endphp
-                <li class="nav-section mt-2">Inventory Management</li>
+                <li class="nav-section mt-2">{{ __('Inventory Management') }}</li>
                 <li class="nav-item">
                     <a class="nav-link {{ $inboundOpen ? '' : 'collapsed' }}" href="#inboundMenu" data-bs-toggle="collapse" aria-expanded="{{ $inboundOpen ? 'true' : 'false' }}">
                         <i class="bi bi-box-arrow-in-right"></i>
-                        <span>Inbound & Stok</span>
+                        <span>{{ __('Inbound & Stok') }}</span>
                         <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $inboundOpen ? 'show' : '' }}" id="inboundMenu" data-bs-parent=".sidebar-nav">
                         @can(\App\Support\Permission::INBOUND_CREATE)
                             @if($punyaProduksi)
                                 <li class="nav-item {{ request()->is('wms/inbound/create') ? 'active' : '' }}">
-                                    <a href="/wms/inbound/create" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Input Produksi</span></a>
+                                    <a href="/wms/inbound/create" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Input Produksi') }}</span></a>
                                 </li>
                             @endif
                         @endcan
                         @can(\App\Support\Permission::INBOUND_HISTORY)
                             @if($punyaProduksi)
                                 <li class="nav-item {{ request()->is('wms/inbound/history*') ? 'active' : '' }}">
-                                    <a href="/wms/inbound/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Produksi</span></a>
+                                    <a href="/wms/inbound/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Riwayat Produksi') }}</span></a>
                                 </li>
                             @endif
                         @endcan
                         @can(\App\Support\Permission::INBOUND_PUTAWAY)
                             <li class="nav-item {{ request()->is('wms/inbound/putaway*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>PDN</span></a>
+                                <a href="/wms/inbound/putaway" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('PDN') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::RETURN_VIEW)
                             <li class="nav-item {{ request()->is('wms/inbound/returns*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/returns" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penolakan Customer</span></a>
+                                <a href="/wms/inbound/returns" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Penolakan Customer') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INBOUND_VERIFY)
                             <li class="nav-item {{ request()->is('wms/inbound/verify*') ? 'active' : '' }}">
-                                <a href="/wms/inbound/verify" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Verifikasi Logistik</span></a>
+                                <a href="/wms/inbound/verify" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Verifikasi Logistik') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::INVENTORY_VIEW)
                             <li class="nav-item {{ request()->is('wms/inventory') ? 'active' : '' }}">
-                                <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Data Stok</span></a>
+                                <a href="/wms/inventory" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Data Stok') }}</span></a>
                             </li>
                         @endcan
                         {{-- Pemindahan DDP dibuka dua peran dengan pekerjaan
@@ -183,7 +183,7 @@
                              daftarnya, Operator mengangkat barangnya. --}}
                         @can(\App\Support\Permission::INVENTORY_DDP_VIEW)
                             <li class="nav-item {{ request()->is('wms/inventory/ddp') ? 'active' : '' }}">
-                                <a href="/wms/inventory/ddp" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Pemindahan DDP</span></a>
+                                <a href="/wms/inventory/ddp" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Pemindahan DDP') }}</span></a>
                             </li>
                         @endcan
                         {{-- Item Ledger TIDAK di sini melainkan di menu Audit,
@@ -197,7 +197,7 @@
                                  layar master data membuatnya luput justru dari
                                  orang yang harus memantaunya. --}}
                             <li class="nav-item {{ request()->is('wms/stocktake*') ? 'active' : '' }}">
-                                <a href="/wms/stocktake" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Stocktake</span></a>
+                                <a href="/wms/stocktake" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Stocktake') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::TRANSFER_HISTORY)
@@ -206,7 +206,7 @@
                                  paling sering memakainya — ke sanalah barang
                                  dikirim dari Karawang. --}}
                             <li class="nav-item {{ request()->is('wms/transfers*') ? 'active' : '' }}">
-                                <a href="/wms/transfers" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Transfer Antar Gudang</span></a>
+                                <a href="/wms/transfers" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Transfer Antar Gudang') }}</span></a>
                             </li>
                         @endcan
                     </ul>
@@ -219,11 +219,11 @@
                 \App\Support\Permission::MRF_RECEIVE,
             ])
                 @php $mrfOpen = request()->is('wms/mrf*') || request()->is('wms/material-produksi*'); @endphp
-                <li class="nav-section mt-2">Produksi</li>
+                <li class="nav-section mt-2">{{ __('Produksi') }}</li>
                 <li class="nav-item">
                     <a class="nav-link {{ $mrfOpen ? '' : 'collapsed' }}" href="#mrfMenu" data-bs-toggle="collapse" aria-expanded="{{ $mrfOpen ? 'true' : 'false' }}">
                         <i class="bi bi-clipboard2-check"></i>
-                        <span>Permintaan Material</span>
+                        <span>{{ __('Permintaan Material') }}</span>
                         <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $mrfOpen ? 'show' : '' }}" id="mrfMenu" data-bs-parent=".sidebar-nav">
@@ -234,7 +234,7 @@
                                  pegang milik siapa. Memisahnya per peran berarti
                                  tiga layar yang isinya tabel yang sama. --}}
                             <li class="nav-item {{ request()->is('wms/mrf') || request()->is('wms/mrf/*') ? 'active' : '' }}">
-                                <a href="/wms/mrf" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>MRF</span></a>
+                                <a href="/wms/mrf" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('MRF') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::MRF_RECEIVE)
@@ -243,7 +243,7 @@
                                  benar masuk mixer hari ini cuma orang di lantai
                                  produksi. --}}
                             <li class="nav-item {{ request()->is('wms/material-produksi') ? 'active' : '' }}">
-                                <a href="/wms/material-produksi" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>MRF Picked</span></a>
+                                <a href="/wms/material-produksi" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('MRF Picked') }}</span></a>
                             </li>
                         @endcan
                         {{-- Menu tersendiri, bukan lipatan di dalam MRF Picked:
@@ -257,7 +257,7 @@
                              berapa"; Logistik melihat seluruhnya. --}}
                         @can(\App\Support\Permission::MRF_VIEW)
                             <li class="nav-item {{ request()->is('wms/material-produksi/riwayat') ? 'active' : '' }}">
-                                <a href="/wms/material-produksi/riwayat" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Pemakaian MRF</span></a>
+                                <a href="/wms/material-produksi/riwayat" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Riwayat Pemakaian MRF') }}</span></a>
                             </li>
                         @endcan
                     </ul>
@@ -278,7 +278,7 @@
                 <li class="nav-item">
                     <a class="nav-link {{ $outboundOpen ? '' : 'collapsed' }}" href="#outboundMenu" data-bs-toggle="collapse" aria-expanded="{{ $outboundOpen ? 'true' : 'false' }}">
                         <i class="bi bi-truck"></i>
-                        <span>Outbound (Kirim)</span>
+                        <span>{{ __('Outbound (Kirim)') }}</span>
                         <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $outboundOpen ? 'show' : '' }}" id="outboundMenu" data-bs-parent=".sidebar-nav">
@@ -288,7 +288,7 @@
                              yang menilai pesanan. --}}
                         @can(\App\Support\Permission::OUTBOUND_ORDER_INTERNAL)
                             <li class="nav-item {{ request()->is('wms/outbound/new-order') ? 'active' : '' }}">
-                                <a href="/wms/outbound/new-order" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Buat Pesanan</span></a>
+                                <a href="/wms/outbound/new-order" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Buat Pesanan') }}</span></a>
                             </li>
                         @endcan
 
@@ -297,13 +297,13 @@
                                  pola berbintang membuat kedua menu ini menyala
                                  bersamaan saat halaman riwayat dibuka. --}}
                             <li class="nav-item {{ request()->is('wms/outbound/approval') || request()->is('wms/outbound/approval/*') && ! request()->is('wms/outbound/approval/history') ? 'active' : '' }}">
-                                <a href="/wms/outbound/approval" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Terima Pesanan</span></a>
+                                <a href="/wms/outbound/approval" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Terima Pesanan') }}</span></a>
                             </li>
                             <li class="nav-item {{ request()->is('wms/outbound/approval/history') ? 'active' : '' }}">
-                                <a href="/wms/outbound/approval/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Penerimaan</span></a>
+                                <a href="/wms/outbound/approval/history" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Riwayat Penerimaan') }}</span></a>
                             </li>
                             <li class="nav-item {{ request()->is('wms/outbound/outstanding') ? 'active' : '' }}">
-                                <a href="/wms/outbound/outstanding" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Riwayat Outstanding</span></a>
+                                <a href="/wms/outbound/outstanding" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Riwayat Outstanding') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::BOOKING)
@@ -312,34 +312,34 @@
                                  orang yang memakainya sehari-hari adalah orang
                                  yang sama dengan yang menerima pesanan. --}}
                             <li class="nav-item {{ request()->is('wms/outbound/booking') ? 'active' : '' }}">
-                                <a href="/wms/outbound/booking" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Booking Produk</span></a>
+                                <a href="/wms/outbound/booking" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Booking Produk') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_PICKING_LIST)
                             <li class="nav-item {{ request()->is('wms/outbound/picking/batching') ? 'active' : '' }}">
-                                <a href="/wms/outbound/picking/batching" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Daftar Picking</span></a>
+                                <a href="/wms/outbound/picking/batching" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Daftar Picking') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_PICKING_PROCESS)
                             <li class="nav-item {{ request()->is('wms/outbound/picking') ? 'active' : '' }}">
-                                <a href="/wms/outbound/picking" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Proses Picking</span></a>
+                                <a href="/wms/outbound/picking" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Proses Picking') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_DELIVERY)
                             <li class="nav-item {{ request()->is('wms/outbound/delivery') ? 'active' : '' }}">
-                                <a href="/wms/outbound/delivery" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Surat Jalan (BC)</span></a>
+                                <a href="/wms/outbound/delivery" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Surat Jalan (BC)') }}</span></a>
                             </li>
                             {{-- Pintu sendiri, bukan hanya tautan dari kartu di
                                  halaman Surat Jalan: pesanan yang sudah turun
                                  dari rak tetapi belum berangkat tidak muncul di
                                  layar mana pun kalau dokumennya belum terbit. --}}
                             <li class="nav-item {{ request()->is('wms/outbound/delivery/siap-kirim') ? 'active' : '' }}">
-                                <a href="/wms/outbound/delivery/siap-kirim" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Siap Kirim</span></a>
+                                <a href="/wms/outbound/delivery/siap-kirim" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Siap Kirim') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::OUTBOUND_VERIFICATION)
                             <li class="nav-item {{ request()->is('wms/outbound/verification') ? 'active' : '' }}">
-                                <a href="/wms/outbound/verification" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Verifikasi Bukti SJ</span></a>
+                                <a href="/wms/outbound/verification" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Verifikasi Bukti SJ') }}</span></a>
                             </li>
                         @endcan
                     </ul>
@@ -356,14 +356,14 @@
                 \App\Support\Permission::ADMIN_SEQUENCE,
                 \App\Support\Permission::ADMIN_SETTINGS,
             ])
-                <li class="nav-section mt-2">Keuangan & Sistem</li>
+                <li class="nav-section mt-2">{{ __('Keuangan & Sistem') }}</li>
             @endcanany
 
             @can(\App\Support\Permission::BILLING_VIEW)
                 <li class="nav-item {{ request()->is('wms/billing') ? 'active' : '' }}">
                     <a href="/wms/billing" class="nav-link">
                         <i class="bi bi-receipt"></i>
-                        <span>Billing & Piutang</span>
+                        <span>{{ __('Billing & Piutang') }}</span>
                     </a>
                 </li>
             @endcan
@@ -380,24 +380,24 @@
                 <li class="nav-item">
                     <a class="nav-link {{ $systemOpen ? '' : 'collapsed' }}" href="#systemMenu" data-bs-toggle="collapse" aria-expanded="{{ $systemOpen ? 'true' : 'false' }}">
                         <i class="bi bi-gear"></i>
-                        <span>Pengaturan Sistem</span>
+                        <span>{{ __('Pengaturan Sistem') }}</span>
                         <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem; margin-right: 0 !important; transition: transform 0.3s;"></i>
                     </a>
                     <ul class="collapse list-unstyled ps-4 {{ $systemOpen ? 'show' : '' }}" id="systemMenu" data-bs-parent=".sidebar-nav">
                         @can(\App\Support\Permission::MASTER_CUSTOMERS)
                             <li class="nav-item {{ request()->is('wms/master/customers') ? 'active' : '' }}">
-                                <a href="/wms/master/customers" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Master Customers</span></a>
+                                <a href="/wms/master/customers" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Master Customers') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::MASTER_PRODUCTS)
                             <li class="nav-item {{ request()->is('wms/master/products') ? 'active' : '' }}">
-                                <a href="/wms/master/products" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Master Products</span></a>
+                                <a href="/wms/master/products" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Master Products') }}</span></a>
                             </li>
                             {{-- Izinnya menumpang MASTER_PRODUCTS: kategori
                                  memang bagian dari master produk, dan cakupan
                                  rolenya sudah persis yang diminta F-MASTER-03. --}}
                             <li class="nav-item {{ request()->is('wms/master/product-categories') ? 'active' : '' }}">
-                                <a href="/wms/master/product-categories" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kategori Produk</span></a>
+                                <a href="/wms/master/product-categories" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Kategori Produk') }}</span></a>
                             </li>
                         @endcan
                         {{-- Izin LIHAT, bukan izin ubah: Logistik membuka
@@ -406,25 +406,25 @@
                              disembunyikan dari mereka di dalam halamannya. --}}
                         @can(\App\Support\Permission::MASTER_LOCATIONS_VIEW)
                             <li class="nav-item {{ request()->is('wms/master/locations') ? 'active' : '' }}">
-                                <a href="/wms/master/locations" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Master Lokasi Rak</span></a>
+                                <a href="/wms/master/locations" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Master Lokasi Rak') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_USERS)
                             <li class="nav-item {{ request()->is('wms/admin/users') ? 'active' : '' }}">
-                                <a href="/wms/admin/users" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>User Management</span></a>
+                                <a href="/wms/admin/users" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('User Management') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_SEQUENCE)
                             <li class="nav-item {{ request()->is('wms/admin/sequence') ? 'active' : '' }}">
-                                <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Penomoran Dokumen</span></a>
+                                <a href="/wms/admin/sequence" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Penomoran Dokumen') }}</span></a>
                             </li>
                         @endcan
                         @can(\App\Support\Permission::ADMIN_SETTINGS)
                             <li class="nav-item {{ request()->is('wms/admin/settings') ? 'active' : '' }}">
-                                <a href="/wms/admin/settings" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Setelan Operasional</span></a>
+                                <a href="/wms/admin/settings" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Setelan Operasional') }}</span></a>
                             </li>
                             <li class="nav-item {{ request()->is('wms/admin/pallet-capacity') ? 'active' : '' }}">
-                                <a href="/wms/admin/pallet-capacity" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>Kapasitas Palet</span></a>
+                                <a href="/wms/admin/pallet-capacity" class="nav-link py-2"><i class="bi bi-dot fs-4" style="margin-left:-8px"></i><span>{{ __('Kapasitas Palet') }}</span></a>
                             </li>
                         @endcan
                         {{-- Log Aktivitas TIDAK di sini melainkan di menu Audit

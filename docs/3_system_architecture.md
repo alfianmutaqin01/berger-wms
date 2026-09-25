@@ -233,6 +233,11 @@ Setiap request HTTP melewati middleware dalam urutan berikut:
 3. VerifyCsrfToken
 4. ShareErrorsFromSession
 5. ──────────────────────── (Laravel Default di atas)
+5a. SecurityHeaders       → Header keamanan respons                  [SUDAH ADA]
+5b. NormalizeQueryString  → Rapikan query string                     [SUDAH ADA]
+5c. PilihanBahasa         → Pasang bahasa pilihan dari session       [SUDAH ADA]
+                            (wajib SESUDAH StartSession, SEBELUM yang menolak)
+5d. WajibGantiSandi       → Tahan pemilik sandi sementara            [SUDAH ADA]
 6. auth                   → Cek user sudah login?                    [SUDAH ADA]
 7. session.track          → Max 2 device + idle timeout 1 jam         [SUDAH ADA]
                             (TrackUserSession: satu middleware untuk keduanya)
@@ -332,6 +337,33 @@ Upload Request (POST /sales/orders/{id}/proof)
     └── File hanya bisa diakses via Controller route (bukan direct URL)
     └── Controller cek authorization sebelum serve file
 ```
+
+---
+
+## 3.5 Arsitektur Bahasa Tampilan (Fase 0)
+
+Bahasa bawaan **Indonesia**; bahasa Inggris adalah pilihan yang diambil pengguna sendiri dari menu akun.
+
+**Terjemahan berbasis kalimat, bukan kunci.** Yang tertulis di Blade adalah kalimat Indonesia-nya — `__('Nyatakan Berangkat')` — dan `lang/en.json` memetakannya ke bahasa Inggris. Tiga alasannya:
+
+1. Blade tetap terbaca tim yang bekerja dalam bahasa Indonesia.
+2. Kalimat yang belum diterjemahkan jatuh ke bahasa Indonesia, bukan ke kunci mentah yang bocor ke layar pengguna — inilah yang membuat pekerjaan bertahap ini aman dipakai selagi belum selesai.
+3. Tidak perlu mengarang ribuan nama kunci.
+
+> [!WARNING]
+> **`APP_FALLBACK_LOCALE` wajib `id`, bukan `en`.** Karena kunci terjemahannya adalah kalimat Indonesia, cadangan `en` membuat layar berbahasa **Indonesia** menemukan kalimatnya di `lang/en.json` lalu menampilkan bahasa Inggris kepada orang yang tidak pernah memintanya. Dijaga oleh `BahasaTest::test_cadangan_bahasa_indonesia_bukan_inggris()`.
+
+| Hal | Keputusan |
+|---|---|
+| Tempat simpan | **Session**, bukan kolom `users`. Berlaku sampai logout, lalu kembali ke Indonesia — terjadi sendiri lewat `session()->invalidate()` di `AuthController::logout()`. |
+| Penguncian | `PilihanBahasa` membaca session pada **setiap** permintaan, termasuk permintaan latar. Satu permintaan yang terlewat sudah cukup membuat sepotong layar kembali ke Indonesia di tengah halaman Inggris. |
+| Halaman bertautan | ePOD dan persetujuan MRF **selalu Indonesia**, dipaksa `PaksaBahasaIndonesia` (alias `bahasa.id`). Halaman-halaman itu ada di dalam grup `web`, jadi tanpa paksaan mereka ikut session peramban yang sama. |
+| Tanggal & waktu relatif | Ikut sendiri. Carbon mengikuti locale aplikasi, jadi `translatedFormat()` dan `diffForHumans()` berubah tanpa kode tambahan. |
+| Nama peran | Diterjemahkan lewat **slug**, bukan lewat kolom `name` yang sewaktu-waktu diperbaiki seeder. |
+| Nama produk/pelanggan/gudang | **Tidak diterjemahkan.** Itu data; menerjemahkan data berarti mengarang data. |
+| Notifikasi & log aktivitas | **Tidak ikut.** Keduanya disimpan sebagai kalimat jadi. Log aktivitas memang tidak boleh ikut: catatan audit yang bunyinya berubah tergantung pembacanya justru lebih buruk saat dipersoalkan. |
+
+**Penjaga kamus.** `BahasaTest` memeriksa dua arah: setiap kalimat `__('...')` di kode harus ada di `lang/en.json`, dan `lang/en.json` tidak boleh menyimpan kalimat yang sudah tidak dipakai. Tanpa itu, kalimat baru yang ditulis besok tampil berbahasa Indonesia di tengah layar Inggris — dan karena bukan galat, tidak ada yang menyadarinya sampai pengguna bertanya.
 
 ---
 
