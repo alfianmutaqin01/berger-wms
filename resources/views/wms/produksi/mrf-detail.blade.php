@@ -1,4 +1,4 @@
-@extends('layouts.wms')
+@extends(auth()->user()?->hasRole(\App\Models\Role::SALES) ? 'layouts.soms' : 'layouts.wms')
 
 @section('title', 'MRF '.$mrf->mrf_number)
 @section('page_title', 'Permintaan Material '.$mrf->mrf_number)
@@ -142,7 +142,79 @@
             <div class="card-body">
                 <h6 class="fw-bold mb-3">Barang yang Diminta</h6>
 
-                <div class="table-responsive">
+                {{-- TAMPILAN MOBILE: Kartu ringkas per item tanpa tabel melebar --}}
+                <div class="d-md-none">
+                    @foreach($mrf->items as $item)
+                        @php($alokasi = $mrf->allocations->where('material_requisition_item_id', $item->id))
+                        <div class="border rounded-3 p-3 mb-2.5 bg-light-subtle">
+                            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                <div>
+                                    <span class="font-monospace fw-bold text-dark">{{ $item->product?->sku }}</span>
+                                    <div class="small text-muted">{{ $item->product?->name }}</div>
+                                </div>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0.5" style="font-size: 0.72rem;">
+                                    #{{ $loop->iteration }}
+                                </span>
+                            </div>
+
+                            @if(filled($item->note))
+                                <div class="small text-primary bg-white rounded p-2 border mb-2" style="font-size: 0.75rem;">
+                                    <i class="bi bi-chat-left-quote me-1"></i>{{ $item->note }}
+                                </div>
+                            @endif
+
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <div class="p-2 bg-white rounded border text-center">
+                                        <div class="text-muted" style="font-size: 0.68rem;">Diminta</div>
+                                        <div class="fw-bold fs-6 text-dark">{{ number_format($item->qty_requested) }}</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="p-2 bg-white rounded border text-center">
+                                        <div class="text-muted" style="font-size: 0.68rem;">Dijanjikan</div>
+                                        <div class="fw-bold fs-6 {{ $item->qty_dialokasikan > 0 ? 'text-success' : 'text-muted' }}">
+                                            {{ number_format($item->qty_dialokasikan) }}
+                                        </div>
+                                        @if($item->qty_tidak_terpenuhi > 0 && $mrf->allocations->isNotEmpty())
+                                            <div class="text-warning-emphasis" style="font-size: 0.65rem;">
+                                                kurang {{ number_format($item->qty_tidak_terpenuhi) }}
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white rounded p-2 border">
+                                <div class="text-muted fw-semibold mb-1" style="font-size: 0.68rem;">Alokasi Batch Logistik:</div>
+                                @if($alokasi->isEmpty())
+                                    <span class="text-muted small fst-italic" style="font-size: 0.75rem;">Belum dipilih Logistik</span>
+                                @else
+                                    @foreach($alokasi as $a)
+                                        <div class="small d-flex flex-wrap gap-1.5 align-items-center mb-1 pb-1 border-bottom border-light">
+                                            <span class="font-monospace fw-semibold">{{ $a->batch_no ?? '—' }}</span>
+                                            <span class="text-muted" style="font-size: 0.72rem;">rak {{ $a->pickingItem?->location?->code ?? '—' }}</span>
+                                            <span class="badge bg-light text-dark border ms-auto">qty {{ $a->qty_allocated }}</span>
+                                            @if($a->qty_picked !== null)
+                                                <span class="badge {{ $a->qty_kurang > 0 ? 'bg-warning-subtle text-warning-emphasis' : 'bg-success-subtle text-success-emphasis' }}">
+                                                    diambil {{ $a->qty_picked }}
+                                                </span>
+                                            @endif
+                                        </div>
+                                        @if(filled($a->discrepancy_reason))
+                                            <div class="small text-danger fst-italic" style="font-size: 0.7rem;">
+                                                Selisih: {{ $a->discrepancy_reason }}
+                                            </div>
+                                        @endif
+                                    @endforeach
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                {{-- TAMPILAN DESKTOP: Tabel lengkap rapi --}}
+                <div class="table-responsive d-none d-md-block">
                     <table class="table align-middle mb-0">
                         <thead class="table-light">
                             <tr>
@@ -407,6 +479,9 @@
         @endif
     </div>
 </div>
+
+{{-- Safe area spacer for mobile bottom navigation --}}
+<div style="height: 4.5rem;" class="d-lg-none"></div>
 @endsection
 
 @push('modals')

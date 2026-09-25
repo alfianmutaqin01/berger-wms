@@ -50,4 +50,59 @@ return [
         'berlaku_jam' => (int) env('WMS_EPOD_BERLAKU_JAM', 72),
         'tampil_setelah_sampai_jam' => 24,
     ],
+
+    /*
+     |--------------------------------------------------------------------
+     | Slide iklan di Dashboard Sales
+     |--------------------------------------------------------------------
+     |
+     | Menggantikan deretan tombol Quick Action, yang isinya sudah ada di
+     | sidebar — dua jalan ke tempat yang sama memakan ruang layar HP tanpa
+     | menambah satu pun kemampuan.
+     |
+     | JUMLAHNYA BOLEH 1, 2, ATAU 3. Layar menyesuaikan sendiri:
+     |   0 slide  -> bagiannya tidak digambar sama sekali
+     |   1 slide  -> tanpa titik indikator dan tanpa pergantian otomatis
+     |   2-3      -> titik indikator muncul, berganti sendiri tiap 6 detik
+     | Lebih dari 3 dipotong; empat slide di layar HP tidak pernah terbaca
+     | sampai habis sebelum orang menggulir lewat.
+     |
+     | Tiap slide:
+     |   label      : teks kecil di atas judul (opsional)
+     |   judul      : satu baris, dibaca sekilas
+     |   keterangan : satu kalimat pendek (opsional)
+     |   tautan     : ke mana slide ini membawa (opsional; tanpa ini tidak diklik)
+     |   gambar     : URL gambar latar (opsional)
+     |   warna      : gradien latar bila tidak ada gambar
+     |
+     | ISINYA CONTOH. Ganti dengan materi pemasaran yang sungguhan sebelum
+     | go-live, atau kosongkan array ini supaya bagian iklannya hilang —
+     | promo karangan di layar Sales akan ditawarkan ke pelanggan sungguhan.
+     */
+    'promo_sales' => [
+        [
+            'label' => 'Promo Spesial',
+            'judul' => 'Diskon 20% Cat Interior',
+            'keterangan' => 'Berlaku untuk semua SKU ukuran Pail. Tawarkan sekarang!',
+            'tautan' => null,
+            'gambar' => null,
+            'warna' => 'linear-gradient(45deg, #1e3a8a, #3b82f6)',
+        ],
+        [
+            'label' => 'Bundling',
+            'judul' => 'Beli 10 Gratis 1 Galon',
+            'keterangan' => 'Produk WeatherShield khusus order via aplikasi.',
+            'tautan' => null,
+            'gambar' => null,
+            'warna' => 'linear-gradient(45deg, #b91c1c, #f97316)',
+        ],
+        [
+            'label' => 'Info Produk',
+            'judul' => 'Warna Baru Tiba!',
+            'keterangan' => 'Tersedia 5 varian warna pastel baru. Cek Master Produk.',
+            'tautan' => null,
+            'gambar' => null,
+            'warna' => 'linear-gradient(45deg, #065f46, #10b981)',
+        ],
+    ],
 ];
