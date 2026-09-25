@@ -3,10 +3,10 @@
 namespace App\Support\Outbound;
 
 use App\Models\DeliveryNote;
+use App\Support\Imaji\SusutkanFoto;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
-use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -47,6 +47,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class ArrivalPhoto
 {
+    public function __construct(private readonly SusutkanFoto $penyusut) {}
+
     private const DISK = 'local';
 
     private const FOLDER = 'arrival-photos';
@@ -80,16 +82,17 @@ class ArrivalPhoto
             $sumber = self::SUMBER_BERKAS;
         }
 
-        $path = $foto->store(self::FOLDER, self::DISK);
-
-        if ($path === false) {
-            throw new RuntimeException('Foto gagal disimpan. Coba ambil ulang fotonya.');
-        }
+        // Disusutkan lebih dulu — lihat App\Support\Imaji\SusutkanFoto. Ukuran
+        // yang dicatat adalah ukuran SESUDAHNYA, bukan ukuran unggahan:
+        // angka yang tertulis di basis data harus sama dengan berkas yang
+        // benar-benar ada di disk, kalau tidak laporan pemakaian tempat
+        // berbohong tepat saat disknya menipis.
+        $hasil = $this->penyusut->simpan($foto, self::FOLDER, self::DISK);
 
         return [
-            'arrival_photo_path' => $path,
-            'arrival_photo_mime' => $foto->getMimeType() ?? 'image/jpeg',
-            'arrival_photo_size' => (int) $foto->getSize(),
+            'arrival_photo_path' => $hasil['path'],
+            'arrival_photo_mime' => $hasil['mime'],
+            'arrival_photo_size' => $hasil['size'],
             'arrival_photo_source' => $sumber,
             // Waktu SERVER. Jam di HP supir bisa disetel mundur; jam server
             // tidak, dan justru waktulah yang membuat foto ini jadi bukti.

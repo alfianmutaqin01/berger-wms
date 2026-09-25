@@ -651,8 +651,10 @@ Produk cat **memiliki masa simpan**. Sistem wajib melacaknya per batch.
      - Format file: **PNG atau JPG saja**.
      - Ukuran maksimal: **5 MB** per file.
      - Jumlah file: Minimal 1, maksimal 3 foto.
-     - **Opsi kamera langsung:** Tombol "Buka Kamera" untuk foto langsung dari perangkat (menggunakan HTML5 `capture` attribute).
+     - **Kamera terbuka di dalam halaman** (`getUserMedia`), sama seperti halaman ePOD supir — bukan lagi `capture` yang diabaikan peramban desktop. Setiap jepretan **menambah**, bukan menimpa, sehingga Surat Jalan dua halaman bisa dikirim sekali jalan. Tiap foto punya petik pratinjau dengan tombol hapus.
+     - **Jalur cadangan:** bila izin kamera ditolak atau koneksinya bukan https, tombol beralih ke kamera HP dan galeri. Keduanya juga menambah, bukan menimpa.
   4. Setelah upload, status berubah menjadi **Menunggu Verifikasi Bukti**.
+- **Penyimpanan:** foto disusutkan otomatis ke sisi terpanjang 2000 px (lihat `App\Support\Imaji\SusutkanFoto`). Formatnya dipertahankan, arah putaran EXIF diluruskan, dan berkas yang gagal diolah tetap disimpan utuh — penghematan tempat tidak pernah boleh menghilangkan bukti.
 
 #### F-OUT-06: Verifikasi Bukti Surat Jalan (Tim Logistik)
 - **Proses:**
