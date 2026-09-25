@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Sistem Terintegrasi WMS & Sales Order — PT Berger Paints Indonesia
 
-> **Versi:** 1.7  
-> **Tanggal:** 24 September 2026 *(revisi dari v1.6, 21 September 2026)*  
+> **Versi:** 1.8  
+> **Tanggal:** 25 September 2026 *(revisi dari v1.7, 24 September 2026)*  
 > **Status:** Scope go-live dikunci — menunggu UAT sign-off  
 > **Pemilik Produk:** PT Berger Paints Indonesia  
 > **Tim Pengembang:** Tim Internal PT Berger Paints Indonesia
@@ -10,6 +10,16 @@
 ---
 
 ## Riwayat Revisi
+
+### Versi 1.8 — 25 September 2026 (Bahasa Tampilan: Indonesia & Inggris)
+
+Permintaan pemilik produk: sebagian pengguna lebih nyaman berbahasa Inggris, sebagian berbahasa Indonesia. Fase 0 memasang pondasinya beserta kulit aplikasi (sidebar, navbar); modul-modulnya menyusul bertahap.
+
+| # | Perubahan | Alasan | Bagian Terdampak |
+|---|---|---|---|
+| 1 | **Pilihan bahasa Indonesia/Inggris di menu akun.** Berlaku untuk penamaan, menu, tombol, dan pesan sistem — TIDAK untuk data. Terkunci selama sesi berjalan, kembali ke Indonesia saat logout. | Dua kelompok pengguna dengan kebiasaan berbeda memakai satu sistem yang sama. Menyimpannya di sesi, bukan di akun, membuat komputer bersama selalu mulai dari bahasa Indonesia. | §6.1 F-AUTH-06 |
+| 2 | **Halaman bertautan dikunci bahasa Indonesia.** e-POD dan persetujuan MRF tidak ikut berganti bahasa. | Yang membukanya supir, pelanggan, dan atasan produksi — tanpa akun, tanpa pernah memilih bahasa, sambil bekerja di lapangan. Halaman itu juga berada di dalam sesi peramban yang sama, jadi tanpa dikunci ia akan ikut pilihan orang kantor yang membukanya. | §6.5 F-OUT-04, §6.4 |
+| 3 | **Pesan validasi bawaan Laravel kini berbahasa Indonesia.** | Temuan saat mengerjakan ini: `APP_LOCALE` sudah `id` tetapi berkas terjemahannya tidak pernah ada, sehingga pesan yang tidak ditulis tangan keluar dalam bahasa Inggris — "The nama supir field is required" — di tengah layar yang seluruhnya berbahasa Indonesia. Tidak pernah dilaporkan karena hanya muncul saat orang salah mengisi. | §6.1, seluruh formulir |
 
 ### Versi 1.7 — 24 September 2026 (Pengiriman Luar Pulau)
 
@@ -355,6 +365,15 @@ Dua lapis *(v1.5)*:
   - Super Admin, Manager, Tim Produksi, Operator Gudang, Tim Logistik → **Portal Warehouse/Admin**
   - Tim Sales → **Portal Sales**
 - Middleware memblokir akses silang antar-portal.
+
+#### F-AUTH-06: Bahasa Tampilan *(v1.8, Fase 0)*
+- Bahasa bawaan **Indonesia**. Bahasa **Inggris** tersedia sebagai pilihan di menu akun (navbar), untuk semua role dan kedua portal.
+- **Yang berubah hanya yang ditulis sistem**: menu, judul halaman, tombol, label status, pesan berhasil/gagal, pesan validasi, serta tanggal dan waktu relatif. **Data tidak ikut**: nama produk, nama pelanggan, SKU, nomor batch, kode rak, dan catatan yang diketik pengguna tetap apa adanya.
+- **Pilihannya terkunci selama sesi berjalan.** Memuat halaman lain, memproses data, atau permintaan latar belakang tidak mengembalikannya ke bahasa bawaan.
+- **Reset saat logout.** Pilihan disimpan di session, bukan pada akun — pada komputer bersama, orang berikutnya mulai dari bahasa Indonesia.
+- **Halaman bertautan tidak ikut**: e-POD supir/pelanggan dan persetujuan MRF **selalu bahasa Indonesia**. Yang membukanya tidak punya akun, tidak pernah memilih bahasa, dan sedang bekerja di lapangan.
+- Nama peran diterjemahkan; nama gudang, departemen, produk, dan pelanggan tidak.
+- **Notifikasi dan log aktivitas tidak ikut berubah bahasa** — keduanya disimpan sebagai kalimat jadi saat dibuat. Untuk log aktivitas ini disengaja: catatan audit yang bunyinya berubah tergantung siapa yang membacanya tidak bisa dipakai saat sebuah kejadian dipersoalkan.
 
 ---
 

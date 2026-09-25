@@ -143,15 +143,29 @@ class SidebarAccessTest extends TestCase
         $html = $this->get($landing)->assertOk()->getContent();
 
         foreach (self::MENU_LABELS as $feature => $label) {
+            /*
+             * Dibandingkan dalam bentuk TERRENDER, bukan bentuk sumbernya.
+             *
+             * Sejak label menu melewati __() (Fase 0 bahasa), Blade
+             * mengeluarkannya lewat {{ }} sehingga "Billing & Piutang" menjadi
+             * "Billing &amp; Piutang" — dan itu justru perbaikan: sebelumnya
+             * sidebar mengeluarkan & telanjang, yang bukan HTML sah.
+             *
+             * e() dipakai supaya test ini menguji apa yang benar-benar dibaca
+             * peramban, dan tidak perlu disentuh lagi setiap kali ada label
+             * baru yang kebetulan memuat &, <, atau tanda kutip.
+             */
+            $terrender = e($label);
+
             if (Permission::allows($user, $feature)) {
                 $this->assertStringContainsString(
-                    $label,
+                    $terrender,
                     $html,
                     "Role [{$roleSlug}] berhak atas [{$feature}] tapi menu \"{$label}\" tidak muncul di sidebar."
                 );
             } else {
                 $this->assertStringNotContainsString(
-                    $label,
+                    $terrender,
                     $html,
                     "Role [{$roleSlug}] TIDAK berhak atas [{$feature}] tapi menu \"{$label}\" tetap muncul di sidebar."
                 );
