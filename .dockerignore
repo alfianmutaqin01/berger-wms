@@ -44,3 +44,7 @@ docs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Production build exclusions
+public/storage
+bootstrap/cache/*.php
