@@ -22,20 +22,20 @@ use RuntimeException;
  * FifoAllocator hanya melihat `qty_available`, begitu pula availableFor()
  * yang memberi angka "stok yang bisa dijanjikan" di layar penerimaan. Jadi
  * begitu 5 dari 10 unit dibooking, yang bisa dipesan tinggal 5 dengan
- * sendirinya — tanpa satu pun query alokasi perlu diubah, dan tanpa ada
+ * sendirinya â€” tanpa satu pun query alokasi perlu diubah, dan tanpa ada
  * tempat kedua yang bisa lupa menyaring.
  *
- * SATU JANJI, SATU PEMILIK — bagian yang paling mudah dirusak
+ * SATU JANJI, SATU PEMILIK â€” bagian yang paling mudah dirusak
  * -----------------------------------------------------------
  * Begitu pesanan sungguhan dari customer itu diterima, jatahnya HARUS
  * berpindah dari booking ke pesanan (consume). Kalau tidak, keduanya
  * sama-sama memegang 5 unit yang sama dan gudang terlihat menjanjikan 10 dari
  * barang yang cuma ada 5. Perpindahan itu mencakup dua hal yang berbeda:
  *
- *   1. Jatah yang SUDAH tercadang — alokasinya berpindah pemilik, tanpa satu
+ *   1. Jatah yang SUDAH tercadang â€” alokasinya berpindah pemilik, tanpa satu
  *      unit pun bergerak di rak. Stok tetap teralokasi; yang berubah cuma
  *      atas nama siapa.
- *   2. Jatah yang MASIH MENUNGGU stok — tidak ada yang bisa dipindahkan,
+ *   2. Jatah yang MASIH MENUNGGU stok â€” tidak ada yang bisa dipindahkan,
  *      tetapi janjinya harus ditutup, karena mulai sekarang pesanan itulah
  *      yang memikulnya. Melewatkan langkah ini membuat satu unit yang sama
  *      antre dua kali saat barang baru masuk.
@@ -116,7 +116,7 @@ class ProductBooking
             ->where('warehouse_id', $booking->warehouse_id)
             ->where('status', InventoryStock::STATUS_ACTIVE)
             ->where('qty_available', '>', 0)
-            // Urutan yang sama persis dengan alokasi pesanan — termasuk
+            // Urutan yang sama persis dengan alokasi pesanan â€” termasuk
             // penanda "Dahulukan Keluar". Lihat scopeUrutanKeluar().
             ->urutanKeluar()
             ->lockForUpdate()
@@ -159,8 +159,8 @@ class ProductBooking
                 'notes' => sprintf(
                     'Booking %s untuk %s (batch %s).',
                     $booking->reference,
-                    $booking->customer?->name ?? '—',
-                    $stok->batch_no ?? '—',
+                    $booking->customer?->name ?? 'â€”',
+                    $stok->batch_no ?? 'â€”',
                 ),
                 'user_id' => $userId,
             ]);
@@ -199,7 +199,7 @@ class ProductBooking
             ->where('customer_id', $order->customer_id)
             ->where('product_id', $detail->product_id)
             ->where('warehouse_id', $order->warehouse_id)
-            // Booking terlama lebih dulu — janji yang lebih tua ditutup lebih
+            // Booking terlama lebih dulu â€” janji yang lebih tua ditutup lebih
             // dulu, sama seperti antrean pesanan yang menunggu stok.
             ->orderBy('created_at')
             ->orderBy('id')
@@ -274,10 +274,10 @@ class ProductBooking
         $dariCadangan = 0;
         $sisa = $maks;
 
-        // TAHAP 1 — jatah yang sudah tercadang berpindah pemilik. Tidak ada
+        // TAHAP 1 â€” jatah yang sudah tercadang berpindah pemilik. Tidak ada
         // satu unit pun yang bergerak di rak: stok tetap teralokasi, yang
         // berubah hanya atas nama siapa. Karena itu tidak ada mutasi ledger
-        // di sini — qty_available tidak berubah, dan menuliskan mutasi
+        // di sini â€” qty_available tidak berubah, dan menuliskan mutasi
         // bernilai nol hanya akan mengaburkan ledger.
         foreach ($booking->allocations()->orderBy('id')->lockForUpdate()->get() as $alokasi) {
             if ($sisa < 1) {
@@ -301,17 +301,25 @@ class ProductBooking
             $sisa -= $ambil;
         }
 
-        // TAHAP 2 — porsi yang MASIH MENUNGGU stok. Tidak ada yang bisa
+        // TAHAP 2 â€” porsi yang MASIH MENUNGGU stok. Tidak ada yang bisa
         // dipindahkan, tetapi janjinya ditutup: mulai sekarang pesanan itulah
         // yang memikulnya. Tanpa langkah ini, satu unit yang sama akan antre
-        // dua kali saat barang baru masuk — sekali atas nama booking, sekali
+        // dua kali saat barang baru masuk â€” sekali atas nama booking, sekali
         // atas nama pesanan.
-        $menunggu = min($sisa, $booking->fresh()->qty_waiting);
+        // Refresh booking agar qty_reserved (dari allocations) mutakhir
+        // setelah Tahap 1 memindahkan sebagian alokasi ke pesanan.
+        $bookingMutakhir = $booking->fresh();
+        $menunggu = min($sisa, max(0, $bookingMutakhir->qty_waiting));
 
         $dipakai = $dariCadangan + max(0, $menunggu);
 
+        // Pastikan qty_used TIDAK PERNAH melebihi qty_booked —
+        // constraint DB stock_bookings_terpakai_wajar: qty_used <= qty_booked
+        $ruangTersisa = max(0, $bookingMutakhir->qty_booked - $bookingMutakhir->qty_used);
+        $dipakai = min($dipakai, $ruangTersisa);
+
         if ($dipakai > 0) {
-            $booking->qty_used += $dipakai;
+            $booking->qty_used = $bookingMutakhir->qty_used + $dipakai;
 
             if ($booking->qty_used >= $booking->qty_booked) {
                 $booking->status = StockBooking::STATUS_CLOSED;
@@ -335,7 +343,7 @@ class ProductBooking
             if ($stok === null) {
                 // Baris stoknya sudah tidak ada. Alokasinya tetap dibuang
                 // supaya tidak menggantung, tetapi tidak ada tempat untuk
-                // mengembalikan qty-nya — dan itu memang benar.
+                // mengembalikan qty-nya â€” dan itu memang benar.
                 $alokasi->delete();
 
                 continue;
